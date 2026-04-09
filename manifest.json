@@ -2,7 +2,7 @@
   "name": "SLYGHT",
   "short_name": "SLYGHT",
   "description": "Personal finance tracker",
-  "start_url": "/slyght/",
+  "start_url": "/slyght/index.html",
   "scope": "/slyght/",
   "display": "standalone",
   "background_color": "#0a0a0a",
