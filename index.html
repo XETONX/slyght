@@ -71,7 +71,7 @@ button { font-family: var(--sans); }
 input, select, textarea { font-family: var(--sans); }
 
 /* DEMO BADGE */
-.demo-badge { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--amber); color: #000; font-family: var(--mono); font-size: 10px; font-weight: 700; padding: 4px 12px; border-radius: 20px; letter-spacing: 0.1em; z-index: 100; display: none; }
+.demo-badge { position: fixed; top: 12px; right: 16px; background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber-border); font-family: var(--mono); font-size: 9px; font-weight: 700; padding: 3px 8px; border-radius: 20px; letter-spacing: 0.1em; z-index: 100; display: none; }
 .demo-badge.show { display: block; }
 
 /* LAYOUT */
@@ -384,7 +384,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px;
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
-        <div class="hdr-badge">Payday in <b id="hdr-days">—</b>d</div>
+        <div class="hdr-badge" id="hdr-badge-wrap">Payday in <b id="hdr-days">—</b>d</div>
         <div class="mode-toggle">
           <div class="toggle-track" id="mode-toggle" onclick="toggleMode()">
             <div class="toggle-thumb"></div>
@@ -548,7 +548,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px;
     <div class="pad">
       <div class="card">
         <div class="settings-section">
-          <div class="settings-title">App Security</div>
+          <div class="settings-title">App Security — applies to both modes</div>
           <div class="settings-row"><span class="settings-lbl">App PIN</span><input class="settings-input" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
@@ -589,23 +589,23 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px;
   <!-- NAV -->
   <div class="nav">
     <button class="nav-btn active" id="nav-dash" onclick="goPage('pg-dash')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" fill="white"/><rect x="11" y="2" width="7" height="7" rx="1.5" fill="white"/><rect x="2" y="11" width="7" height="7" rx="1.5" fill="white" opacity=".5"/><rect x="11" y="11" width="7" height="7" rx="1.5" fill="white" opacity=".5"/></svg>
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="2" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="11" y="2" width="7" height="7" rx="1.5" fill="currentColor"/><rect x="2" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity=".5"/><rect x="11" y="11" width="7" height="7" rx="1.5" fill="currentColor" opacity=".5"/></svg>
       <span class="nav-lbl">Dashboard</span>
     </button>
     <button class="nav-btn" id="nav-cal" onclick="goPage('pg-cal')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="14" rx="2" stroke="white" stroke-width="1.2" fill="none"/><path d="M6 2v4M14 2v4M2 9h16" stroke="white" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="13" r="1" fill="white"/><circle cx="10" cy="13" r="1" fill="white"/><circle cx="13" cy="13" r="1" fill="white"/></svg>
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M6 2v4M14 2v4M2 9h16" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="13" r="1" fill="currentColor"/><circle cx="10" cy="13" r="1" fill="currentColor"/><circle cx="13" cy="13" r="1" fill="currentColor"/></svg>
       <span class="nav-lbl">Bills</span>
     </button>
     <button class="nav-btn" id="nav-budget" onclick="goPage('pg-budget')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><path d="M3 15L7 9L11 12L15 6L18 8" stroke="white" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="5" r="2" fill="white" opacity=".7"/></svg>
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><path d="M3 15L7 9L11 12L15 6L18 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="5" r="2" fill="currentColor" opacity=".7"/></svg>
       <span class="nav-lbl">Budget</span>
     </button>
     <button class="nav-btn" id="nav-spend" onclick="goPage('pg-spend')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="white" stroke-width="1.2" fill="none"/><path d="M10 6v4l3 2" stroke="white" stroke-width="1.2" stroke-linecap="round"/></svg>
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       <span class="nav-lbl">Spending</span>
     </button>
     <button class="nav-btn" id="nav-settings" onclick="goPage('pg-settings')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="white" stroke-width="1.2" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="white" stroke-width="1.2" stroke-linecap="round"/></svg>
+      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       <span class="nav-lbl">Settings</span>
     </button>
   </div>
@@ -855,7 +855,7 @@ function renderAll() {
 
   const currentDays = isDemo ? D.days : daysLeft(S.payday);
   if(!isDemo) S.days = currentDays;
-  $('hdr-days').textContent = currentDays;
+  $('hdr-days').textContent = currentDays===0?'today':currentDays;
 
   $('h-bal').textContent = fmtS(realBal);
   $('h-bal').className = 'hero-bal '+(realBal<0?'bad':realBal<300?'warn':'ok');
@@ -865,17 +865,17 @@ function renderAll() {
   const hCtx = $('hero-context');
   if(hCtx) hCtx.textContent = isDemo ? 'Demo — Virgin Money' : 'Virgin Money';
 
-  const pct = Math.max(3, Math.min(100,(D.days/31)*100));
+  const pct = Math.max(3, Math.min(100,(currentDays/31)*100));
   $('pd-fill').style.width=pct+'%';
-  $('pd-fill').style.background = D.days<4?'var(--red)':D.days<8?'var(--amber)':'var(--green)';
-  $('pd-lbl').textContent = D.days+' days left';
+  $('pd-fill').style.background = currentDays<4?'var(--red)':currentDays<8?'var(--amber)':'var(--green)';
+  $('pd-lbl').textContent = currentDays+(currentDays===1?' day':' days')+' to payday';
 
   $('m-safe').textContent=fmtS(safe);
   $('m-safe').className='met-v '+(safe<0?'bad':safe<200?'warn':'ok');
   $('m-safe-s').textContent=due.length+' bills due';
   $('m-daily').textContent=fmtS(daily);
   $('m-daily').className='met-v '+(daily<0?'bad':daily<15?'warn':'ok');
-  $('m-daily-s').textContent=D.days+' days until 15th';
+  $('m-daily-s').textContent=currentDays+' days until 15th';
   $('m-spent').textContent=fmt(txnSpent);
 
   renderAlerts(safe, realBal, dueTotal, txnSpent);
@@ -1157,7 +1157,7 @@ function checkAfford() {
   }
 
   if(after<0||newDaily<20){
-    const cuts=[{n:'Entertainment',s:750},{n:'Weed',s:300},{n:'Work food (50%)',s:240},{n:'Pause streaming',s:95},{n:'Hobby / games',s:25}];
+    const cuts=[{n:'Entertainment',s:750},{n:'Other discretionary',s:300},{n:'Work food (50%)',s:240},{n:'Pause streaming',s:95},{n:'Hobby / games',s:25}];
     let cum=0;let rows='';
     for(const d of cuts){
       cum+=d.s;const covers=cum>=amt;
