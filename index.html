@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
 <title>SLYGHT</title>
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="/slyght/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -1471,7 +1471,15 @@ function doImport() {
 function resetAll() { if (confirm('Reset all Slyght data?')) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }
 
 $('ob-bal').addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  // Unregister any old broken service workers first
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    registrations.forEach(reg => reg.unregister());
+  }).then(() => {
+    // Register fresh
+    navigator.serviceWorker.register('/slyght/sw.js').catch(() => {});
+  });
+}
 
 load();
 const obEl = $('ob-days-display');
