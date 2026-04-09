@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -624,7 +625,7 @@ function renderBillList() {
   const sorted = [...BILLS].map(b => ({...b, diff: b.day >= today ? b.day - today : 31 - today + b.day})).sort((a,b) => a.diff - b.diff);
   c.innerHTML = sorted.map(b => {
     const cls = b.diff === 0 ? 'bad' : b.diff <= 3 ? 'warn' : '';
-    return `<div class="list-row"><div class="row-icon" style="background:${b.diff<=3?'var(--amber-dim)':'var(--bg3)'};color:${b.diff<=3?'var(--amber)':'var(--text3)';font-family:'Space Mono',monospace}">${b.day}</div><div class="row-main"><div class="row-name">${b.name}</div><div class="row-sub">${b.tag}</div></div><div class="row-val ${cls}">${fmt(b.amt)}</div></div>`;
+    return `<div class="list-row"><div class="row-icon" style="background:${b.diff<=3?'var(--amber-dim)':'var(--bg3)'};color:${b.diff<=3?'var(--amber)':'var(--text3)'};font-family:'Space Mono',monospace">${b.day}</div><div class="row-main"><div class="row-name">${b.name}</div><div class="row-sub">${b.tag}</div></div><div class="row-val ${cls}">${fmt(b.amt)}</div></div>`;
   }).join('');
 }
 
