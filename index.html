@@ -394,18 +394,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
   }
 }
 
-
-/* CALENDAR */
-.cal-day{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px 2px;cursor:pointer;transition:background .1s;border:1px solid transparent}
-.cal-day:active{background:var(--bg4)}
-.cal-day.today{border-color:var(--green);background:var(--green-dim)}
-.cal-day.has-bill{background:var(--red-dim);border-color:var(--red-border)}
-.cal-day.has-multi{background:var(--amber-dim);border-color:var(--amber-border)}
-.cal-day.payday{background:var(--green-dim);border-color:var(--green-border)}
-.cal-day.other-month{opacity:.25}
-.cal-day-num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);line-height:1}
-.cal-day-dot{width:4px;height:4px;border-radius:50%;margin-top:2px}
-.cal-day-amt{font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px;line-height:1;text-align:center}
 </style>
 </head>
 <body>
@@ -1784,7 +1772,7 @@ if(S.bal>0){
 }
 </script>
 </body>
-</html>let BILLS=[
+</htmllet BILLS=[
   {name:'Rent',amt:3000,day:1,tag:'Fixed',recurring:true},
   {name:'Car Loan — Firstmac',amt:387.69,day:1,tag:'Loan',recurring:true},
   {name:'Car Loan — Firstmac',amt:387.69,day:15,tag:'Loan',recurring:true},
@@ -1803,7 +1791,7 @@ if(S.bal>0){
   {name:'Adobe',amt:23.99,day:27,tag:'Subscription',recurring:true},
   {name:'Spotify',amt:15.99,day:29,tag:'Streaming',recurring:true},
   {name:'Food at Work',amt:200,day:28,tag:'Variable',recurring:true},
-];!DOCTYPE html>
+];DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2805,18 +2793,6 @@ function showOb(){
   $('main-app').style.display='none';
 }
 
-function launchApp(){
-  const b=parseFloat($('ob-bal').value);
-  if(isNaN(b)){alert('Enter your Virgin Money balance.');return;}
-  const prevBal=S.bal;
-  const prevTxns=S.txns.reduce((s,t)=>s+t.amt,0);
-  S.bal=b; S.days=daysLeft(S.payday); save();
-  $('ob-screen').style.display='none';
-  $('pin-screen').style.display='block';
-  pinEntry=''; updatePinDots();
-  // Store for reconciliation after PIN
-  S._pendingRecon={newBal:b,prevBal,prevTxns};
-}
 
 function showMain(){
   S.days=daysLeft(S.payday); save();
