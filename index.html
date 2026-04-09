@@ -138,12 +138,13 @@ button,input,select,textarea{font-family:var(--sans)}
 .bill-amt{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);white-space:nowrap}
 /* CALENDAR */
 .cal-day{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px 2px;cursor:pointer;border:1px solid transparent;transition:background .1s}
-.cal-day.today{border-color:var(--green);background:var(--green-dim)}
+.cal-day.today{border-color:var(--green);background:var(--green-dim);box-shadow:0 0 0 2px var(--green)}
 .cal-day.has-bill{background:var(--red-dim);border-color:var(--red-border)}
 .cal-day.has-multi{background:var(--amber-dim);border-color:var(--amber-border)}
 .cal-day.payday{background:var(--green-dim);border-color:var(--green-border)}
 .cal-day.other-month{opacity:.25}
 .cal-day-num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);line-height:1}
+.cal-day.today .cal-day-num{color:var(--green)}
 .cal-day-dot{width:4px;height:4px;border-radius:50%;margin-top:2px}
 .cal-day-amt{font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px;line-height:1;text-align:center}
 /* AFFORD */
@@ -169,8 +170,9 @@ select.s-input{cursor:pointer}
 .slider-row{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .slider-lbl{font-size:13px;color:var(--text2);min-width:150px;font-weight:500}
 .slider-val{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green);min-width:58px;text-align:right}
-input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:3px;background:var(--bg5);border-radius:2px;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--green);cursor:pointer}
+input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:6px;background:var(--bg5);border-radius:3px;outline:none;cursor:pointer;touch-action:manipulation}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:var(--green);cursor:pointer;border:3px solid var(--bg);box-shadow:0 0 0 1px var(--green)}
+input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:var(--green);cursor:pointer;border:3px solid var(--bg);box-shadow:0 0 0 1px var(--green)}
 .impact-box{background:var(--bg3);border-radius:var(--r-sm);padding:18px}
 .impact-num{font-family:var(--mono);font-size:36px;font-weight:700;line-height:1;margin-bottom:6px}
 .impact-desc{font-size:13px;color:var(--text2)}
@@ -419,7 +421,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       </div>
       <div id="cal-day-detail" style="display:none" class="card"><div id="cal-day-detail-content"></div></div>
       <div class="card" id="cal-week-summary">
-        <div class="card-hdr"><div class="card-title">This Week</div></div>
+        <div class="card-hdr"><div class="card-title">This Week — Balance Breakdown</div></div>
         <div id="cal-week-content"></div>
       </div>
       <div id="bills-grouped"></div>
@@ -436,24 +438,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
   <div class="screen" id="pg-budget">
     <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Budget</div></div>
     <div class="pad">
-      <!-- SAVINGS MOMENTUM -->
-      <div class="card" id="savings-card">
-        <div class="card-hdr"><div class="card-title">Savings Momentum &#x1F680;</div></div>
-        <div id="savings-content"></div>
-      </div>
-      <!-- CHINA HOLIDAY -->
-      <div class="card" id="china-card">
-        <div class="card-hdr">
-          <div><div class="card-title">China Holiday &#x1F1E8;&#x1F1F3;</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Locked savings &#x2014; round-ups + manual</div></div>
-          <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)" id="china-display">$0.00</span>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <input class="s-input" type="number" id="china-input" placeholder="Current balance ($)" inputmode="decimal" style="flex:1">
-          <button onclick="saveChinaBal()" style="padding:12px 16px;background:var(--green);color:#000;border:none;border-radius:var(--r-sm);font-weight:700;font-size:13px;cursor:pointer">Save</button>
-        </div>
-        <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-bottom:8px"><div id="china-bar" style="height:4px;border-radius:2px;transition:width .5s;width:0%"></div></div>
-        <div style="font-size:12px;color:var(--text3)" id="china-label">Goal: $4,000 for China trip by Dec 2026</div>
-      </div>
       <!-- CUT SPENDING -->
       <div class="card">
         <div class="card-hdr"><div class="card-title">What If I Cut Spending?</div></div>
@@ -476,6 +460,32 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <div class="card">
         <div class="card-hdr"><div class="card-title">Spending by Category</div></div>
         <div id="cat-breakdown"></div>
+      </div>
+
+      <!-- SAVINGS DIVIDER -->
+      <div style="display:flex;align-items:center;gap:12px;margin:8px 0 4px">
+        <div style="flex:1;height:1px;background:var(--border2)"></div>
+        <div style="font-size:11px;font-family:var(--mono);font-weight:700;color:var(--text3);letter-spacing:.1em;text-transform:uppercase">Savings &amp; Goals</div>
+        <div style="flex:1;height:1px;background:var(--border2)"></div>
+      </div>
+
+      <!-- SAVINGS MOMENTUM -->
+      <div class="card" id="savings-card">
+        <div class="card-hdr"><div class="card-title">Savings Momentum &#x1F680;</div></div>
+        <div id="savings-content"></div>
+      </div>
+      <!-- CHINA HOLIDAY -->
+      <div class="card" id="china-card">
+        <div class="card-hdr">
+          <div><div class="card-title">China Holiday &#x1F1E8;&#x1F1F3;</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Locked savings &#x2014; round-ups + manual</div></div>
+          <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)" id="china-display">$0.00</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input class="s-input" type="number" id="china-input" placeholder="Current balance ($)" inputmode="decimal" style="flex:1">
+          <button onclick="saveChinaBal()" style="padding:12px 16px;background:var(--green);color:#000;border:none;border-radius:var(--r-sm);font-weight:700;font-size:13px;cursor:pointer">Save</button>
+        </div>
+        <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-bottom:8px"><div id="china-bar" style="height:4px;border-radius:2px;transition:width .5s;width:0%"></div></div>
+        <div style="font-size:12px;color:var(--text3)" id="china-label">Goal: $4,000 for China trip by Dec 2026</div>
       </div>
     </div>
   </div>
@@ -641,28 +651,20 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 <div class="modal-overlay" id="lt-debt-modal" onclick="handleOverlayClick(event,'lt-debt-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title" id="lt-modal-title">Payoff Calculator</div>
-    <div class="modal-sub">See how extra payments help</div>
+    <div class="modal-sub" id="lt-modal-sub">Fixed rate — locked in</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
       <div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Balance</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Current Balance</div>
         <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--red)" id="lt-balance">$0</div>
       </div>
       <div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Min payment</div>
-        <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text)" id="lt-minpay">$0</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Fixed Payment</div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)" id="lt-minpay">$0</div>
       </div>
     </div>
-    <div class="modal-field"><label>Interest rate (% per year)</label><input class="modal-input" type="number" id="lt-rate" placeholder="e.g. 9.87" step="0.1" oninput="calcLtDebt()"></div>
-    <div class="modal-field"><label>Extra payment per month ($)</label><input class="modal-input" type="number" id="lt-extra" placeholder="e.g. 200" oninput="calcLtDebt()"></div>
-    <div id="lt-result" style="background:var(--bg3);border-radius:var(--r-sm);padding:14px;margin-bottom:14px;display:none">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Paid off in</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)" id="lt-months-base">-</div></div>
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">With extra</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--green)" id="lt-months-extra">-</div></div>
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Total interest</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)" id="lt-interest-base">-</div></div>
-        <div><div style="font-size:11px;color:var(--text3);margin-bottom:3px">Interest saved</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)" id="lt-interest-saved">-</div></div>
-      </div>
-      <div style="font-size:13px;color:var(--text2);line-height:1.6" id="lt-advice"></div>
-    </div>
+    <div id="lt-result" style="margin-bottom:14px;display:none"></div>
+    <div class="modal-field"><label id="lt-extra-label">Extra payment per fortnight / month ($)</label><input class="modal-input" type="number" id="lt-extra" placeholder="e.g. 100" oninput="calcLtDebt()"></div>
+
     <div class="modal-field"><label>Update current balance ($)</label><input class="modal-input" type="number" id="lt-new-bal" placeholder="Enter latest balance"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveLtDebt()">Save Balance</button>
@@ -725,7 +727,7 @@ let S = {
 };
 
 let BILLS = [
-  {name:'Rent', amt:3000, day:1, tag:'Fixed', recurring:true},
+  {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:true},
   {name:'Car Loan — Firstmac', amt:387.69, day:1, tag:'Loan', recurring:true},
   {name:'Car Loan — Firstmac', amt:387.69, day:15, tag:'Loan', recurring:true},
   {name:'Health Insurance (qtrly avg)', amt:119.04, day:1, tag:'Fixed', recurring:true},
@@ -818,19 +820,38 @@ function runRecon(newBal, prevBal, prevTxns) {
   const absDiff = Math.abs(diff);
   if (absDiff < 1) return;
   const rt = $('recon-title'), rb = $('recon-body'), rs = $('recon-reasons');
+
+  // Smart match: find bills whose amount is close to the difference
+  const today = new Date().getDate();
+  const matchedBills = BILLS.filter(b => Math.abs(b.amt - absDiff) < 1.5);
+  const todayBills = BILLS.filter(b => b.day === today);
+
   let reasons = [];
   if (diff < -1) {
-    rt.textContent = 'Something extra came out';
+    rt.textContent = 'Something came out \u2193';
     rt.style.color = 'var(--red)';
-    rb.innerHTML = 'Balance is <strong>' + fmtC(absDiff) + ' less</strong> than expected based on logged spending.<br><br>Gap of <strong>' + fmtC(absDiff) + '</strong> could be a bill, fee, or unlogged spend.';
-    reasons = ['Bill came out early','Bank fee','Forgot to log a spend','Direct debit','Other'];
+    let bodyHtml = 'Balance is <strong>' + fmtC(absDiff) + ' less</strong> than expected.';
+    if (matchedBills.length > 0) {
+      bodyHtml += '<div style="margin-top:10px;padding:10px 12px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);font-size:13px;color:var(--amber);line-height:1.6">';
+      bodyHtml += '\uD83D\uDCA1 Was it: <strong>' + matchedBills.map(b => b.name + ' (' + fmt(b.amt) + ')').join(' or ') + '</strong>?</div>';
+      reasons = matchedBills.map(b => b.name + ' \u2014 ' + fmt(b.amt));
+      reasons.push('Different bill', 'Bank fee', 'Unlogged spend', 'Other');
+    } else if (todayBills.length > 0) {
+      bodyHtml += '<div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--r-sm);font-size:13px;color:var(--text2);line-height:1.6">';
+      bodyHtml += 'Scheduled today: <strong>' + todayBills.map(b => b.name + ' (' + fmt(b.amt) + ')').join(', ') + '</strong></div>';
+      reasons = todayBills.map(b => b.name + ' came out');
+      reasons.push('Different bill', 'Bank fee', 'Unlogged spend', 'Other');
+    } else {
+      reasons = ['Bill came out early','Bank fee','Forgot to log a spend','Direct debit','Other'];
+    }
+    rb.innerHTML = bodyHtml;
   } else {
-    rt.textContent = 'Balance higher than expected';
+    rt.textContent = 'Balance higher than expected \u2191';
     rt.style.color = 'var(--green)';
-    rb.innerHTML = 'Balance is <strong>' + fmtC(absDiff) + ' more</strong> than expected. Could be a refund, pay, or transfer in.';
+    rb.innerHTML = 'Balance is <strong>' + fmtC(absDiff) + ' more</strong> than expected. Refund, pay, or transfer in?';
     reasons = ['Got paid','Refund received','Transfer in','Correcting previous error','Other'];
   }
-  rs.innerHTML = reasons.map(r => '<button onclick="selectReason(this,\'' + r + '\')" style="padding:9px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left">' + r + '</button>').join('');
+  rs.innerHTML = reasons.map(r => '<button onclick="selectReason(this,\'' + r.replace(/'/g,"\\'") + '\')" style="padding:9px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left">' + r + '</button>').join('');
   $('recon-custom').value = '';
   const btn = $('recon-confirm-btn');
   btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
@@ -971,7 +992,7 @@ function renderDebtTiles() {
     const col = d.delayed ? 'warn' : 'bad';
     const pct = Math.min(100, Math.round((d.amt/total)*100));
     const fillCol = d.delayed ? 'var(--amber)' : 'var(--red)';
-    const dueStr = d.delayDate ? d.delayDate.slice(5).replace('-','/') : 'ASAP';
+    const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
     const ri = S.debts.indexOf(d);
     return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
       '<div class="dt-name">' + d.name + '</div>' +
@@ -1053,43 +1074,146 @@ function closeModal(id) { $(id).classList.remove('open'); }
 function openLtDebtModal(type) {
   ltDebtType = type;
   const bal = type === 'car' ? S.carloan : S.cc;
-  const minPay = type === 'car' ? 387.69/2 : Math.max(25, bal*0.02);
-  $('lt-modal-title').textContent = type === 'car' ? 'Car Loan Payoff' : 'Credit Card Payoff';
+  $('lt-modal-title').textContent = type === 'car' ? 'Car Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
   $('lt-balance').textContent = fmtC(bal);
-  $('lt-minpay').textContent = fmt(minPay) + (type === 'car' ? '/fortnight' : '/month min');
-  $('lt-rate').value = type === 'car' ? '9.87' : '19.99';
-  $('lt-extra').value = ''; $('lt-new-bal').value = ''; $('lt-result').style.display = 'none';
+  if (type === 'car') {
+    $('lt-minpay').textContent = '$387.69 / fortnight (fixed)';
+  } else {
+    $('lt-minpay').textContent = '$92 / month (min — avoid this)';
+  }
+  $('lt-extra').value = '';
+  $('lt-new-bal').value = '';
+  $('lt-result').style.display = 'none';
   $('lt-debt-modal').classList.add('open');
   calcLtDebt();
 }
 
 function calcLtDebt() {
   const bal = ltDebtType === 'car' ? S.carloan : S.cc;
-  const rate = parseFloat($('lt-rate').value) || 0;
-  const extra = parseFloat($('lt-extra').value) || 0;
-  const minPay = ltDebtType === 'car' ? 194 : Math.max(25, bal*0.02);
-  if (!rate || bal <= 0) { $('lt-result').style.display = 'none'; return; }
-  const mr = rate/100/12;
-  function calc(pay) {
-    if (pay <= 0) return {months:9999, totalInt:0};
-    let b = bal, months = 0, totalInt = 0;
-    while (b > 0 && months < 600) { const i = b*mr; totalInt += i; b = b+i-pay; months++; }
-    return {months, totalInt: Math.max(0, totalInt)};
+  if (bal <= 0) { $('lt-result').style.display = 'none'; return; }
+
+  if (ltDebtType === 'car') {
+    // Car loan: fortnightly $387.69 fixed. Show 6/12/24 month projections
+    const rate = 9.87;
+    const mr = rate/100/26; // fortnightly rate
+    const payment = 387.69;
+    const extra = parseFloat($('lt-extra').value) || 0;
+    const totalPayment = payment + extra;
+
+    function projectBalance(months) {
+      let b = bal;
+      const fortnights = months * 26/12;
+      for (let i = 0; i < fortnights; i++) {
+        const interest = b * mr;
+        b = b + interest - totalPayment;
+        if (b <= 0) return 0;
+      }
+      return Math.max(0, b);
+    }
+
+    function calcPayoff(pay) {
+      let b = bal, fortnights = 0, totalInt = 0;
+      while (b > 0 && fortnights < 1200) {
+        const interest = b * mr;
+        totalInt += interest;
+        b = b + interest - pay;
+        fortnights++;
+      }
+      const months = Math.ceil(fortnights * 12/26);
+      return { months, totalInt: Math.max(0, totalInt) };
+    }
+
+    const base = calcPayoff(payment);
+    const withExtra = calcPayoff(totalPayment);
+    const bal6 = projectBalance(6);
+    const bal12 = projectBalance(12);
+    const bal24 = projectBalance(24);
+    const saved = base.totalInt - withExtra.totalInt;
+    const mSaved = base.months - withExtra.months;
+    const yb = Math.floor(base.months/12), mb = base.months%12;
+    const yx = Math.floor(withExtra.months/12), mx = withExtra.months%12;
+
+    let html = '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Balance Projections (at $387.69/fortnight)</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
+    [['6 months', bal6], ['12 months', bal12], ['24 months', bal24]].forEach(([label, b]) => {
+      const reduced = bal - b;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px 8px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:4px">'+label+'</div>' +
+        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)">'+fmt(b)+'</div>' +
+        '<div style="font-size:10px;color:var(--green);margin-top:2px">-'+fmt(reduced)+'</div></div>';
+    });
+    html += '</div></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
+    html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Paid off in</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">'+(yb>0?yb+'y '+mb+'m':mb+'m')+'</div></div>';
+    html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Total interest</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)">'+fmt(base.totalInt)+'</div></div>';
+    html += '</div>';
+    if (extra > 0 && saved > 0) {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-bottom:10px">';
+      html += '<div style="font-size:13px;color:var(--green);font-weight:600;margin-bottom:4px">+$'+extra.toFixed(0)+'/fortnight extra</div>';
+      html += '<div style="font-size:13px;color:var(--text2);line-height:1.7">Pay off <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> — saves <strong>'+fmt(saved)+'</strong> in interest and finishes <strong>'+mSaved+' months sooner.</strong></div>';
+      html += '</div>';
+    } else {
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.7">Add an extra fortnightly amount below to see how much interest you save. Even an extra $50/fortnight makes a significant difference at 9.87%.</div>';
+    }
+    $('lt-result').innerHTML = html;
+    $('lt-result').style.display = 'block';
+
+  } else {
+    // Credit card: show min vs recommended payoff scenarios
+    const rate = 19.99;
+    const mr = rate/100/12;
+    const extra = parseFloat($('lt-extra').value) || 0;
+
+    function calcCC(monthlyPay) {
+      if (monthlyPay <= 0) return {months:9999, totalInt:9999};
+      let b = bal, months = 0, totalInt = 0;
+      while (b > 0 && months < 600) {
+        const interest = b * mr;
+        totalInt += interest;
+        b = b + interest - monthlyPay;
+        months++;
+      }
+      return {months, totalInt: Math.max(0, totalInt)};
+    }
+
+    const minPay = 92;
+    const pay12 = bal > 0 ? bal * mr / (1 - Math.pow(1+mr, -12)) + 1 : 0;
+    const pay24 = bal > 0 ? bal * mr / (1 - Math.pow(1+mr, -24)) + 1 : 0;
+    const withExtra = calcCC(minPay + extra);
+    const minResult = calcCC(minPay);
+    const res12 = calcCC(Math.ceil(pay12));
+    const res24 = calcCC(Math.ceil(pay24));
+
+    let html = '<div style="background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">&#x26A0;&#xFE0F; Minimum payment trap</div>';
+    html += '<div style="font-size:13px;color:var(--text2);line-height:1.7">Paying only $92/month means <strong>'+Math.floor(minResult.months/12)+'+ years</strong> to clear this and <strong>'+fmt(minResult.totalInt)+'</strong> in interest. At 19.99% every dollar counts.</div></div>';
+
+    html += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Payoff Scenarios</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+    [
+      ['Minimum
+$92/mo', minResult, 'var(--red)'],
+      ['Clear in 24m
+$'+Math.ceil(pay24)+'/mo', res24, 'var(--amber)'],
+      ['Clear in 12m
+$'+Math.ceil(pay12)+'/mo', res12, 'var(--green)'],
+    ].forEach(([label, res, col]) => {
+      const yy = Math.floor(res.months/12), mm = res.months%12;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:4px;white-space:pre-line">'+label+'</div>' +
+        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+col+'">'+(yy>0?yy+'y '+mm+'m':mm+'m')+'</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+fmt(res.totalInt)+' interest</div></div>';
+    });
+    html += '</div></div>';
+    if (extra > 0) {
+      const yx = Math.floor(withExtra.months/12), mx = withExtra.months%12;
+      const saved = minResult.totalInt - withExtra.totalInt;
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;font-size:13px;color:var(--text2);line-height:1.7">';
+      html += 'Paying $'+(minPay+extra).toFixed(0)+'/month clears it in <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> saving <strong>'+fmt(saved)+'</strong> vs minimum.</div>';
+    }
+    $('lt-result').innerHTML = html;
+    $('lt-result').style.display = 'block';
   }
-  const base = calc(minPay), withX = calc(minPay + extra);
-  const saved = base.totalInt - withX.totalInt;
-  const mSaved = base.months - withX.months;
-  const yb = Math.floor(base.months/12), mb = base.months%12;
-  const yx = Math.floor(withX.months/12), mx = withX.months%12;
-  $('lt-months-base').textContent = yb > 0 ? yb+'y '+mb+'m' : mb+'m';
-  $('lt-months-extra').textContent = extra > 0 ? (yx > 0 ? yx+'y '+mx+'m' : mx+'m') : '-';
-  $('lt-interest-base').textContent = fmt(base.totalInt) + ' total';
-  $('lt-interest-saved').textContent = extra > 0 && saved > 0 ? 'Save ' + fmt(saved) : 'Add extra to see';
-  $('lt-advice').textContent = extra > 0 && saved > 0
-    ? 'Paying an extra ' + fmt(extra) + '/month saves ' + fmt(saved) + ' in interest and pays it off ' + mSaved + ' months sooner.'
-    : ltDebtType === 'cc' ? 'At ' + rate + '%, minimum payments barely cover interest. Pay as much above minimum as you can.'
-    : 'Enter an extra monthly amount above to see how much you save.';
-  $('lt-result').style.display = 'block';
 }
 
 function saveLtDebt() {
@@ -1101,6 +1225,7 @@ function saveLtDebt() {
 function renderBillsGrouped() {
   const c = $('bills-grouped'); if (!c) return;
   const today = new Date().getDate();
+  const now = new Date();
   const grouped = {today:[], week:[], next:[], later:[]};
   BILLS.forEach(b => {
     const diff = b.day >= today ? b.day - today : 31 - today + b.day;
@@ -1113,26 +1238,54 @@ function renderBillsGrouped() {
 
   const todayTotal = grouped.today.reduce((s,b) => s+b.amt, 0);
   const weekTotal = [...grouped.today,...grouped.week].reduce((s,b) => s+b.amt, 0);
+  const txnSpent = S.txns.reduce((s,t) => s+t.amt, 0);
+  const liveBal = S.bal - txnSpent;
   let warn = '';
-  if (todayTotal > 0) warn = '<div class="alert bad" style="margin-bottom:16px"><strong>' + fmt(todayTotal) + ' is being charged today.</strong><br>Stop and check before spending anything.</div>';
-  else if (weekTotal > 0) warn = '<div class="alert warn" style="margin-bottom:16px"><strong>' + fmt(weekTotal) + ' due this week.</strong><br>Your real spendable balance is ' + fmtS(S.bal - weekTotal) + ', not ' + fmtS(S.bal) + '.</div>';
+  if (todayTotal > 0) warn = '<div class="alert bad" style="margin-bottom:16px"><strong>' + fmt(todayTotal) + ' charging today.</strong><br>Real balance after: <strong>' + fmtC(liveBal - todayTotal) + '</strong></div>';
+  else if (weekTotal > 0) warn = '<div class="alert warn" style="margin-bottom:16px"><strong>' + fmt(weekTotal) + ' due this week.</strong><br>Real balance after bills: <strong>' + fmtC(liveBal - weekTotal) + '</strong></div>';
 
   function renderGroup(title, bills, cls) {
     if (!bills.length) return '';
     const gt = bills.reduce((s,b) => s+b.amt, 0);
+    const isWeekSection = cls === 'today' || cls === 'week';
     const tc = cls === 'today' ? 'var(--red)' : cls === 'week' ? 'var(--amber)' : 'var(--text3)';
+    // Week highlight border
+    const cardStyle = isWeekSection
+      ? 'padding:4px 16px;border-color:' + (cls==='today'?'var(--red-border)':'var(--amber-border)') + ';background:' + (cls==='today'?'rgba(255,68,85,0.04)':'rgba(245,166,35,0.04)')
+      : 'padding:4px 16px';
+
     const rows = bills.map(b => {
       const cc = b.diff === 0 ? 'today' : b.diff <= 7 ? 'soon' : 'normal';
       const ri = BILLS.findIndex(x => x.name === b.name && x.day === b.day);
       const rec = b.recurring !== false ? '<span class="bill-recurring">RECURRING</span>' : '';
-      return '<div class="bill-row" onclick="openBillModal('+ri+')">' +
-        '<div class="bill-chip '+cc+'">'+b.day+'</div>' +
-        '<div class="bill-info"><div class="bill-name">'+b.name+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
-        '<div class="bill-amt">'+fmt(b.amt)+'</div></div>';
+      const isPaid = S.paidBills && S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
+      const paidBadge = isPaid ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
+      const todayBadge = b.diff === 0 ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
+      return '<div class="bill-row">' +
+        '<div class="bill-chip '+cc+'" onclick="openBillModal('+ri+')" style="min-width:38px">'+String(b.day).padStart(2,'0')+'</div>' +
+        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+        '<div class="bill-amt" style="'+(isPaid?'text-decoration:line-through;color:var(--text3)':b.diff===0?'color:var(--red)':'')+'">'+fmt(b.amt)+'</div>' +
+        (!isPaid && b.diff <= 1 ? '<button onclick="markBillPaid(event,''+b.name+'','+b.day+')" style="padding:4px 8px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">Paid</button>' : '') +
+        '</div></div>';
     }).join('');
-    return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="padding:4px 16px">'+rows+'</div></div>';
+
+    // Running balance after this group
+    const runningAfter = liveBal - weekTotal;
+    const afterNote = isWeekSection ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 4px;border-top:1px solid var(--border);margin-top:4px"><span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Balance after</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(runningAfter<0?'var(--red)':runningAfter<200?'var(--amber)':'var(--green)')+'">'+fmtC(runningAfter)+'</span></div>' : '';
+
+    return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
   c.innerHTML = warn + renderGroup('Due Today', grouped.today, 'today') + renderGroup('This Week', grouped.week, 'week') + renderGroup('Next Week', grouped.next, '') + renderGroup('Later This Month', grouped.later, '');
+}
+
+function markBillPaid(event, name, day) {
+  event.stopPropagation();
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+name+'-'+day;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  save(); renderAll();
 }
 
 function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
@@ -1207,15 +1360,37 @@ function renderCalWeekSummary() {
   const txnSpent = S.txns.reduce((s,t) => s+t.amt, 0);
   const liveBal = S.bal - txnSpent;
   const afterBills = liveBal - weekTotal;
-  if (!weekBills.length) { c.innerHTML = '<div class="empty-state">No bills due in the next 7 days.</div>'; return; }
+  const days = daysLeft(S.payday);
+  const dontSpend = afterBills > 0 ? Math.floor(afterBills / Math.max(1, days)) : 0;
+
+  // Balance summary bar always shows even if no bills
   const sc = afterBills < 0 ? 'var(--red)' : afterBills < 200 ? 'var(--amber)' : 'var(--green)';
-  const sm = afterBills < 0 ? '&#x26A0;&#xFE0F; Bills will exceed your balance &#x2014; stop all discretionary spending.' : afterBills < 200 ? 'Very tight after bills. Be careful with any purchases.' : 'Looking manageable. Stay disciplined.';
   const sdim = afterBills < 0 ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
   const sbord = afterBills < 0 ? 'var(--red-border)' : afterBills < 200 ? 'var(--amber-border)' : 'var(--green-border)';
-  c.innerHTML = weekBills.map(b => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+b.name+' <span style="color:var(--text3)">(day '+b.day+')</span></span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">$'+b.amt.toFixed(2)+'</span></div>').join('') +
-    '<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text2)">Bills this week</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">'+fmt(weekTotal)+'</span></div>' +
-    '<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;font-weight:600;color:var(--text2)">Balance after bills</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</span></div>' +
-    '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.6;color:'+sc+'">'+sm+'</div>';
+
+  // 3-step balance flow
+  let html = '<div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">Now</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(liveBal)+'</div></div>';
+  html += '<div style="font-size:18px;color:var(--text3);text-align:center">&#x2192;</div>';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">After bills</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div></div>';
+  html += '<div style="font-size:18px;color:var(--text3);text-align:center">&#x2192;</div>';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">Max/day</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmt(dontSpend)+'</div></div>';
+  html += '</div>';
+
+  if (!weekBills.length) {
+    html += '<div style="font-size:13px;color:var(--text3);padding:8px 2px">No bills due in the next 7 days &#x2714;</div>';
+  } else {
+    html += weekBills.map(b => '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+b.name+' <span style="color:var(--text3);font-size:11px">day '+b.day+'</span></span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">'+fmt(b.amt)+'</span></div>').join('');
+    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">This week total</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">'+fmt(weekTotal)+'</span></div>';
+  }
+
+  const msg = afterBills < 0
+    ? '&#x26A0;&#xFE0F; Bills will exceed your balance. Do not spend anything until payday.'
+    : afterBills < 200
+    ? 'Very tight after bills. Maximum '+fmt(dontSpend)+'/day until payday.'
+    : 'Stay under '+fmt(dontSpend)+'/day and you'll clear all bills comfortably.';
+  html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
+  c.innerHTML = html;
 }
 
 function renderSavingsMomentum(txnSpent, safe, days) {
@@ -1325,7 +1500,7 @@ function renderDashTxns() {
   c.innerHTML = recent.map(t => {
     const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
     const d = new Date(t.ts);
-    const time = d.getDate()+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+    const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
     const flag = t.flagged ? ' <span style="font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
     return '<div class="txn-row"><div class="txn-chip" style="background:'+col+'22;color:'+col+'">'+(t.cat||'?')[0].toUpperCase()+'</div><div class="txn-info"><div class="txn-name">'+t.note+flag+'</div><div class="txn-meta">'+t.cat+' &#x00B7; '+time+'</div></div><div class="txn-amt">-'+fmt(t.amt)+'</div></div>';
   }).join('');
@@ -1369,7 +1544,7 @@ function renderTxnAll() {
   c.innerHTML = [...S.txns].reverse().map((t,i) => {
     const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
     const d = new Date(t.ts);
-    const time = d.getDate()+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+    const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
     const ri = S.txns.length - 1 - i;
     const flag = t.flagged ? ' <span style="font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
     return '<div class="txn-row"><div class="txn-chip" style="background:'+col+'22;color:'+col+'">'+(t.cat||'?')[0].toUpperCase()+'</div><div class="txn-info"><div class="txn-name">'+t.note+flag+'</div><div class="txn-meta">'+t.cat+' &#x00B7; '+time+'</div></div><div style="display:flex;align-items:center;gap:6px"><div class="txn-amt">-'+fmt(t.amt)+'</div><button class="rm-btn" onclick="rmTxn('+ri+')">&#x00D7;</button></div></div>';
@@ -1395,7 +1570,7 @@ function renderIncomeLog() {
   if (!S.income_log || !S.income_log.length) { c.innerHTML = '<div class="empty-state">No income logged yet.</div>'; return; }
   c.innerHTML = [...S.income_log].reverse().map((t,i) => {
     const d = new Date(t.ts);
-    const time = d.getDate()+'/'+(d.getMonth()+1);
+    const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+'/'+(d.getFullYear()+'').slice(2);
     const ri = S.income_log.length - 1 - i;
     return '<div class="txn-row"><div class="txn-chip" style="background:var(--green-dim);color:var(--green)">+</div><div class="txn-info"><div class="txn-name">'+t.note+'</div><div class="txn-meta">'+t.cat+' &#x00B7; '+time+'</div></div><div style="display:flex;align-items:center;gap:6px"><div class="txn-amt" style="color:var(--green)">+'+fmt(t.amt)+'</div><button class="rm-btn" onclick="rmIncome('+ri+')">&#x00D7;</button></div></div>';
   }).join('');
