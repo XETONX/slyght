@@ -1,27 +1,28 @@
-const CACHE = 'slyght-v5';
+// SLYGHT v5 - clears all old caches on install
+const CACHE_NAME = 'slyght-v5-fresh';
 
-self.addEventListener('install', e => {
+self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
-    )
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          console.log('Deleting old cache:', cacheName);
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
-  // Network first — always get fresh content, fall back to cache offline
-  e.respondWith(
-    fetch(e.request)
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE).then(cache => cache.put(e.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(e.request))
+self.addEventListener('fetch', event => {
+  // Network first always - never serve stale
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      return caches.match(event.request);
+    })
   );
 });
