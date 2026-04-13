@@ -923,7 +923,7 @@ function goPage(id) {
 function getBillsDue(days) {
   const today = new Date().getDate();
   const d = days !== undefined ? days : daysLeft(S.payday);
-  return BILLS.filter(b => { const diff = b.day >= today ? b.day - today : 31 - today + b.day; return diff <= d; });
+  return BILLS.filter(b => b.recurring !== false && (b.day >= today ? b.day - today : 31 - today + b.day) <= d);
 }
 
 function renderAll() {
@@ -1224,7 +1224,7 @@ function renderBillsGrouped() {
   const today = new Date().getDate();
   const now = new Date();
   const grouped = {today:[], week:[], next:[], later:[]};
-  BILLS.forEach(b => {
+  BILLS.filter(b => b.recurring !== false).forEach(b => {
     const diff = b.day >= today ? b.day - today : 31 - today + b.day;
     if (diff === 0) grouped.today.push({...b, diff});
     else if (diff <= 7) grouped.week.push({...b, diff});
@@ -1365,22 +1365,29 @@ function renderCalWeekSummary() {
   const c = $('cal-week-content'); if (!c) return;
   const todayD = new Date().getDate();
   const endOfWeek = todayD + 7;
-  const weekBills = BILLS.filter(b => b.day >= todayD && b.day <= endOfWeek);
+  const weekBills = BILLS.filter(b => b.recurring !== false && b.day >= todayD && b.day <= endOfWeek);
   const weekTotal = weekBills.reduce((s,b) => s+b.amt, 0);
   const txnSpent = S.txns.reduce((s,t) => s+t.amt, 0);
   const liveBal = S.bal - txnSpent;
-  const afterBills = liveBal - weekTotal;
   const days = daysLeft(S.payday);
+
+  // Change 1: if payday falls within the next 7 days, include income in Now balance
+  const paydayInWeek = S.payday >= todayD && S.payday <= endOfWeek;
+  const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
+  const afterBills = effectiveBal - weekTotal;
   const dontSpend = afterBills > 0 ? Math.floor(afterBills / Math.max(1, days)) : 0;
 
-  // Balance summary bar always shows even if no bills
   const sc = afterBills < 0 ? 'var(--red)' : afterBills < 200 ? 'var(--amber)' : 'var(--green)';
   const sdim = afterBills < 0 ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
   const sbord = afterBills < 0 ? 'var(--red-border)' : afterBills < 200 ? 'var(--amber-border)' : 'var(--green-border)';
 
-  // 3-step balance flow
+  // 3-step balance flow — Now label + note changes when payday is this week
+  const nowLabel = paydayInWeek ? 'Now + Pay' : 'Now';
+  const nowNote = paydayInWeek
+    ? '<div style="font-size:9px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
+    : '';
   let html = '<div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
-  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">Now</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(liveBal)+'</div></div>';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
   html += '<div style="font-size:18px;color:var(--text3);text-align:center">&#x2192;</div>';
   html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">After bills</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div></div>';
   html += '<div style="font-size:18px;color:var(--text3);text-align:center">&#x2192;</div>';
@@ -1400,6 +1407,25 @@ function renderCalWeekSummary() {
     ? 'Very tight after bills. Maximum '+fmt(dontSpend)+'/day until payday.'
     : 'Stay under '+fmt(dontSpend)+'/day and you\'ll clear all bills comfortably.';
   html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
+
+  // Change 2: Smart surplus suggestion — Afterpay first, then Michael, then CC; keep $200 buffer
+  const surplus = afterBills - 200;
+  if (surplus > 0 && S.debts) {
+    const activeDebts = S.debts.filter(d => !d.paid);
+    const target = activeDebts.find(d => d.name.toLowerCase().includes('afterpay'))
+      || activeDebts.find(d => d.name.toLowerCase().includes('michael'))
+      || activeDebts.find(d => d.name.toLowerCase().includes('credit card'));
+    if (target) {
+      const canPay = Math.min(surplus, target.amt);
+      const remaining = target.amt - canPay;
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.7;color:var(--green)">' +
+        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong> spare after a $200 buffer. ' +
+        'Put <strong>'+fmt(canPay)+'</strong> toward <strong>'+target.name+'</strong>' +
+        (remaining > 0 ? ' — leaves '+fmt(remaining)+' still owed.' : ' — clears it completely!') +
+        '</div>';
+    }
+  }
+
   c.innerHTML = html;
 }
 
@@ -1459,21 +1485,67 @@ function setSeg(s) { S.seg = s; ['1m','3m','6m'].forEach(x => $('sg-'+x).classLi
 
 function renderCutSliders() {
   const c = $('cut-sliders'); if (!c) return;
-  let total = 0;
-  c.innerHTML = DISC.map(d => {
-    const val = S.cuts[d.key] !== undefined ? S.cuts[d.key] : d.max;
-    total += val;
-    return '<div class="slider-row"><span class="slider-lbl">'+d.label+'</span><input type="range" min="0" max="'+d.max+'" step="5" value="'+val+'" oninput="S.cuts[\''+d.key+'\']=+this.value;save();renderCutSliders()"><span class="slider-val">'+fmt(val)+'</span></div>';
-  }).join('');
   const mult = S.seg === '1m' ? 1 : S.seg === '3m' ? 3 : 6;
-  const saving = DISC_BASELINE - total;
-  const total2 = saving * mult;
-  $('cut-saving').textContent = fmt(Math.max(0, total2));
-  $('cut-saving').style.color = saving > 400 ? 'var(--green)' : saving > 0 ? 'var(--amber)' : 'var(--red)';
-  $('cut-desc').textContent = 'saved over '+mult+' month'+(mult>1?'s':'')+' &#x00B7; '+fmt(Math.max(0,saving))+'/month';
-  const pct = Math.min(100, Math.max(0, (saving/DISC_BASELINE)*100));
+
+  // Change 4: Use actual transaction data instead of static slider baselines
+  const cats = {};
+  S.txns.forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+
+  // Monthly reference baselines per category
+  const baselines = {
+    'Food / Coffee': 480, 'Entertainment': 750, 'Transport / Fuel': 300,
+    'Shopping': 300, 'Health': 100, 'Subscriptions': 95, 'Other': 300
+  };
+
+  if (!S.txns.length) {
+    c.innerHTML = '<div class="empty-state" style="padding:12px 0">No transactions logged yet. Log spending to see real category analysis and where to cut.</div>';
+    $('cut-saving').textContent = '$0';
+    $('cut-saving').style.color = 'var(--text3)';
+    $('cut-desc').textContent = 'log spending to activate real analysis';
+    $('cut-bar').style.width = '0%';
+    $('cut-bar').style.background = 'var(--bg5)';
+    return;
+  }
+
+  const sorted = Object.entries(cats).sort((a,b) => b[1]-a[1]);
+  let totalPotential = 0;
+
+  const rows = sorted.map(([cat, spent], i) => {
+    const baseline = baselines[cat] || 200;
+    const over = spent - baseline;
+    const isOver = over > 0;
+    // Bar width: 100% = at baseline; overflow shown as full red bar
+    const barPct = Math.min(100, Math.round((spent / Math.max(baseline, spent)) * 100));
+    const barCol = isOver ? 'var(--red)' : 'var(--green)';
+    const cut = isOver ? Math.round(over * 0.5) : 0;
+    totalPotential += cut;
+    const worstBadge = isOver && i === 0
+      ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle">WORST</span>'
+      : '';
+    return '<div style="margin-bottom:16px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
+      '<span style="font-size:13px;color:var(--text2);font-weight:500">'+cat+worstBadge+'</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(isOver?'var(--red)':'var(--text)')+'">'+fmt(spent)+'</span>' +
+      '</div>' +
+      '<div style="height:6px;background:var(--bg5);border-radius:3px;overflow:hidden;margin-bottom:5px">' +
+      '<div style="width:'+barPct+'%;height:6px;border-radius:3px;background:'+barCol+';transition:width .4s"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">' +
+      '<span>baseline: '+fmt(baseline)+'/mo</span>' +
+      (isOver
+        ? '<span style="color:var(--red)">+'+fmt(over)+' over &mdash; cut ~'+fmt(cut)+'/mo</span>'
+        : '<span style="color:var(--green)">'+fmt(baseline-spent)+' under &#x2713;</span>') +
+      '</div></div>';
+  }).join('');
+
+  c.innerHTML = rows;
+
+  const totalSaved = totalPotential * mult;
+  $('cut-saving').textContent = fmt(Math.max(0, totalSaved));
+  $('cut-saving').style.color = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
+  $('cut-desc').textContent = 'potential savings over '+mult+' month'+(mult>1?'s':'')+' \u00B7 '+fmt(totalPotential)+'/month if cuts made';
+  const pct = Math.min(100, Math.max(0, (totalPotential / 500) * 100));
   $('cut-bar').style.width = pct + '%';
-  $('cut-bar').style.background = saving > 400 ? 'var(--green)' : saving > 0 ? 'var(--amber)' : 'var(--red)';
+  $('cut-bar').style.background = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
 }
 
 function renderTrend() {
