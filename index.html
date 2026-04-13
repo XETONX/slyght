@@ -355,6 +355,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div class="congrats-title">Debts Cleared!</div>
           <div class="congrats-sub">All immediate debts paid off.<br>Time to start building savings.</div>
         </div>
+        <button class="add-btn" onclick="openAddDebtModal()" style="margin-top:8px">+ Add Debt</button>
       </div>
       <!-- LONG-TERM LIABILITIES -->
       <div class="card">
@@ -647,6 +648,23 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   </div>
 </div>
 
+<!-- ADD DEBT MODAL -->
+<div class="modal-overlay" id="add-debt-modal" onclick="handleOverlayClick(event,'add-debt-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Add Debt</div>
+    <div class="modal-sub">Track a new obligation — it factors into your surplus and Max/Day calculations</div>
+    <div class="modal-field"><label>Debt name</label><input class="modal-input" type="text" id="nd-name" placeholder="e.g. Owe to Sarah, Afterpay order"></div>
+    <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" type="number" id="nd-amt" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="nd-rate" placeholder="0" inputmode="decimal" value="0"></div>
+    <div class="modal-field"><label>Due date (optional)</label><input class="modal-input" type="date" id="nd-due"></div>
+    <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="nd-notes" placeholder="Any context..."></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-save" onclick="saveNewDebt()">Add Debt</button>
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('add-debt-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- LT DEBT MODAL -->
 <div class="modal-overlay" id="lt-debt-modal" onclick="handleOverlayClick(event,'lt-debt-modal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -783,6 +801,40 @@ function daysLeft(payday) {
   return Math.ceil((next - now) / (1000*60*60*24));
 }
 
+// --- Core financial helpers ---
+
+// Returns average daily spend from txn history; $80 fallback if insufficient data
+function getAvgDailySpend() {
+  if (!S.txns || S.txns.length < 2) return 80;
+  const timestamps = S.txns.map(t => t.ts);
+  const oldest = Math.min(...timestamps);
+  const newest = Math.max(...timestamps);
+  const daySpan = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
+  const totalSpent = S.txns.reduce((s, t) => s + t.amt, 0);
+  return Math.max(20, Math.min(200, totalSpent / daySpan));
+}
+
+// Correct Max/Day: (liveBal - allBillsDueBeforePayday - $500 buffer) / daysLeft
+function getMaxDay() {
+  const txnSpent = S.txns.reduce((s, t) => s + t.amt, 0);
+  const liveBal = S.bal - txnSpent;
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
+  const spendable = liveBal - allBillsDue - 500;
+  if (days <= 0 || spendable <= 0) return 0;
+  return spendable / days;
+}
+
+// Genuine surplus: only positive when bills + living costs + $500 buffer are all covered
+function getGenuineSurplus() {
+  const txnSpent = S.txns.reduce((s, t) => s + t.amt, 0);
+  const liveBal = S.bal - txnSpent;
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
+  const livingReserve = getAvgDailySpend() * days;
+  return liveBal - allBillsDue - livingReserve - 500;
+}
+
 function showOb() {
   $('ob-screen').style.display = 'block';
   $('pin-screen').style.display = 'none';
@@ -797,10 +849,8 @@ function launchApp() {
   S.bal = b;
   save();
   $('ob-screen').style.display = 'none';
-  $('pin-screen').style.display = 'block';
-  pinEntry = '';
-  updatePinDots();
   S._pendingRecon = {newBal: b, prevBal, prevTxns};
+  showMain();
 }
 
 function showMain() {
@@ -934,8 +984,7 @@ function renderAll() {
   const bonusTotal = S.bonuses.reduce((s,b) => s + (+b.amt || 0), 0);
   const safe = liveBal - dueTotal + bonusTotal;
   const days = daysLeft(S.payday);
-  const daily = days > 0 ? Math.max(0, safe) / days : 0;
-  const conservativeDaily = daily * 0.65;
+  const maxDay = getMaxDay();
 
   $('h-bal').textContent = fmtC(liveBal);
   $('h-bal').className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
@@ -950,8 +999,8 @@ function renderAll() {
   $('m-safe').textContent = safe < 0 ? '$0.00' : fmtC(safe);
   $('m-safe').className = 'met-v ' + (safe < 0 ? 'bad' : safe < 200 ? 'warn' : 'ok');
   $('m-safe-s').textContent = safe < 0 ? 'cannot spend' : due.length + ' bills due';
-  $('m-daily').textContent = fmtC(conservativeDaily);
-  $('m-daily').className = 'met-v ' + (conservativeDaily < 0 ? 'bad' : conservativeDaily < 10 ? 'warn' : 'ok');
+  $('m-daily').textContent = maxDay > 0 ? fmtC(maxDay) : '$0';
+  $('m-daily').className = 'met-v ' + (maxDay <= 0 ? 'bad' : maxDay < 30 ? 'warn' : 'ok');
   $('m-spent').textContent = fmt(txnSpent);
 
   renderAlerts(safe, liveBal, dueTotal, txnSpent);
@@ -994,13 +1043,21 @@ function renderDebtTiles() {
     const fillCol = d.delayed ? 'var(--amber)' : 'var(--red)';
     const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
     const ri = S.debts.indexOf(d);
-    return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
+    const dailyInt = (d.rate > 0) ? (d.amt * d.rate / 100 / 365) : 0;
+    const intTicker = dailyInt > 0
+      ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day interest</div>'
+      : '';
+    return '<div class="debt-tile">' +
+      '<div onclick="openDebtModal('+ri+')" style="cursor:pointer">' +
       '<div class="dt-name">' + d.name + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
-      '<div class="dt-sub">' + (d.notes || 'Tap to manage') + '</div>' +
+      intTicker +
+      '<div class="dt-sub">' + (d.notes || 'Tap to edit') + '</div>' +
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
       '<div class="dt-status '+col+'">Due ' + dueStr + '</div>' +
+      '</div>' +
+      '<button onclick="clearDebt('+ri+')" style="width:100%;margin-top:8px;padding:6px 4px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-xs);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.02em">&#x2713; Mark Cleared</button>' +
       '</div>';
   }).join('');
 }
@@ -1041,6 +1098,34 @@ function markDebtPaid() {
   if (activeDebtIdx < 0) return;
   S.debts[activeDebtIdx].paid = true;
   save(); closeModal('debt-modal'); renderAll();
+}
+
+function clearDebt(idx) {
+  const d = S.debts[idx];
+  if (!d || !confirm('Mark "' + d.name + '" as cleared?')) return;
+  S.debts[idx].paid = true;
+  save(); renderAll();
+}
+
+function openAddDebtModal() {
+  $('nd-name').value = '';
+  $('nd-amt').value = '';
+  $('nd-rate').value = '0';
+  $('nd-due').value = '';
+  $('nd-notes').value = '';
+  $('add-debt-modal').classList.add('open');
+}
+
+function saveNewDebt() {
+  const name = $('nd-name').value.trim();
+  const amt = parseFloat($('nd-amt').value);
+  const rate = parseFloat($('nd-rate').value) || 0;
+  const due = $('nd-due').value || '';
+  const notes = $('nd-notes').value.trim();
+  if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
+  if (!S.nextDebtId) S.nextDebtId = S.debts.length;
+  S.debts.push({id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes});
+  save(); closeModal('add-debt-modal'); renderAll();
 }
 
 function openBillModal(idx) {
@@ -1375,7 +1460,9 @@ function renderCalWeekSummary() {
   const paydayInWeek = S.payday >= todayD && S.payday <= endOfWeek;
   const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
   const afterBills = effectiveBal - weekTotal;
-  const dontSpend = afterBills > 0 ? Math.floor(afterBills / Math.max(1, days)) : 0;
+  // Corrected Max/Day uses full bills-before-payday + $500 buffer formula
+  const maxDay = getMaxDay();
+  const dontSpend = Math.max(0, Math.floor(maxDay));
 
   const sc = afterBills < 0 ? 'var(--red)' : afterBills < 200 ? 'var(--amber)' : 'var(--green)';
   const sdim = afterBills < 0 ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
@@ -1408,8 +1495,8 @@ function renderCalWeekSummary() {
     : 'Stay under '+fmt(dontSpend)+'/day and you\'ll clear all bills comfortably.';
   html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
 
-  // Change 2: Smart surplus suggestion — Afterpay first, then Michael, then CC; keep $200 buffer
-  const surplus = afterBills - 200;
+  // Genuine surplus: only fires when balance covers all bills + living costs + $500 buffer
+  const surplus = getGenuineSurplus();
   if (surplus > 0 && S.debts) {
     const activeDebts = S.debts.filter(d => !d.paid);
     const target = activeDebts.find(d => d.name.toLowerCase().includes('afterpay'))
@@ -1687,12 +1774,13 @@ function checkAfford() {
   const safe = liveBal - dueTotal + bonusTotal;
   const after = safe - amt;
   const nd = daysLeft(S.payday);
-  const newDaily = nd > 0 ? after / nd : 0;
+  // Corrected Max/Day after purchase: (liveBal - purchase - allBillsDue - $500 buffer) / daysLeft
+  const newMaxDay = nd > 0 ? (liveBal - amt - dueTotal - 500) / nd : 0;
   if (liveBal - amt < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No.</strong> You\'d overdraw. Only '+fmtC(liveBal)+' in the account.'; }
   else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
-  else if (newDaily < 8) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newDaily)+'/day for '+nd+' days.'; }
-  else if (newDaily < 20) { el.className = 'verdict warn'; el.innerHTML = '<strong>Tight but possible.</strong> '+fmt(after)+' left &#x2014; '+fmt(newDaily)+'/day.'; }
-  else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes, you can.</strong> After '+what+' and bills you\'d have '+fmt(after)+' &#x2014; '+fmt(newDaily)+'/day.'; if (el2) el2.innerHTML = ''; return; }
+  else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
+  else if (newMaxDay < 30) { el.className = 'verdict warn'; el.innerHTML = '<strong>Tight but possible.</strong> '+fmt(after)+' left &#x2014; '+fmt(newMaxDay)+'/day.'; }
+  else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes, you can.</strong> After '+what+' and bills you\'d have '+fmt(after)+' &#x2014; '+fmt(newMaxDay)+'/day.'; if (el2) el2.innerHTML = ''; return; }
   if (after < 0 || newDaily < 20) {
     const cuts = [{n:'Entertainment',s:750},{n:'Other discretionary',s:300},{n:'Work food (50%)',s:240},{n:'Pause streaming',s:95},{n:'Hobby / games',s:25}];
     let cum = 0, rows = '';
@@ -1741,7 +1829,7 @@ if ('serviceWorker' in navigator) {
 load();
 const obEl = $('ob-days-display');
 if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
-if (S.bal > 0) { $('ob-screen').style.display = 'none'; $('pin-screen').style.display = 'block'; pinEntry = ''; updatePinDots(); }
+if (S.bal > 0) { $('ob-screen').style.display = 'none'; showMain(); }
 </script>
 </body>
 </html>
