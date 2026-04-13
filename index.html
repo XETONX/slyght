@@ -103,12 +103,12 @@ button,input,select,textarea{font-family:var(--sans)}
 .card-sub{font-size:11px;color:var(--text3);margin-top:2px}
 /* DEBT TILES */
 .debt-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s}
+.debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s;height:160px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
 .debt-tile:active{background:var(--bg4)}
-.dt-name{font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px}
+.dt-name{font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dt-amt{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1;margin-bottom:4px}
 .dt-amt.bad{color:var(--red)}.dt-amt.warn{color:var(--amber)}.dt-amt.ok{color:var(--green)}
-.dt-sub{font-size:11px;color:var(--text3);margin-bottom:6px}
+.dt-sub{font-size:11px;color:var(--text3);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dt-bar-wrap{margin-bottom:4px}
 .dt-bar-lbl{font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
 .dt-bar{height:3px;background:var(--bg5);border-radius:2px;overflow:hidden}
@@ -212,12 +212,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .bonus-row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
 .bonus-row .s-input{margin-bottom:0}
 /* NAV */
-.nav{display:flex;background:var(--bg2);border-top:1px solid var(--border2);padding:8px 4px env(safe-area-inset-bottom,8px);flex-shrink:0}
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;background:var(--bg2);border-top:1px solid var(--border2);padding:6px 4px env(safe-area-inset-bottom,6px);z-index:100;align-items:center}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 4px;background:none;border:none;cursor:pointer;border-radius:var(--r-sm)}
 .nav-btn svg{opacity:.45;transition:opacity .15s;color:var(--text)}
 .nav-lbl{font-size:10px;color:var(--text3);font-weight:500;letter-spacing:.03em;transition:color .15s}
 .nav-btn.active svg{opacity:1}
 .nav-btn.active .nav-lbl{color:var(--green)}
+.nav-center-btn{width:56px;height:56px;border-radius:50%;background:var(--green);color:#000;border:none;font-size:28px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,232,122,0.4);display:flex;align-items:center;justify-content:center;margin-top:-16px;flex-shrink:0;transition:transform .15s,box-shadow .15s}
+.nav-center-btn:active{transform:scale(.93);box-shadow:0 2px 8px rgba(0,232,122,0.3)}
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:flex-end;justify-content:center}
 .modal-overlay.open{display:flex}
@@ -248,6 +250,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .fade-up{animation:fadeUp .25s ease forwards}
 @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 .shake{animation:shake .4s ease}
+@keyframes splashFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+#splash-screen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:500;cursor:pointer}
+.splash-logo{font-family:var(--mono);font-size:64px;font-weight:700;letter-spacing:-4px;color:var(--text);animation:splashFade .6s ease forwards}
+.splash-tag{font-size:13px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;font-family:var(--mono);margin-top:8px;animation:splashFade .6s ease .2s both}
+.splash-hint{position:absolute;bottom:48px;font-size:12px;color:var(--text3);letter-spacing:.08em;animation:splashFade .6s ease .6s both}
 /* TREND */
 .trend-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
 .trend-row:last-child{border-bottom:none}
@@ -279,8 +286,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 </head>
 <body>
 
+<!-- SPLASH SCREEN -->
+<div id="splash-screen" onclick="splashTap()">
+  <div class="splash-logo">SLYGHT</div>
+  <div class="splash-tag">Know your money. Always.</div>
+  <div class="splash-hint">tap to continue</div>
+</div>
+
 <!-- ONBOARD -->
-<div id="ob-screen">
+<div id="ob-screen" style="display:none">
   <div class="ob-wrap">
     <div class="ob-logo">SLYGHT</div>
     <div class="ob-tag">Know your money. Always.</div>
@@ -323,6 +337,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="hdr-right">
         <div class="icon-btn" onclick="showOb()" title="Update balance">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="icon-btn" onclick="goPage('pg-settings')" title="Settings">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </div>
       </div>
     </div>
@@ -470,24 +487,13 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div style="flex:1;height:1px;background:var(--border2)"></div>
       </div>
 
-      <!-- SAVINGS MOMENTUM -->
-      <div class="card" id="savings-card">
-        <div class="card-hdr"><div class="card-title">Savings Momentum &#x1F680;</div></div>
-        <div id="savings-content"></div>
+      <!-- SAVINGS BUCKETS -->
+      <div class="card" id="savings-buckets-card">
+        <div class="card-hdr"><div class="card-title">Savings Buckets</div></div>
+        <div id="savings-buckets-content"></div>
       </div>
-      <!-- CHINA HOLIDAY -->
-      <div class="card" id="china-card">
-        <div class="card-hdr">
-          <div><div class="card-title">China Holiday &#x1F1E8;&#x1F1F3;</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Locked savings &#x2014; round-ups + manual</div></div>
-          <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)" id="china-display">$0.00</span>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <input class="s-input" type="number" id="china-input" placeholder="Current balance ($)" inputmode="decimal" style="flex:1">
-          <button onclick="saveChinaBal()" style="padding:12px 16px;background:var(--green);color:#000;border:none;border-radius:var(--r-sm);font-weight:700;font-size:13px;cursor:pointer">Save</button>
-        </div>
-        <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-bottom:8px"><div id="china-bar" style="height:4px;border-radius:2px;transition:width .5s;width:0%"></div></div>
-        <div style="font-size:12px;color:var(--text3)" id="china-label">Goal: $4,000 for China trip by Dec 2026</div>
-      </div>
+      <!-- SPENDING COACH -->
+      <div id="spending-coach"></div>
     </div>
   </div>
 
@@ -589,6 +595,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M6 2v4M14 2v4M2 9h16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="13" r="1.2" fill="currentColor"/><circle cx="10" cy="13" r="1.2" fill="currentColor"/><circle cx="13" cy="13" r="1.2" fill="currentColor"/></svg>
       <span class="nav-lbl">Bills</span>
     </button>
+    <button class="nav-center-btn" onclick="openQuickLogModal()" aria-label="Log transaction">+</button>
     <button class="nav-btn" id="nav-budget" onclick="goPage('pg-budget')">
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><path d="M3 15L7 9L11 12L15 6L18 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="18" cy="5" r="2" fill="currentColor"/></svg>
       <span class="nav-lbl">Budget</span>
@@ -596,10 +603,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <button class="nav-btn" id="nav-spend" onclick="goPage('pg-spend')">
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       <span class="nav-lbl">Spending</span>
-    </button>
-    <button class="nav-btn" id="nav-settings" onclick="goPage('pg-settings')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      <span class="nav-lbl">Settings</span>
     </button>
   </div>
 </div>
@@ -611,10 +614,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-sub">Edit this debt — tap Save when done</div>
     <div class="modal-field"><label>Name</label><input class="modal-input" type="text" id="modal-name"></div>
     <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" type="number" id="modal-amt" inputmode="decimal"></div>
+    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="modal-rate" placeholder="0" inputmode="decimal"></div>
     <div class="modal-field"><label>Due date</label><input class="modal-input" type="date" id="modal-due"></div>
     <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="modal-notes"></div>
     <div class="modal-actions">
-      <button class="modal-btn modal-btn-paid" onclick="markDebtPaid()">Mark Paid</button>
+      <button class="modal-btn modal-btn-paid" onclick="markDebtPaid()">Mark Cleared</button>
       <button class="modal-btn modal-btn-delay" onclick="saveDebtDelay()">Delay</button>
       <button class="modal-btn modal-btn-save" onclick="saveDebt()">Save Changes</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('debt-modal')">Cancel</button>
@@ -626,7 +630,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <div class="modal-overlay" id="bill-modal" onclick="handleOverlayClick(event,'bill-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title" id="bill-modal-title">Edit Bill</div>
-    <div class="modal-sub">Tap Save to update this bill</div>
+    <div class="modal-sub">Tap Save Changes to update this bill</div>
     <div class="modal-field"><label>Bill name</label><input class="modal-input" type="text" id="bm-name"></div>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="bm-amt" inputmode="decimal"></div>
     <div class="modal-field"><label>Day of month (1-31)</label><input class="modal-input" type="number" id="bm-day" min="1" max="31"></div>
@@ -641,9 +645,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <label for="bm-recurring">Recurring every month</label>
     </div>
     <div class="modal-actions">
-      <button class="modal-btn modal-btn-save" onclick="saveBill()">Save Bill</button>
+      <button class="modal-btn modal-btn-save" onclick="saveBill()">Save Changes</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('bill-modal')">Cancel</button>
-      <button class="modal-btn modal-btn-delete" onclick="deleteBill()">Delete This Bill</button>
+      <button class="modal-btn modal-btn-paid" onclick="markBillPaidMonth()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Paid This Month</button>
+      <button class="modal-btn modal-btn-delete" onclick="deleteBill()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Remove Permanently</button>
     </div>
   </div>
 </div>
@@ -687,6 +692,49 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveLtDebt()">Save Balance</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('lt-debt-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD BUCKET MODAL -->
+<div class="modal-overlay" id="add-bucket-modal" onclick="handleOverlayClick(event,'add-bucket-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Add Savings Bucket</div>
+    <div class="modal-sub">Create a new savings goal — locked from your spendable balance</div>
+    <div class="modal-field"><label>Bucket name</label><input class="modal-input" type="text" id="nb-name" placeholder="e.g. Emergency Fund"></div>
+    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" type="number" id="nb-goal" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Account (e.g. ING, Westpac)</label><input class="modal-input" type="text" id="nb-account" placeholder="ING"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-save" onclick="saveNewBucket()">Add Bucket</button>
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('add-bucket-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- QUICK LOG MODAL -->
+<div class="modal-overlay" id="quick-log-modal" onclick="handleOverlayClick(event,'quick-log-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Log a Transaction</div>
+    <div class="modal-sub">Quick-log a spend from your Virgin Money notification</div>
+    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Description</label><input class="modal-input" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles"></div>
+    <div class="modal-field"><label>Category</label>
+      <select class="modal-input" id="ql-cat">
+        <option value="">Category...</option>
+        <option>Food / Coffee</option><option>Entertainment</option><option>Transport / Fuel</option>
+        <option>Shopping</option><option>Health</option><option>Subscriptions</option><option>Other</option>
+      </select>
+    </div>
+    <div class="modal-checkbox-row">
+      <input type="checkbox" class="modal-checkbox" id="ql-recurring" onchange="document.getElementById('ql-recurring-fields').style.display=this.checked?'block':'none'">
+      <label for="ql-recurring">Recurring — add to bills list</label>
+    </div>
+    <div id="ql-recurring-fields" style="display:none;margin-bottom:10px">
+      <input class="modal-input" type="number" id="ql-day" placeholder="Day of month (e.g. 15)" min="1" max="31">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('quick-log-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -736,12 +784,19 @@ let S = {
   income_log: [],
   iid: 0,
   debts: [
-    {id:0, name:'Afterpay', amt:250.84, paid:false, delayed:false, delayDate:'2026-04-16', notes:'$121.16 due 16 Apr'},
-    {id:1, name:'Owed to Michael', amt:350, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill'},
-    {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May'},
-    {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK'},
+    {id:0, name:'Afterpay', amt:250.84, paid:false, delayed:false, delayDate:'2026-04-16', notes:'$121.16 due 16 Apr', rate:0},
+    {id:1, name:'Owed to Michael', amt:350, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill', rate:0},
+    {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May', rate:19.99},
+    {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK', rate:0},
   ],
-  nextDebtId: 4
+  nextDebtId: 4,
+  savingsBuckets: [
+    {id:0, name:'China Holiday', goal:4000, saved:61.82, account:'ING'},
+    {id:1, name:'Rainy Day Fund', goal:2000, saved:0, account:'ING'},
+    {id:2, name:'Rego & Insurance', goal:1500, saved:0, account:'Westpac'},
+    {id:3, name:'Gifts & Celebrations', goal:500, saved:0, account:'Other'},
+  ],
+  nextBucketId: 4
 };
 
 let BILLS = [
@@ -814,28 +869,31 @@ function getAvgDailySpend() {
   return Math.max(20, Math.min(200, totalSpent / daySpan));
 }
 
-// Correct Max/Day: (liveBal - allBillsDueBeforePayday - $500 buffer) / daysLeft
+// Correct Max/Day: (liveBal - allBillsDueBeforePayday - bucketTotal - $500 buffer) / daysLeft; hard cap $100/day
 function getMaxDay() {
   const txnSpent = S.txns.reduce((s, t) => s + t.amt, 0);
   const liveBal = S.bal - txnSpent;
   const days = daysLeft(S.payday);
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
-  const spendable = liveBal - allBillsDue - 500;
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
+  const spendable = liveBal - allBillsDue - bucketTotal - 500;
   if (days <= 0 || spendable <= 0) return 0;
-  return spendable / days;
+  return Math.min(100, spendable / days);
 }
 
-// Genuine surplus: only positive when bills + living costs + $500 buffer are all covered
+// Genuine surplus: only positive when bills + living costs + buckets + $500 buffer are all covered
 function getGenuineSurplus() {
   const txnSpent = S.txns.reduce((s, t) => s + t.amt, 0);
   const liveBal = S.bal - txnSpent;
   const days = daysLeft(S.payday);
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
-  return liveBal - allBillsDue - livingReserve - 500;
+  return liveBal - allBillsDue - bucketTotal - livingReserve - 500;
 }
 
 function showOb() {
+  $('splash-screen').style.display = 'none';
   $('ob-screen').style.display = 'block';
   $('pin-screen').style.display = 'none';
   $('main-app').style.display = 'none';
@@ -964,7 +1022,7 @@ function goPage(id) {
   document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   $(id).classList.add('active');
-  const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-budget':'nav-budget','pg-spend':'nav-spend','pg-settings':'nav-settings'};
+  const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-budget':'nav-budget','pg-spend':'nav-spend'};
   if (map[id]) $(map[id]).classList.add('active');
   if (id === 'pg-cal') setTimeout(() => renderCalendar(), 50);
   renderAll();
@@ -996,10 +1054,12 @@ function renderAll() {
   $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
   $('pd-lbl').textContent = days + (days === 1 ? ' day' : ' days') + ' to payday';
 
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   $('m-safe').textContent = safe < 0 ? '$0.00' : fmtC(safe);
   $('m-safe').className = 'met-v ' + (safe < 0 ? 'bad' : safe < 200 ? 'warn' : 'ok');
-  $('m-safe-s').textContent = safe < 0 ? 'cannot spend' : due.length + ' bills due';
-  $('m-daily').textContent = maxDay > 0 ? fmtC(maxDay) : '$0';
+  $('m-safe-s').textContent = bucketTotal > 0 ? fmt(bucketTotal) + ' locked in savings' : (safe < 0 ? 'cannot spend' : due.length + ' bills due');
+  const dailyLabel = maxDay >= 100 ? '$100 \u2605' : (maxDay > 0 ? fmtC(maxDay) : '$0');
+  $('m-daily').textContent = dailyLabel;
   $('m-daily').className = 'met-v ' + (maxDay <= 0 ? 'bad' : maxDay < 30 ? 'warn' : 'ok');
   $('m-spent').textContent = fmt(txnSpent);
 
@@ -1014,8 +1074,8 @@ function renderAll() {
   renderTxnAll();
   renderSettingsBills();
   renderIncomeLog();
-  renderSavingsMomentum(txnSpent, safe, days);
-  renderChinaCard();
+  renderSavingsBuckets();
+  renderSpendingCoach();
   updateExport();
   checkAfford();
   $('dt-car').textContent = fmt(S.carloan);
@@ -1028,6 +1088,15 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
   else if (safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
+  // Trajectory alert: at current daily spend pace, will bills be covered?
+  const avgDaily = getAvgDailySpend();
+  const days = daysLeft(S.payday);
+  if (liveBal - (avgDaily * days) < dueTotal) {
+    c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
+  }
+  // Cap note
+  const maxDay = getMaxDay();
+  if (maxDay >= 100) c.innerHTML += '<div class="alert ok fade-up"><strong>$100/day cap active.</strong> Surplus above cap goes to debt repayment pool.</div>';
 }
 
 function renderDebtTiles() {
@@ -1045,10 +1114,9 @@ function renderDebtTiles() {
     const ri = S.debts.indexOf(d);
     const dailyInt = (d.rate > 0) ? (d.amt * d.rate / 100 / 365) : 0;
     const intTicker = dailyInt > 0
-      ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day interest</div>'
+      ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day</div>'
       : '';
-    return '<div class="debt-tile">' +
-      '<div onclick="openDebtModal('+ri+')" style="cursor:pointer">' +
+    return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
       '<div class="dt-name">' + d.name + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
       intTicker +
@@ -1056,8 +1124,6 @@ function renderDebtTiles() {
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
       '<div class="dt-status '+col+'">Due ' + dueStr + '</div>' +
-      '</div>' +
-      '<button onclick="clearDebt('+ri+')" style="width:100%;margin-top:8px;padding:6px 4px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-xs);font-size:11px;font-weight:700;cursor:pointer;letter-spacing:.02em">&#x2713; Mark Cleared</button>' +
       '</div>';
   }).join('');
 }
@@ -1068,6 +1134,7 @@ function openDebtModal(idx) {
   $('modal-title').textContent = d.name;
   $('modal-name').value = d.name;
   $('modal-amt').value = d.amt;
+  $('modal-rate').value = d.rate !== undefined ? d.rate : 0;
   $('modal-due').value = d.delayDate || '';
   $('modal-notes').value = d.notes || '';
   $('debt-modal').classList.add('open');
@@ -1078,6 +1145,7 @@ function saveDebt() {
   const d = S.debts[activeDebtIdx];
   d.name = $('modal-name').value || d.name;
   d.amt = parseFloat($('modal-amt').value) || d.amt;
+  d.rate = parseFloat($('modal-rate').value) || 0;
   d.delayDate = $('modal-due').value || '';
   d.notes = $('modal-notes').value || d.notes;
   save(); closeModal('debt-modal'); renderAll();
@@ -1089,6 +1157,7 @@ function saveDebtDelay() {
   d.delayed = true;
   d.name = $('modal-name').value || d.name;
   d.amt = parseFloat($('modal-amt').value) || d.amt;
+  d.rate = parseFloat($('modal-rate').value) || 0;
   d.delayDate = $('modal-due').value || '';
   d.notes = $('modal-notes').value || d.notes;
   save(); closeModal('debt-modal'); renderAll();
@@ -1138,18 +1207,37 @@ function openBillModal(idx) {
 
 function saveBill() {
   if (activeBillIdx < 0) return;
+  const recurring = $('bm-recurring').checked;
+  if (!recurring) {
+    // Treat unchecking recurring as permanent cancel
+    if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
+      BILLS.splice(activeBillIdx, 1);
+      save(); closeModal('bill-modal'); renderAll();
+    }
+    return;
+  }
   BILLS[activeBillIdx] = {
     name: $('bm-name').value || BILLS[activeBillIdx].name,
     amt: parseFloat($('bm-amt').value) || BILLS[activeBillIdx].amt,
     day: parseInt($('bm-day').value) || BILLS[activeBillIdx].day,
-    tag: $('bm-tag').value, recurring: $('bm-recurring').checked
+    tag: $('bm-tag').value, recurring: true
   };
   save(); closeModal('bill-modal'); renderAll();
 }
 
 function deleteBill() {
-  if (activeBillIdx < 0 || !confirm('Delete this bill?')) return;
+  if (activeBillIdx < 0 || !confirm('Remove this bill permanently?')) return;
   BILLS.splice(activeBillIdx, 1);
+  save(); closeModal('bill-modal'); renderAll();
+}
+
+function markBillPaidMonth() {
+  if (activeBillIdx < 0) return;
+  const b = BILLS[activeBillIdx];
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
   save(); closeModal('bill-modal'); renderAll();
 }
 
@@ -1499,9 +1587,9 @@ function renderCalWeekSummary() {
   const surplus = getGenuineSurplus();
   if (surplus > 0 && S.debts) {
     const activeDebts = S.debts.filter(d => !d.paid);
-    const target = activeDebts.find(d => d.name.toLowerCase().includes('afterpay'))
-      || activeDebts.find(d => d.name.toLowerCase().includes('michael'))
-      || activeDebts.find(d => d.name.toLowerCase().includes('credit card'));
+    // Sort by interest rate descending, then amount descending for ties
+    activeDebts.sort((a,b) => (b.rate||0) - (a.rate||0) || b.amt - a.amt);
+    const target = activeDebts[0];
     if (target) {
       const canPay = Math.min(surplus, target.amt);
       const remaining = target.amt - canPay;
@@ -1541,21 +1629,94 @@ function renderSavingsMomentum(txnSpent, safe, days) {
   c.innerHTML = html;
 }
 
-function saveChinaBal() {
-  const v = parseFloat($('china-input').value);
-  if (isNaN(v)) return;
-  S.chinaBal = v; save(); renderAll(); $('china-input').value = '';
+function renderSavingsBuckets() {
+  const c = $('savings-buckets-content'); if (!c) return;
+  const buckets = S.savingsBuckets || [];
+  if (!buckets.length) { c.innerHTML = '<div class="empty-state">No savings buckets yet.</div><button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>'; return; }
+  let html = buckets.map((b, i) => {
+    const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
+    const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
+    const accountBadge = '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
+    return '<div style="padding:12px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<span style="font-size:14px;font-weight:500;color:var(--text)">'+b.name+accountBadge+'</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmtC(b.saved)+'</span>' +
+      '</div>' +
+      '<div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-bottom:5px">' +
+      '<div style="width:'+pct+'%;height:4px;border-radius:2px;background:'+barCol+';transition:width .5s"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:8px">' +
+      '<span>'+pct+'% of '+fmtC(b.goal)+' goal</span>' +
+      '<span>'+fmtC(b.goal - b.saved)+' to go</span></div>' +
+      '<div style="display:flex;gap:6px">' +
+      '<input class="s-input" type="number" id="bk-add-'+i+'" placeholder="Add amount" inputmode="decimal" style="flex:1;padding:8px 10px;font-size:13px">' +
+      '<button onclick="addToBucket('+i+')" style="padding:8px 14px;background:var(--green);color:#000;border:none;border-radius:var(--r-sm);font-size:12px;font-weight:700;cursor:pointer">Save</button>' +
+      '</div></div>';
+  }).join('');
+  html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
+  c.innerHTML = html;
 }
 
-function renderChinaCard() {
-  const goal = 4000, bal = S.chinaBal || 0;
-  const el = $('china-display'), bar = $('china-bar'), lbl = $('china-label');
-  if (!el) return;
-  el.textContent = fmtC(bal);
-  const pct = Math.min(100, Math.round((bal/goal)*100));
-  if (bar) { bar.style.width = pct + '%'; bar.style.background = pct >= 75 ? 'var(--green)' : pct >= 40 ? 'var(--amber)' : 'var(--blue)'; }
-  const perMonth = bal < goal ? Math.ceil((goal - bal) / 8) : 0;
-  if (lbl) lbl.textContent = pct >= 100 ? '&#x1F389; Goal reached! Book the trip.' : pct + '% of $' + goal.toLocaleString() + ' goal &#x2014; need ' + fmt(perMonth) + '/month by Dec 2026';
+function addToBucket(i) {
+  const input = $('bk-add-'+i);
+  const v = parseFloat(input.value);
+  if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
+  if (!S.savingsBuckets[i]) return;
+  S.savingsBuckets[i].saved = (S.savingsBuckets[i].saved||0) + v;
+  save(); renderAll();
+}
+
+function openAddBucketModal() {
+  $('nb-name').value = ''; $('nb-goal').value = ''; $('nb-account').value = '';
+  $('add-bucket-modal').classList.add('open');
+}
+
+function saveNewBucket() {
+  const name = $('nb-name').value.trim();
+  const goal = parseFloat($('nb-goal').value);
+  const account = $('nb-account').value.trim() || 'Other';
+  if (!name || isNaN(goal) || goal <= 0) { alert('Enter a name and goal amount.'); return; }
+  if (!S.savingsBuckets) S.savingsBuckets = [];
+  if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
+  S.savingsBuckets.push({id: S.nextBucketId++, name, goal, saved:0, account});
+  save(); closeModal('add-bucket-modal'); renderAll();
+}
+
+function renderSpendingCoach() {
+  const c = $('spending-coach'); if (!c) return;
+  const txnSpent = S.txns.reduce((s,t) => s+t.amt, 0);
+  const liveBal = S.bal - txnSpent;
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
+  const avgDaily = getAvgDailySpend();
+
+  let html = '';
+
+  // Category overspend flags
+  const cats = {};
+  S.txns.forEach(t => { const k = t.cat||'Other'; cats[k] = (cats[k]||0)+t.amt; });
+  const overCats = Object.entries(cats).filter(([k,v]) => v > 200);
+  if (overCats.length) {
+    const income = S.income || 7282;
+    const flags = overCats.map(([k,v]) => {
+      const pct = Math.round((v/income)*100);
+      return '<div class="alert bad" style="margin-bottom:8px"><strong>'+k+':</strong> You spent '+fmt(v)+' this cycle — that\'s '+pct+'% of your '+fmt(income)+' income.</div>';
+    }).join('');
+    html += flags;
+  }
+
+  // Bill coverage trajectory alert
+  if (liveBal - (avgDaily * days) < allBillsDue) {
+    const nextBill = BILLS.filter(b => b.recurring !== false).sort((a,b) => {
+      const today = new Date().getDate();
+      const da = a.day >= today ? a.day - today : 31 - today + a.day;
+      const db = b.day >= today ? b.day - today : 31 - today + b.day;
+      return da - db;
+    })[0];
+    const billName = nextBill ? nextBill.name : 'upcoming bills';
+    html += '<div class="alert bad" style="margin-bottom:8px"><strong>At this rate you will not cover '+billName+' before payday.</strong> Reduce daily spending now.</div>';
+  }
+
+  c.innerHTML = html ? '<div style="padding:0 20px 12px">'+html+'</div>' : '';
 }
 
 function addBonus() { S.bonuses.push({id:S.bid++, label:'', amt:0}); save(); renderBonusList(0,0); }
@@ -1621,7 +1782,9 @@ function renderCutSliders() {
       (isOver
         ? '<span style="color:var(--red)">+'+fmt(over)+' over &mdash; cut ~'+fmt(cut)+'/mo</span>'
         : '<span style="color:var(--green)">'+fmt(baseline-spent)+' under &#x2713;</span>') +
-      '</div></div>';
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">You actually spent '+fmt(spent)+' this month</div>' +
+      '</div>';
   }).join('');
 
   c.innerHTML = rows;
@@ -1707,6 +1870,36 @@ function logTxn() {
   save(); renderAll(); goPage('pg-dash');
 }
 
+function openQuickLogModal() {
+  $('ql-amt').value = ''; $('ql-note').value = ''; $('ql-cat').value = '';
+  $('ql-recurring').checked = false;
+  $('ql-recurring-fields').style.display = 'none';
+  if ($('ql-day')) $('ql-day').value = '';
+  $('quick-log-modal').classList.add('open');
+  setTimeout(() => $('ql-amt').focus(), 100);
+}
+
+function quickLogTxn() {
+  const amt = parseFloat($('ql-amt').value);
+  const note = $('ql-note').value.trim();
+  const cat = $('ql-cat').value;
+  const recurring = $('ql-recurring').checked;
+  const day = parseInt($('ql-day').value) || new Date().getDate();
+  if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
+  const flag = getHabitFlag(note, amt);
+  S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag});
+  if (flag) {
+    const spent = S.txns.reduce((s,t) => s+t.amt, 0);
+    const bal = fmtC(S.bal - spent);
+    const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
+    const msg = HABIT_MSGS[Math.floor(Math.random()*HABIT_MSGS.length)](flag, bal, debt);
+    setTimeout(() => alert('HABIT CHECK\n\n' + msg), 100);
+  }
+  if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
+  closeModal('quick-log-modal');
+  save(); renderAll();
+}
+
 function renderTxnAll() {
   const c = $('txn-all'); if (!c) return;
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions yet.</div>'; return; }
@@ -1781,7 +1974,7 @@ function checkAfford() {
   else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
   else if (newMaxDay < 30) { el.className = 'verdict warn'; el.innerHTML = '<strong>Tight but possible.</strong> '+fmt(after)+' left &#x2014; '+fmt(newMaxDay)+'/day.'; }
   else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes, you can.</strong> After '+what+' and bills you\'d have '+fmt(after)+' &#x2014; '+fmt(newMaxDay)+'/day.'; if (el2) el2.innerHTML = ''; return; }
-  if (after < 0 || newDaily < 20) {
+  if (after < 0 || newMaxDay < 20) {
     const cuts = [{n:'Entertainment',s:750},{n:'Other discretionary',s:300},{n:'Work food (50%)',s:240},{n:'Pause streaming',s:95},{n:'Hobby / games',s:25}];
     let cum = 0, rows = '';
     for (const d of cuts) {
@@ -1829,7 +2022,15 @@ if ('serviceWorker' in navigator) {
 load();
 const obEl = $('ob-days-display');
 if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
-if (S.bal > 0) { $('ob-screen').style.display = 'none'; showMain(); }
+// Always show splash first — splashTap() handles routing
+function splashTap() {
+  $('splash-screen').style.display = 'none';
+  if (S.bal > 0) {
+    showMain();
+  } else {
+    $('ob-screen').style.display = 'block';
+  }
+}
 </script>
 </body>
 </html>
