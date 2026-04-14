@@ -328,6 +328,19 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .quick-prompt-btn{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:13px 14px;text-align:left;font-size:14px;color:var(--text2);cursor:pointer;transition:all .15s;display:block}
 .quick-prompt-btn:active{background:var(--bg4);border-color:var(--green);color:var(--green)}
 .chat-key-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:32px 24px;text-align:center}
+/* NOTIFICATION DRAWER */
+@keyframes slideDown{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
+#notif-drawer{animation:slideDown .18s ease forwards}
+/* DNA BAR */
+.dna-bar{display:flex;height:26px;border-radius:8px;overflow:hidden;margin:12px 0}
+.dna-seg{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:rgba(255,255,255,0.9);transition:flex .4s ease;overflow:hidden;white-space:nowrap;min-width:3px;cursor:pointer}
+/* SCORE RING */
+.score-ring-arc{transition:stroke-dashoffset 1s ease}
+/* PREDICTOR */
+.pred-row{padding:10px 0;border-bottom:1px solid var(--border)}
+.pred-row:last-child{border-bottom:none}
+/* WRX COMMAND */
+.wrx-status-btn{flex:1;padding:10px 6px;border-radius:var(--r-sm);font-size:12px;font-weight:700;cursor:pointer;text-align:center;transition:all .15s}
 </style>
 </head>
 <body>
@@ -381,6 +394,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
+        <div class="icon-btn" id="notif-btn" onclick="NOTIFY.toggleDrawer()" title="Notifications" style="position:relative">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 1 6 6v3l2 3H2l2-3V8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><path d="M8 17a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
+          <div id="notif-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:9px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
+        </div>
         <div class="icon-btn" onclick="softRefresh()" title="Sync latest balance from Virgin Money">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
@@ -408,12 +425,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div id="dash-alerts"></div>
       <div id="dash-velocity" class="info-line"></div>
       <div id="dash-streak" class="info-line"></div>
+      <div id="personality-badge" style="display:none;margin-bottom:8px"></div>
       <div class="metrics">
         <div class="met" onclick="TRACER.show('maxday')" style="cursor:pointer" title="Tap to see calculation"><div class="met-l">Safe/Day</div><div class="met-v" id="m-daily">$0</div><div class="met-s">max today</div></div>
         <div class="met"><div class="met-l">Today</div><div class="met-v" id="m-today-spent">$0</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div id="m-today-bar" style="height:3px;border-radius:2px;transition:width .4s"></div></div></div>
         <div class="met" onclick="TRACER.show('surplus')" style="cursor:pointer" title="Tap to see calculation"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s" id="m-surplus-lbl">after bills</div></div>
       </div>
       <div id="dash-overspend"></div>
+      <div id="slyght-score-card"></div>
       <div id="auditor-badge" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
 
@@ -1627,6 +1646,87 @@ function renderAnalysisTab() {
     }).join('') +
     '</div></div>';
 
+  // ─── SPENDING DNA ─────────────────────────────────────────────
+  if (total > 0) {
+    const dnaColors = {'Food / Coffee':'#00e87a','Transport / Fuel':'#4d9fff','Shopping':'#f5a623','Entertainment':'#ff6b6b','Health':'#c084fc','Subscriptions':'#34d399','Other':'#6b7280'};
+    const income2 = S.income || 7282;
+    const prevMonthCats = (S.monthlyHistory||[]).length >= 1 ? (S.monthlyHistory[S.monthlyHistory.length-1]||{}) : {};
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending DNA</div><div style="font-size:11px;color:var(--text3)">tap segment to drill in</div></div>';
+    html += '<div class="dna-bar">';
+    sortedCats.forEach(([k,v]) => {
+      const w = Math.max(1, Math.round((v/total)*100));
+      const col = dnaColors[k]||'#6b7280';
+      html += '<div class="dna-seg" onclick="openCategoryDrillDown(\''+k+'\')" style="flex:'+w+';background:'+col+'" title="'+k+': '+fmt(v)+' ('+w+'%)">'+(w>=8?k[0]:'')+'</div>';
+    });
+    html += '</div>';
+    // Insights
+    const debtCats = cats['Debt repayment']||0;
+    const debtPct = total+debtCats>0 ? Math.round((debtCats/(total+debtCats))*100) : 0;
+    if (debtPct>0) html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">💳 Debt repayments: <strong>'+fmt(debtCats)+'</strong> ('+debtPct+'% of income) — reducing net worth liability ✅</div>';
+    const subSpend = cats['Subscriptions']||0;
+    if (subSpend>80) html += '<div style="font-size:12px;color:var(--amber);margin-bottom:4px">📺 Subscriptions: <strong>'+fmt(subSpend)+'</strong> ('+Math.round((subSpend/income2)*100)+'% of income) — cutting $34 Claude saves $408/year</div>';
+    // Worst offender vs prev month
+    if (sortedCats.length) {
+      const worst = sortedCats[0];
+      const prevAmt = prevMonthCats[worst[0]]||0;
+      const delta = worst[1]-prevAmt;
+      const deltaStr = prevAmt>0 ? (delta>0?' ▲+'+fmt(delta)+' vs last month':delta<0?' ▼'+fmt(Math.abs(delta))+' vs last month — great work':'') : '';
+      html += '<div style="font-size:12px;margin-top:4px"><span style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 6px;font-family:var(--mono);font-size:10px;font-weight:700;margin-right:6px">WORST</span><strong>'+worst[0]+'</strong>: '+fmt(worst[1])+esc(deltaStr)+'</div>';
+    }
+    html += '</div>';
+  }
+
+  // ─── PREDICTIVE CASH FLOW ─────────────────────────────────────
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">90-Day Forecast</div></div><div id="predictor-card">';
+  const proj = PREDICTOR.project(3);
+  const wrxP = PREDICTOR.wrxImpact(S.wrxValue||21000, proj);
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Based on current income, bills &amp; avg daily spend</div>';
+  html += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">If you keep this up:</div>';
+  proj.forEach((p,i)=>{
+    const nwCol = p.netWorth>=0?'var(--green)':'var(--red)';
+    html += '<div class="pred-row"><div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">'+esc(p.date)+'</div>'+
+      '<div style="text-align:right;font-size:12px;line-height:1.7">'+
+        '<span style="color:var(--text3)">Bal </span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">~'+fmt(p.bal)+'</span>  '+
+        '<span style="color:var(--text3)">CC </span><span style="font-family:var(--mono);color:var(--red)">~'+fmt(p.cc)+'</span>  '+
+        '<span style="color:var(--text3)">NW </span><span style="font-family:var(--mono);font-weight:700;color:'+nwCol+'">'+(p.netWorth>=0?'+':'')+fmt(p.netWorth)+'</span>'+
+      '</div></div>'+
+      ((S.wrxValue>0&&wrxP[i].wrxNW>p.netWorth+500)?'<div style="font-size:11px;color:var(--green);margin-top:3px">✈ If WRX sells this month: NW → <strong>+'+fmt(wrxP[i].wrxNW)+'</strong></div>':'')+
+      '</div>';
+  });
+  html += '</div></div>';
+
+  // ─── FINANCIAL TIME MACHINE ────────────────────────────────────
+  const snaps = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS.load() : [];
+  if (snaps.length) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">⏳ Time Machine</div><div style="font-size:11px;color:var(--text3)">tap restore to go back</div></div>';
+    html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Past snapshots — green dot = improvement, red = drop</div>';
+    const nwNow = getNetWorth().net;
+    snaps.slice(0,8).forEach((snap, si) => {
+      const nwSnap = snap.netWorth ? snap.netWorth.net || snap.netWorth || 0 : 0;
+      const improved = nwSnap < nwNow;
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="width:8px;height:8px;border-radius:50%;background:'+(improved?'var(--green)':'var(--red)')+';flex-shrink:0"></div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:12px;color:var(--text)">'+esc(snap.date+' '+snap.time)+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Bal '+fmtC(snap.bal)+' · '+(snap.reason||'auto')+'</div>'+
+        '</div>'+
+        '<button onclick="SNAPSHOTS.restore('+si+')" style="font-size:11px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer">restore</button>'+
+        '</div>';
+    });
+    // Future projections (dashed)
+    html += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 6px;opacity:.6">Projected (dashed)</div>';
+    proj.slice(0,3).forEach(p=>{
+      const nwCol = p.netWorth>=0?'var(--green)':'var(--amber)';
+      html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);opacity:.7">'+
+        '<div style="width:8px;height:8px;border-radius:50%;border:2px dashed var(--text3);flex-shrink:0"></div>'+
+        '<div style="flex:1"><div style="font-size:12px;color:var(--text2)">'+esc(p.date)+' (projected)</div>'+
+        '<div style="font-size:11px;color:var(--text3)">Bal ~'+fmtC(p.bal)+' · NW <span style="color:'+nwCol+'">'+(p.netWorth>=0?'+':'')+fmt(p.netWorth)+'</span></div></div>'+
+        '</div>';
+    });
+    html += '</div>';
+  }
+
   c.innerHTML = html;
 }
 
@@ -2321,38 +2421,123 @@ function renderLtTiles() {
 function renderWrxTracker() {
   const el = $('wrx-tracker-card'); if (!el) return;
   if (!S.wrxValue || S.wrxValue <= 0) { el.innerHTML = ''; return; }
+  const status = S.wrxStatus || 'unlisted';
   const net = Math.round(S.wrxValue * 0.92);
-  const activeDebts = (S.debts||[]).filter(d => !d.paid);
+  const activeDebts = (S.debts||[]).filter(d => !d.paid).sort((a,b)=>(a.priority||99)-(b.priority||99));
   const debtTotal = activeDebts.reduce((s,d) => s+d.amt, 0);
-  const carRemaining = Math.max(0, (S.carloan||0) - net);
-  const coversDebts = net >= debtTotal;
-  const coversList = [];
-  let remaining = net;
-  for (const d of activeDebts.sort((a,b) => (a.priority||99)-(b.priority||99))) {
-    if (remaining >= d.amt) { remaining -= d.amt; coversList.push(d.name); }
+  // Daily interest cost across all interest-bearing debts
+  const dailyInterest = Math.round(((S.cc||0)*0.1999 + (S.carloan||0)*0.07) / 365 * 100) / 100;
+  // Days listed
+  const daysListed = S.wrxListedDate ? Math.floor((Date.now()-new Date(S.wrxListedDate).getTime())/864e5) : 0;
+  const totalInterestBurned = Math.round(dailyInterest * daysListed * 100) / 100;
+  // Sale scenario at slider value or default
+  const salePrice = S._wrxSlider || S.wrxValue;
+  const saleNet = Math.round(salePrice * 0.92);
+  let rem = saleNet; const clearOrder = [];
+  for (const d of activeDebts) { if(rem>=d.amt){rem-=d.amt;clearOrder.push(d.name);} }
+  const carAfter = Math.max(0,(S.carloan||0)-rem);
+  const nwAfter = Math.round(getNetWorth().net + saleNet - (S.wrxValue||0) + ((S.carloan||0)-carAfter));
+
+  const statusColors = { unlisted:'var(--red)', listed:'var(--amber)', sold:'var(--green)' };
+  const statusBgs = { unlisted:'var(--red-dim)', listed:'var(--amber-dim)', sold:'var(--green-dim)' };
+  const statusBorders = { unlisted:'var(--red-border)', listed:'var(--amber-border)', sold:'var(--green-border)' };
+  const col = statusColors[status];
+
+  let html = '<div class="card" style="border:1px solid '+statusBorders[status]+';background:'+statusBgs[status]+'">';
+  html += '<div class="card-hdr" onclick="toggleExpandCard(\'wrx-body\',\'wrx-tog\')" style="cursor:pointer;margin-bottom:0">';
+  html += '<div class="card-title" style="color:'+col+'">🚗 WRX Command Centre</div>';
+  if (status==='listed'&&daysListed>0) html += '<div style="font-size:11px;font-family:var(--mono);font-weight:700;color:'+col+'">Day '+daysListed+'</div>';
+  if (status==='unlisted') html += '<div style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:2px 7px">LIST THIS WEEK</div>';
+  html += '<span id="wrx-tog" style="font-size:14px;color:var(--text3);margin-left:6px">▴</span></div>';
+
+  html += '<div id="wrx-body" class="expand-body" style="max-height:2000px">';
+  html += '<div style="height:1px;background:var(--border);margin:12px 0"></div>';
+
+  // Status buttons
+  html += '<div style="display:flex;gap:6px;margin-bottom:12px">';
+  ['unlisted','listed','sold'].forEach(s2=>{
+    const active=s2===status;
+    const labels={unlisted:'Not Listed Yet',listed:'Listed',sold:'Sold'};
+    const c2=statusColors[s2],bg2=active?statusBgs[s2]:'var(--bg3)',bd=active?statusBorders[s2]:'var(--border)';
+    html+='<button class="wrx-status-btn" onclick="setWrxStatus(\''+s2+'\')" style="border:1px solid '+bd+';color:'+(active?c2:'var(--text3)')+';background:'+bg2+'">'+labels[s2]+'</button>';
+  });
+  html += '</div>';
+
+  // Status-specific info
+  if (status==='listed'&&daysListed>0) {
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">';
+    html += '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Days Listed</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--amber)">'+daysListed+'</div></div>';
+    html += '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Daily Interest</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--red)">'+fmtC(dailyInterest)+'</div></div>';
+    html += '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Interest Burned</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)">'+fmtC(totalInterestBurned)+'</div></div>';
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--amber);margin-bottom:10px">⏰ Every day unlisted costs '+fmtC(dailyInterest)+' in interest — urgency score: '+Math.round(daysListed*dailyInterest)+'</div>';
+  } else if (status==='unlisted') {
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.6">Daily interest on all debts: <strong style="color:var(--red)">'+fmtC(dailyInterest)+'/day</strong>. Every day the WRX is unlisted is '+fmtC(dailyInterest)+' wasted. List on Carsales + Facebook Marketplace today.</div>';
   }
-  el.innerHTML = '<div class="card" style="border:1px solid var(--amber-border);background:var(--amber-dim)">' +
-    '<div class="card-hdr">' +
-      '<div class="card-title" style="color:var(--amber)">🚗 WRX — Your Debt Exit</div>' +
-      '<div style="font-size:11px;font-family:var(--mono);font-weight:700;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:3px;padding:2px 7px">LIST THIS WEEK</div>' +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0">' +
-      '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center">' +
-        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px">Est. Value</div>' +
-        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">' + fmtC(S.wrxValue) + '</div>' +
-      '</div>' +
-      '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center">' +
-        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px">Net After Costs</div>' +
-        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green)">' + fmtC(net) + '</div>' +
-      '</div>' +
-    '</div>' +
-    '<div style="font-size:13px;color:var(--text2);line-height:1.6">' +
-      (coversDebts
-        ? '✅ Clears <strong>' + (coversList.length ? coversList.join(', ') : 'all debts') + '</strong> and reduces car loan to <strong>' + fmtC(carRemaining) + '</strong>.'
-        : '⚡ Clears <strong>' + (coversList.length ? coversList.join(', ') : 'some debts') + '</strong>. Remaining car loan: <strong>' + fmtC(carRemaining) + '</strong>.') +
-    '</div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-top:6px">Every day unlisted costs you interest. Facebook Marketplace + Carsales — list today.</div>' +
-  '</div>';
+
+  // Sale scenario calculator
+  html += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Sale Scenario Calculator</div>';
+  html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span style="font-size:12px;color:var(--text3)">$18k</span><input type="range" min="18000" max="24000" step="500" value="'+salePrice+'" oninput="S._wrxSlider=parseInt(this.value);renderWrxTracker()" style="flex:1"><span style="font-size:12px;color:var(--text3)">$24k</span></div>';
+  html += '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:12px;font-size:13px;line-height:1.8">';
+  html += '<strong style="color:var(--text)">'+fmtC(salePrice)+' sale → net '+fmtC(saleNet)+'</strong><br>';
+  if (clearOrder.length) html += '✅ Clears: <strong>'+clearOrder.join(' → ')+'</strong><br>';
+  html += '🚗 Car loan reduced to: <strong style="color:var(--green)">'+fmtC(carAfter)+'</strong><br>';
+  html += '💰 New net worth: <strong style="color:var(--green)">+'+(nwAfter>=0?'+':'')+fmtC(nwAfter)+'</strong>';
+  html += '</div></div>';
+
+  // Sell button
+  if (status==='listed') {
+    html += '<button onclick="openWrxAllocModal()" style="width:100%;padding:13px;background:var(--green);color:#000;font-size:14px;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;margin-top:4px">🎉 Mark as SOLD — Allocate Proceeds</button>';
+  }
+
+  html += '</div></div>'; // close expand-body and card
+  el.innerHTML = html;
+}
+
+function setWrxStatus(status) {
+  S.wrxStatus = status;
+  if (status==='listed' && !S.wrxListedDate) S.wrxListedDate = new Date().toISOString().slice(0,10);
+  if (status==='unlisted') { S.wrxListedDate = null; S.wrxStatus='unlisted'; }
+  save(); renderWrxTracker();
+}
+
+function openWrxAllocModal() {
+  const salePrice = S._wrxSlider || S.wrxValue || 21000;
+  const saleNet = Math.round(salePrice * 0.92);
+  const activeDebts = (S.debts||[]).filter(d=>!d.paid).sort((a,b)=>(a.priority||99)-(b.priority||99));
+  let rem = saleNet;
+  const allocs = [];
+  for (const d of activeDebts) { if(rem>=d.amt){rem-=d.amt;allocs.push({name:d.name,amt:d.amt,id:d.id,type:'debt'});} }
+  if (rem > 0) { allocs.push({name:'Car Loan (lump sum)',amt:Math.min(rem,(S.carloan||0)),id:'car',type:'car'}); rem=Math.max(0,rem-Math.min(rem,(S.carloan||0))); }
+  if (rem > 0) allocs.push({name:'Remaining to Virgin Money',amt:rem,id:'cash',type:'cash'});
+
+  $('wrx-alloc-sub').textContent = fmtC(salePrice)+' sale · net '+fmtC(saleNet)+' after costs';
+  let html = '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Recommended allocation:</div>';
+  html += allocs.map((a,i)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">'+
+    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">'+
+    '<input type="checkbox" id="wa-'+i+'" style="accent-color:var(--green);width:18px;height:18px">'+
+    '<span style="font-size:13px;font-weight:500;color:var(--text)">'+esc(a.name)+'</span></label>'+
+    '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmtC(a.amt)+'</span></div>').join('');
+  html += '<button onclick="confirmWrxAlloc('+JSON.stringify(allocs).replace(/"/g,"'")+','+saleNet+')" style="width:100%;padding:13px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;margin-top:14px;font-size:14px">Confirm Marked Payments →</button>';
+  $('wrx-alloc-body').innerHTML = html;
+  $('wrx-alloc-modal').classList.add('open');
+}
+
+function confirmWrxAlloc(allocs, saleNet) {
+  allocs.forEach((a,i) => {
+    if (document.getElementById('wa-'+i)?.checked) {
+      if (a.type==='debt') {
+        const di = (S.debts||[]).findIndex(d=>d.id===a.id);
+        if (di>=0) { S.debts[di].paid=true; }
+      }
+      if (a.type==='car') { S.carloan = Math.max(0,(S.carloan||0)-a.amt); }
+      S.txns.push({amt:a.amt,note:'WRX sale — '+a.name,cat:'Debt repayment',ts:Date.now(),income:false,_balAffected:true});
+    }
+  });
+  S.bal += saleNet;
+  S.wrxValue = 0; S.wrxStatus='sold';
+  save(); closeModal('wrx-alloc-modal'); renderAll();
+  showUndoToast('WRX proceeds allocated — great work!');
 }
 
 function openDebtModal(idx) {
@@ -3083,12 +3268,63 @@ function renderCalWeekSummary() {
   c.innerHTML = html;
 }
 
+function renderChinaHolidayTracker(b, i) {
+  const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
+  const goal = new Date('2026-12-01'); const now2 = new Date();
+  const daysToGoal = Math.max(1, Math.ceil((goal-now2)/864e5));
+  const monthsToGoal = daysToGoal/30;
+  const needed = Math.max(0, b.goal - (b.saved||0));
+  const monthlyNeeded = needed > 0 ? Math.ceil(needed/monthsToGoal) : 0;
+  const weeklyNeeded = needed > 0 ? Math.ceil(needed/(daysToGoal/7)) : 0;
+  const roundups = (S.txns||[]).filter(t=>t.cat==='Savings'&&(t.note||'').toLowerCase().includes('round')).reduce((s,t)=>s+t.amt,0);
+  const pctBar = Math.min(100,pct);
+  let html = '<div style="background:var(--blue-dim);border:1px solid rgba(77,159,255,0.25);border-radius:var(--r-sm);padding:14px;margin-bottom:12px">';
+  html += '<div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px">✈️ CHINA HOLIDAY</div>';
+  html += '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px"><span style="color:var(--text)"><strong>'+fmtC(b.saved)+'</strong> saved of <strong>'+fmtC(b.goal)+'</strong> goal</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--blue)">'+pct+'%</span></div>';
+  html += '<div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:10px"><div style="width:'+pctBar+'%;height:8px;background:var(--blue);border-radius:4px;transition:width .6s"></div></div>';
+  const rate = getGenuineSurplus();
+  if (needed <= 0) {
+    html += '<div style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:8px">✅ Goal reached — China Holiday funded!</div>';
+  } else if (monthlyNeeded > 0) {
+    html += '<div style="font-size:12px;color:var(--text2);margin-bottom:8px"><span style="color:var(--text3)">Need: </span><strong>'+fmtC(monthlyNeeded)+'/month</strong> or <strong>'+fmtC(weeklyNeeded)+'/week</strong> to hit Dec 2026</div>';
+    html += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Days to Dec 2026: <strong style="color:var(--text)">'+daysToGoal+'</strong></div>';
+    if (rate > 0) {
+      const months2 = Math.ceil(needed/rate);
+      html += '<div style="font-size:12px;color:'+( months2<=monthsToGoal?'var(--green)':'var(--amber)')+';margin-bottom:8px">At current surplus: arrive <strong>'+(months2<=monthsToGoal?'Dec 2026 ✓':'in ~'+months2+' months')+'</strong></div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--amber);margin-bottom:8px">At current rate: never (no surplus detected)</div>';
+    }
+  }
+  if (roundups>0) html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Round-ups this cycle: <strong>'+fmtC(roundups)+'</strong> — at this rate: '+fmtC(roundups*12)+'/year</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">💡 Set a '+fmtC(monthlyNeeded||50)+'/month transfer to hit goal on time</div>';
+  html += '<div style="display:flex;gap:8px">';
+  [10,50,100].forEach(amt => {
+    html += '<button onclick="quickAddToBucket('+i+','+amt+')" style="flex:1;padding:10px;background:var(--blue-dim);border:1px solid rgba(77,159,255,0.3);border-radius:var(--r-sm);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer">+'+fmtC(amt)+'</button>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+function quickAddToBucket(i, amt) {
+  if (S.bal < amt) { showUndoToast('Not enough balance'); return; }
+  S.savingsBuckets[i].saved = (S.savingsBuckets[i].saved||0) + amt;
+  S.bal -= amt;
+  S.txns.push({amt, note: S.savingsBuckets[i].name+' — quick add', cat:'Savings', ts:Date.now(), income:false});
+  save(); renderAll();
+  showUndoToast(fmtC(amt)+' added to '+S.savingsBuckets[i].name);
+}
+
 function renderSavingsBuckets() {
   const c = $('savings-buckets-content'); if (!c) return;
   const buckets = S.savingsBuckets || [];
   if (!buckets.length) { c.innerHTML = '<div class="empty-state">No savings buckets yet.</div><button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>'; return; }
   const bucketSurplus = getGenuineSurplus();
-  let html = buckets.map((b, i) => {
+  // China Holiday gets special treatment at the top
+  const chinaIdx = buckets.findIndex(b=>b.name.toLowerCase().includes('china'));
+  let html = '';
+  if (chinaIdx >= 0) html += renderChinaHolidayTracker(buckets[chinaIdx], chinaIdx);
+  let html2 = buckets.map((b, i) => {
+    if (i === chinaIdx) return ''; // already rendered specially
     const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
     const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
     const monthsToGoal = bucketSurplus > 0 ? Math.ceil((b.goal - (b.saved||0)) / bucketSurplus) : 0;
@@ -3109,6 +3345,7 @@ function renderSavingsBuckets() {
       '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + (monthsToGoal > 0 && monthsToGoal < 60 ? monthsToGoal + ' months to goal at current surplus' : '') + '</div>' +
       '</div>';
   }).join('');
+  html += html2;
   html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
   c.innerHTML = html;
 }
@@ -4652,11 +4889,339 @@ const APP_HEALTH = {
   }
 };
 
+// ─── OVERDRIVE RENDER OVERRIDE ────────────────────────────────
+// Wraps renderAll a second time after all Overdrive systems are defined
+const _prevRenderAllOD = renderAll;
+renderAll = function() {
+  _prevRenderAllOD();
+  if (typeof PERSONALITY !== 'undefined') PERSONALITY.render();
+  if (typeof SLYGHT_SCORE !== 'undefined') SLYGHT_SCORE.render();
+  if (typeof PREDICTOR !== 'undefined') PREDICTOR.renderCard();
+  if (typeof NOTIFY !== 'undefined') NOTIFY.refresh();
+};
+
+// ─── FINANCIAL PERSONALITY ENGINE ────────────────────────────
+const PERSONALITY = {
+  archetypes: {
+    'The Grinder':  {emoji:'💪', desc:'Paying off debt faster than minimum'},
+    'The Builder':  {emoji:'📈', desc:'Net worth trending upward'},
+    'The Planner':  {emoji:'📋', desc:'Consistent bills, growing savings'},
+    'The Survivor': {emoji:'😰', desc:'Tight before payday — hang in there'},
+    'The Spender':  {emoji:'💸', desc:'Discretionary over 40% of income'},
+    'The Impulsive':{emoji:'⚡', desc:'High-frequency small transactions'},
+  },
+  calculate() {
+    const txns = S.txns || [];
+    const income = S.income || 7282;
+    const disc = txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t)=>s+t.amt,0);
+    const debtPaid = txns.filter(t => !t.income && t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
+    const buckets = getBucketTotal();
+    const nw = getNetWorth();
+    const history = S.monthlyHistory || [];
+    const scores = {};
+    // Grinder: paid debt > 130% of minimum payments
+    const minPay = 387.69*2 + Math.max(25,(S.cc||0)*0.02);
+    scores['The Grinder'] = debtPaid > minPay*1.3 ? 80 : debtPaid > minPay ? 50 : debtPaid > 0 ? 30 : 0;
+    // Builder: NW improved vs last month
+    if (history.length >= 1) {
+      const prevNW = (history[history.length-1].bal||0) - ((S.carloanOriginal||37400) - (history[history.length-1].carloan||(S.carloan||23989)));
+      scores['The Builder'] = nw.net > prevNW + 200 ? 75 : nw.net > prevNW ? 50 : 0;
+    } else { scores['The Builder'] = 0; }
+    // Planner: bills paid + savings
+    scores['The Planner'] = (Object.keys(S.paidBills||{}).length >= 3 || buckets > 50) && debtPaid > 0 ? 70 : 0;
+    // Survivor: low balance + many days to payday
+    const dl = daysLeft(S.payday);
+    scores['The Survivor'] = S.bal < 200 && dl > 4 ? 90 : S.bal < 400 && dl > 6 ? 60 : 0;
+    // Spender: disc > 40% income
+    scores['The Spender'] = disc > income*0.4 ? 90 : disc > income*0.25 ? 55 : 0;
+    // Impulsive: many small txns, low savings
+    const small = txns.filter(t=>!t.income&&t.amt>0&&t.amt<30);
+    scores['The Impulsive'] = small.length > 8 && buckets < 50 ? 70 : small.length > 5 ? 40 : 0;
+    const top = Object.entries(scores).sort((a,b)=>b[1]-a[1])[0];
+    return (!top || top[1]===0) ? 'The Grinder' : top[0];
+  },
+  getInsight(type) {
+    const txns = S.txns||[];
+    const debtPaid = txns.filter(t=>!t.income&&t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
+    if (type==='The Grinder'&&debtPaid>0) return 'You paid '+fmt(debtPaid)+' in debt this cycle — keep the momentum';
+    if (type==='The Builder') { const nw=getNetWorth(); return 'Net worth at '+(nw.net>=0?'+':'')+fmt(nw.net)+' and climbing'; }
+    if (type==='The Planner') return 'Bills on track, savings growing — solid foundation';
+    if (type==='The Survivor') return 'Tight before payday — WRX sale would change everything';
+    if (type==='The Spender') { const inc=S.income||7282; const d=txns.filter(t=>!t.income&&!_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t)=>s+t.amt,0); return fmt(d)+' discretionary ('+Math.round((d/inc)*100)+'% of income) — redirect to CC'; }
+    if (type==='The Impulsive') { const s=txns.filter(t=>!t.income&&t.amt>0&&t.amt<30); return s.length+' small purchases = '+fmt(s.reduce((a,t)=>a+t.amt,0))+' this cycle'; }
+    return 'Tracking your financial behaviour';
+  },
+  getStreaks() {
+    const txns = S.txns||[];
+    const noSpend = getNoSpendStreak();
+    const disc = txns.filter(t=>!t.income&&!_NON_SPEND_CATS.has(t.cat||'Other'));
+    const billNames = new Set(BILLS.map(b=>b.name.toLowerCase()));
+    const impulse = disc.filter(t=>t.amt>100&&!billNames.has((t.note||'').toLowerCase()));
+    let daysSinceImpulse = null;
+    if (impulse.length) { const last=Math.max(...impulse.map(t=>t.ts)); const td=new Date();td.setHours(0,0,0,0); daysSinceImpulse=Math.floor((td-last)/(864e5)); }
+    const out = [];
+    if (noSpend>=2) out.push({icon:'🔥',text:noSpend+'-day no-spend streak'});
+    if (daysSinceImpulse!==null&&daysSinceImpulse>=3) out.push({icon:'🎯',text:daysSinceImpulse+' days since last impulse buy'});
+    if (!impulse.length&&disc.length===0) out.push({icon:'⭐',text:'No impulse purchases this cycle'});
+    return out;
+  },
+  render() {
+    const el = document.getElementById('personality-badge');
+    if (!el) return;
+    if (!S.txns||S.txns.length<2) { el.style.display='none'; return; }
+    const type = this.calculate();
+    const info = this.archetypes[type]||{emoji:'💡'};
+    const insight = this.getInsight(type);
+    const streaks = this.getStreaks();
+    let html = '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-sm)">' +
+      '<div style="font-size:24px">'+info.emoji+'</div><div style="flex:1;min-width:0">' +
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">This month you\'re '+esc(type)+'</div>' +
+      '<div style="font-size:12px;color:var(--text3);margin-top:1px">'+esc(insight)+'</div></div></div>';
+    if (streaks.length) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">'+streaks.map(s=>'<div style="display:flex;align-items:center;gap:4px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:20px;padding:3px 9px;font-size:11px;font-weight:600;color:var(--green)">'+s.icon+' '+esc(s.text)+'</div>').join('')+'</div>';
+    el.innerHTML = html;
+    el.style.display = 'block';
+  }
+};
+
+// ─── PREDICTIVE CASH FLOW ENGINE ──────────────────────────────
+const PREDICTOR = {
+  project(nMonths) {
+    const results = [];
+    let bal = S.bal, cc = S.cc||0, car = S.carloan||0;
+    const income = S.income||7282;
+    const monthlyBills = BILLS.filter(b=>b.recurring!==false).reduce((s,b)=>s+b.amt,0);
+    const avgSpend = getAvgDailySpend()*30;
+    const ccMin = Math.max(25, cc*0.02);
+    const carPay = 387.69*2;
+    const activeDebts = (S.debts||[]).filter(d=>!d.paid).reduce((s,d)=>s+d.amt,0);
+    for (let m=1; m<=nMonths; m++) {
+      const dt = new Date(); dt.setMonth(dt.getMonth()+m); dt.setDate(S.payday||15);
+      bal = bal + income - monthlyBills - avgSpend;
+      cc = Math.max(0, cc - ccMin);
+      car = Math.max(0, car - carPay);
+      const netWorth = bal + (S.wrxValue||0) + getBucketTotal() - cc - car - activeDebts;
+      results.push({ date: dt.toLocaleDateString('en-AU',{day:'numeric',month:'short'}), bal:Math.round(bal), cc:Math.round(cc), car:Math.round(car), netWorth:Math.round(netWorth), m });
+    }
+    return results;
+  },
+  wrxImpact(salePrice, projections) {
+    const net = Math.round((salePrice||S.wrxValue||21000)*0.92);
+    const debts = (S.debts||[]).filter(d=>!d.paid).sort((a,b)=>(a.priority||99)-(b.priority||99));
+    let rem = net; const cleared = [];
+    for (const d of debts) { if(rem>=d.amt){rem-=d.amt;cleared.push(d.name);} }
+    const carAfter = Math.max(0,(S.carloan||0)-rem);
+    return projections.map(p => ({ ...p, wrxNW: p.netWorth + net - (S.wrxValue||0) + ((S.carloan||0)-carAfter), cleared, carAfter }));
+  },
+  renderCard() {
+    const el = document.getElementById('predictor-card');
+    if (!el) return;
+    const proj = this.project(3);
+    const wrx = this.wrxImpact(S.wrxValue||21000, proj);
+    let html = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Based on current income, bills &amp; avg spend</div>';
+    html += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">If you keep this up:</div>';
+    proj.forEach((p,i)=>{
+      const nwCol = p.netWorth>=0?'var(--green)':'var(--red)';
+      html += '<div class="pred-row"><div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+esc(p.date)+'</div>'+
+        '<div style="text-align:right;font-size:12px;line-height:1.7">'+
+          '<span style="color:var(--text3)">Bal </span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">~'+fmt(p.bal)+'</span>'+
+          '  <span style="color:var(--text3)">CC </span><span style="font-family:var(--mono);color:var(--red)">~'+fmt(p.cc)+'</span>'+
+          '  <span style="color:var(--text3)">NW </span><span style="font-family:var(--mono);font-weight:700;color:'+nwCol+'">'+(p.netWorth>=0?'+':'')+fmt(p.netWorth)+'</span>'+
+        '</div></div>'+
+        ((S.wrxValue>0&&wrx[i].wrxNW>p.netWorth+500)?'<div style="font-size:11px;color:var(--green);margin-top:3px">✈ If WRX sells this month: NW → <strong>+'+fmt(wrx[i].wrxNW)+'</strong></div>':'') +
+        '</div>';
+    });
+    el.innerHTML = html;
+  }
+};
+
+// ─── SMART NOTIFICATIONS ENGINE ───────────────────────────────
+const NOTIFY = {
+  _iid: null,
+  generate() {
+    const now = new Date(), today = now.getDate(), dow = now.getDay();
+    const dismissed = new Set(S.dismissedNotifications||[]);
+    const existing = new Set((S.notifications||[]).map(n=>n.id));
+    const out = [];
+    let seq = Date.now();
+    const add = (type, msg, act) => {
+      const id = type+'_'+msg.slice(0,20).replace(/\W/g,'_');
+      if (!dismissed.has(id)&&!existing.has(id)) out.push({id,type,msg,act,ts:seq++,read:false});
+    };
+    // URGENT: debts overdue/due soon
+    const dl = daysLeft(S.payday);
+    (S.debts||[]).filter(d=>!d.paid&&d.delayDate).forEach(d=>{
+      const daysUntil = Math.ceil((new Date(d.delayDate+'T00:00')-now)/(864e5));
+      if (daysUntil<=0) add('urgent',d.name+' '+fmt(d.amt)+' is OVERDUE — pay now','Pay');
+      else if (daysUntil===1) add('urgent',d.name+' '+fmt(d.amt)+' due tomorrow — pay today','Pay');
+      else if (daysUntil<=3) add('urgent',d.name+' '+fmt(d.amt)+' due in '+daysUntil+' days','Pay');
+    });
+    if (S.bal<500&&dl>2) add('urgent','Balance below $500 — review spending before next bill','Check bills');
+    // WARNING: bills debiting tomorrow
+    const tmrw = today+1;
+    getExpandedBills().filter(b=>b.recurring!==false&&b.day===tmrw).forEach(b=>add('warning',b.name+' '+fmt(b.amt)+' debits tomorrow — ensure funds available','Check'));
+    // WARNING: no transactions in 3+ days
+    if ((S.txns||[]).length>0) {
+      const last=Math.max(...S.txns.map(t=>t.ts));
+      const days=Math.floor((Date.now()-last)/864e5);
+      if (days>=3) add('warning','No transactions in '+days+' days — data up to date?','Log now');
+    }
+    // INFO: payday soon
+    if (dl<=2&&!S.paydayReceived) add('info','Payday in '+dl+' day'+(dl!==1?'s':'')+' — allocation plan ready','View plan');
+    // INFO: no-spend streak
+    const ns=getNoSpendStreak();
+    if (ns>=3) add('info','You\'ve been under budget for '+ns+' days straight 🔥',null);
+    // INFO: net worth up
+    const history=S.monthlyHistory||[];
+    if (history.length>=1) {
+      const prev=history[history.length-1]; const prevNW=(prev.bal||0)-28584.70;
+      const nw=getNetWorth();
+      if (nw.net>prevNW+100) add('info','Net worth up '+fmt(nw.net-prevNW)+' this month — keep going',null);
+    }
+    // WEEKLY: Sunday evening
+    if (dow===0&&now.getHours()>=17) {
+      const ws=new Date(now); ws.setDate(today-6); ws.setHours(0,0,0,0);
+      const wtxns=(S.txns||[]).filter(t=>t.ts>=ws.getTime());
+      const ws2=wtxns.filter(t=>!t.income&&!_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t)=>s+t.amt,0);
+      const wd=wtxns.filter(t=>t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
+      const budget=(S.weekdayBudget||60)*5+(S.weekendBudget||180)*2;
+      const grade=ws2<=budget*0.7?'A':ws2<=budget?'B':ws2<=budget*1.3?'C':'D';
+      add('weekly','Week review: spent '+fmt(ws2)+', paid '+fmt(wd)+' toward debt — Grade: '+grade,null);
+    }
+    return out;
+  },
+  refresh() {
+    const newOnes = this.generate();
+    if (newOnes.length) { S.notifications=[...(S.notifications||[]),...newOnes].slice(-50); save(); }
+    this.updateBadge();
+  },
+  updateBadge() {
+    const badge=document.getElementById('notif-badge');
+    const unread=(S.notifications||[]).filter(n=>!n.read&&!n.dismissed).length;
+    if (badge){badge.textContent=unread;badge.style.display=unread>0?'flex':'none';}
+  },
+  toggleDrawer() {
+    const d=document.getElementById('notif-drawer');
+    if (!d) return;
+    if (d.style.display==='none'||!d.style.display) { this._markRead(); this.renderDrawer(); d.style.display='block'; }
+    else { d.style.display='none'; }
+  },
+  _markRead() { (S.notifications||[]).forEach(n=>n.read=true); this.updateBadge(); save(); },
+  dismiss(id) {
+    if (!S.dismissedNotifications) S.dismissedNotifications=[];
+    S.dismissedNotifications.push(id);
+    S.notifications=(S.notifications||[]).filter(n=>n.id!==id);
+    save(); this.updateBadge(); this.renderDrawer();
+  },
+  clearAll() {
+    S.notifications=[]; save(); this.updateBadge();
+    const b=document.getElementById('notif-drawer-body');
+    if (b) b.innerHTML='<div style="text-align:center;padding:32px 0;color:var(--text3);font-size:14px">All notifications cleared ✓</div>';
+  },
+  renderDrawer() {
+    const body=document.getElementById('notif-drawer-body');
+    if (!body) return;
+    const notifs=(S.notifications||[]).filter(n=>!n.dismissed).slice(-20).reverse();
+    if (!notifs.length){body.innerHTML='<div style="text-align:center;padding:32px 0;color:var(--text3);font-size:14px">No notifications — all caught up ✓</div>';return;}
+    const cols={urgent:'var(--red)',warning:'var(--amber)',info:'var(--green)',weekly:'var(--blue)'};
+    const bgs={urgent:'var(--red-dim)',warning:'var(--amber-dim)',info:'var(--green-dim)',weekly:'var(--blue-dim)'};
+    body.innerHTML = notifs.map(n=>{
+      const col=cols[n.type]||'var(--text2)',bg=bgs[n.type]||'var(--bg3)';
+      return '<div style="padding:11px 12px;background:'+bg+';border-radius:var(--r-sm);margin-bottom:8px;position:relative">'+
+        '<div style="font-size:13px;font-weight:500;color:'+col+';padding-right:28px;line-height:1.5">'+esc(n.msg)+'</div>'+
+        (n.act?'<button onclick="NOTIFY.dismiss(\''+n.id+'\')" style="font-size:11px;color:'+col+';background:none;border:1px solid '+col+';border-radius:4px;padding:3px 8px;margin-top:6px;cursor:pointer">'+esc(n.act)+' →</button>':'')+
+        '<button onclick="NOTIFY.dismiss(\''+n.id+'\')" style="position:absolute;right:8px;top:8px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button></div>';
+    }).join('');
+  },
+  startInterval() {
+    if (this._iid) clearInterval(this._iid);
+    this._iid = setInterval(()=>this.refresh(), 4*60*60*1000); // every 4 hours
+  }
+};
+
+// ─── SLYGHT SCORE ─────────────────────────────────────────────
+const SLYGHT_SCORE = {
+  calculate() {
+    const income = S.income||7282;
+    const txns = S.txns||[];
+    const debtPaid = txns.filter(t=>!t.income&&t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
+    const disc = txns.filter(t=>!t.income&&!_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t)=>s+t.amt,0);
+    const budget = (S.weekdayBudget||60)*22+(S.weekendBudget||180)*8;
+    const buckets = getBucketTotal();
+    const nw = getNetWorth();
+    const history = S.monthlyHistory||[];
+    const rainy = (S.savingsBuckets||[]).find(b=>b.name.toLowerCase().includes('rainy')||b.name.toLowerCase().includes('emergency'));
+    const emergencyTarget = getAvgDailySpend()*90;
+    // Debt reduction 0-200
+    const minPay = 387.69*2+Math.max(25,(S.cc||0)*0.02);
+    const debtScore = Math.min(200, Math.round((debtPaid/Math.max(minPay,1))*100));
+    // Savings rate 0-200
+    const savingsScore = income>0 ? Math.min(200,Math.round((buckets/income)*400)) : 0;
+    // Spending discipline 0-200
+    const disciplineScore = budget>0 ? Math.min(200,Math.round(Math.max(0,(1-disc/budget))*200)) : 100;
+    // Emergency fund 0-200
+    const emergencyScore = emergencyTarget>0 ? Math.min(200,Math.round(((rainy?.saved||0)/emergencyTarget)*200)) : 0;
+    // Net worth trend 0-200
+    let nwScore = 100;
+    if (history.length>=1) {
+      const prev=history[history.length-1]; const prevNW=(prev.bal||0)-28584.70;
+      nwScore = nw.net>prevNW ? Math.min(200,100+Math.round(((nw.net-prevNW)/income)*200)) : Math.max(0,100-Math.round(((prevNW-nw.net)/income)*100));
+    }
+    return { total:debtScore+savingsScore+disciplineScore+emergencyScore+nwScore,
+      c:{ debt:{s:debtScore,l:'Debt reduction'}, savings:{s:savingsScore,l:'Savings rate'}, discipline:{s:disciplineScore,l:'Spending discipline'}, emergency:{s:emergencyScore,l:'Emergency fund'}, nw:{s:nwScore,l:'Net worth trend'} }
+    };
+  },
+  label(n) {
+    if (n>=800) return {t:'Excellent',c:'var(--green)'};
+    if (n>=600) return {t:'Good',c:'var(--green)'};
+    if (n>=400) return {t:'Needs work',c:'var(--amber)'};
+    return {t:'Critical',c:'var(--red)'};
+  },
+  improvement(c) {
+    const gaps = Object.entries(c).map(([k,v])=>({k,l:v.l,gap:200-v.s})).sort((a,b)=>b.gap-a.gap);
+    const top = gaps[0]; if (!top||top.gap<20) return null;
+    const pts = '+'+Math.round(top.gap/2)+' pts';
+    const sugg = {debt:'Pay extra '+fmt((S.cc||0)*0.1)+' toward CC ('+pts+')',savings:'Add $100 to a savings bucket ('+pts+')',discipline:'Cut discretionary by $200 this cycle ('+pts+')',emergency:'Transfer $200 to Rainy Day fund ('+pts+')',nw:'Accelerate debt repayment to lift net worth ('+pts+')'};
+    return sugg[top.k]||null;
+  },
+  render() {
+    const el = document.getElementById('slyght-score-card');
+    if (!el) return;
+    const {total,c} = this.calculate();
+    const {t,c:col} = this.label(total);
+    const imp = this.improvement(c);
+    const r=40, circ=(2*Math.PI*r).toFixed(1), offset=(circ*(1-total/1000)).toFixed(1);
+    const history = S.monthlyHistory||[];
+    const prevScore = history.length>=1&&history[history.length-1].slyghtScore ? history[history.length-1].slyghtScore : null;
+    const trend = prevScore!==null ? total-prevScore : null;
+    el.innerHTML = '<div class="card" style="margin-bottom:12px"><div class="card-hdr">'+
+      '<div class="card-title">SLYGHT Score</div>'+
+      (trend!==null?'<div style="font-size:11px;font-family:var(--mono);font-weight:700;color:'+(trend>=0?'var(--green)':'var(--red)')+'">'+( trend>=0?'▲':'▼')+' '+Math.abs(trend)+' this month</div>':'')+
+      '</div><div style="display:flex;align-items:center;gap:16px">'+
+      '<div style="position:relative;width:90px;height:90px;flex-shrink:0">'+
+        '<svg width="90" height="90" viewBox="0 0 90 90">'+
+          '<circle cx="45" cy="45" r="'+r+'" fill="none" stroke="var(--bg4)" stroke-width="9"/>'+
+          '<circle cx="45" cy="45" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="9" stroke-dasharray="'+circ+'" stroke-dashoffset="'+offset+'" stroke-linecap="round" transform="rotate(-90 45 45)" class="score-ring-arc"/>'+
+        '</svg>'+
+        '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">'+
+          '<div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text);line-height:1">'+total+'</div>'+
+          '<div style="font-size:9px;color:'+col+';font-weight:700;text-transform:uppercase;letter-spacing:.05em">'+t+'</div>'+
+        '</div></div>'+
+      '<div style="flex:1;min-width:0">'+Object.values(c).map(v=>'<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:2px"><span>'+v.l+'</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">'+v.s+'</span></div><div style="height:3px;background:var(--bg5);border-radius:2px;overflow:hidden"><div style="width:'+Math.round(v.s/2)+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div>').join('')+'</div>'+
+      '</div>'+(imp?'<div style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:var(--r-sm);padding:8px 10px;margin-top:10px">💡 '+esc(imp)+'</div>':'')+
+    '</div>';
+    // Save score to history on next month snapshot
+    if (!S._currentSlyghtScore) S._currentSlyghtScore = total;
+  }
+};
+
 load();
 RECONCILER.morningCheck();
 CONSISTENCY.start();
 APP_HEALTH.init();
 SNAPSHOTS.autoSnapshot('app_open');
+NOTIFY.refresh();
+NOTIFY.startInterval();
 // API key in separate storage — never wiped by reset or seed
 const savedApiKey = localStorage.getItem('slyght_api_key');
 if (savedApiKey) S.apiKey = savedApiKey;
@@ -4672,6 +5237,30 @@ function splashTap() {
   }
 }
 </script>
+<!-- NOTIFICATION DRAWER -->
+<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:350;background:var(--bg2);border-bottom:1px solid var(--border2);max-height:72vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1">
+    <div style="font-size:14px;font-weight:700;color:var(--text)">Notifications</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button onclick="NOTIFY.clearAll()" style="font-size:11px;color:var(--text3);background:none;border:1px solid var(--border);padding:4px 8px;border-radius:4px;cursor:pointer">Clear all</button>
+      <button onclick="NOTIFY.toggleDrawer()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+  </div>
+  <div id="notif-drawer-body" style="padding:12px 16px 20px"></div>
+</div>
+
+<!-- WRX ALLOCATION FLOW MODAL -->
+<div class="modal-overlay" id="wrx-alloc-modal" onclick="handleOverlayClick(event,'wrx-alloc-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">WRX Sale — Allocate Proceeds</div>
+    <div class="modal-sub" id="wrx-alloc-sub">Enter sale amount to begin</div>
+    <div id="wrx-alloc-body"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('wrx-alloc-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="tracer-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:flex-end;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
   <div style="background:var(--bg2);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;max-height:80vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">

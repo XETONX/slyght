@@ -256,6 +256,41 @@ const checks = [
       return (match[0].includes('paidBills') || match[0].includes('monthlyReset') || match[0].includes('bills_reset'))
         ? 'OK' : 'WARNING — monthly paidBills reset may be missing';
     }
+  },
+
+  // Overdrive: PERSONALITY engine
+  { name: 'PERSONALITY engine exists',
+    test: () => html.includes('const PERSONALITY') ? 'OK' : 'MISSING — financial personality engine not found'
+  },
+
+  // Overdrive: PREDICTOR engine
+  { name: 'PREDICTOR engine exists',
+    test: () => html.includes('const PREDICTOR') ? 'OK' : 'MISSING — predictive cash flow engine not found'
+  },
+
+  // Overdrive: NOTIFY system
+  { name: 'NOTIFY system exists',
+    test: () => html.includes('const NOTIFY') ? 'OK' : 'MISSING — smart notifications system not found'
+  },
+
+  // Overdrive: SLYGHT_SCORE
+  { name: 'SLYGHT_SCORE exists',
+    test: () => html.includes('const SLYGHT_SCORE') ? 'OK' : 'MISSING — SLYGHT score system not found'
+  },
+
+  // Overdrive: WRX Command Centre
+  { name: 'WRX Command Centre present',
+    test: () => (html.includes('setWrxStatus') && html.includes('wrxListedDate') && html.includes('openWrxAllocModal')) ? 'OK' : 'MISSING — WRX command centre incomplete'
+  },
+
+  // Overdrive: China Holiday tracker upgraded
+  { name: 'China Holiday tracker upgraded with quick-add',
+    test: () => html.includes('renderChinaHolidayTracker') && html.includes('quickAddToBucket') ? 'OK' : 'MISSING — China Holiday tracker not upgraded'
+  },
+
+  // Overdrive: Time Machine present
+  { name: 'Time Machine present in Analysis tab',
+    test: () => html.includes('Time Machine') && html.includes('SNAPSHOTS.restore') ? 'OK' : 'MISSING — time machine not found'
   }
 ];
 
