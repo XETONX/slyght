@@ -275,6 +275,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .info-line{font-size:12px;color:var(--text3);padding:2px 0;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 /* EXPAND CARD */
 .expand-body{transition:max-height .2s ease;overflow:hidden}
+/* SLYGHT S LOGO */
+:root{--s-trail1:rgba(255,255,255,.28);--s-trail2:rgba(255,255,255,.13);--s-trail3:rgba(255,255,255,.06)}
+@media(prefers-color-scheme:light){:root{--s-trail1:rgba(0,0,0,.2);--s-trail2:rgba(0,0,0,.09);--s-trail3:rgba(0,0,0,.04)}}
+.slyght-s{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:900;letter-spacing:-1px;display:inline-block;transform:skewX(-4deg);text-shadow:5px 0 8px var(--s-trail1),12px 0 14px var(--s-trail2),20px 0 12px var(--s-trail3)}
 /* DESKTOP */
 @media(min-width:768px){
   .app{max-width:100%;flex-direction:row;height:100vh;height:100dvh}
@@ -298,7 +302,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <!-- SPLASH SCREEN -->
 <div id="splash-screen" onclick="splashTap()">
-  <div class="splash-logo">SLYGHT</div>
+  <div class="splash-logo"><span class="slyght-s">S</span>LYGHT</div>
   <div class="splash-tag">Know your money. Always.</div>
   <div class="splash-hint">tap to continue</div>
 </div>
@@ -306,7 +310,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <!-- ONBOARD -->
 <div id="ob-screen" style="display:none">
   <div class="ob-wrap">
-    <div class="ob-logo">SLYGHT</div>
+    <div class="ob-logo"><span class="slyght-s">S</span>LYGHT</div>
     <div class="ob-tag">Know your money. Always.</div>
     <div class="ob-lbl">Virgin Money balance right now</div>
     <input class="ob-inp" type="number" id="ob-bal" placeholder="$0.00" inputmode="decimal">
@@ -320,7 +324,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <!-- PIN -->
 <div id="pin-screen" style="display:none">
   <div class="pin-wrap">
-    <div class="pin-logo">SLYGHT</div>
+    <div class="pin-logo"><span class="slyght-s">S</span>LYGHT</div>
     <div class="pin-lbl">Enter your PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
       <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
@@ -343,9 +347,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <!-- DASHBOARD -->
   <div class="screen active" id="pg-dash">
     <div class="hdr">
-      <div class="hdr-logo">SLYGHT</div>
+      <div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div>
       <div class="hdr-right">
-        <div class="icon-btn" onclick="showOb()" title="Update balance">
+        <div class="icon-btn" onclick="softRefresh()" title="Refresh">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <div class="icon-btn" onclick="goPage('pg-settings')" title="Settings">
@@ -446,7 +450,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- BILLS (Calendar) -->
   <div class="screen" id="pg-cal">
-    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Bills</div></div>
+    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Bills</div></div>
     <div class="pad">
       <div class="card" style="padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -487,7 +491,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- BUDGET -->
   <div class="screen" id="pg-budget">
-    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Budget</div></div>
+    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Budget</div></div>
     <div class="pad">
       <!-- CUT SPENDING -->
       <div class="card">
@@ -532,7 +536,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- ANALYSIS -->
   <div class="screen" id="pg-spend">
-    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Analysis</div></div>
+    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Analysis</div></div>
     <div class="pad">
       <div id="analysis-content"></div>
     </div>
@@ -540,7 +544,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- SETTINGS -->
   <div class="screen" id="pg-settings">
-    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
+    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
     <div class="pad">
       <div class="card">
         <div class="settings-section">
@@ -656,7 +660,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveBill()">Save Changes</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('bill-modal')">Cancel</button>
-      <button class="modal-btn modal-btn-paid" onclick="markBillPaidMonth()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Paid This Month</button>
+      <button class="modal-btn" id="bill-modal-mark-paid" onclick="markBillPaidMonth()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Paid This Month</button>
+      <button class="modal-btn" id="bill-modal-undo-paid" onclick="undoBillPaid()" style="display:none;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)">Undo Paid This Month</button>
       <button class="modal-btn modal-btn-delete" onclick="deleteBill()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Remove Permanently</button>
     </div>
   </div>
@@ -906,12 +911,13 @@ function daysLeft(payday) {
 
 // Returns average daily spend from txn history; $80 fallback if insufficient data
 function getAvgDailySpend() {
-  if (!S.txns || S.txns.length < 2) return 80;
-  const timestamps = S.txns.map(t => t.ts);
+  const expTxns = S.txns ? S.txns.filter(t => !t.income) : [];
+  if (expTxns.length < 2) return 80;
+  const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
   const newest = Math.max(...timestamps);
   const daySpan = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
-  const totalSpent = S.txns.reduce((s, t) => s + t.amt, 0);
+  const totalSpent = expTxns.reduce((s, t) => s + t.amt, 0);
   return Math.max(20, Math.min(200, totalSpent / daySpan));
 }
 
@@ -979,6 +985,23 @@ function toggleExpandCard(bodyId, togId) {
   const isOpen = body.style.maxHeight && body.style.maxHeight !== '0px' && body.style.maxHeight !== '0';
   body.style.maxHeight = isOpen ? '0' : '800px';
   if (tog) tog.textContent = isOpen ? '▾' : '▴';
+}
+
+// FIX 4: Month phase context — drives conditional messaging throughout
+function getMonthPhase() {
+  const today = new Date().getDate();
+  const payday = S.payday || 15;
+  const days = daysLeft(payday);
+  if (today === payday) return 'PAYDAY';
+  if (days <= 3) return 'PRE_PAYDAY';
+  if (today > payday && today <= 25) return 'MID_MONTH';
+  return 'END_OF_MONTH';
+}
+
+// FIX 8: Soft refresh — recalculate and re-render, never shows onboarding
+function softRefresh() {
+  renderAll();
+  if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
 }
 
 function showOb() {
@@ -1268,12 +1291,25 @@ function renderAll() {
   $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
   $('pd-lbl').textContent = isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
 
-  // Payday banner (FIX 3)
+  // FIX 4: Timing context
+  const phase = getMonthPhase();
+
+  // Payday banner (FIX 3 / FIX 4)
   const bannerEl = $('dash-payday-banner');
   if (bannerEl) {
-    bannerEl.innerHTML = isPayday
-      ? '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>'
-      : '';
+    if (phase === 'PAYDAY') {
+      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>';
+      // Auto-expand payday plan on payday day
+      const ppBody = $('payday-plan-body'), ppTog = $('payday-plan-tog');
+      if (ppBody && (!ppBody.style.maxHeight || ppBody.style.maxHeight === '0px' || ppBody.style.maxHeight === '0')) {
+        ppBody.style.maxHeight = '800px';
+        if (ppTog) ppTog.textContent = '▴';
+      }
+    } else if (phase === 'PRE_PAYDAY') {
+      bannerEl.innerHTML = '<div class="alert warn fade-up" style="margin-bottom:8px">💰 <strong>Payday in ' + days + ' day' + (days === 1 ? '' : 's') + '.</strong> Hold tight — projection resets on the ' + (S.payday||15) + 'th.</div>';
+    } else {
+      bannerEl.innerHTML = '';
+    }
   }
 
   // 3 metrics (FIX 3)
@@ -1288,16 +1324,14 @@ function renderAll() {
   const surplusEl = $('m-surplus');
   if (surplusEl) { surplusEl.textContent = (surplus >= 0 ? '+' : '') + fmt(surplus); surplusEl.className = 'met-v ' + (surplus < 0 ? 'bad' : surplus < 500 ? 'warn' : 'ok'); }
 
-  // $30 or below remaining today warning (FIX 3)
+  // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
   const remaining = maxDay - todaySpent;
-  if (remaining <= 30 && remaining >= 0 && maxDay > 0) {
-    const velEl = $('dash-velocity');
-    if (velEl) velEl.innerHTML = '<span style="color:var(--amber)">⚠️ Keep $30 for Opal and lunch — only ' + fmt(remaining) + ' left today</span>';
-  }
-
-  // Spending velocity (FIX 9)
+  const billsDueVeryShortly = getExpandedBills().filter(b => b.recurring !== false && (b.day === today || b.day === today + 1));
   const velEl = $('dash-velocity');
-  if (velEl && !(remaining <= 30 && remaining >= 0 && maxDay > 0)) {
+  if (remaining <= 30 && remaining >= 0 && maxDay > 0 && (isPayday || billsDueVeryShortly.length > 0)) {
+    if (velEl) velEl.innerHTML = '<span style="color:var(--amber)">⚠️ Keep $30 for Opal and lunch — only ' + fmt(remaining) + ' left today</span>';
+  } else if (velEl && phase !== 'PRE_PAYDAY' && phase !== 'PAYDAY') {
+    // FIX 6: Spending velocity — suppress before payday
     const avgDaily = getAvgDailySpend();
     const projMonth = Math.round(avgDaily * 30);
     const income = S.income || 7282;
@@ -1308,6 +1342,8 @@ function renderAll() {
     } else {
       velEl.innerHTML = '<span>📈 Projected: ~' + fmt(projMonth) + '/mo</span>';
     }
+  } else if (velEl && (phase === 'PRE_PAYDAY' || phase === 'PAYDAY')) {
+    velEl.innerHTML = '';
   }
 
   // No-spend streak (FIX 10)
@@ -1366,29 +1402,56 @@ function renderMonthlyPosition() {
   ).join('') + '<div style="font-size:11px;color:var(--text3);padding:8px 0">Available for debt repayment each month</div></div>';
 }
 
+// FIX 5: Payday plan — deduplicated bills, 3-month avg living costs, all priority debts, directive tone
 function renderPaydayPlan() {
   const el = $('payday-plan-body'); if (!el) return;
   const income = S.income || 7282;
   let remaining = income;
   const lines = [];
-  // Fixed bills on payday
-  const paydayBills = getExpandedBills().filter(b => b.recurring !== false && b.day === (S.payday||15));
-  paydayBills.forEach(b => { remaining -= b.amt; lines.push({label: b.name, amt: -b.amt}); });
-  // Priority debts
-  const activeDebts = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
-  const surplus = getMonthlySurplus();
-  if (surplus > 0 && activeDebts.length) {
-    const target = activeDebts[0];
-    const payment = Math.min(surplus * 0.5, target.amt);
-    remaining -= payment;
-    lines.push({label: target.name + ' (P' + (target.priority||1) + ')', amt: -payment, highlight:true});
+
+  // Step 1: Bills that auto-debit on payday — deduplicated by name (no generated fortnightly duplicates)
+  const paydayDay = S.payday || 15;
+  const seen = new Set();
+  const paydayBills = BILLS.filter(b => b.recurring !== false && b.day === paydayDay && !seen.has(b.name) && seen.add(b.name));
+  if (paydayBills.length) {
+    paydayBills.forEach(b => {
+      remaining -= b.amt;
+      lines.push({label: b.name, amt: -b.amt, note: 'auto-debit'});
+    });
   }
-  lines.push({label: 'Remaining for living', amt: remaining, col: remaining >= 0 ? 'var(--green)' : 'var(--red)', bold:true});
+
+  // Step 2: Living costs — 3-month rolling average, daily × 30
+  const avgDaily = getAvgDailySpend();
+  const livingEst = Math.round(avgDaily * 30);
+  remaining -= livingEst;
+  lines.push({label: 'Living costs reserve', amt: -livingEst, note: fmt(avgDaily) + '/day avg'});
+
+  // Step 3: Priority debts — pay each in order until remaining runs out
+  const activeDebts = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+  if (activeDebts.length && remaining > 50) {
+    activeDebts.forEach(d => {
+      if (remaining <= 50) return;
+      const pool = Math.min(remaining - 50, d.amt);
+      if (pool < 5) return;
+      remaining -= pool;
+      lines.push({label: d.name, amt: -pool, directive: true, note: 'P'+(d.priority||'?')});
+    });
+  }
+
+  // Step 4: Buffer line
+  lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true});
+
   el.innerHTML = '<div style="padding-top:4px">' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">When $' + Math.round(income).toLocaleString() + ' lands on the ' + (S.payday||15) + 'th:</div>' +
-    lines.map(r => '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">' +
-      '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">'+r.label+'</span>' +
-      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(r.col||(r.amt<0?'var(--red)':'var(--text)'))+'">'+(r.amt>=0?'+':'')+fmt(Math.abs(r.amt))+'</span></div>'
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Do this in order when $' + Math.round(income).toLocaleString('en-AU') + ' lands on the ' + paydayDay + 'th:</div>' +
+    lines.map(r =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)'+(r.directive?';border-left:2px solid var(--amber);padding-left:8px;margin-left:-8px':'')+'">' +
+      '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">' +
+        (r.directive ? '<span style="color:var(--amber);margin-right:4px">→</span>' : '') +
+        r.label +
+        (r.note ? '<span style="font-size:10px;color:var(--text3);margin-left:6px">'+r.note+'</span>' : '') +
+      '</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(r.col||(r.amt<0?'var(--red)':'var(--text)'))+'">'+(r.amt>=0?'+':'')+fmt(Math.abs(r.amt))+'</span>' +
+      '</div>'
     ).join('') + '</div>';
 }
 
@@ -1421,16 +1484,21 @@ function openNetWorthModal() {
   $('nw-modal').classList.add('open');
 }
 
+// FIX 9: Balance update from settings also triggers reconciliation modal
 function updateBalanceFromSettings() {
   const b = parseFloat($('s-bal').value);
   const msg = $('s-bal-msg');
   if (isNaN(b)) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; return; }
+  const prevBal = S.bal;
+  const prevTxns = S.txns.reduce((s,t) => s + t.amt, 0);
   S.bal = b;
   save();
   renderAll();
   msg.style.color = 'var(--green)';
   msg.textContent = 'Balance updated to ' + fmtC(b);
   setTimeout(() => { if ($('s-bal-msg')) $('s-bal-msg').textContent = ''; }, 3000);
+  // Trigger reconciliation if difference is significant
+  runRecon(b, prevBal, prevTxns);
 }
 
 function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
@@ -1438,10 +1506,11 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
   else if (safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
-  // Trajectory alert: at current daily spend pace, will bills be covered?
+  // FIX 10: Trajectory alert — validate phase before firing; suppress in PRE_PAYDAY/PAYDAY
   const avgDaily = getAvgDailySpend();
   const days = daysLeft(S.payday);
-  if (dueTotal > 0 && liveBal - (avgDaily * days) < dueTotal) {
+  const alertPhase = getMonthPhase();
+  if (dueTotal > 0 && liveBal - (avgDaily * days) < dueTotal && alertPhase !== 'PRE_PAYDAY' && alertPhase !== 'PAYDAY') {
     c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
   }
   // Cap note
@@ -1570,6 +1639,12 @@ function openBillModal(idx) {
   $('bm-name').value = b.name; $('bm-amt').value = b.amt; $('bm-day').value = b.day;
   $('bm-tag').value = b.tag; $('bm-recurring').checked = b.recurring !== false;
   $('bm-freq').value = b.freq || 'monthly';
+  // FIX 3: show correct paid/undo button based on current paid state
+  const _n = new Date();
+  const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
+  const _isPaid = S.paidBills && S.paidBills[_key];
+  $('bill-modal-mark-paid').style.display = _isPaid ? 'none' : '';
+  $('bill-modal-undo-paid').style.display = _isPaid ? '' : 'none';
   $('bill-modal').classList.add('open');
 }
 
@@ -1607,6 +1682,16 @@ function markBillPaidMonth() {
   const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
   if (!S.paidBills) S.paidBills = {};
   S.paidBills[key] = true;
+  save(); closeModal('bill-modal'); renderAll();
+}
+
+// FIX 3: undo paid — only accessible inside the modal
+function undoBillPaid() {
+  if (activeBillIdx < 0) return;
+  const b = BILLS[activeBillIdx];
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+  if (S.paidBills) delete S.paidBills[key];
   save(); closeModal('bill-modal'); renderAll();
 }
 
@@ -1814,7 +1899,6 @@ function renderBillsGrouped() {
         '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
         '<div style="display:flex;align-items:center;gap:6px">' +
         '<div class="bill-amt" style="'+(isPaid?'text-decoration:line-through;color:var(--text3)':b.diff===0?'color:var(--red)':'')+'">'+fmt(b.amt)+'</div>' +
-        (!isPaid && b.diff <= 1 ? '<button class="paid-btn" data-name="'+b.name.replace(/"/g,'&quot;')+'" data-day="'+b.day+'" style="padding:4px 8px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">Paid</button>' : '') +
         '</div></div>';
     }).join('');
 
@@ -1824,12 +1908,12 @@ function renderBillsGrouped() {
 
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
-  // FIX 2: Replace Next Week + Later with one combined monthly summary table
+  // FIX 2: Replace Next Week + Later with one combined monthly summary table sorted by amount
   const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => b.amt - a.amt);
   let monthlyHtml = '';
   if (upcoming.length) {
     const monthlyTotal = upcoming.reduce((s,b) => s+b.amt, 0);
-    monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Later This Month</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
+    monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
       '<div class="card" style="padding:4px 16px">' +
       upcoming.map(b => {
         const ri = BILLS.findIndex(x => x.name === b.name);
@@ -1933,8 +2017,14 @@ function renderCalWeekSummary() {
   const c = $('cal-week-content'); if (!c) return;
   const todayD = new Date().getDate();
   const endOfWeek = todayD + 7;
-  // FIX 1: de-duplicate fortnightly bills within same 7-day window (same name)
-  const rawWeekBills = getExpandedBills().filter(b => b.recurring !== false && b.day >= todayD && b.day <= endOfWeek);
+  // FIX 1: de-duplicate fortnightly bills within same 7-day window (same name); exclude already-paid bills
+  const _wNow = new Date();
+  const rawWeekBills = getExpandedBills().filter(b => {
+    if (b.recurring === false) return false;
+    if (b.day < todayD || b.day > endOfWeek) return false;
+    const key = _wNow.getFullYear()+'-'+(_wNow.getMonth()+1)+'-'+b.name+'-'+b.day;
+    return !(S.paidBills && S.paidBills[key]);
+  });
   const seenNames = new Set();
   const weekBills = rawWeekBills.filter(b => { if (seenNames.has(b.name)) return false; seenNames.add(b.name); return true; });
   const weekTotal = weekBills.reduce((s,b) => s+b.amt, 0);
