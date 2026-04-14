@@ -899,7 +899,7 @@ const DISC = [
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
 const HABIT_MSGS = [
   (l,b,d) => 'Bro. You\'ve got '+b+' left and '+d+' in debts. '+l+' is not it right now.',
-  (l,b,d) => l+'?? Your credit card is at $4,595 at 19.99% interest. Every dollar matters.',
+  (l,b,d) => l+'?? Your credit card is at '+fmtC(S.cc)+' at 19.99% interest. Every dollar matters.',
   (l,b,d) => 'Grow up mate. '+l+' again. The WRX isn\'t listed. Michael wants his money back. Sort it out.',
   (l,b,d) => l+' \u2192 '+b+' left \u2192 '+d+' owed. You\'re in a cycle. Break it.',
 ];
@@ -1308,7 +1308,7 @@ function renderAnalysisTab() {
   }
 
   // --- Top 5 transactions ---
-  const top5 = [...S.txns].sort((a,b) => b.amt-a.amt).slice(0,5);
+  const top5 = [...S.txns].filter(t => !t.income).sort((a,b) => b.amt-a.amt).slice(0,5);
   html += '<div class="card"><div class="card-hdr"><div class="card-title">Top 5 Transactions</div></div>';
   html += top5.map((t,i) => {
     const col = CHIP_COLORS[i % CHIP_COLORS.length];
@@ -1350,7 +1350,7 @@ function renderAll() {
   const pct = Math.max(3, Math.min(100, (days/31)*100));
   $('pd-fill').style.width = pct + '%';
   $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
-  $('pd-lbl').textContent = isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
+  $('pd-lbl').textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
 
   // FIX 4: Timing context
   const phase = getMonthPhase();
@@ -1580,7 +1580,7 @@ function updateBalanceFromSettings() {
   const msg = $('s-bal-msg');
   if (isNaN(b)) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; return; }
   const prevBal = S.bal;
-  const prevTxns = S.txns.reduce((s,t) => s + t.amt, 0);
+  const prevTxns = getTxnSpent();
 
   // Fix 2: Detect payday via balance jump — positive jump within 20% of income = pay received
   const jump = b - prevBal;
@@ -1616,7 +1616,8 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   }
   // Cap note
   const maxDay = getMaxDay();
-  if (maxDay >= 100) c.innerHTML += '<div class="alert ok fade-up"><strong>$100/day cap active.</strong> Surplus above cap goes to debt repayment pool.</div>';
+  const dailyCapVal = getDailyBudget();
+  if (maxDay >= dailyCapVal) c.innerHTML += '<div class="alert ok fade-up"><strong>'+fmtC(dailyCapVal)+'/day cap active.</strong> Surplus above cap goes to debt repayment pool.</div>';
 }
 
 function renderDebtTiles() {
@@ -2109,7 +2110,13 @@ function calDayClick(day) {
   if (!bills.length && !isPayday) { detail.style.display = 'none'; return; }
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let html = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)">' + day + ' ' + months[calMonth] + '</div>';
-  if (isPayday) html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x1F4B0;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday &#x2014; $'+Math.round(S.income).toLocaleString()+' incoming</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
+  if (isPayday) {
+    if (S.paydayReceived) {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x2713;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday received &#x2014; $'+Math.round(S.income).toLocaleString()+' banked</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
+    } else {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x1F4B0;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday &#x2014; $'+Math.round(S.income).toLocaleString()+' incoming</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
+    }
+  }
   if (bills.length) {
     html += bills.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:14px;color:var(--text);font-weight:500">'+b.name+'</div><div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' &#x00B7; Recurring':'')+'</div></div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+b.amt.toFixed(2)+'</div></div>').join('');
     const total = bills.reduce((s,b) => s+b.amt, 0);
@@ -2152,7 +2159,7 @@ function renderCalWeekSummary() {
     const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
     const spendable = effectiveBal - allBillsDue - bucketTotal - 500;
     if (days <= 0 || spendable <= 0) return 0;
-    return Math.min(100, spendable / days);
+    return Math.min(getDailyBudget(), spendable / days);
   })();
   const dontSpend = Math.max(0, Math.floor(weekMaxDay));
 
@@ -2190,7 +2197,7 @@ function renderCalWeekSummary() {
   html += '<div style="text-align:center"><div style="font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
   html += '</div>';
   // Max/day row below the grid
-  const maxDayLabel = weekMaxDay >= 100 ? '$100 \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
+  const maxDayLabel = weekMaxDay >= getDailyBudget() ? fmtC(getDailyBudget()) + ' \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
   html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 10px"><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Max/day this week</span><span style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+sc+'">'+maxDayLabel+'</span></div>';
 
   if (!weekBills.length) {
@@ -2362,7 +2369,7 @@ function renderSpendingCoach() {
 
   // Category overspend flags
   const cats = {};
-  S.txns.forEach(t => { const k = t.cat||'Other'; cats[k] = (cats[k]||0)+t.amt; });
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat||'Other'; cats[k] = (cats[k]||0)+t.amt; });
   const overCats = Object.entries(cats).filter(([k,v]) => v > 200);
   if (overCats.length) {
     const income = S.income || 7282;
@@ -2406,7 +2413,7 @@ function renderCutSliders() {
 
   // Change 4: Use actual transaction data instead of static slider baselines
   const cats = {};
-  S.txns.forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
 
   // Monthly reference baselines per category
   const baselines = {
@@ -2472,7 +2479,7 @@ function renderTrend() {
   const history = S.monthlyHistory || [];
   if (history.length < 2) { c.innerHTML = '<div class="empty-state">Trend data builds up as you use Slyght each month.</div>'; return; }
   const cats = {};
-  S.txns.forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
     const prev = (history[history.length-1]||{})[k] || 0;
     const delta = prev > 0 ? Math.round(((v-prev)/prev)*100) : 0;
@@ -2485,7 +2492,7 @@ function renderCatBreakdown() {
   const c = $('cat-breakdown'); if (!c) return;
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   const cats = {};
-  S.txns.forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
   c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v],i) => {
     const pct = Math.round((v/total)*100);
@@ -2529,8 +2536,7 @@ function logTxn() {
   const flag = getHabitFlag(note, amt);
   S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag});
   if (flag) {
-    const spent = S.txns.reduce((s,t) => s+t.amt, 0);
-    const bal = fmtC(S.bal - spent);
+    const bal = fmtC(getLiveBal());
     const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
     const msg = HABIT_MSGS[Math.floor(Math.random()*HABIT_MSGS.length)](flag, bal, debt);
     setTimeout(() => alert('HABIT CHECK\n\n' + msg), 100);
@@ -2658,15 +2664,15 @@ function checkAfford() {
   const what = $('aff-what').value || 'this';
   const el = $('aff-verdict'), el2 = $('aff-cuts');
   if (!amt) { if (el) el.innerHTML = ''; if (el2) el2.innerHTML = ''; return; }
-  const txnSpent = S.txns.reduce((s,t) => s+t.amt, 0);
-  const liveBal = S.bal - txnSpent;
+  const liveBal = getLiveBal();
   const dueTotal = getBillsDue().reduce((s,b) => s+b.amt, 0);
   const bonusTotal = S.bonuses.reduce((s,b) => s+(+b.amt||0), 0);
   const safe = liveBal - dueTotal + bonusTotal;
   const after = safe - amt;
   const nd = daysLeft(S.payday);
-  // Corrected Max/Day after purchase: (liveBal - purchase - allBillsDue - $500 buffer) / daysLeft
-  const newMaxDay = nd > 0 ? (liveBal - amt - dueTotal - 500) / nd : 0;
+  // Max/Day after purchase: capped at getDailyBudget()
+  const rawNewMaxDay = nd > 0 ? (liveBal - amt - dueTotal - 500) / nd : 0;
+  const newMaxDay = Math.min(getDailyBudget(), rawNewMaxDay);
   if (liveBal - amt < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No.</strong> You\'d overdraw. Only '+fmtC(liveBal)+' in the account.'; }
   else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
   else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
