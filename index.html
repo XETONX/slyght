@@ -248,6 +248,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* ANIMATIONS */
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .fade-up{animation:fadeUp .25s ease forwards}
+@keyframes debtCelebrate{0%{transform:scale(1)}30%{transform:scale(1.12)}60%{transform:scale(.97)}100%{transform:scale(1);opacity:0}}
+#debt-celebrate-overlay{position:fixed;top:0;left:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;z-index:9999;pointer-events:none}
+#debt-celebrate-overlay.show{display:flex}
+#debt-celebrate-msg{font-size:28px;font-weight:900;color:var(--green);text-align:center;animation:debtCelebrate .9s ease forwards;padding:20px;border-radius:16px;background:var(--green-dim);border:2px solid var(--green-border)}
 @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
 .shake{animation:shake .4s ease}
 @keyframes splashFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
@@ -558,13 +562,25 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="settings-section">
           <div class="settings-title">Income</div>
           <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
+          <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
           <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" type="number" id="s-payday" value="15" oninput="saveSettings()"></div>
+          <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
           <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
           <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Assets</div>
           <div class="settings-row"><span class="settings-lbl">Vehicle value ($)</span><input class="settings-input" type="number" id="s-wrx-value" value="21000" oninput="saveSettings()"></div>
+        </div>
+        <div class="settings-section">
+          <div class="settings-title">Debt Strategy</div>
+          <div class="settings-row"><span class="settings-lbl">Repayment order</span>
+            <select class="settings-input" id="s-debt-strategy" onchange="saveSettings()">
+              <option value="avalanche">Avalanche (highest rate first)</option>
+              <option value="snowball">Snowball (smallest balance first)</option>
+            </select>
+          </div>
+          <div style="font-size:11px;color:var(--text3);padding:4px 0 8px">Avalanche saves the most interest. Snowball builds momentum with quick wins.</div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Debts</div>
@@ -581,12 +597,16 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="card">
         <div class="card-hdr"><div class="card-title">Export / Import</div></div>
         <div class="section-hdr">Export — paste into Claude to sync</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠️ This export contains real financial data. Only paste into trusted conversations.</div>
         <div class="export-box" id="export-box"></div>
         <button class="action-btn" onclick="copyExport()">Copy Export Code</button>
         <div class="section-hdr">Import — paste Claude's updated code</div>
         <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
         <button class="action-btn" onclick="doImport()">Import &amp; Apply</button>
         <div id="import-msg" style="font-size:13px;margin-top:6px"></div>
+      </div>
+      <div class="card">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">🔒 All data is stored locally on this device. Nothing is sent to any server.</div>
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title" style="color:var(--red)">Danger Zone</div></div>
@@ -645,7 +665,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-sub">Tap Save Changes to update this bill</div>
     <div class="modal-field"><label>Bill name</label><input class="modal-input" type="text" id="bm-name"></div>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="bm-amt" inputmode="decimal"></div>
-    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" type="number" id="bm-day" min="1" max="28"></div>
+    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" type="number" id="bm-day" min="1" max="28"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 28</div></div>
     <div class="modal-field"><label>Category</label>
       <select class="modal-input" id="bm-tag">
         <option>Fixed</option><option>Loan</option><option>Variable</option><option>Streaming</option>
@@ -810,6 +830,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <!-- UNDO TOAST (L3) -->
 <div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
+<div id="debt-celebrate-overlay"><div id="debt-celebrate-msg"></div></div>
+<div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:500;font-family:var(--mono)">OFFLINE</div>
 
 <!-- END-OF-DAY RECONCILIATION MODAL -->
 <div class="recon-overlay" id="eod-recon-modal">
@@ -840,6 +862,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <script>
 const STORAGE_KEY = 'slyght_v5';
+const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10'];
+// SEC2: sanitize user-supplied strings before inserting into innerHTML
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
 const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
 const DISC_BASELINE = 750+300+200+75+25;
 
@@ -886,7 +911,8 @@ let S = {
   weekdayBudget: 60,
   weekendBudget: 180,
   lastOpenDate: null,
-  wrxValue: 21000
+  wrxValue: 21000,
+  debtStrategy: 'avalanche'
 };
 
 let BILLS = [
@@ -911,10 +937,10 @@ let BILLS = [
 
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
 const HABIT_MSGS = [
-  (l,b,d) => 'Bro. You\'ve got '+b+' left and '+d+' in debts. '+l+' is not it right now.',
-  (l,b,d) => l+'?? Your credit card is at '+fmtC(S.cc)+' at 19.99% interest. Every dollar matters.',
-  (l,b,d) => 'Grow up mate. '+l+' again. The WRX isn\'t listed. Michael wants his money back. Sort it out.',
-  (l,b,d) => l+' \u2192 '+b+' left \u2192 '+d+' owed. You\'re in a cycle. Break it.',
+  (l,b,d) => 'Heads up \u2014 you have '+b+' available and '+d+' in outstanding debts. Worth pausing on '+l+' right now?',
+  (l,b,d) => 'That '+l+' spend is flagged. At 19.99%, every dollar on the credit card costs you. Small wins add up.',
+  (l,b,d) => 'Habit check: '+l+' again. The WRX sale could clear debts fast \u2014 each small spend delays that.',
+  (l,b,d) => l+' \u2192 '+b+' left \u2192 '+d+' owed. You\'re building momentum \u2014 stay the course.',
 ];
 
 const fmt = n => '$' + Math.round(Math.abs(n)).toLocaleString('en-AU');
@@ -971,19 +997,19 @@ function getMaxDay() {
   const days = daysLeft(S.payday);
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
-  const spendable = liveBal - allBillsDue - bucketTotal - 500;
+  const spendable = liveBal - allBillsDue - bucketTotal - getDynamicBuffer();
   if (days <= 0 || spendable <= 0) return 0;
   return Math.min(getDailyBudget(), spendable / days);
 }
 
-// Genuine surplus: only positive when bills + living costs + buckets + $500 buffer are all covered
+// Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
 function getGenuineSurplus() {
   const liveBal = getLiveBal();
   const days = daysLeft(S.payday);
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
-  return liveBal - allBillsDue - bucketTotal - livingReserve - 500;
+  return liveBal - allBillsDue - bucketTotal - livingReserve - getDynamicBuffer();
 }
 
 function getTxnSpent() {
@@ -995,12 +1021,17 @@ function getLiveBal() {
   const bal = isNaN(S.bal) ? 0 : (S.bal || 0); // H11: guard NaN propagation
   return bal - spent + incomeAdded;
 }
-// C1: use getExpandedBills() so fortnightly bills are counted twice per month
-function getMonthlySurplus() {
-  const income = S.income || 7282;
-  const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
-  const living = Math.round(getAvgDailySpend() * 30);
-  return income - billsTotal - living;
+// FA2: dynamic buffer — $500 default, rises with upcoming bills
+function getDynamicBuffer() {
+  const due7 = getExpandedBills().filter(b => {
+    if (b.recurring === false) return false;
+    const today = new Date().getDate();
+    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    return diff >= 0 && diff <= 7;
+  }).reduce((s,b) => s+b.amt, 0);
+  if (due7 > 2000) return 1500;
+  if (due7 > 1000) return 1000;
+  return 500;
 }
 function getTodaySpent() {
   const today = new Date(); today.setHours(0,0,0,0);
@@ -1228,15 +1259,23 @@ function goPage(id) {
 // H1: always add second fortnightly occurrence; wrap day2 > 31 by -28 so it's never silently dropped
 function getExpandedBills() {
   const result = [];
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   BILLS.forEach(b => {
     result.push(b);
     if (b.freq === 'fortnightly') {
+      // H1: use real month length instead of day2 - 28 hack
       const day2 = b.day + 14;
-      result.push({...b, day: day2 > 31 ? day2 - 28 : day2, _generated: true});
+      if (day2 <= daysInMonth) {
+        result.push({...b, day: day2, _generated: true});
+      } else {
+        // Overflows into next month — skip (next month's occurrence handled when month changes)
+        result.push({...b, day: day2 - daysInMonth, _generated: true, _nextMonth: true});
+      }
     } else if (b.freq === 'weekly') {
       for (let w = 1; w <= 3; w++) {
         const wd = b.day + w * 7;
-        if (wd <= 31) result.push({...b, day: wd, _generated: true});
+        if (wd <= daysInMonth) result.push({...b, day: wd, _generated: true});
       }
     }
   });
@@ -1369,6 +1408,87 @@ function renderAnalysisTab() {
   }
   html += '</div>';
 
+  // --- FA3: Essential vs Discretionary breakdown ---
+  const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Debt repayment','Savings','Income']);
+  const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Debt repayment','Savings'];
+  let essTotal = 0, discTotal = 0;
+  S.txns.filter(t => !t.income).forEach(t => {
+    const k = t.cat || 'Other';
+    if (ESSENTIAL_KEYS.includes(k) || k === 'Fuel') essTotal += t.amt;
+    else discTotal += t.amt;
+  });
+  if (essTotal + discTotal > 0) {
+    const essPct = Math.round((essTotal / (essTotal + discTotal)) * 100);
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Essential vs Discretionary</div></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Essential</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)">'+fmt(essTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+essPct+'% of spend</div></div>' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Discretionary</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:'+(discTotal > 500 ? 'var(--red)' : 'var(--amber)')+'">'+fmt(discTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+(100-essPct)+'% of spend</div></div>' +
+      '</div>' +
+      // FA4: Opportunity cost coaching if discretionary > $150
+      (discTotal > 150 ? '<div style="background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:10px;font-size:13px;line-height:1.6;color:var(--amber)"><strong>Opportunity cost:</strong> ' + fmt(discTotal) + ' discretionary this cycle. Redirected to Credit Card (' + (S.cc > 0 ? '19.99%' : 'debt') + '), that\'s <strong>' + fmt(Math.round(discTotal * 0.1999 / 12)) + ' saved in annual interest</strong> per month you cut it.</div>' : '') +
+      '</div>';
+  }
+
+  // --- FA5: Emergency fund check ---
+  const avgDailyAdv = getAvgDailySpend();
+  const emergencyNeeded = Math.round(avgDailyAdv * 90);
+  const bucketSaved = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  const rainyDay = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('rainy') || b.name.toLowerCase().includes('emergency'));
+  const rainyAmt = rainyDay ? rainyDay.saved : 0;
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Emergency Fund</div></div>';
+  if (rainyAmt >= emergencyNeeded) {
+    html += '<div class="alert ok">90-day emergency fund covered — ' + fmtC(rainyAmt) + ' saved. Well done.</div>';
+  } else {
+    const gap = emergencyNeeded - rainyAmt;
+    const gapPct = Math.round((rainyAmt / emergencyNeeded) * 100);
+    html += '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px"><span>Saved: ' + fmtC(rainyAmt) + '</span><span>Target: ' + fmtC(emergencyNeeded) + ' (90 days)</span></div>' +
+      '<div style="height:6px;background:var(--bg5);border-radius:3px;overflow:hidden"><div style="width:'+Math.min(100,gapPct)+'%;height:6px;background:var(--amber);border-radius:3px"></div></div></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">You need <strong>' + fmtC(gap) + ' more</strong> for a 90-day emergency buffer. Once immediate debts are cleared, allocate a portion each month.</div>';
+  }
+  html += '</div>';
+
+  // --- FA6: Net worth trend ---
+  const nwHistory = S.monthlyHistory || [];
+  if (nwHistory.length >= 1) {
+    const latest = nwHistory[nwHistory.length - 1];
+    const nw = getNetWorth();
+    const prevNW = latest.bal ? latest.bal - (S.carloan + S.cc) : null;
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Net Worth Trend</div></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
+    [['Assets', nw.assets, 'var(--green)'], ['Liabilities', nw.liabilities, 'var(--red)'], ['Net Worth', nw.net, nw.net >= 0 ? 'var(--green)' : 'var(--red)']].forEach(([lbl, val, col]) => {
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">'+lbl+'</div><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+col+'">'+(val >= 0 ? '' : '-')+fmt(Math.abs(val))+'</div></div>';
+    });
+    html += '</div>';
+    if (prevNW !== null) {
+      const delta = nw.net - prevNW;
+      const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
+      html += '<div style="font-size:13px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
+    }
+    html += '</div>';
+  }
+
+  // --- FA7: WRX sale scenario ---
+  if (S.wrxValue > 0) {
+    const wrxAfterSale = S.wrxValue * 0.92; // ~8% selling costs
+    const debtAfterWrx = Math.max(0, S.carloan + S.cc - wrxAfterSale);
+    const activeImm = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+    let remaining = wrxAfterSale;
+    const cleared = [];
+    for (const d of activeImm) {
+      if (remaining >= d.amt) { cleared.push(d.name); remaining -= d.amt; }
+    }
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">WRX Sale Scenario</div><div style="font-size:11px;font-family:var(--mono);font-weight:700;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:3px;padding:2px 7px">Optional</div></div>';
+    html += '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px">If you list and sell the WRX at <strong>' + fmtC(S.wrxValue) + '</strong>, after ~8% selling costs you\'d net <strong>' + fmtC(Math.round(wrxAfterSale)) + '</strong>.</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:4px">Car loan after</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+(S.carloan - wrxAfterSale <= 0 ? 'var(--green)' : 'var(--red)')+'">'+fmtC(Math.max(0, S.carloan - Math.round(wrxAfterSale)))+'</div></div>' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:4px">Total debt after</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+(debtAfterWrx <= 0 ? 'var(--green)' : 'var(--amber)')+'">'+fmtC(Math.round(debtAfterWrx))+'</div></div>' +
+      '</div>';
+    if (cleared.length) {
+      html += '<div style="font-size:13px;color:var(--green);line-height:1.7">Also clears immediately: <strong>' + cleared.join(', ') + '</strong> — freeing ' + fmtC(Math.round(remaining)) + ' residual.</div>';
+    }
+    html += '</div>';
+  }
+
   // H6: All transactions list with delete buttons
   const allTxns = (S.txns || []).slice().reverse();
   if (allTxns.length) {
@@ -1381,7 +1501,7 @@ function renderAnalysisTab() {
       const amtCol = isIncome ? 'var(--green)' : 'var(--red)';
       const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
       return '<div class="txn-row">' +
-        '<div class="txn-info"><div class="txn-name">'+(t.note||'\u2014')+'</div><div class="txn-meta">'+(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
+        '<div class="txn-info"><div class="txn-name">'+esc(t.note||'\u2014')+'</div><div class="txn-meta">'+esc(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
         '<div style="display:flex;align-items:center;gap:8px">' +
         '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
         '<button onclick="rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;flex-shrink:0" title="Delete transaction">\uD83D\uDDD1</button>' +
@@ -1406,7 +1526,7 @@ function renderAll() {
         month: prevMonth,
         bal: getLiveBal(),
         spent: getTxnSpent(),
-        surplus: getMonthlySurplus(),
+        surplus: getGenuineSurplus(),
         ts: Date.now()
       });
       save();
@@ -1518,15 +1638,13 @@ function renderAll() {
     }
   }
   const genuineSurplus = getGenuineSurplus();
-  const monthlySurplus = getMonthlySurplus();
   const surplusEl = $('m-surplus');
   if (surplusEl) {
     surplusEl.textContent = (genuineSurplus >= 0 ? '+' : '') + fmt(genuineSurplus);
     surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
   }
-  // M4: label both figures so user understands the difference
   const surplusLbl = $('m-surplus-lbl');
-  if (surplusLbl) surplusLbl.textContent = 'avail. now · ~' + fmt(monthlySurplus) + '/mo projected';
+  if (surplusLbl) surplusLbl.textContent = 'Available now';
 
   // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
   const remaining = dailyBudget - todaySpent;
@@ -1604,27 +1722,27 @@ function renderAll() {
   if ($('s-wrx-value')) $('s-wrx-value').value = S.wrxValue != null ? S.wrxValue : 21000;
   if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
   if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
+  if ($('s-debt-strategy')) $('s-debt-strategy').value = S.debtStrategy || 'avalanche';
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
 }
 
-// C1: use getExpandedBills so fortnightly bills are counted twice in the monthly breakdown
 function renderMonthlyPosition() {
   const el = $('monthly-pos-body'); if (!el) return;
   const income = S.income || 7282;
   const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
   const living = Math.round(getAvgDailySpend() * 30);
-  const surplus = income - billsTotal - living;
+  const surplus = getGenuineSurplus();
   const rows = [
     {label:'Income', val:income, col:'var(--green)'},
-    {label:'Bills', val:-billsTotal, col:'var(--red)'},
+    {label:'Bills (all recurring)', val:-billsTotal, col:'var(--red)'},
     {label:'Living est.', val:-living, col:'var(--amber)'},
-    {label:'Surplus', val:surplus, col: surplus >= 0 ? 'var(--green)' : 'var(--red)', bold:true},
+    {label:'Available now', val:surplus, col: surplus >= 0 ? 'var(--green)' : 'var(--red)', bold:true},
   ];
   el.innerHTML = '<div style="padding-top:4px">' + rows.map(r =>
     '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">' +
     '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">'+r.label+'</span>' +
     '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+r.col+'">'+(r.val >= 0 ? '+' : '')+fmt(Math.abs(r.val))+'</span></div>'
-  ).join('') + '<div style="font-size:11px;color:var(--text3);padding:8px 0">Available for debt repayment each month</div></div>';
+  ).join('') + '<div style="font-size:11px;color:var(--text3);padding:8px 0">After bills, living costs, savings & buffer</div></div>';
 }
 
 // FIX 5: Payday plan — deduplicated bills, 3-month avg living costs, all priority debts, directive tone
@@ -1651,8 +1769,12 @@ function renderPaydayPlan() {
   remaining -= livingEst;
   lines.push({label: 'Living costs reserve', amt: -livingEst, note: fmt(avgDaily) + '/day avg'});
 
-  // Step 3: Priority debts — pay each in order until remaining runs out
-  const activeDebts = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+  // Step 3: Priority debts — FA1: sort by debtStrategy (avalanche=highest rate, snowball=smallest balance)
+  const strategy = S.debtStrategy || 'avalanche';
+  const activeDebts = S.debts.filter(d => !d.paid).sort((a,b) => {
+    if (strategy === 'snowball') return a.amt - b.amt;
+    return (b.rate||0) - (a.rate||0) || (a.priority||99) - (b.priority||99);
+  });
   if (activeDebts.length && remaining > 50) {
     activeDebts.forEach(d => {
       if (remaining <= 50) return;
@@ -1802,10 +1924,10 @@ function renderDebtTiles() {
     const pri = d.priority || (i+1);
     const priBadge = '<span class="pri-badge">'+pri+'</span>';
     return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
-      '<div class="dt-name">'+priBadge + d.name + '</div>' +
+      '<div class="dt-name">'+priBadge + esc(d.name) + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
       intTicker +
-      '<div class="dt-sub">' + (d.notes || 'Tap to edit') + '</div>' +
+      '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
       '<div class="dt-status '+col+'">Due ' + dueStr + '</div>' +
@@ -1873,11 +1995,20 @@ function markDebtPaid() {
   // Auto-log debt clearance — reduces getLiveBal via getTxnSpent automatically
   S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false});
   S.debts[idx].paid = true;
-  if (d.rate > 0) {
-    setTimeout(() => alert('Interest stopped! ' + d.name + ' cleared \u2014 $' + d.amt.toFixed(2) + ' at ' + d.rate + '% no longer accruing daily.'), 150);
-  }
   save(); closeModal('debt-modal'); renderAll();
   showUndoToast('Debt marked paid');
+  // UX2: debt cleared celebration
+  const overlay = $('debt-celebrate-overlay');
+  const msg = $('debt-celebrate-msg');
+  if (overlay && msg) {
+    msg.textContent = d.rate > 0
+      ? '\uD83C\uDF89 ' + d.name + ' — cleared! Interest stopped.'
+      : '\uD83C\uDF89 ' + d.name + ' — cleared!';
+    overlay.classList.add('show');
+    setTimeout(() => overlay.classList.remove('show'), 1100);
+  }
+  // UX7: haptic feedback
+  if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
 }
 
 function openAddDebtModal() {
@@ -1928,9 +2059,15 @@ function saveBill() {
     }
     return;
   }
-  // C3: validate day is 1-28 so bills never fall on invalid dates
+  // C3: validate day is 1-28 — show inline error, not alert
   const dayVal = parseInt($('bm-day').value);
-  if (!dayVal || dayVal < 1 || dayVal > 28) { alert('Please enter a day between 1 and 28 (safe for all months).'); return; }
+  const dayErrEl = $('bm-day-err');
+  if (!dayVal || dayVal < 1 || dayVal > 28) {
+    if (dayErrEl) { dayErrEl.style.display = 'block'; }
+    $('bm-day').focus();
+    return;
+  }
+  if (dayErrEl) dayErrEl.style.display = 'none';
   BILLS[activeBillIdx] = {
     name: $('bm-name').value || BILLS[activeBillIdx].name,
     amt: parseFloat($('bm-amt').value) || BILLS[activeBillIdx].amt,
@@ -1971,6 +2108,8 @@ function undoBillPaid() {
 
 function handleOverlayClick(e, id) { if (e.target.classList.contains('modal-overlay')) closeModal(id); }
 function closeModal(id) {
+  // H5: clear activeDebtIdx when debt modal closes to prevent stale index
+  if (id === 'debt-modal') activeDebtIdx = -1;
   const el = $(id);
   el.classList.remove('open');
   if (el._vvResize && window.visualViewport) {
@@ -2063,7 +2202,10 @@ function calcLtDebt() {
       html += '<div style="font-size:13px;color:var(--text2);line-height:1.7">Pay off <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> — saves <strong>'+fmt(saved)+'</strong> in interest and finishes <strong>'+mSaved+' months sooner.</strong></div>';
       html += '</div>';
     } else {
-      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.7">Add an extra fortnightly amount below to see how much interest you save. Even an extra $50/fortnight makes a significant difference at 9.87%.</div>';
+      const surplus = getGenuineSurplus();
+      const tipAmt = surplus > 200 ? Math.floor(Math.min(surplus * 0.5, 200) / 10) * 10 : 50;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.7">' +
+        'FA8 tip: You have a genuine surplus of <strong>' + fmtC(surplus) + '</strong>. Putting <strong>' + fmtC(tipAmt) + '/fortnight</strong> extra here at 9.87% could save hundreds in interest — enter it below to see exactly how much.</div>';
     }
     $('lt-result').innerHTML = html;
     $('lt-result').style.display = 'block';
@@ -2282,7 +2424,13 @@ function calDayClick(day) {
   const isPayday = day === S.payday;
   const detail = $('cal-day-detail'), content = $('cal-day-detail-content');
   if (!detail || !content) return;
-  if (!bills.length && !isPayday) { detail.style.display = 'none'; return; }
+  if (!bills.length && !isPayday) {
+    // UX5: show positive message for empty days
+    const months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    content.innerHTML = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:10px;color:var(--text)">'+day+' '+months2[calMonth]+'</div><div style="font-size:13px;color:var(--green)">Nothing due \u2014 enjoy the day \u2713</div><button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
+    detail.style.display = 'block';
+    return;
+  }
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   let html = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)">' + day + ' ' + months[calMonth] + '</div>';
   if (isPayday) {
@@ -2686,7 +2834,7 @@ function renderDashTxns() {
     const isIncome = t.income;
     const chipCol = isIncome ? 'var(--green)' : col;
     const amtStr = isIncome ? '<span style="color:var(--green)">+'+fmt(t.amt)+'</span>' : '-'+fmt(t.amt);
-    return '<div class="txn-row"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+t.note+flag+'</div><div class="txn-meta">'+t.cat+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
+    return '<div class="txn-row"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+esc(t.note)+flag+'</div><div class="txn-meta">'+esc(t.cat)+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
   }).join('');
 }
 
@@ -2737,6 +2885,7 @@ function quickLogTxn() {
   if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
   day = Math.min(28, Math.max(1, day));
   if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
+  if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
   // FIX 6: Income category adds to balance
   if (cat === 'Income') {
     S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true});
@@ -2770,12 +2919,15 @@ function renderSettingsBills() {
   c.innerHTML = BILLS.map((b,i) => '<div class="settings-row"><span class="settings-lbl">'+b.name+' <span style="color:var(--text3);font-size:12px">(day '+b.day+')</span></span><input class="settings-input" type="number" value="'+b.amt+'" oninput="BILLS['+i+'].amt=+this.value;save();renderAll()"></div>').join('');
 }
 
-// H4: validate required fields instead of silently reverting. L5: use explicit checks
+// H4: validate required fields with inline errors instead of alerts
 function saveSettings() {
   const incomeV = +$('s-income').value;
   const paydayV = +$('s-payday').value;
-  if (!incomeV || incomeV <= 0) { alert('Please enter a valid income.'); return; }
-  if (!paydayV || paydayV < 1 || paydayV > 28) { alert('Please enter a valid payday day (1\u201328).'); return; }
+  const incErr = $('s-income-err'), pdErr = $('s-payday-err');
+  if (!incomeV || incomeV <= 0) { if (incErr) incErr.style.display = 'block'; return; }
+  if (incErr) incErr.style.display = 'none';
+  if (!paydayV || paydayV < 1 || paydayV > 28) { if (pdErr) pdErr.style.display = 'block'; return; }
+  if (pdErr) pdErr.style.display = 'none';
   S.income = incomeV;
   S.payday = paydayV;
   // L5: 0 is valid for loan balances (paid off) and vehicle value (no car)
@@ -2788,6 +2940,7 @@ function saveSettings() {
   S.wrxValue = +$('s-wrx-value').value; // 0 valid (no vehicle)
   if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
   if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
+  if ($('s-debt-strategy')) S.debtStrategy = $('s-debt-strategy').value;
   const np = $('s-pin').value;
   if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
   save(); renderAll();
@@ -2866,11 +3019,12 @@ function doImport() {
   } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid data. Paste the full export code.'; }
 }
 
-// C4: also clear the seeded flag so onboarding shows after a reset
+// C4: clear all seed flags so onboarding shows after a reset
 function resetAll() {
   if (confirm('Reset all Slyght data? This cannot be undone.')) {
+    saveUndoState();
     localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem('slyght_seeded_v9');
+    SEED_FLAGS.forEach(f => localStorage.removeItem(f));
     location.reload();
   }
 }
@@ -2902,6 +3056,15 @@ function undoLastAction() {
 }
 
 $('ob-bal').addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
+
+// UX6: Offline indicator badge
+function updateOnlineStatus() {
+  const badge = $('offline-badge');
+  if (badge) badge.style.display = navigator.onLine ? 'none' : 'block';
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
 if ('serviceWorker' in navigator) {
   // Unregister any old broken service workers first
   navigator.serviceWorker.getRegistrations().then(registrations => {
@@ -2912,41 +3075,45 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Seed v9: S.bal=-945.74 so getLiveBal()=3245.99. Fixes: removed chinaBal, cuts; added carloanOriginal/ccLimit; Spotify day 28.
-// Math: -945.74 - (250.84+2436.96+142+120.47+140) + 7282 = -945.74 - 3090.27 + 7282 = 3245.99
-(function seedV9() {
-  if (localStorage.getItem('slyght_seeded_v9')) return;
+// Seed v10: real state 14 Apr 2026. S.bal=3345.99, getLiveBal()=6664.82
+// Math: 3345.99 - (2500+1170+250.84+141.76+0.90) + (7282.33+100) = 3345.99 - 4063.50 + 7382.33 = 6664.82
+(function seedV10() {
+  if (localStorage.getItem('slyght_seeded_v10')) return;
   const t = Date.parse('2026-04-14T09:00:00');
   const seed = {
     "S":{
-      "bal":-945.74,
+      "bal":3345.99,
       "txns":[
-        {"amt":7282,"note":"Salary \u2014 Manhattan Associates","cat":"Income","ts":t+1000,"income":true},
-        {"amt":250.84,"note":"Afterpay \u2014 cleared","cat":"Debt repayment","ts":t+2000,"income":false},
-        {"amt":2436.96,"note":"Credit Card payment","cat":"Debt repayment","ts":t+3000,"income":false},
-        {"amt":142,"note":"Claude Max subscription","cat":"Subscriptions","ts":t+4000,"income":false},
-        {"amt":120.47,"note":"Pet Insurance Reconciliation","cat":"Fixed","ts":t+5000,"income":false},
-        {"amt":140,"note":"Parking Fine","cat":"Other","ts":t+6000,"income":false}
+        {"id":0,"amt":7282.33,"note":"Salary \u2014 Manhattan Associates","cat":"Income","ts":t+1000,"income":true},
+        {"id":1,"amt":2500,"note":"CC repayment \u2014 Virgin Money (pending)","cat":"Debt repayment","ts":t+2000,"income":false},
+        {"id":2,"amt":1170,"note":"Car Loan Firstmac \u2014 regular + missed payment + fees","cat":"Debt repayment","ts":t+3000,"income":false},
+        {"id":3,"amt":250.84,"note":"Afterpay \u2014 cleared","cat":"Debt repayment","ts":t+4000,"income":false},
+        {"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":t+5000,"income":false},
+        {"id":5,"amt":0.90,"note":"China Holiday round-ups","cat":"Savings","ts":t+6000,"income":false},
+        {"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":t+7000,"income":true}
       ],
       "bonuses":[],"bid":0,"seg":"1m","income":7282,"payday":15,
-      "carloan":23989.7,"cc":2158.39,"pin":"2103","carloanOriginal":37400,"ccLimit":6000,
+      "carloan":23214.32,"cc":4658.39,"pin":"2103","carloanOriginal":37400,"ccLimit":6000,
       "monthlyHistory":[],"income_log":[],"iid":0,
       "debts":[
-        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"delayed":false,"delayDate":"2026-04-16","notes":"Cleared 14 Apr","rate":0},
-        {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"delayed":false,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing","rate":0},
-        {"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid \u2014 next due 6 May","rate":19.99},
-        {"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"delayed":false,"delayDate":"","notes":"LIST THE WRX THIS WEEK","rate":0}
+        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0},
+        {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"rate":0,"priority":1,"notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},
+        {"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid \u2014 next due 6 May"},
+        {"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"rate":0,"priority":3,"notes":"LIST THE WRX THIS WEEK"},
+        {"id":4,"name":"Pet Insurance Reconciliation","amt":120.47,"paid":false,"rate":0,"priority":4},
+        {"id":5,"name":"Parking Fine","amt":140,"paid":false,"rate":0,"priority":5}
       ],
-      "nextDebtId":4,
+      "nextDebtId":6,
       "savingsBuckets":[
-        {"id":0,"name":"China Holiday","goal":4000,"saved":61.82,"account":"ING"},
+        {"id":0,"name":"China Holiday","goal":4000,"saved":67.22,"account":"Virgin Money"},
         {"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},
         {"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},
         {"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}
       ],
       "nextBucketId":4,
       "paydayReceived":true,"paydayReceivedDate":"2026-04-14",
-      "weekdayBudget":60,"weekendBudget":180,"lastOpenDate":"2026-04-14"
+      "weekdayBudget":60,"weekendBudget":180,"lastOpenDate":"2026-04-14",
+      "wrxValue":21000,"debtStrategy":"avalanche"
     },
     "BILLS":[
       {"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},
@@ -2955,9 +3122,10 @@ if ('serviceWorker' in navigator) {
       {"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},
       {"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},
       {"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},
-      {"name":"Pet Insurance \u2014 Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},
+      {"name":"Pet Insurance \u2014 Bowtie","amt":60.20,"day":8,"tag":"Fixed","recurring":true},
       {"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},
       {"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},
+      {"name":"Afterpay instalment","amt":121.16,"day":16,"tag":"Debt repayment","recurring":false},
       {"name":"Optus \u2014 Phone + Internet","amt":199,"day":16,"tag":"Fixed","recurring":true},
       {"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},
       {"name":"Parking \u2014 CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},
@@ -2968,7 +3136,7 @@ if ('serviceWorker' in navigator) {
     ]
   };
   localStorage.setItem('slyght_v5', JSON.stringify(seed));
-  localStorage.setItem('slyght_seeded_v9', '1');
+  localStorage.setItem('slyght_seeded_v10', '1');
 })();
 
 load();
