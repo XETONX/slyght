@@ -1,5 +1,5 @@
-// SLYGHT v5 - clears all old caches on install
-const CACHE_NAME = 'slyght-v5-fresh';
+// SLYGHT v6 - clears old caches on activate
+const CACHE_NAME = 'slyght-v6';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -7,15 +7,11 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          console.log('Deleting old cache:', cacheName);
-          return caches.delete(cacheName);
-        })
-      );
-    }).then(() => self.clients.claim())
+    caches.keys().then(keys => Promise.all(
+      keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+    ))
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {

@@ -241,6 +241,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .modal-btn-delay{background:var(--bg4);color:var(--amber);border:1px solid var(--amber-border)}
 .modal-btn-cancel{background:var(--bg3);color:var(--text2);border:1px solid var(--border2);grid-column:span 2}
 .modal-btn-delete{background:none;color:var(--red);border:1px solid var(--red-border);grid-column:span 2;margin-top:4px}
+.cat-chip{background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:5px 10px;font-size:12px;color:var(--text2);cursor:pointer;transition:all .15s}
+.cat-chip.active{background:var(--green-dim);border-color:var(--green-border);color:var(--green)}
 /* RECON MODAL */
 .recon-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:24px;width:calc(100% - 48px);max-width:400px;margin:0 auto}
 .recon-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:300;align-items:center;justify-content:center}
@@ -452,6 +454,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div id="lt-cc-tile" class="debt-tile" onclick="openLtDebtModal('cc')"></div>
         </div>
       </div>
+      <div id="wrx-tracker-card" style="margin-top:12px"></div>
       <!-- RECENT SPENDING -->
       <div class="card">
         <div class="card-hdr"><div class="card-title">Recent Spending</div></div>
@@ -467,6 +470,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
         <div id="aff-verdict"></div>
         <div id="aff-cuts"></div>
+        <div id="aff-instalments"></div>
       </div>
     </div>
   </div>
@@ -602,10 +606,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div class="settings-title">Income</div>
           <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
           <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
-          <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" type="number" id="s-payday" value="15" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
           <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
           <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Mon–Fri</div>
           <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Sat–Sun</div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Assets</div>
@@ -619,6 +625,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
               <option value="snowball">Snowball (smallest balance first)</option>
             </select>
           </div>
+          <div id="strategy-explain" style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5;padding:8px;background:var(--bg3);border-radius:var(--r-sm)"></div>
           <div style="font-size:11px;color:var(--text3);padding:4px 0 8px">Avalanche saves the most interest. Snowball builds momentum with quick wins.</div>
         </div>
         <div class="settings-section">
@@ -702,6 +709,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title" id="bill-modal-title">Edit Bill</div>
     <div class="modal-sub">Tap Save Changes to update this bill</div>
+    <div id="bill-extra-info" style="margin-bottom:12px"></div>
     <div class="modal-field"><label>Bill name</label><input class="modal-input" type="text" id="bm-name"></div>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="bm-amt" inputmode="decimal"></div>
     <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" type="number" id="bm-day" min="1" max="28"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 28</div></div>
@@ -823,6 +831,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal"></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles"></div>
     <div class="modal-field"><label>Category</label>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+        <button type="button" onclick="setQlCat('Food / Coffee')" class="cat-chip">☕ Food</button>
+        <button type="button" onclick="setQlCat('Transport / Fuel')" class="cat-chip">🚗 Transport</button>
+        <button type="button" onclick="setQlCat('Shopping')" class="cat-chip">🛍 Shopping</button>
+        <button type="button" onclick="setQlCat('Entertainment')" class="cat-chip">🎮 Fun</button>
+        <button type="button" onclick="setQlCat('Health')" class="cat-chip">💊 Health</button>
+        <button type="button" onclick="setQlCat('Other')" class="cat-chip">📦 Other</button>
+      </div>
       <select class="modal-input" id="ql-cat">
         <option value="">Category...</option>
         <option>Food / Coffee</option><option>Entertainment</option><option>Transport / Fuel</option>
@@ -869,6 +885,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <!-- UNDO TOAST (L3) -->
 <div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
+<div id="sw-update-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--green-dim);border-top:1px solid var(--green-border);padding:12px 16px;align-items:center;justify-content:space-between;z-index:9998">
+  <span style="font-size:13px;color:var(--green);font-weight:600">✓ New version available</span>
+  <button onclick="window.location.reload()" style="background:var(--green);color:#fff;border:none;border-radius:var(--r-sm);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">Reload</button>
+</div>
 <div id="debt-celebrate-overlay"><div id="debt-celebrate-msg"></div></div>
 <div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:500;font-family:var(--mono)">OFFLINE</div>
 
@@ -1574,6 +1594,7 @@ function renderAnalysisTab() {
   const allTxns = (S.txns || []).slice().reverse();
   if (allTxns.length) {
     html += '<div class="card"><div class="card-hdr"><div class="card-title">All Transactions</div><div style="font-size:11px;color:var(--text3)">tap \uD83D\uDDD1 to delete</div></div>';
+    html += '<div style="margin-bottom:10px;position:relative"><input id="txn-search" type="text" placeholder="Search transactions..." style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px 10px 36px;font-size:14px;color:var(--text);outline:none;box-sizing:border-box" oninput="filterTxns()" autocomplete="off"><span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px">&#x1F50D;</span></div>';
     html += allTxns.map((t, revIdx) => {
       const realIdx = S.txns.length - 1 - revIdx;
       const d = new Date(t.ts);
@@ -1586,12 +1607,50 @@ function renderAnalysisTab() {
         '<div style="display:flex;align-items:center;gap:8px">' +
         '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
         '<button onclick="rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;flex-shrink:0" title="Delete transaction">\uD83D\uDDD1</button>' +
+        '<button onclick="event.stopPropagation();rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px;opacity:.5;white-space:nowrap" title="Remove">\xD7</button>' +
         '</div></div>';
     }).join('');
     html += '</div>';
   }
 
+  // 7-day bar chart
+  const chartDays = [];
+  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(todayMidnight); d.setDate(d.getDate() - i);
+    const dStr = d.toDateString();
+    const spend = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && new Date(t.ts).toDateString() === dStr).reduce((s,t)=>s+t.amt,0);
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    chartDays.push({label: dayNames[d.getDay()] + ' ' + d.getDate(), spend, isToday: i === 0});
+  }
+  const chartMax = Math.max(getDailyBudget() * 1.5, Math.max(...chartDays.map(d=>d.spend), 1));
+  const dailyCap = getDailyBudget();
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Last 7 Days</div>' +
+    '<div style="font-size:11px;font-family:var(--mono);color:var(--text3)">budget $' + dailyCap + '/day</div></div>' +
+    '<div style="display:flex;align-items:flex-end;gap:6px;height:80px;padding-top:8px;position:relative">' +
+    '<div style="position:absolute;top:0;left:0;right:0;border-top:1px dashed var(--border2);opacity:.5" title="Daily budget"></div>' +
+    chartDays.map(d => {
+      const pct = Math.min(100, Math.round((d.spend / chartMax) * 100));
+      const barColor = d.spend > dailyCap ? 'var(--red)' : d.spend > dailyCap * 0.7 ? 'var(--amber)' : 'var(--green)';
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">' +
+        '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">' + (d.spend > 0 ? '$' + Math.round(d.spend) : '') + '</div>' +
+        '<div style="flex:1;width:100%;display:flex;align-items:flex-end">' +
+          '<div style="width:100%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:' + (d.spend > 0 ? '4' : '1') + 'px;height:' + pct + '%;opacity:' + (d.isToday ? '1' : '.7') + ';border:' + (d.isToday ? '1px solid ' + barColor : 'none') + '"></div>' +
+        '</div>' +
+        '<div style="font-size:9px;color:' + (d.isToday ? 'var(--text)' : 'var(--text3)') + ';font-weight:' + (d.isToday ? '700' : '400') + '">' + d.label + '</div>' +
+      '</div>';
+    }).join('') +
+    '</div></div>';
+
   c.innerHTML = html;
+}
+
+function filterTxns() {
+  const q = ($('txn-search').value || '').toLowerCase().trim();
+  document.querySelectorAll('.txn-row').forEach(row => {
+    const text = row.textContent.toLowerCase();
+    row.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
 }
 
 function openCategoryDrillDown(cat) {
@@ -1822,6 +1881,7 @@ function renderAll() {
   }
   renderDebtTiles();
   renderLtTiles();
+  renderWrxTracker();
   renderDashTxns();
   renderBillsGrouped();
   renderBonusList(bonusTotal, safe);
@@ -1860,6 +1920,13 @@ function renderAll() {
   if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
   if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
   if ($('s-debt-strategy')) $('s-debt-strategy').value = S.debtStrategy || 'avalanche';
+  const _explEl = $('strategy-explain');
+  if (_explEl) {
+    const _strat = S.debtStrategy || 'avalanche';
+    _explEl.innerHTML = _strat === 'snowball'
+      ? '<strong>Snowball:</strong> Pay smallest debt first. Builds momentum with quick wins — great for motivation.'
+      : '<strong>Avalanche:</strong> Pay highest interest rate first. Saves the most money long-term — mathematically optimal.';
+  }
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
   if ($('pg-chat') && $('pg-chat').classList.contains('active') && !_chatRendering) renderChatTab();
 }
@@ -1897,7 +1964,7 @@ function renderPaydayPlan() {
   if (paydayBills.length) {
     paydayBills.forEach(b => {
       remaining -= b.amt;
-      lines.push({label: b.name, amt: -b.amt, note: 'auto-debit'});
+      lines.push({label: b.name, amt: -b.amt, note: 'auto-debit', runBal: remaining});
     });
   }
 
@@ -1905,7 +1972,7 @@ function renderPaydayPlan() {
   const avgDaily = getAvgDailySpend();
   const livingEst = Math.round(avgDaily * 30);
   remaining -= livingEst;
-  lines.push({label: 'Living costs reserve', amt: -livingEst, note: fmt(avgDaily) + '/day avg'});
+  lines.push({label: 'Living costs reserve', amt: -livingEst, note: fmt(avgDaily) + '/day avg', runBal: remaining});
 
   // Step 3: Priority debts — FA1: sort by debtStrategy (avalanche=highest rate, snowball=smallest balance)
   const strategy = S.debtStrategy || 'avalanche';
@@ -1919,12 +1986,12 @@ function renderPaydayPlan() {
       const pool = Math.min(remaining - 50, d.amt);
       if (pool < 5) return;
       remaining -= pool;
-      lines.push({label: d.name, amt: -pool, directive: true, note: 'P'+(d.priority||'?')});
+      lines.push({label: d.name, amt: -pool, directive: true, note: 'P'+(d.priority||'?'), runBal: remaining});
     });
   }
 
   // Step 4: Buffer line
-  lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true});
+  lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true, runBal: remaining});
 
   // Update card title for past-tense when payday has been received
   const planTitleEl = $('payday-plan-title');
@@ -1952,7 +2019,10 @@ function renderPaydayPlan() {
         r.label +
         (r.note ? '<span style="font-size:10px;color:var(--text3);margin-left:6px">'+r.note+'</span>' : '') +
       '</span>' +
-      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(r.col||(r.amt<0?'var(--red)':'var(--text)'))+'">'+(r.amt>=0?'+':'')+fmt(Math.abs(r.amt))+'</span>' +
+      '<div style="text-align:right">' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(r.col||(r.amt<0?'var(--red)':'var(--text)'))+'">'+(r.amt>=0?'+':'')+fmt(Math.abs(r.amt))+'</div>' +
+        (r.runBal !== undefined ? '<div style="font-size:10px;color:'+(r.runBal>=0?'var(--green)':'var(--red)')+';font-family:var(--mono)">→ '+fmtC(r.runBal)+'</div>' : '') +
+      '</div>' +
       '</div>'
     ).join('') + '</div>';
 }
@@ -1982,6 +2052,20 @@ function openNetWorthModal() {
   html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 8px">Liabilities</div>';
   html += liabRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">-'+fmt(r.val)+'</span></div>').join('');
   html += '<div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px;border-top:2px solid var(--border2)"><span style="font-size:14px;font-weight:600;color:var(--text)">Net Worth</span><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+(nw.net>=0?'var(--green)':'var(--red)')+'">'+fmtC(nw.net)+'</span></div>';
+  // Debt freedom estimate
+  const surplus = getGenuineSurplus();
+  const totalDebt = nw.liabilities - 0; // simplified: all liabilities
+  const debtFreeMonths = surplus > 0 ? Math.ceil(totalDebt / surplus) : 0;
+  const debtFreeDate = new Date();
+  if (debtFreeMonths > 0) debtFreeDate.setMonth(debtFreeDate.getMonth() + debtFreeMonths);
+  const dateStr = debtFreeDate.toLocaleDateString('en-AU', {month:'short', year:'numeric'});
+  html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:8px;text-align:center">' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase">Debt Freedom Estimate</div>' +
+    (surplus > 0 && debtFreeMonths > 0
+      ? '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)">' + dateStr + '</div>' +
+        '<div style="font-size:12px;color:var(--text3);margin-top:3px">'+debtFreeMonths+' months at current $'+Math.round(surplus).toLocaleString()+'/mo surplus</div>'
+      : '<div style="font-size:13px;color:var(--amber)">Build surplus to unlock this projection</div>') +
+  '</div>';
   $('nw-modal-content').innerHTML = html;
   $('nw-modal').classList.add('open');
 }
@@ -2141,6 +2225,43 @@ function renderLtTiles() {
     '<div class="dt-status">ANZ · ' + (ccAmt > 0 ? ccUtil + '% used' : 'Clear \u2713') + '</div>';
 }
 
+function renderWrxTracker() {
+  const el = $('wrx-tracker-card'); if (!el) return;
+  if (!S.wrxValue || S.wrxValue <= 0) { el.innerHTML = ''; return; }
+  const net = Math.round(S.wrxValue * 0.92);
+  const activeDebts = (S.debts||[]).filter(d => !d.paid);
+  const debtTotal = activeDebts.reduce((s,d) => s+d.amt, 0);
+  const carRemaining = Math.max(0, (S.carloan||0) - net);
+  const coversDebts = net >= debtTotal;
+  const coversList = [];
+  let remaining = net;
+  for (const d of activeDebts.sort((a,b) => (a.priority||99)-(b.priority||99))) {
+    if (remaining >= d.amt) { remaining -= d.amt; coversList.push(d.name); }
+  }
+  el.innerHTML = '<div class="card" style="border:1px solid var(--amber-border);background:var(--amber-dim)">' +
+    '<div class="card-hdr">' +
+      '<div class="card-title" style="color:var(--amber)">🚗 WRX — Your Debt Exit</div>' +
+      '<div style="font-size:11px;font-family:var(--mono);font-weight:700;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:3px;padding:2px 7px">LIST THIS WEEK</div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0">' +
+      '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px">Est. Value</div>' +
+        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">' + fmtC(S.wrxValue) + '</div>' +
+      '</div>' +
+      '<div style="background:var(--bg2);border-radius:var(--r-sm);padding:10px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px">Net After Costs</div>' +
+        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--green)">' + fmtC(net) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--text2);line-height:1.6">' +
+      (coversDebts
+        ? '✅ Clears <strong>' + (coversList.length ? coversList.join(', ') : 'all debts') + '</strong> and reduces car loan to <strong>' + fmtC(carRemaining) + '</strong>.'
+        : '⚡ Clears <strong>' + (coversList.length ? coversList.join(', ') : 'some debts') + '</strong>. Remaining car loan: <strong>' + fmtC(carRemaining) + '</strong>.') +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-top:6px">Every day unlisted costs you interest. Facebook Marketplace + Carsales — list today.</div>' +
+  '</div>';
+}
+
 function openDebtModal(idx) {
   activeDebtIdx = idx;
   const d = S.debts[idx];
@@ -2271,6 +2392,36 @@ function openBillModal(idx) {
   $('bm-name').value = b.name; $('bm-amt').value = b.amt; $('bm-day').value = b.day;
   $('bm-tag').value = b.tag; $('bm-recurring').checked = b.recurring !== false;
   $('bm-freq').value = b.freq || 'monthly';
+  // Show last paid and next due
+  const extraInfo = $('bill-extra-info');
+  if (extraInfo) {
+    const now = new Date();
+    // Last paid: scan S.paidBills for most recent entry for this bill
+    let lastPaidStr = 'Not yet this month';
+    if (S.paidBills) {
+      const matches = Object.keys(S.paidBills).filter(k => k.includes('-' + b.name + '-' + b.day));
+      if (matches.length) {
+        // Parse year-month from key like "2026-4-Rent-1"
+        const parts = matches[matches.length - 1].split('-');
+        if (parts.length >= 2) lastPaidStr = parts[1] + '/' + parts[0];
+      }
+    }
+    // Next due: find next occurrence of b.day
+    const nextDue = new Date(now.getFullYear(), now.getMonth(), b.day);
+    if (nextDue < now) nextDue.setMonth(nextDue.getMonth() + 1);
+    const nextDueStr = nextDue.getDate() + '/' + (nextDue.getMonth()+1) + '/' + nextDue.getFullYear();
+
+    extraInfo.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase">Last Paid</div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">' + lastPaidStr + '</div>' +
+      '</div>' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase">Next Due</div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--amber)">' + nextDueStr + '</div>' +
+      '</div></div>';
+  }
   // FIX 3: show correct paid/undo button based on current paid state
   const _n = new Date();
   const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
@@ -2811,9 +2962,11 @@ function renderSavingsBuckets() {
   const c = $('savings-buckets-content'); if (!c) return;
   const buckets = S.savingsBuckets || [];
   if (!buckets.length) { c.innerHTML = '<div class="empty-state">No savings buckets yet.</div><button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>'; return; }
+  const bucketSurplus = getGenuineSurplus();
   let html = buckets.map((b, i) => {
     const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
     const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
+    const monthsToGoal = bucketSurplus > 0 ? Math.ceil((b.goal - (b.saved||0)) / bucketSurplus) : 0;
     const accountBadge = '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
     return '<div onclick="openBucketModal('+i+')" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:var(--r-xs);margin:0 -4px;padding:12px 4px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
@@ -2828,6 +2981,7 @@ function renderSavingsBuckets() {
       '<span style="color:'+(b.saved >= b.goal ? 'var(--green)' : 'var(--text3)')+'">'+
       (b.saved >= b.goal ? 'Goal reached! \uD83C\uDF89' : fmtC(Math.max(0, b.goal - b.saved))+' to go \u2192')+
       '</span></div>' +
+      '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + (monthsToGoal > 0 && monthsToGoal < 60 ? monthsToGoal + ' months to goal at current surplus' : '') + '</div>' +
       '</div>';
   }).join('');
   html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
@@ -3138,7 +3292,9 @@ function quickLogTxn() {
     S.bal += amt;
     S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true});
     closeModal('quick-log-modal');
+    document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     save(); renderAll();
+    showUndoToast('+$' + amt.toFixed(2) + ' · Income · ' + (note || '—'));
     return;
   }
   // Expense: deduct from balance immediately
@@ -3153,7 +3309,17 @@ function quickLogTxn() {
   }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
   closeModal('quick-log-modal');
+  document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
   save(); renderAll();
+  // Receipt toast
+  const toastMsg = '-$' + amt.toFixed(2) + ' · ' + (cat || 'Other') + ' · ' + (note || '—');
+  showUndoToast(toastMsg);
+}
+
+function setQlCat(cat) {
+  const sel = $('ql-cat'); if (!sel) return;
+  sel.value = cat;
+  document.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('active', c.textContent.includes(cat.split('/')[0].trim())));
 }
 
 function rmTxn(i) {
@@ -3176,6 +3342,18 @@ function renderSettingsBills() {
 }
 
 // H4: validate required fields with inline errors instead of alerts
+function validatePayday() {
+  const inp = $('s-payday'); if (!inp) return;
+  const v = parseInt(inp.value);
+  if (isNaN(v) || v < 1 || v > 28) {
+    inp.style.borderColor = 'var(--red)';
+    inp.title = 'Payday must be between 1 and 28';
+  } else {
+    inp.style.borderColor = '';
+    inp.title = '';
+  }
+}
+
 function saveSettings() {
   const incomeV = +$('s-income').value;
   const paydayV = +$('s-payday').value;
@@ -3197,6 +3375,13 @@ function saveSettings() {
   if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
   if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
   if ($('s-debt-strategy')) S.debtStrategy = $('s-debt-strategy').value;
+  // Update strategy explanation
+  const explEl = $('strategy-explain');
+  if (explEl) {
+    explEl.innerHTML = S.debtStrategy === 'snowball'
+      ? '<strong>Snowball:</strong> Pay smallest debt first. Builds momentum with quick wins — great for motivation.'
+      : '<strong>Avalanche:</strong> Pay highest interest rate first. Saves the most money long-term — mathematically optimal.';
+  }
   const np = $('s-pin').value;
   if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
   save(); renderAll();
@@ -3222,7 +3407,7 @@ function checkAfford() {
   else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
   else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
   else if (newMaxDay < 30) { el.className = 'verdict warn'; el.innerHTML = '<strong>Tight but possible.</strong> '+fmt(after)+' left &#x2014; '+fmt(newMaxDay)+'/day.'; }
-  else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes, you can.</strong> After '+what+' and bills you\'d have '+fmt(after)+' &#x2014; '+fmt(newMaxDay)+'/day.'; if (el2) el2.innerHTML = ''; return; }
+  else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes.</strong> '+fmtC(after)+' left after bills \u00b7 '+fmtC(newMaxDay)+'/day for '+nd+' days.'; if (el2) el2.innerHTML = ''; const instElOk = $('aff-instalments'); if (instElOk) instElOk.innerHTML = ''; return; }
   if (after < 0 || newMaxDay < 20) {
     // L4: Build "What to cut" from actual txn category spend data
     const catSpend = {};
@@ -3236,6 +3421,34 @@ function checkAfford() {
       if (covers) break;
     }
     if (el2) el2.innerHTML = '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">What to cut to afford it</div>' + rows;
+  }
+  // Instalment suggestion when amount is tight
+  const instEl = $('aff-instalments');
+  if (instEl && amt > 0) {
+    if (after < 0 || newMaxDay < 30) {
+      const f2 = (amt / 2).toFixed(2);
+      const f3 = (amt / 3).toFixed(2);
+      const f4 = (amt / 4).toFixed(2);
+      instEl.innerHTML = '<div style="margin-top:12px;padding:10px;background:var(--bg3);border-radius:var(--r-sm);border:1px solid var(--border2)">' +
+        '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Split it instead</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">' +
+        '<div style="text-align:center;padding:8px;background:var(--bg2);border-radius:var(--r-sm)">' +
+          '<div style="font-size:10px;color:var(--text3)">2 fortnights</div>' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--amber)">$'+f2+'</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:8px;background:var(--bg2);border-radius:var(--r-sm)">' +
+          '<div style="font-size:10px;color:var(--text3)">3 fortnights</div>' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">$'+f3+'</div>' +
+        '</div>' +
+        '<div style="text-align:center;padding:8px;background:var(--bg2);border-radius:var(--r-sm)">' +
+          '<div style="font-size:10px;color:var(--text3)">4 fortnights</div>' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">$'+f4+'</div>' +
+        '</div></div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">Each instalment vs your $'+getDailyBudget()+'/day budget</div>' +
+      '</div>';
+    } else {
+      instEl.innerHTML = '';
+    }
   }
 }
 
@@ -3682,12 +3895,20 @@ updateOnlineStatus();
 })();
 
 if ('serviceWorker' in navigator) {
-  // Unregister any old broken service workers first
   navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(reg => reg.unregister());
-  }).then(() => {
-    // Register fresh
-    navigator.serviceWorker.register('/slyght/sw.js').catch(() => {});
+    registrations.forEach(r => r.unregister());
+    navigator.serviceWorker.register('/slyght/sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version available — show update banner
+            const banner = document.getElementById('sw-update-banner');
+            if (banner) banner.style.display = 'flex';
+          }
+        });
+      });
+    }).catch(() => {});
   });
 }
 
