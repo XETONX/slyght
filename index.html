@@ -3147,7 +3147,7 @@ function buildSystemPrompt() {
 
   const activeDebts = (S.debts||[]).filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
   const billsDue = getBillsDue();
-  const recentTxns = (S.txns||[]).slice(-10).slice().reverse();
+  const recentTxns = (S.txns||[]).slice(-10).reverse();
   const buckets = S.savingsBuckets || [];
 
   const debtList = activeDebts.length
