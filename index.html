@@ -417,13 +417,13 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
             <div class="dt-name">Car Loan <span style="font-size:9px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
             <div class="dt-amt bad" id="dt-car">$23,990</div>
             <div class="dt-sub" id="dt-car-sub"></div>
-            <div class="dt-bar-wrap"><div class="dt-bar-lbl">Remaining balance</div><div class="dt-bar"><div class="dt-fill" id="dt-car-fill" style="width:64%;background:var(--red)"></div></div></div>
+            <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-car-fill" style="width:64%;background:var(--red)"></div></div></div>
           </div>
           <div class="debt-tile" onclick="openLtDebtModal('cc')">
             <div class="dt-name">Credit Card <span style="font-size:9px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
             <div class="dt-amt bad" id="dt-cc">$4,595</div>
             <div class="dt-sub" id="dt-cc-sub"></div>
-            <div class="dt-bar-wrap"><div class="dt-bar-lbl">Remaining balance</div><div class="dt-bar"><div class="dt-fill" id="dt-cc-fill" style="width:100%;background:var(--red)"></div></div></div>
+            <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-cc-fill" style="width:100%;background:var(--red)"></div></div></div>
           </div>
         </div>
       </div>
@@ -569,7 +569,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="settings-section">
           <div class="settings-title">Debts</div>
           <div class="settings-row"><span class="settings-lbl">Car loan remaining</span><input class="settings-input" type="number" id="s-car" value="23989.70" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Car loan original amount</span><input class="settings-input" type="number" id="s-car-original" value="37400" oninput="saveSettings()"></div>
           <div class="settings-row"><span class="settings-lbl">Credit card balance</span><input class="settings-input" type="number" id="s-cc" value="4595.35" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Credit card limit</span><input class="settings-input" type="number" id="s-cc-limit" value="6000" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Bills</div>
@@ -643,7 +645,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-sub">Tap Save Changes to update this bill</div>
     <div class="modal-field"><label>Bill name</label><input class="modal-input" type="text" id="bm-name"></div>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="bm-amt" inputmode="decimal"></div>
-    <div class="modal-field"><label>Day of month (1-31)</label><input class="modal-input" type="number" id="bm-day" min="1" max="31"></div>
+    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" type="number" id="bm-day" min="1" max="28"></div>
     <div class="modal-field"><label>Category</label>
       <select class="modal-input" id="bm-tag">
         <option>Fixed</option><option>Loan</option><option>Variable</option><option>Streaming</option>
@@ -676,7 +678,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Add Debt</div>
     <div class="modal-sub">Track a new obligation — it factors into your surplus and Max/Day calculations</div>
-    <div class="modal-field"><label>Debt name</label><input class="modal-input" type="text" id="nd-name" placeholder="e.g. Borrowed from friend, Afterpay order"></div>
+    <div class="modal-field"><label>Debt name</label><input class="modal-input" type="text" id="nd-name" placeholder="e.g. Borrowed from friend"></div>
     <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" type="number" id="nd-amt" placeholder="0.00" inputmode="decimal"></div>
     <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="nd-rate" placeholder="0" inputmode="decimal" value="0"></div>
     <div class="modal-field"><label>Due date (optional)</label><input class="modal-input" type="date" id="nd-due"></div>
@@ -774,7 +776,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <label for="ql-recurring">Recurring — add to bills list</label>
     </div>
     <div id="ql-recurring-fields" style="display:none;margin-bottom:10px">
-      <input class="modal-input" type="number" id="ql-day" placeholder="Day of month (e.g. 15)" min="1" max="31">
+      <input class="modal-input" type="number" id="ql-day" placeholder="Day of month (1–28)" min="1" max="28">
     </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
@@ -805,6 +807,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     </div>
   </div>
 </div>
+
+<!-- UNDO TOAST (L3) -->
+<div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
 
 <!-- END-OF-DAY RECONCILIATION MODAL -->
 <div class="recon-overlay" id="eod-recon-modal">
@@ -856,10 +861,10 @@ let S = {
   payday: 15,
   carloan: 23989.70,
   cc: 4595.35,
+  carloanOriginal: 37400,
+  ccLimit: 6000,
   pin: '2103',
-  cuts: {entertainment:750, weed:300, food_work:200, streaming:75, games:25},
   monthlyHistory: [],
-  chinaBal: 61.82,
   income_log: [],
   iid: 0,
   debts: [
@@ -900,16 +905,8 @@ let BILLS = [
   {name:'Parking — CBD Secure', amt:32.32, day:22, tag:'Fixed', recurring:true},
   {name:'Pet Food', amt:45, day:25, tag:'Fixed', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
-  {name:'Spotify', amt:15.99, day:29, tag:'Streaming', recurring:true},
+  {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
   {name:'Food at Work', amt:200, day:28, tag:'Variable', recurring:true},
-];
-
-const DISC = [
-  {key:'entertainment', label:'Entertainment', max:750},
-  {key:'weed', label:'Other discretionary', max:300},
-  {key:'food_work', label:'Work food savings', max:480},
-  {key:'streaming', label:'Streaming cuts', max:95},
-  {key:'games', label:'Hobby / games', max:25},
 ];
 
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
@@ -938,8 +935,12 @@ function load() {
   } catch(e) {}
 }
 
+// L1: clamp pd to actual days in month so day-31 in February doesn't wrap to March
 function daysLeft(payday) {
-  const now = new Date(), today = now.getDate(), pd = payday || S.payday || 15;
+  const now = new Date(), today = now.getDate();
+  const rawPd = payday || S.payday || 15;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pd = Math.min(rawPd, daysInMonth);
   if (today < pd) return pd - today;
   const next = new Date(now.getFullYear(), now.getMonth() + 1, pd);
   return Math.ceil((next - now) / (1000*60*60*24));
@@ -948,13 +949,14 @@ function daysLeft(payday) {
 // --- Core financial helpers ---
 
 // Returns average daily spend from txn history; $80 fallback if insufficient data
+// C2: floor daySpan at 7 days so same-day transactions don't produce the $200 cap
 function getAvgDailySpend() {
   const expTxns = S.txns ? S.txns.filter(t => !t.income && t.cat !== 'Debt repayment') : [];
   if (expTxns.length < 2) return 80;
   const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
   const newest = Math.max(...timestamps);
-  const daySpan = Math.max(1, (newest - oldest) / (1000 * 60 * 60 * 24));
+  const daySpan = Math.max(7, (newest - oldest) / (1000 * 60 * 60 * 24));
   const totalSpent = expTxns.reduce((s, t) => s + t.amt, 0);
   return Math.max(20, Math.min(200, totalSpent / daySpan));
 }
@@ -990,11 +992,13 @@ function getTxnSpent() {
 function getLiveBal() {
   const spent = getTxnSpent();
   const incomeAdded = S.txns.filter(t => t.income).reduce((s,t) => s+t.amt, 0);
-  return S.bal - spent + incomeAdded;
+  const bal = isNaN(S.bal) ? 0 : (S.bal || 0); // H11: guard NaN propagation
+  return bal - spent + incomeAdded;
 }
+// C1: use getExpandedBills() so fortnightly bills are counted twice per month
 function getMonthlySurplus() {
   const income = S.income || 7282;
-  const billsTotal = BILLS.filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+  const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
   const living = Math.round(getAvgDailySpend() * 30);
   return income - billsTotal - living;
 }
@@ -1221,13 +1225,14 @@ function goPage(id) {
   renderAll();
 }
 
+// H1: always add second fortnightly occurrence; wrap day2 > 31 by -28 so it's never silently dropped
 function getExpandedBills() {
   const result = [];
   BILLS.forEach(b => {
     result.push(b);
     if (b.freq === 'fortnightly') {
       const day2 = b.day + 14;
-      if (day2 <= 31) result.push({...b, day: day2, _generated: true});
+      result.push({...b, day: day2 > 31 ? day2 - 28 : day2, _generated: true});
     } else if (b.freq === 'weekly') {
       for (let w = 1; w <= 3; w++) {
         const wd = b.day + w * 7;
@@ -1289,7 +1294,8 @@ function renderAnalysisTab() {
   // --- Spending by category ---
   const sortedCats = Object.entries(cats).sort((a,b) => b[1]-a[1]);
   const baselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending by Category</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">$'+Math.round(total).toLocaleString('en-AU')+'</div></div>';
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending by Category</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">$'+Math.round(total).toLocaleString('en-AU')+'</div></div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
   html += sortedCats.map(([k,v], i) => {
     const pct = Math.round((v/total)*100);
     const col = CHIP_COLORS[i % CHIP_COLORS.length];
@@ -1363,6 +1369,27 @@ function renderAnalysisTab() {
   }
   html += '</div>';
 
+  // H6: All transactions list with delete buttons
+  const allTxns = (S.txns || []).slice().reverse();
+  if (allTxns.length) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">All Transactions</div><div style="font-size:11px;color:var(--text3)">tap \uD83D\uDDD1 to delete</div></div>';
+    html += allTxns.map((t, revIdx) => {
+      const realIdx = S.txns.length - 1 - revIdx;
+      const d = new Date(t.ts);
+      const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+      const isIncome = t.income;
+      const amtCol = isIncome ? 'var(--green)' : 'var(--red)';
+      const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
+      return '<div class="txn-row">' +
+        '<div class="txn-info"><div class="txn-name">'+(t.note||'\u2014')+'</div><div class="txn-meta">'+(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
+        '<button onclick="rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;flex-shrink:0" title="Delete transaction">\uD83D\uDDD1</button>' +
+        '</div></div>';
+    }).join('');
+    html += '</div>';
+  }
+
   c.innerHTML = html;
 }
 
@@ -1385,7 +1412,10 @@ function renderAll() {
       save();
     }
   }
+  // L4: persist _lastSnapMonth so month transition is detected after page reload
+  const prevSnapMonth = S._lastSnapMonth;
   S._lastSnapMonth = snapKey;
+  if (prevSnapMonth !== snapKey) save();
 
   const txnSpent = getTxnSpent();
   const liveBal = getLiveBal();
@@ -1417,7 +1447,16 @@ function renderAll() {
   const nwEl = $('nw-val');
   if (nwEl) { const nw = getNetWorth(); nwEl.textContent = (nw.net >= 0 ? '+' : '') + fmtC(nw.net); nwEl.className = 'nw-val ' + (nw.net >= 0 ? 'pos' : 'neg'); }
 
-  const pct = Math.max(3, Math.min(100, (days/31)*100));
+  // H3: calculate actual cycle length from last payday to next payday instead of hardcoded /31
+  const paydayDayV = S.payday || 15;
+  const nowForC = new Date();
+  const lastPdDate = nowForC.getDate() >= paydayDayV
+    ? new Date(nowForC.getFullYear(), nowForC.getMonth(), paydayDayV)
+    : new Date(nowForC.getFullYear(), nowForC.getMonth() - 1, paydayDayV);
+  const nextPdDate = new Date(lastPdDate.getFullYear(), lastPdDate.getMonth() + 1, paydayDayV);
+  const cycleLen = Math.max(1, Math.round((nextPdDate - lastPdDate) / (1000*60*60*24)));
+  const dayIntoC = Math.max(0, Math.round((nowForC - lastPdDate) / (1000*60*60*24)));
+  const pct = Math.max(3, Math.min(100, (dayIntoC / cycleLen) * 100));
   $('pd-fill').style.width = pct + '%';
   $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
   $('pd-lbl').textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
@@ -1485,8 +1524,9 @@ function renderAll() {
     surplusEl.textContent = (genuineSurplus >= 0 ? '+' : '') + fmt(genuineSurplus);
     surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
   }
+  // M4: label both figures so user understands the difference
   const surplusLbl = $('m-surplus-lbl');
-  if (surplusLbl) surplusLbl.textContent = 'now · ~' + fmt(monthlySurplus) + '/mo';
+  if (surplusLbl) surplusLbl.textContent = 'avail. now · ~' + fmt(monthlySurplus) + '/mo projected';
 
   // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
   const remaining = dailyBudget - todaySpent;
@@ -1499,7 +1539,7 @@ function renderAll() {
     const avgDaily = getAvgDailySpend();
     const projMonth = Math.round(avgDaily * 30);
     const income = S.income || 7282;
-    const billsTotal = BILLS.filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+    const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
     const budget = income - billsTotal;
     if (projMonth > budget) {
       velEl.innerHTML = '<span style="color:var(--red)">📈 At this pace: ~' + fmt(projMonth) + '/mo — ' + fmt(projMonth - budget) + ' over budget</span>';
@@ -1545,23 +1585,33 @@ function renderAll() {
   const carBill = BILLS.find(b => b.name && b.name.toLowerCase().includes('car loan'));
   const carPayStr = carBill ? fmt(carBill.amt) + (carBill.freq === 'fortnightly' ? ' fortnightly' : '/mo') : '';
   if ($('dt-car-sub')) $('dt-car-sub').textContent = carPayStr ? carPayStr + ' — Firstmac 9.87%' : 'Firstmac 9.87%';
-  const carPct = Math.min(100, Math.round((S.carloan / 37400) * 100));
+  // M1: show % paid off (not % remaining). M2: use S.carloanOriginal / S.ccLimit
+  const carOrig = S.carloanOriginal || 37400;
+  const carPct = Math.min(100, Math.max(0, Math.round(((carOrig - S.carloan) / carOrig) * 100)));
   if ($('dt-car-fill')) { $('dt-car-fill').style.width = carPct + '%'; }
   const ccDebt = S.debts && S.debts.find(d => !d.paid && d.name && d.name.toLowerCase().includes('credit card'));
   if ($('dt-cc-sub')) $('dt-cc-sub').textContent = '19.99%' + (ccDebt ? ' — ' + fmt(ccDebt.amt) + ' overdue' : '');
-  const ccPct = Math.min(100, Math.round((S.cc / 6000) * 100));
+  const ccLim = S.ccLimit || 6000;
+  const ccPct = Math.min(100, Math.max(0, Math.round(((ccLim - S.cc) / ccLim) * 100)));
   if ($('dt-cc-fill')) { $('dt-cc-fill').style.width = ccPct + '%'; }
   if ($('s-bal')) $('s-bal').value = S.bal || '';
+  if ($('s-income')) $('s-income').value = S.income || 7282;
+  if ($('s-payday')) $('s-payday').value = S.payday || 15;
+  if ($('s-car')) $('s-car').value = S.carloan != null ? S.carloan : '';
+  if ($('s-cc')) $('s-cc').value = S.cc != null ? S.cc : '';
   if ($('s-weekday-budget')) $('s-weekday-budget').value = S.weekdayBudget || 60;
   if ($('s-weekend-budget')) $('s-weekend-budget').value = S.weekendBudget || 180;
   if ($('s-wrx-value')) $('s-wrx-value').value = S.wrxValue != null ? S.wrxValue : 21000;
+  if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
+  if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
 }
 
+// C1: use getExpandedBills so fortnightly bills are counted twice in the monthly breakdown
 function renderMonthlyPosition() {
   const el = $('monthly-pos-body'); if (!el) return;
   const income = S.income || 7282;
-  const billsTotal = BILLS.filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+  const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
   const living = Math.round(getAvgDailySpend() * 30);
   const surplus = income - billsTotal - living;
   const rows = [
@@ -1642,7 +1692,7 @@ function openNetWorthModal() {
   html += '</div>';
   const assetRows = [
     {label:'Virgin Money balance', val:liveBal},
-    {label:'WRX (est. value)', val:21000},
+    {label:'WRX (est. value)', val: S.wrxValue || 21000}, // H2: read from S not hardcoded
     ...(S.savingsBuckets||[]).map(b => ({label:b.name+' savings', val:b.saved})),
   ];
   const liabRows = [
@@ -1814,15 +1864,20 @@ function saveDebtDelay() {
 }
 
 function markDebtPaid() {
-  if (activeDebtIdx < 0) return;
-  const d = S.debts[activeDebtIdx];
+  // H5: snapshot then immediately clear activeDebtIdx to prevent double-tap duplicate
+  const idx = activeDebtIdx;
+  activeDebtIdx = -1;
+  if (idx < 0) return;
+  const d = S.debts[idx];
+  saveUndoState(); // L3: undo support
   // Auto-log debt clearance — reduces getLiveBal via getTxnSpent automatically
   S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false});
-  S.debts[activeDebtIdx].paid = true;
+  S.debts[idx].paid = true;
   if (d.rate > 0) {
     setTimeout(() => alert('Interest stopped! ' + d.name + ' cleared \u2014 $' + d.amt.toFixed(2) + ' at ' + d.rate + '% no longer accruing daily.'), 150);
   }
   save(); closeModal('debt-modal'); renderAll();
+  showUndoToast('Debt marked paid');
 }
 
 function openAddDebtModal() {
@@ -1865,17 +1920,21 @@ function saveBill() {
   if (activeBillIdx < 0) return;
   const recurring = $('bm-recurring').checked;
   if (!recurring) {
-    // Treat unchecking recurring as permanent cancel
     if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
+      saveUndoState();
       BILLS.splice(activeBillIdx, 1);
       save(); closeModal('bill-modal'); renderAll();
+      showUndoToast('Bill removed');
     }
     return;
   }
+  // C3: validate day is 1-28 so bills never fall on invalid dates
+  const dayVal = parseInt($('bm-day').value);
+  if (!dayVal || dayVal < 1 || dayVal > 28) { alert('Please enter a day between 1 and 28 (safe for all months).'); return; }
   BILLS[activeBillIdx] = {
     name: $('bm-name').value || BILLS[activeBillIdx].name,
     amt: parseFloat($('bm-amt').value) || BILLS[activeBillIdx].amt,
-    day: parseInt($('bm-day').value) || BILLS[activeBillIdx].day,
+    day: dayVal,
     tag: $('bm-tag').value, recurring: true,
     freq: $('bm-freq').value || 'monthly'
   };
@@ -1884,8 +1943,10 @@ function saveBill() {
 
 function deleteBill() {
   if (activeBillIdx < 0 || !confirm('Remove this bill permanently?')) return;
+  saveUndoState();
   BILLS.splice(activeBillIdx, 1);
   save(); closeModal('bill-modal'); renderAll();
+  showUndoToast('Bill deleted');
 }
 
 function markBillPaidMonth() {
@@ -2127,7 +2188,7 @@ function renderBillsGrouped() {
   let monthlyHtml = '';
   if (upcoming.length) {
     const monthlyTotal = upcoming.reduce((s,b) => s+b.amt, 0);
-    let runBal = liveBal - weekTotal; // start from balance after this-week bills
+    let runBal = liveBal - weekTotal - bucketTotal; // H10: deduct buckets for consistency with weekly panel
     monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
       '<div class="card" style="padding:4px 16px">' +
       upcoming.map(b => {
@@ -2195,11 +2256,15 @@ function renderCalendar() {
     const billTotal = bills.reduce((s,b) => s+b.amt, 0);
     let cls = 'cal-day';
     if (!isThis) cls += ' other-month';
-    if (isPayday) cls += ' payday';
+    // H7: apply both payday and bill classes so rent on payday day is visible
+    if (isPayday && bills.length > 1) cls += ' payday has-multi';
+    else if (isPayday && bills.length === 1) cls += ' payday has-bill';
+    else if (isPayday) cls += ' payday';
     else if (bills.length > 1) cls += ' has-multi';
     else if (bills.length === 1) cls += ' has-bill';
     if (isToday) cls += ' today';
-    const dotColor = isPayday ? 'var(--green)' : bills.length > 1 ? 'var(--amber)' : bills.length === 1 ? 'var(--red)' : 'transparent';
+    // H7: amber dot when payday has bills (both signals combined)
+    const dotColor = isPayday && bills.length ? 'var(--amber)' : isPayday ? 'var(--green)' : bills.length > 1 ? 'var(--amber)' : bills.length === 1 ? 'var(--red)' : 'transparent';
     const amtStr = billTotal > 0 ? '$' + Math.round(billTotal) : '';
     const clickFn = isThis ? 'calDayClick(' + d + ')' : '';
     html += '<div class="'+cls+'" onclick="'+clickFn+'">' +
@@ -2258,9 +2323,10 @@ function renderCalWeekSummary() {
   // If payday falls within the next 7 days AND not yet received, include income in Now balance
   const paydayInWeek = !S.paydayReceived && S.payday >= todayD && S.payday <= endOfWeek;
   const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
-  // When paydayReceived: projected = current - bills this week - daily budget × 7
+  // M6: use actual remaining days in 7-day window (capped at days until payday)
+  const remainingWindowDays = Math.min(7, daysLeft(S.payday));
   const projectedWeekBal = S.paydayReceived
-    ? liveBal - weekTotal - getDailyBudget() * 7
+    ? liveBal - weekTotal - getDailyBudget() * remainingWindowDays
     : effectiveBal - weekTotal;
   const afterBills = projectedWeekBal;
   // Max/Day for week summary: uses effectiveBal so payday income is reflected when within 7 days
@@ -2299,7 +2365,7 @@ function renderCalWeekSummary() {
     ? 'Projected end of week balance'
     : 'Projected Virgin Money<br>after this week\'s bills';
   const projNote = S.paydayReceived
-    ? '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 7</div>'
+    ? '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 ' + remainingWindowDays + '</div>'
     : '<div style="font-size:9px;margin-top:3px;visibility:hidden">x</div>';
   html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
   html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
@@ -2337,38 +2403,13 @@ function renderCalWeekSummary() {
       const canPay = Math.min(surplus, target.amt);
       const remaining = target.amt - canPay;
       html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.7;color:var(--green)">' +
-        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong> spare after a $200 buffer. ' +
+        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong> spare after a $500 buffer. ' +
         'Put <strong>'+fmt(canPay)+'</strong> toward <strong>'+target.name+'</strong>' +
         (remaining > 0 ? ' — leaves '+fmt(remaining)+' still owed.' : ' — clears it completely!') +
         '</div>';
     }
   }
 
-  c.innerHTML = html;
-}
-
-function renderSavingsMomentum(txnSpent, safe, days) {
-  const c = $('savings-content'); if (!c) return;
-  const allBillsTotal = BILLS.reduce((s,b) => s+b.amt, 0);
-  const expected = (allBillsTotal/30) * (30 - days);
-  const diff = txnSpent - expected;
-  const chinaBal = S.chinaBal || 0;
-  const chinaGoal = 4000;
-  let html = '';
-  if (txnSpent === 0) {
-    html = '<div style="text-align:center;padding:16px 0"><div style="font-size:32px;margin-bottom:8px">&#x1F4AA;</div><div style="font-size:14px;color:var(--text2);line-height:1.7">No spending logged yet.<br>Every dollar you don\'t spend goes toward clearing your debts.</div></div>';
-  } else if (diff < -50) {
-    const saved = Math.abs(diff);
-    html = '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:14px;margin-bottom:12px"><div style="font-size:22px;font-family:var(--mono);font-weight:700;color:var(--green);margin-bottom:4px">+'+fmt(saved)+' ahead</div><div style="font-size:13px;color:var(--text2);line-height:1.7">You\'re spending <strong>'+fmt(saved)+' less</strong> than expected. Keep it up &#x2014; that\'s an extra <strong>'+fmt(saved*2)+'</strong> by end of month.<br><br>&#x1F1E8;&#x1F1F3; Redirect <strong>$'+Math.round(saved*0.5)+'</strong> to China Holiday and you\'ll be there by December.</div></div>';
-  } else if (diff > 100) {
-    html = '<div style="background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:14px;margin-bottom:12px"><div style="font-size:22px;font-family:var(--mono);font-weight:700;color:var(--red);margin-bottom:4px">'+fmt(diff)+' over pace</div><div style="font-size:13px;color:var(--text2);line-height:1.7">You\'re tracking above your baseline. Slow down for the next <strong>'+days+' days</strong> &#x2014; no discretionary spending.</div></div>';
-  } else {
-    html = '<div style="background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:14px;margin-bottom:12px"><div style="font-size:22px;font-family:var(--mono);font-weight:700;color:var(--amber);margin-bottom:4px">On track</div><div style="font-size:13px;color:var(--text2);line-height:1.7">Spending roughly in line. '+days+' days to payday &#x2014; keep discretionary to <strong>'+fmt(Math.max(0,safe/Math.max(1,days)))+'/day</strong>.</div></div>';
-  }
-  if (chinaBal > 0) {
-    const pct = Math.min(100, Math.round((chinaBal/chinaGoal)*100));
-    html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)"><div style="font-size:20px">&#x1F1E8;&#x1F1F3;</div><div style="flex:1"><div style="font-size:12px;color:var(--text2);font-weight:500;margin-bottom:4px">China Holiday &#x2014; '+pct+'% of goal</div><div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden"><div style="width:'+pct+'%;height:4px;background:var(--green);border-radius:2px"></div></div></div><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmtC(chinaBal)+'</div></div>';
-  }
   c.innerHTML = html;
 }
 
@@ -2389,7 +2430,10 @@ function renderSavingsBuckets() {
       '<div style="width:'+pct+'%;height:5px;border-radius:3px;background:'+barCol+';transition:width .5s"></div></div>' +
       '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">' +
       '<span>'+pct+'% of goal</span>' +
-      '<span style="color:var(--text3)">'+fmtC(b.goal - b.saved)+' to go \u2192</span></div>' +
+      // M5: floor "to go" at 0 and show celebration text when goal is met
+      '<span style="color:'+(b.saved >= b.goal ? 'var(--green)' : 'var(--text3)')+'">'+
+      (b.saved >= b.goal ? 'Goal reached! \uD83C\uDF89' : fmtC(Math.max(0, b.goal - b.saved))+' to go \u2192')+
+      '</span></div>' +
       '</div>';
   }).join('');
   html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
@@ -2439,8 +2483,10 @@ function deleteBucket() {
   if (activeBucketIdx < 0) return;
   const b = S.savingsBuckets[activeBucketIdx];
   if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
+  saveUndoState();
   S.savingsBuckets.splice(activeBucketIdx, 1);
   save(); closeModal('bucket-modal'); renderAll();
+  showUndoToast('Bucket deleted');
 }
 
 function addToBucket(i) {
@@ -2601,10 +2647,12 @@ function renderTrend() {
 function renderCatBreakdown() {
   const c = $('cat-breakdown'); if (!c) return;
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
+  // M8: show time period label
   const cats = {};
   S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
-  c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v],i) => {
+  const timePeriodLabel = '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
+  c.innerHTML = timePeriodLabel + Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v],i) => {
     const pct = Math.round((v/total)*100);
     const col = CHIP_COLORS[i % CHIP_COLORS.length];
     return '<div class="txn-row" onclick="openCatModal(\''+k.replace(/'/g,"\\'")+'\')" style="cursor:pointer"><div class="txn-chip" style="background:'+col+'22;color:'+col+'">'+k[0].toUpperCase()+'</div><div class="txn-info"><div class="txn-name">'+k+'</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div><div class="txn-amt" style="color:'+col+'">'+fmt(v)+'</div></div>';
@@ -2658,8 +2706,12 @@ function openQuickLogModal() {
   if ($('ql-day')) $('ql-day').value = '';
   const overlay = $('quick-log-modal');
   overlay.classList.add('open');
-  // Keyboard-aware: shrink modal to fit above software keyboard using visual viewport
+  // M7: remove any existing listeners before adding new ones to prevent accumulation
   if (window.visualViewport) {
+    if (overlay._vvResize) {
+      window.visualViewport.removeEventListener('resize', overlay._vvResize);
+      window.visualViewport.removeEventListener('scroll', overlay._vvScroll);
+    }
     const reposition = () => {
       const vv = window.visualViewport;
       overlay.style.height = vv.height + 'px';
@@ -2680,7 +2732,10 @@ function quickLogTxn() {
   const note = $('ql-note').value.trim();
   const cat = $('ql-cat').value;
   const recurring = $('ql-recurring').checked;
-  const day = parseInt($('ql-day').value) || new Date().getDate();
+  let day = parseInt($('ql-day').value) || new Date().getDate();
+  // C3: clamp bill day to 1-28 when adding recurring
+  if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
+  day = Math.min(28, Math.max(1, day));
   if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
   // FIX 6: Income category adds to balance
   if (cat === 'Income') {
@@ -2702,21 +2757,37 @@ function quickLogTxn() {
   save(); renderAll();
 }
 
-function rmTxn(i) { S.txns.splice(i, 1); save(); renderAll(); }
+function rmTxn(i) {
+  if (!confirm('Delete this transaction?')) return;
+  saveUndoState();
+  S.txns.splice(i, 1);
+  save(); renderAll();
+  showUndoToast('Transaction deleted');
+}
 
 function renderSettingsBills() {
   const c = $('settings-bills'); if (!c) return;
   c.innerHTML = BILLS.map((b,i) => '<div class="settings-row"><span class="settings-lbl">'+b.name+' <span style="color:var(--text3);font-size:12px">(day '+b.day+')</span></span><input class="settings-input" type="number" value="'+b.amt+'" oninput="BILLS['+i+'].amt=+this.value;save();renderAll()"></div>').join('');
 }
 
+// H4: validate required fields instead of silently reverting. L5: use explicit checks
 function saveSettings() {
-  S.income = +$('s-income').value || 7282;
-  S.payday = +$('s-payday').value || 15;
-  S.carloan = +$('s-car').value || 23989.70;
-  S.cc = +$('s-cc').value || 4595.35;
+  const incomeV = +$('s-income').value;
+  const paydayV = +$('s-payday').value;
+  if (!incomeV || incomeV <= 0) { alert('Please enter a valid income.'); return; }
+  if (!paydayV || paydayV < 1 || paydayV > 28) { alert('Please enter a valid payday day (1\u201328).'); return; }
+  S.income = incomeV;
+  S.payday = paydayV;
+  // L5: 0 is valid for loan balances (paid off) and vehicle value (no car)
+  const carV = +$('s-car').value;
+  const ccV = +$('s-cc').value;
+  if (!isNaN(carV) && carV >= 0) S.carloan = carV;
+  if (!isNaN(ccV) && ccV >= 0) S.cc = ccV;
   S.weekdayBudget = +$('s-weekday-budget').value || 60;
   S.weekendBudget = +$('s-weekend-budget').value || 180;
-  S.wrxValue = +$('s-wrx-value').value || 0;
+  S.wrxValue = +$('s-wrx-value').value; // 0 valid (no vehicle)
+  if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
+  if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
   const np = $('s-pin').value;
   if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
   save(); renderAll();
@@ -2730,7 +2801,9 @@ function checkAfford() {
   const liveBal = getLiveBal();
   const dueTotal = getBillsDue().reduce((s,b) => s+b.amt, 0);
   const bonusTotal = S.bonuses.reduce((s,b) => s+(+b.amt||0), 0);
-  const safe = liveBal - dueTotal + bonusTotal;
+  const bucketTotalAff = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  // H8: deduct bucketTotal so affordability matches getMaxDay() universe
+  const safe = liveBal - dueTotal + bonusTotal - bucketTotalAff;
   const after = safe - amt;
   const nd = daysLeft(S.payday);
   // Max/Day after purchase: capped at getDailyBudget()
@@ -2778,7 +2851,13 @@ function doImport() {
       const mergedTxns = [...S.txns, ...incoming];
       S = {...S, ...p.S, txns: mergedTxns};
     }
-    if (p.BILLS) BILLS = p.BILLS;
+    // L2: validate imported BILLS schema — skip invalid entries and warn
+    if (p.BILLS) {
+      const validBills = p.BILLS.filter(b => typeof b.name === 'string' && b.name.length > 0 && b.amt > 0 && b.day >= 1 && b.day <= 28);
+      const skipped = p.BILLS.length - validBills.length;
+      BILLS = validBills;
+      if (skipped > 0) { msg.style.color = 'var(--amber)'; msg.textContent += ' ⚠ ' + skipped + ' bill(s) skipped (invalid day/amount).'; }
+    }
     save(); renderAll();
     const preserved = S.txns.length;
     msg.style.color = 'var(--green)';
@@ -2787,7 +2866,40 @@ function doImport() {
   } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid data. Paste the full export code.'; }
 }
 
-function resetAll() { if (confirm('Reset all Slyght data?')) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }
+// C4: also clear the seeded flag so onboarding shows after a reset
+function resetAll() {
+  if (confirm('Reset all Slyght data? This cannot be undone.')) {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('slyght_seeded_v9');
+    location.reload();
+  }
+}
+
+// L3: Undo system — save snapshot before destructive actions, restore on tap
+let _undoTimer = null;
+function saveUndoState() {
+  try { S._prevState = JSON.stringify({S: Object.assign({}, S, {_prevState: null}), BILLS: BILLS.slice()}); } catch(e) {}
+}
+function showUndoToast(msg) {
+  if (_undoTimer) clearTimeout(_undoTimer);
+  const toast = $('undo-toast');
+  if (!toast) return;
+  toast.textContent = msg + ' — Tap to undo';
+  toast.style.display = 'block';
+  _undoTimer = setTimeout(() => { toast.style.display = 'none'; _undoTimer = null; }, 5000);
+}
+function undoLastAction() {
+  if (!S._prevState) return;
+  try {
+    const prev = JSON.parse(S._prevState);
+    S = Object.assign({}, S, prev.S);
+    if (prev.BILLS) BILLS = prev.BILLS;
+    save(); renderAll();
+    const toast = $('undo-toast');
+    if (toast) toast.style.display = 'none';
+    if (_undoTimer) { clearTimeout(_undoTimer); _undoTimer = null; }
+  } catch(e) {}
+}
 
 $('ob-bal').addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
 if ('serviceWorker' in navigator) {
@@ -2800,10 +2912,10 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Seed v8: S.bal=-945.74 so getLiveBal()=3245.99 with 6 historical transactions included.
+// Seed v9: S.bal=-945.74 so getLiveBal()=3245.99. Fixes: removed chinaBal, cuts; added carloanOriginal/ccLimit; Spotify day 28.
 // Math: -945.74 - (250.84+2436.96+142+120.47+140) + 7282 = -945.74 - 3090.27 + 7282 = 3245.99
-(function seedV8() {
-  if (localStorage.getItem('slyght_seeded_v8')) return;
+(function seedV9() {
+  if (localStorage.getItem('slyght_seeded_v9')) return;
   const t = Date.parse('2026-04-14T09:00:00');
   const seed = {
     "S":{
@@ -2817,9 +2929,8 @@ if ('serviceWorker' in navigator) {
         {"amt":140,"note":"Parking Fine","cat":"Other","ts":t+6000,"income":false}
       ],
       "bonuses":[],"bid":0,"seg":"1m","income":7282,"payday":15,
-      "carloan":23989.7,"cc":2158.39,"pin":"2103",
-      "cuts":{"entertainment":750,"weed":300,"food_work":200,"streaming":75,"games":25},
-      "monthlyHistory":[],"chinaBal":61.82,"income_log":[],"iid":0,
+      "carloan":23989.7,"cc":2158.39,"pin":"2103","carloanOriginal":37400,"ccLimit":6000,
+      "monthlyHistory":[],"income_log":[],"iid":0,
       "debts":[
         {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"delayed":false,"delayDate":"2026-04-16","notes":"Cleared 14 Apr","rate":0},
         {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"delayed":false,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing","rate":0},
@@ -2852,12 +2963,12 @@ if ('serviceWorker' in navigator) {
       {"name":"Parking \u2014 CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},
       {"name":"Pet Food","amt":45,"day":25,"tag":"Fixed","recurring":true},
       {"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},
-      {"name":"Spotify","amt":15.99,"day":29,"tag":"Streaming","recurring":true},
+      {"name":"Spotify","amt":15.99,"day":28,"tag":"Streaming","recurring":true},
       {"name":"Food at Work","amt":200,"day":28,"tag":"Variable","recurring":true}
     ]
   };
   localStorage.setItem('slyght_v5', JSON.stringify(seed));
-  localStorage.setItem('slyght_seeded_v8', '1');
+  localStorage.setItem('slyght_seeded_v9', '1');
 })();
 
 load();
