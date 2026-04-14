@@ -124,6 +124,85 @@ const checks = [
   // Offline badge exists
   { name: 'Offline indicator badge present',
     test: () => html.includes('offline') ? 'OK' : 'MISSING — no offline indicator'
+  },
+
+  // UX monitor exists and initialised
+  { name: 'UX monitor exists and initialised',
+    test: () => {
+      if (!html.includes('const UX')) return 'MISSING — UX system not found';
+      if (!html.includes('UX.init()')) return 'BROKEN — UX.init() not called on app start';
+      return 'OK';
+    }
+  },
+
+  // Tab visits tracked in goPage
+  { name: 'Tab visits tracked via UX.trackTabVisit in goPage',
+    test: () => {
+      const match = html.match(/function goPage[\s\S]*?\nfunction /);
+      if (!match) return 'MISSING — goPage not found';
+      return match[0].includes('UX.trackTabVisit') ? 'OK' : 'BROKEN — goPage missing UX.trackTabVisit call';
+    }
+  },
+
+  // Modal open tracking wired
+  { name: 'Modal open interactions tracked via UX.trackModalOpen',
+    test: () => {
+      const openCalls = (html.match(/UX\.trackModalOpen/g) || []).length;
+      return openCalls >= 4 ? 'OK' : 'WARNING — only ' + openCalls + ' modal open tracked (expected ≥4)';
+    }
+  },
+
+  // Modal close tracking wired
+  { name: 'Modal close interactions tracked via UX.trackModalClose in closeModal',
+    test: () => {
+      const match = html.match(/function closeModal[\s\S]*?\n}/);
+      if (!match) return 'MISSING — closeModal not found';
+      return match[0].includes('UX.trackModalClose') ? 'OK' : 'BROKEN — closeModal missing UX.trackModalClose';
+    }
+  },
+
+  // No text below 11px font size
+  { name: 'No font-size below 11px',
+    test: () => {
+      const sizes = [...html.matchAll(/font-size:\s*(\d+)px/g)].map(m => parseInt(m[1]));
+      const tooSmall = sizes.filter(s => s < 11);
+      return tooSmall.length === 0 ? 'OK' : 'WARNING — ' + tooSmall.length + ' font-size(s) below 11px: ' + [...new Set(tooSmall)].join(', ') + 'px';
+    }
+  },
+
+  // Interactive elements have cursor:pointer
+  { name: 'cursor:pointer defined for interactive elements',
+    test: () => {
+      const hasCursorPointer = html.includes('cursor:pointer') || html.includes('cursor: pointer');
+      return hasCursorPointer ? 'OK' : 'BROKEN — no cursor:pointer rules found';
+    }
+  },
+
+  // Haptic feedback on key actions
+  { name: 'Haptic feedback (navigator.vibrate) used on key actions',
+    test: () => {
+      const vibrateCount = (html.match(/navigator\.vibrate/g) || []).length;
+      return vibrateCount >= 2 ? 'OK' : 'WARNING — only ' + vibrateCount + ' haptic feedback call(s) found (expected ≥2)';
+    }
+  },
+
+  // Pull to refresh implemented
+  { name: 'Pull to refresh implemented (touchstart/touchmove)',
+    test: () => {
+      const hasPullRefresh = html.includes('touchstart') || html.includes('pull-to-refresh') || html.includes('pullToRefresh');
+      return hasPullRefresh ? 'OK' : 'WARNING — no pull-to-refresh detected';
+    }
+  },
+
+  // All modals have a close/cancel button
+  { name: 'All modals have a close or cancel button',
+    test: () => {
+      const modalIds = [...html.matchAll(/class="modal-overlay[^"]*"[^>]*id="([^"]+)"/g)].map(m => m[1]);
+      // Simpler: count modal-overlay elements vs modal-btn-cancel/modal-close occurrences
+      const overlayCount = (html.match(/class="modal-overlay/g) || []).length;
+      const closeBtnCount = (html.match(/modal-btn-cancel|modal-close|closeModal/g) || []).length;
+      return closeBtnCount >= overlayCount ? 'OK' : 'WARNING — ' + overlayCount + ' modals but only ' + closeBtnCount + ' close mechanisms';
+    }
   }
 ];
 

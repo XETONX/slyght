@@ -631,6 +631,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <button onclick="HEALTH.render()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Health Check</button>
       </div>
       <div class="card">
+        <div class="settings-section">
+          <div class="settings-title">UX Intelligence</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Real-time analysis of how you interact with the app.</div>
+          <div id="ux-report-content"></div>
+          <button onclick="UX.renderReport()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Refresh UX Report</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-hdr"><div class="card-title">Financial Audit Log</div></div>
         <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Every balance change is recorded and verified here.</div>
         <div id="audit-log-content"></div>
@@ -1349,6 +1357,7 @@ function goPage(id) {
   const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-chat':'nav-chat','pg-spend':'nav-spend'};
   if (map[id]) $(map[id]).classList.add('active');
   if (id === 'pg-cal') setTimeout(() => renderCalendar(), 50);
+  if (typeof UX !== 'undefined') UX.trackTabVisit(id);
   renderAll();
 }
 
@@ -2563,6 +2572,7 @@ function openDebtModal(idx) {
     }
   }
   $('debt-modal').classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('debt-modal');
 }
 
 function saveDebt() {
@@ -2574,7 +2584,7 @@ function saveDebt() {
   d.delayDate = $('modal-due').value || '';
   d.notes = $('modal-notes').value || d.notes;
   d.priority = parseInt($('modal-priority').value) || 99;
-  save(); closeModal('debt-modal'); renderAll();
+  save(); closeModal('debt-modal', true); renderAll();
 }
 
 function saveDebtDelay() {
@@ -2587,7 +2597,7 @@ function saveDebtDelay() {
   d.delayDate = $('modal-due').value || '';
   d.notes = $('modal-notes').value || d.notes;
   d.priority = parseInt($('modal-priority').value) || 99;
-  save(); closeModal('debt-modal'); renderAll();
+  save(); closeModal('debt-modal', true); renderAll();
 }
 
 function markDebtPaid() {
@@ -2604,7 +2614,7 @@ function markDebtPaid() {
   S.bal -= d.amt;
   S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false, _balAffected: true});
   S.debts[idx].paid = true;
-  save(); closeModal('debt-modal'); renderAll();
+  save(); closeModal('debt-modal', true); renderAll();
   showUndoToast('Debt marked paid');
   // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill paid
   if (d.name.toLowerCase().includes('afterpay')) {
@@ -2637,6 +2647,7 @@ function openAddDebtModal() {
   $('nd-due').value = '';
   $('nd-notes').value = '';
   $('add-debt-modal').classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('add-debt-modal');
 }
 
 function saveNewDebt() {
@@ -2664,7 +2675,7 @@ function saveNewDebt() {
     }
   }
   S.debts.push({id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes, ...(linkedLiability ? {linkedLiability} : {})});
-  save(); closeModal('add-debt-modal'); renderAll();
+  save(); closeModal('add-debt-modal', true); renderAll();
 }
 
 function openBillModal(idx) {
@@ -2710,6 +2721,7 @@ function openBillModal(idx) {
   $('bill-modal-mark-paid').style.display = _isPaid ? 'none' : '';
   $('bill-modal-undo-paid').style.display = _isPaid ? '' : 'none';
   $('bill-modal').classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('bill-modal');
 }
 
 function saveBill() {
@@ -2719,7 +2731,7 @@ function saveBill() {
     if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
       saveUndoState();
       BILLS.splice(activeBillIdx, 1);
-      save(); closeModal('bill-modal'); renderAll();
+      save(); closeModal('bill-modal', true); renderAll();
       showUndoToast('Bill removed');
     }
     return;
@@ -2740,14 +2752,14 @@ function saveBill() {
     tag: $('bm-tag').value, recurring: true,
     freq: $('bm-freq').value || 'monthly'
   };
-  save(); closeModal('bill-modal'); renderAll();
+  save(); closeModal('bill-modal', true); renderAll();
 }
 
 function deleteBill() {
   if (activeBillIdx < 0 || !confirm('Remove this bill permanently?')) return;
   saveUndoState();
   BILLS.splice(activeBillIdx, 1);
-  save(); closeModal('bill-modal'); renderAll();
+  save(); closeModal('bill-modal', true); renderAll();
   showUndoToast('Bill deleted');
 }
 
@@ -2762,7 +2774,7 @@ function markBillPaidMonth() {
   const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
   if (!S.paidBills) S.paidBills = {};
   S.paidBills[key] = true;
-  save(); closeModal('bill-modal'); renderAll();
+  save(); closeModal('bill-modal', true); renderAll();
   if(navigator.vibrate) navigator.vibrate(50);
 }
 
@@ -2773,13 +2785,14 @@ function undoBillPaid() {
   const now = new Date();
   const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
   if (S.paidBills) delete S.paidBills[key];
-  save(); closeModal('bill-modal'); renderAll();
+  save(); closeModal('bill-modal', true); renderAll();
 }
 
 function handleOverlayClick(e, id) { if (e.target.classList.contains('modal-overlay')) closeModal(id); }
-function closeModal(id) {
+function closeModal(id, actionTaken) {
   // H5: clear activeDebtIdx when debt modal closes to prevent stale index
   if (id === 'debt-modal') activeDebtIdx = -1;
+  if (typeof UX !== 'undefined') UX.trackModalClose(id, actionTaken || false);
   const el = $(id);
   el.classList.remove('open');
   if (el._vvResize && window.visualViewport) {
@@ -3368,6 +3381,7 @@ function openBucketModal(i) {
   $('bkt-notes').value = b.notes || '';
   $('bkt-add-funds').value = '';
   $('bucket-modal').classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('bucket-modal');
 }
 
 function saveBucketModal() {
@@ -3378,7 +3392,7 @@ function saveBucketModal() {
   b.saved = parseFloat($('bkt-saved').value) || 0;
   b.account = $('bkt-account').value || b.account;
   b.notes = $('bkt-notes').value.trim();
-  save(); closeModal('bucket-modal'); renderAll();
+  save(); closeModal('bucket-modal', true); renderAll();
 }
 
 function addFundsBucketModal() {
@@ -3386,7 +3400,7 @@ function addFundsBucketModal() {
   const v = parseFloat($('bkt-add-funds').value);
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
   S.savingsBuckets[activeBucketIdx].saved = (S.savingsBuckets[activeBucketIdx].saved||0) + v;
-  save(); closeModal('bucket-modal'); renderAll();
+  save(); closeModal('bucket-modal', true); renderAll();
 }
 
 function deleteBucket() {
@@ -3395,7 +3409,7 @@ function deleteBucket() {
   if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
   saveUndoState();
   S.savingsBuckets.splice(activeBucketIdx, 1);
-  save(); closeModal('bucket-modal'); renderAll();
+  save(); closeModal('bucket-modal', true); renderAll();
   showUndoToast('Bucket deleted');
 }
 
@@ -3411,6 +3425,7 @@ function addToBucket(i) {
 function openAddBucketModal() {
   $('nb-name').value = ''; $('nb-goal').value = ''; $('nb-account').value = '';
   $('add-bucket-modal').classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('add-bucket-modal');
 }
 
 function saveNewBucket() {
@@ -3421,7 +3436,7 @@ function saveNewBucket() {
   if (!S.savingsBuckets) S.savingsBuckets = [];
   if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
   S.savingsBuckets.push({id: S.nextBucketId++, name, goal, saved:0, account});
-  save(); closeModal('add-bucket-modal'); renderAll();
+  save(); closeModal('add-bucket-modal', true); renderAll();
 }
 
 function renderSpendingCoach() {
@@ -3617,6 +3632,7 @@ function openQuickLogModal() {
   if ($('ql-day')) $('ql-day').value = '';
   const overlay = $('quick-log-modal');
   overlay.classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
   // M7: remove any existing listeners before adding new ones to prevent accumulation
   if (window.visualViewport) {
     if (overlay._vvResize) {
@@ -4889,6 +4905,111 @@ const APP_HEALTH = {
   }
 };
 
+// ─── UX INTELLIGENCE MONITOR ─────────────────────────────────
+const UX = {
+  session: {
+    start: Date.now(),
+    interactions: [],
+    tabVisits: {},
+    slowRenders: [],
+    missedTaps: [],
+    scrollDepths: {},
+    modalAbandons: [],
+    errors: []
+  },
+  trackTap(element, label) {
+    const entry = { ts: Date.now(), label: label || element?.id || element?.className?.split(' ')[0] || 'unknown', tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
+    this.session.interactions.push(entry);
+    if (this.session.interactions.length > 200) this.session.interactions.shift();
+  },
+  trackTabVisit(tabName) {
+    if (!this.session.tabVisits[tabName]) this.session.tabVisits[tabName] = 0;
+    this.session.tabVisits[tabName]++;
+  },
+  trackMissedTap(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const isInteractive = el && (el.tagName === 'BUTTON' || el.tagName === 'INPUT' || el.tagName === 'A' || el.onclick || el.closest('button') || el.closest('[onclick]'));
+    if (!isInteractive) this.session.missedTaps.push({ x, y, ts: Date.now(), element: el?.className || el?.id || el?.tagName });
+  },
+  trackRender(label, durationMs) {
+    if (durationMs > 100) {
+      this.session.slowRenders.push({ label, durationMs, ts: Date.now() });
+      if (this.session.slowRenders.length > 20) this.session.slowRenders.shift();
+    }
+  },
+  trackModalOpen(modalId) { this._openModal = { id: modalId, ts: Date.now() }; },
+  trackModalClose(modalId, actionTaken) {
+    if (this._openModal && this._openModal.id === modalId && !actionTaken) {
+      const timeOpen = Date.now() - this._openModal.ts;
+      if (timeOpen < 2000) this.session.modalAbandons.push({ modal: modalId, timeOpenMs: timeOpen, ts: Date.now() });
+    }
+    this._openModal = null;
+  },
+  trackScroll(tabId, scrollPct) {
+    if (!this.session.scrollDepths[tabId]) this.session.scrollDepths[tabId] = 0;
+    this.session.scrollDepths[tabId] = Math.max(this.session.scrollDepths[tabId], scrollPct);
+  },
+  report() {
+    const sessionMins = Math.round((Date.now() - this.session.start) / 60000);
+    const totalTaps = this.session.interactions.length;
+    const missedPct = totalTaps > 0 ? Math.round((this.session.missedTaps.length / totalTaps) * 100) : 0;
+    const issues = [], suggestions = [];
+    if (missedPct > 20) issues.push('HIGH missed tap rate (' + missedPct + '%) — tap targets may be too small');
+    if (this.session.slowRenders.length > 3) {
+      const avg = Math.round(this.session.slowRenders.reduce((s,r) => s+r.durationMs, 0) / this.session.slowRenders.length);
+      issues.push('Slow renders (' + this.session.slowRenders.length + ' over 100ms, avg ' + avg + 'ms)');
+    }
+    if (this.session.modalAbandons.length > 2) {
+      const mc = {};
+      this.session.modalAbandons.forEach(m => { mc[m.modal] = (mc[m.modal]||0)+1; });
+      Object.entries(mc).forEach(([modal, count]) => { if (count>1) suggestions.push('Modal "'+modal+'" abandoned '+count+' times — may be confusing'); });
+    }
+    const unusedTabs = ['pg-dash','pg-cal','pg-chat','pg-spend','pg-settings'].filter(t => !this.session.tabVisits[t]);
+    if (unusedTabs.length > 0) suggestions.push('Unvisited tabs: '+unusedTabs.map(t=>t.replace('pg-','')).join(', ')+' — content may not be discoverable');
+    Object.entries(this.session.scrollDepths).forEach(([tab, depth]) => {
+      if (depth < 30 && this.session.tabVisits[tab] > 0) suggestions.push('Low scroll on '+tab+' ('+depth+'%) — key info may need moving higher');
+    });
+    const tapLabels = {};
+    this.session.interactions.forEach(i => { tapLabels[i.label] = (tapLabels[i.label]||0)+1; });
+    const topFeatures = Object.entries(tapLabels).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    const score = Math.max(0, 100 - (issues.length*15) - (suggestions.length*5));
+    return { sessionMins, totalTaps, missedTapPct: missedPct, slowRenders: this.session.slowRenders.length, modalAbandons: this.session.modalAbandons.length, topFeatures, tabUsage: Object.entries(this.session.tabVisits).sort((a,b)=>b[1]-a[1]), issues, suggestions, score };
+  },
+  renderReport() {
+    const el = document.getElementById('ux-report-content');
+    if (!el) return;
+    const r = this.report();
+    const scoreCol = r.score>80?'var(--green)':r.score>60?'var(--amber)':'var(--red)';
+    el.innerHTML =
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
+        '<div style="background:var(--bg3);padding:10px;border-radius:8px;text-align:center">'+
+          '<div style="font-size:22px;font-weight:700;color:'+scoreCol+'">'+r.score+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">UX Score</div></div>'+
+        '<div style="background:var(--bg3);padding:10px;border-radius:8px;text-align:center">'+
+          '<div style="font-size:22px;font-weight:700;color:var(--text)">'+r.totalTaps+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Taps this session</div></div>'+
+      '</div>'+
+      (r.issues.length>0?'<div style="margin-bottom:8px">'+r.issues.map(i=>'<div style="color:var(--red);font-size:12px;padding:3px 0">❌ '+esc(i)+'</div>').join('')+'</div>':'')+
+      (r.suggestions.length>0?'<div style="margin-bottom:8px">'+r.suggestions.map(s=>'<div style="color:var(--amber);font-size:12px;padding:3px 0">💡 '+esc(s)+'</div>').join('')+'</div>':'')+
+      (r.issues.length===0&&r.suggestions.length===0?'<div style="color:var(--green);font-size:13px;padding:4px 0">✅ UX looking good this session</div>':'')+
+      (r.topFeatures.length>0?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">Most used: '+r.topFeatures.map(f=>esc(f[0])+' ('+f[1]+'×)').join(', ')+'</div>':'')+
+      '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Session: '+r.sessionMins+' mins · Missed taps: '+r.missedTapPct+'% · Slow renders: '+r.slowRenders+'</div>';
+  },
+  init() {
+    document.addEventListener('click', (e) => { this.trackTap(e.target, e.target.textContent?.trim()?.substring(0,30)); });
+    document.addEventListener('touchend', (e) => { const t=e.changedTouches[0]; if(t) this.trackMissedTap(t.clientX, t.clientY); }, {passive:true});
+    document.querySelectorAll('.screen').forEach(screen => {
+      screen.addEventListener('scroll', () => {
+        const h = screen.scrollHeight - screen.clientHeight;
+        if (h > 0) this.trackScroll(screen.id, Math.round((screen.scrollTop/h)*100));
+      }, {passive:true});
+    });
+    window.addEventListener('error', (e) => { this.session.errors.push({msg: e.message, ts: Date.now()}); });
+    setInterval(() => { try { localStorage.setItem('slyght_ux_report', JSON.stringify({ts:new Date().toISOString(),...this.report()})); } catch(e){} }, 300000);
+    console.log('👁️ UX Monitor active');
+  }
+};
+
 // ─── OVERDRIVE RENDER OVERRIDE ────────────────────────────────
 // Wraps renderAll a second time after all Overdrive systems are defined
 const _prevRenderAllOD = renderAll;
@@ -4898,6 +5019,7 @@ renderAll = function() {
   if (typeof SLYGHT_SCORE !== 'undefined') SLYGHT_SCORE.render();
   if (typeof PREDICTOR !== 'undefined') PREDICTOR.renderCard();
   if (typeof NOTIFY !== 'undefined') NOTIFY.refresh();
+  if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
 };
 
 // ─── FINANCIAL PERSONALITY ENGINE ────────────────────────────
@@ -5222,6 +5344,7 @@ APP_HEALTH.init();
 SNAPSHOTS.autoSnapshot('app_open');
 NOTIFY.refresh();
 NOTIFY.startInterval();
+if (typeof UX !== 'undefined') UX.init();
 // API key in separate storage — never wiped by reset or seed
 const savedApiKey = localStorage.getItem('slyght_api_key');
 if (savedApiKey) S.apiKey = savedApiKey;
