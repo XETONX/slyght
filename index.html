@@ -995,11 +995,11 @@ function daysLeft(payday) {
   // If payday already received this cycle but nominal date not yet passed, cycle is now → next month
   if (S.paydayReceived && today <= pd) {
     const next = new Date(now.getFullYear(), now.getMonth() + 1, pd);
-    return Math.ceil((next - now) / (1000*60*60*24));
+    return Math.max(1, Math.ceil((next - now) / (1000*60*60*24)));
   }
   if (today < pd) return pd - today;
   const next = new Date(now.getFullYear(), now.getMonth() + 1, pd);
-  return Math.ceil((next - now) / (1000*60*60*24));
+  return Math.max(1, Math.ceil((next - now) / (1000*60*60*24)));
 }
 
 // --- Core financial helpers ---
