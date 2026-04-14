@@ -1045,13 +1045,6 @@ function getGenuineSurplus() {
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
   const immDebts = getActiveDebtsDueBeforePayday();
-  console.log('SURPLUS DEBUG - S.bal:', S.bal);
-  console.log('SURPLUS DEBUG - billsDue:', allBillsDue);
-  console.log('SURPLUS DEBUG - debtsDue:', immDebts);
-  console.log('SURPLUS DEBUG - buckets:', bucketTotal);
-  console.log('SURPLUS DEBUG - living:', getAvgDailySpend(), 'x', days, '=', livingReserve);
-  console.log('SURPLUS DEBUG - buffer:', getDynamicBuffer());
-  console.log('SURPLUS DEBUG - RESULT:', liveBal - allBillsDue - immDebts - bucketTotal - livingReserve - getDynamicBuffer());
   return Math.max(0, liveBal - allBillsDue - immDebts - bucketTotal - livingReserve - getDynamicBuffer());
 }
 function getActiveDebtsDueBeforePayday() {
