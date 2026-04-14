@@ -844,7 +844,9 @@ let S = {
     {id:2, name:'Rego & Insurance', goal:1500, saved:0, account:'Westpac'},
     {id:3, name:'Gifts & Celebrations', goal:500, saved:0, account:'Other'},
   ],
-  nextBucketId: 4
+  nextBucketId: 4,
+  paydayReceived: false,
+  paydayReceivedDate: null
 };
 
 let BILLS = [
@@ -1290,12 +1292,24 @@ function renderAll() {
   // FIX 4: Timing context
   const phase = getMonthPhase();
 
-  // Payday banner (FIX 3 / FIX 4)
+  // Auto-reset paydayReceived when calendar month rolls over
+  if (S.paydayReceived && S.paydayReceivedDate) {
+    const rec = new Date(S.paydayReceivedDate), now2 = new Date();
+    if (rec.getMonth() !== now2.getMonth() || rec.getFullYear() !== now2.getFullYear()) {
+      S.paydayReceived = false; S.paydayReceivedDate = null; save();
+    }
+  }
+
+  // Payday banner — paydayReceived suppresses all countdown messaging
   const bannerEl = $('dash-payday-banner');
   if (bannerEl) {
-    if (phase === 'PAYDAY') {
+    if (S.paydayReceived) {
+      const recDateStr = S.paydayReceivedDate
+        ? new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric', month:'short'})
+        : '';
+      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">✓ <strong>Payday received' + (recDateStr ? ' ' + recDateStr : '') + '.</strong> Plan your allocation below.</div>';
+    } else if (phase === 'PAYDAY') {
       bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>';
-      // Auto-expand payday plan on payday day
       const ppBody = $('payday-plan-body'), ppTog = $('payday-plan-tog');
       if (ppBody && (!ppBody.style.maxHeight || ppBody.style.maxHeight === '0px' || ppBody.style.maxHeight === '0')) {
         ppBody.style.maxHeight = '800px';
@@ -1487,11 +1501,22 @@ function updateBalanceFromSettings() {
   if (isNaN(b)) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; return; }
   const prevBal = S.bal;
   const prevTxns = S.txns.reduce((s,t) => s + t.amt, 0);
+
+  // Fix 2: Detect payday via balance jump — positive jump within 20% of income = pay received
+  const jump = b - prevBal;
+  const income = S.income || 7282;
+  if (jump >= income * 0.8 && jump <= income * 1.2 && !S.paydayReceived) {
+    S.paydayReceived = true;
+    S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
+  }
+
   S.bal = b;
   save();
   renderAll();
   msg.style.color = 'var(--green)';
-  msg.textContent = 'Balance updated to ' + fmtC(b);
+  msg.textContent = S.paydayReceived && jump >= income * 0.8
+    ? 'Looks like you got paid — payday plan activated'
+    : 'Balance updated to ' + fmtC(b);
   setTimeout(() => { if ($('s-bal-msg')) $('s-bal-msg').textContent = ''; }, 3000);
   // Trigger reconciliation if difference is significant
   runRecon(b, prevBal, prevTxns);
