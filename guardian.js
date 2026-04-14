@@ -191,6 +191,16 @@ const checks = [
       const hasBudgetToggle = html.includes('toggleChatBudget') || html.includes('chat-budget');
       return !hasBudgetToggle ? 'OK' : 'BROKEN — budget dropdown still in chat tab';
     }
+  },
+
+  // Financial auditor present
+  { name: 'Financial auditor AUDITOR object exists',
+    test: () => html.includes('const AUDITOR') || html.includes('AUDITOR =') ? 'OK' : 'MISSING — add auditor system'
+  },
+
+  // Money mutations wrapped
+  { name: 'Money mutations wrapped with auditedMutation',
+    test: () => html.includes('auditedMutation') ? 'OK' : 'MISSING — mutations not audited'
   }
 ];
 

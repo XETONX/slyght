@@ -414,6 +414,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="met"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s" id="m-surplus-lbl">after bills</div></div>
       </div>
       <div id="dash-overspend"></div>
+      <div id="auditor-badge" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
 
       <!-- PAYDAY PLAN (FIX 8) -->
       <div class="card" style="margin-bottom:12px">
@@ -598,6 +599,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div class="settings-title">Bills</div>
           <div id="settings-bills"></div>
         </div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Financial Audit Log</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Every balance change is recorded and verified here.</div>
+        <div id="audit-log-content"></div>
+        <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear audit log</button>
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Export / Import</div></div>
@@ -4145,6 +4152,147 @@ if ('serviceWorker' in navigator) {
   } catch(e) {}
   localStorage.setItem('slyght_seeded_v12', '1');
 })();
+
+// ─── FINANCIAL AUDITOR ───────────────────────────────────────
+// Monitors every financial interaction in real time
+// Catches calculation errors before they mislead the user
+
+const AUDITOR = {
+  log: [],
+  maxLog: 100,
+
+  record(action, before, after, expected, notes) {
+    const entry = {
+      ts: new Date().toISOString(),
+      time: new Date().toLocaleTimeString('en-AU'),
+      action,
+      before: parseFloat((+before).toFixed(2)),
+      after: parseFloat((+after).toFixed(2)),
+      change: parseFloat((after - before).toFixed(2)),
+      expected: expected !== null ? parseFloat((+expected).toFixed(2)) : null,
+      ok: expected !== null ? Math.abs((after - before) - expected) < 0.02 : true,
+      notes: notes || ''
+    };
+    this.log.unshift(entry);
+    if (this.log.length > this.maxLog) this.log.pop();
+    try { localStorage.setItem('slyght_audit_log', JSON.stringify(this.log.slice(0, 50))); } catch(e) {}
+    if (!entry.ok) { console.warn('🚨 AUDITOR ANOMALY:', entry); this.showAnomaly(entry); }
+    return entry;
+  },
+
+  load() {
+    try { const saved = localStorage.getItem('slyght_audit_log'); if (saved) this.log = JSON.parse(saved); } catch(e) {}
+  },
+
+  showAnomaly(entry) {
+    const badge = document.getElementById('auditor-badge');
+    if (badge) { badge.style.display = 'block'; badge.textContent = '⚠️ Auditor flagged an issue — check Settings'; }
+  },
+
+  clearBadge() {
+    const badge = document.getElementById('auditor-badge');
+    if (badge) badge.style.display = 'none';
+  },
+
+  verifyState() {
+    const issues = [];
+    if (isNaN(S.bal)) issues.push('S.bal is NaN');
+    if (S.bal === undefined || S.bal === null) issues.push('S.bal is undefined/null');
+    const surplus = getGenuineSurplus();
+    if (surplus > S.bal) issues.push('Surplus ($' + surplus.toFixed(2) + ') exceeds balance ($' + S.bal.toFixed(2) + ')');
+    const activeDebtTotal = (S.debts||[]).filter(d=>!d.paid).reduce((s,d)=>s+d.amt,0);
+    if (activeDebtTotal > (S.income||7282) * 3) issues.push('Active debts ($' + activeDebtTotal.toFixed(0) + ') exceed 3x monthly income — verify data');
+    const maxDay = getMaxDay();
+    const budget = getDailyBudget();
+    if (maxDay > budget + 0.01) issues.push('getMaxDay ($' + maxDay.toFixed(2) + ') exceeds getDailyBudget ($' + budget + ')');
+    const days = daysLeft();
+    if (days < 1 || days > 31) issues.push('daysLeft() returned ' + days + ' — should be 1-31');
+    const nonRecurringInDue = getBillsDue().filter(b => b.recurring === false);
+    if (nonRecurringInDue.length > 0) issues.push('Non-recurring bills in getBillsDue(): ' + nonRecurringInDue.map(b=>b.name).join(', '));
+    return issues;
+  },
+
+  audit() {
+    const issues = this.verifyState();
+    const entry = { ts: new Date().toISOString(), time: new Date().toLocaleTimeString('en-AU'),
+      action: 'FULL AUDIT', ok: issues.length === 0,
+      notes: issues.length === 0 ? 'All checks passed' : issues.join(' | '),
+      before: S.bal, after: S.bal, change: 0, expected: 0 };
+    this.log.unshift(entry);
+    if (!entry.ok) this.showAnomaly(entry);
+    return issues;
+  }
+};
+
+function auditedMutation(actionName, expectedChange, mutationFn) {
+  const balBefore = S.bal;
+  const surplusBefore = getGenuineSurplus();
+  mutationFn();
+  const balAfter = S.bal;
+  AUDITOR.record(actionName, balBefore, balAfter, expectedChange,
+    'Surplus: $' + surplusBefore.toFixed(2) + ' → $' + getGenuineSurplus().toFixed(2));
+  const issues = AUDITOR.verifyState();
+  if (issues.length > 0) console.warn('🚨 State issues after ' + actionName + ':', issues);
+}
+
+const _origQuickLogTxn = quickLogTxn;
+quickLogTxn = function() {
+  const amt = parseFloat(document.getElementById('ql-amt')?.value || 0);
+  const isIncome = document.getElementById('ql-cat')?.value === 'Income / Refund ↑';
+  const expectedChange = isIncome ? amt : -amt;
+  auditedMutation('LOG_' + (isIncome ? 'INCOME' : 'EXPENSE') + '_$' + amt, expectedChange, () => _origQuickLogTxn());
+};
+
+const _origMarkDebtPaid = markDebtPaid;
+markDebtPaid = function() {
+  const debt = S.debts[activeDebtIdx];
+  const expectedChange = debt ? -debt.amt : 0;
+  auditedMutation('MARK_DEBT_PAID_' + (debt?.name || 'unknown') + '_$' + (debt?.amt || 0), expectedChange, () => _origMarkDebtPaid());
+};
+
+const _origUpdateBalance = updateBalanceFromSettings;
+updateBalanceFromSettings = function() {
+  const newBal = parseFloat(document.getElementById('s-bal')?.value || S.bal);
+  const expectedChange = newBal - S.bal;
+  auditedMutation('MANUAL_BALANCE_UPDATE_to_$' + newBal, expectedChange, () => _origUpdateBalance());
+};
+
+function renderAuditLog() {
+  const el = document.getElementById('audit-log-content');
+  if (!el) return;
+  if (AUDITOR.log.length === 0) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No financial events recorded yet.</div>';
+    return;
+  }
+  el.innerHTML = AUDITOR.log.map(entry => {
+    const icon = entry.ok ? '✅' : '🚨';
+    const changeColor = entry.change >= 0 ? 'var(--green)' : 'var(--red)';
+    const changeSign = entry.change >= 0 ? '+' : '';
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="color:var(--text);font-weight:600">' + icon + ' ' + esc(entry.action) + '</span>' +
+        '<span style="color:var(--text3)">' + entry.time + '</span>' +
+      '</div>' +
+      '<div style="display:flex;gap:12px;margin-top:4px">' +
+        '<span style="color:var(--text3)">Before: <span style="color:var(--text)">$' + entry.before.toFixed(2) + '</span></span>' +
+        '<span style="color:var(--text3)">After: <span style="color:var(--text)">$' + entry.after.toFixed(2) + '</span></span>' +
+        '<span style="color:' + changeColor + '">' + changeSign + entry.change.toFixed(2) + '</span>' +
+      '</div>' +
+      (entry.notes ? '<div style="color:var(--text3);margin-top:2px">' + esc(entry.notes) + '</div>' : '') +
+      (!entry.ok ? '<div style="color:var(--red);margin-top:4px">⚠️ Expected: $' + (entry.expected?.toFixed(2) || '?') + ' — got: $' + entry.change.toFixed(2) + '</div>' : '') +
+    '</div>';
+  }).join('');
+}
+
+const _origRenderAll = renderAll;
+renderAll = function() {
+  _origRenderAll();
+  const issues = AUDITOR.verifyState();
+  if (issues.length > 0) AUDITOR.record('AUTO_STATE_CHECK', S.bal, S.bal, 0, 'Issues: ' + issues.join(' | '));
+  renderAuditLog();
+};
+
+AUDITOR.load();
 
 load();
 // API key in separate storage — never wiped by reset or seed
