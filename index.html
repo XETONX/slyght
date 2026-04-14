@@ -103,7 +103,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .card-sub{font-size:11px;color:var(--text3);margin-top:2px}
 /* DEBT TILES */
 .debt-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s;height:160px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
+.debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s;min-height:160px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
 .debt-tile:active{background:var(--bg4)}
 .dt-name{font-size:12px;color:var(--text);font-weight:600;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dt-amt{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1;margin-bottom:4px}
@@ -274,7 +274,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .nw-val{font-family:var(--mono);font-size:14px;font-weight:700}
 .nw-val.pos{color:var(--green)}.nw-val.neg{color:var(--red)}
 /* PRIORITY */
-.pri-badge{width:16px;height:16px;border-radius:50%;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);vertical-align:middle;margin-right:3px;flex-shrink:0}
+.pri-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;margin-right:5px;flex-shrink:0}
 /* COMPACT INFO LINE */
 .info-line{font-size:12px;color:var(--text3);padding:2px 0;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 /* EXPAND CARD */
@@ -425,7 +425,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <!-- PAYDAY PLAN (FIX 8) -->
       <div class="card" style="margin-bottom:12px">
         <div class="card-hdr" onclick="toggleExpandCard('payday-plan-body','payday-plan-tog')" style="cursor:pointer;margin-bottom:0">
-          <div class="card-title">Payday Plan — 15th</div>
+          <div class="card-title" id="payday-plan-title">Payday Plan — 15th</div>
           <span id="payday-plan-tog" style="font-size:14px;color:var(--text3)">▴</span>
         </div>
         <div id="payday-plan-body" class="expand-body" style="max-height:2000px"></div>
@@ -448,18 +448,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="card">
         <div class="card-hdr"><div class="card-title">Long-Term Liabilities</div></div>
         <div class="debt-grid">
-          <div class="debt-tile" onclick="openLtDebtModal('car')">
-            <div class="dt-name">Car Loan <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
-            <div class="dt-amt bad" id="dt-car">$23,990</div>
-            <div class="dt-sub" id="dt-car-sub"></div>
-            <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-car-fill" style="width:64%;background:var(--red)"></div></div></div>
-          </div>
-          <div class="debt-tile" onclick="openLtDebtModal('cc')">
-            <div class="dt-name">Credit Card <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
-            <div class="dt-amt bad" id="dt-cc">$4,595</div>
-            <div class="dt-sub" id="dt-cc-sub"></div>
-            <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-cc-fill" style="width:100%;background:var(--red)"></div></div></div>
-          </div>
+          <div id="lt-car-tile" class="debt-tile" onclick="openLtDebtModal('car')"></div>
+          <div id="lt-cc-tile" class="debt-tile" onclick="openLtDebtModal('cc')"></div>
         </div>
       </div>
       <!-- RECENT SPENDING -->
@@ -696,7 +686,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="modal-rate" placeholder="0" inputmode="decimal"></div>
     <div class="modal-field"><label>Due date</label><input class="modal-input" type="date" id="modal-due"></div>
     <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="modal-notes"></div>
-    <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" type="number" id="modal-priority" min="1" max="99" value="1"></div>
+    <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" type="number" id="modal-priority" min="1" max="99" value="1"><button onclick="document.getElementById('modal-priority').stepDown(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↓</button><button onclick="document.getElementById('modal-priority').stepUp(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↑</button></div>
     <div id="modal-payoff-eta" style="font-size:12px;color:var(--text3);padding:8px 0;border-top:1px solid var(--border);margin-bottom:4px"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-paid" onclick="markDebtPaid()">Mark Cleared</button>
@@ -1405,7 +1395,7 @@ function renderAnalysisTab() {
     const baseline = baselines[k] || 200;
     const isOver = v > baseline;
     const overBadge = isOver ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">'+(i===0?'WORST':'OVER')+'</span>' : '';
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">' +
+    return '<div onclick="openCategoryDrillDown(\''+k+'\')" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer">' +
       '<div style="width:32px;height:32px;border-radius:8px;background:'+col+'22;color:'+col+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+k[0].toUpperCase()+'</div>' +
       '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k+overBadge+'</div>' +
       '<div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div>' +
@@ -1604,6 +1594,39 @@ function renderAnalysisTab() {
   c.innerHTML = html;
 }
 
+function openCategoryDrillDown(cat) {
+  const now = new Date();
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const monthName = months[now.getMonth()];
+  const txns = (S.txns || []).filter(t => !t.income && (t.cat || 'Other') === cat);
+  const total = txns.reduce((s,t) => s+t.amt, 0);
+  let html = '<div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:4px">' + cat + '</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">' + monthName + ' \u00B7 ' + txns.length + ' transaction' + (txns.length!==1?'s':'') + '</div>';
+  if (!txns.length) {
+    html += '<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px 0">No transactions in this category yet.</div>';
+  } else {
+    html += txns.slice().reverse().map(t => {
+      const d = new Date(t.ts);
+      const dateStr = String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">' +
+        '<div><div style="font-size:13px;color:var(--text);font-weight:500">' + (t.note ? esc(t.note) : cat) + '</div>' +
+        '<div style="font-size:11px;color:var(--text3)">' + dateStr + '</div></div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">$' + t.amt.toFixed(2) + '</div></div>';
+    }).join('');
+    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0">' +
+      '<span style="font-size:12px;color:var(--text3);font-weight:600;text-transform:uppercase">Total</span>' +
+      '<span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$' + total.toFixed(2) + '</span></div>';
+  }
+  html += '<button onclick="this.closest(\'.modal-overlay\').classList.remove(\'open\')" style="width:100%;margin-top:14px;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer" type="button">Close</button>';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open';
+  overlay.style.cssText = 'z-index:1000';
+  overlay.innerHTML = '<div class="modal" style="max-width:380px"><div class="modal-title">' + cat + ' \u2014 ' + monthName + '</div><div>' + html + '</div></div>';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 function renderAll() {
   // L2: Month-end snapshot — write to S.monthlyHistory when month rolls over
   const nowForSnap = new Date();
@@ -1712,9 +1735,19 @@ function renderAll() {
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
-  const dailyLabel = maxDay >= dailyBudget ? fmtC(dailyBudget) + ' \u2605' : (maxDay > 0 ? fmtC(maxDay) : '$0');
-  $('m-daily').textContent = dailyLabel;
-  $('m-daily').className = 'met-v ' + (maxDay <= 0 ? 'bad' : maxDay < 30 ? 'warn' : 'ok');
+  const dailyLabel = maxDay >= dailyBudget ? '\u2605 ' + fmtC(dailyBudget) : (maxDay > 0 ? fmtC(maxDay) : '$0');
+  const dailyEl = $('m-daily');
+  if (dailyEl) {
+    dailyEl.textContent = dailyLabel;
+    if (maxDay >= dailyBudget) {
+      dailyEl.style.color = 'var(--green)';
+    } else if (maxDay < dailyBudget * 0.5) {
+      dailyEl.style.color = 'var(--red)';
+    } else {
+      dailyEl.style.color = 'var(--amber)';
+    }
+    dailyEl.className = 'met-v';
+  }
   const todaySpent = getTodaySpent();
   const todayEl = $('m-today-spent'), barEl = $('m-today-bar');
   if (todayEl) { todayEl.textContent = fmt(todaySpent); todayEl.className = 'met-v ' + (todaySpent >= maxDay && maxDay > 0 ? 'bad' : todaySpent >= maxDay * 0.7 ? 'warn' : 'ok'); }
@@ -1740,7 +1773,7 @@ function renderAll() {
     surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
   }
   const surplusLbl = $('m-surplus-lbl');
-  if (surplusLbl) surplusLbl.textContent = 'after bills+buffer';
+  if (surplusLbl) surplusLbl.textContent = 'Available now after bills + buffer';
 
   // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
   const remaining = dailyBudget - todaySpent;
@@ -1788,6 +1821,7 @@ function renderAll() {
     if (pdPlanBtn) { pdPlanBtn.textContent = pdPlanBtn.textContent.replace('▾','▴'); }
   }
   renderDebtTiles();
+  renderLtTiles();
   renderDashTxns();
   renderBillsGrouped();
   renderBonusList(bonusTotal, safe);
@@ -1892,8 +1926,25 @@ function renderPaydayPlan() {
   // Step 4: Buffer line
   lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true});
 
+  // Update card title for past-tense when payday has been received
+  const planTitleEl = $('payday-plan-title');
+  if (planTitleEl) {
+    if (S.paydayReceived) {
+      const recDateStr = S.paydayReceivedDate
+        ? new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric', month:'short'})
+        : 'payday';
+      planTitleEl.textContent = 'Your $' + Math.round(income).toLocaleString() + ' landed on ' + recDateStr + ' \u2014 here\u2019s what happened';
+    } else {
+      planTitleEl.textContent = 'Payday Plan \u2014 ' + paydayDay + 'th';
+    }
+  }
+
+  const planSubtitle = S.paydayReceived
+    ? 'Here\u2019s how your $' + Math.round(income).toLocaleString('en-AU') + ' was allocated on the ' + paydayDay + 'th:'
+    : 'Do this in order when $' + Math.round(income).toLocaleString('en-AU') + ' lands on the ' + paydayDay + 'th:';
+
   el.innerHTML = '<div style="padding-top:4px">' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Do this in order when $' + Math.round(income).toLocaleString('en-AU') + ' lands on the ' + paydayDay + 'th:</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' + planSubtitle + '</div>' +
     lines.map(r =>
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)'+(r.directive?';border-left:2px solid var(--amber);padding-left:8px;margin-left:-8px':'')+'">' +
       '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">' +
@@ -2026,23 +2077,68 @@ function renderDebtTiles() {
     const pct = Math.min(100, Math.round((d.amt/total)*100));
     const fillCol = d.delayed ? 'var(--amber)' : 'var(--red)';
     const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
+    let dueUrgency = 'default';
+    if (d.delayDate) {
+      const dueD = new Date(d.delayDate);
+      const now = new Date();
+      const diffDays = Math.ceil((dueD - now) / 86400000);
+      if (diffDays <= 0) dueUrgency = 'overdue';
+      else if (diffDays <= 2) dueUrgency = 'soon';
+      else if (diffDays <= 7) dueUrgency = 'week';
+    }
+    const dueColor = dueUrgency === 'overdue' || dueUrgency === 'soon' ? 'var(--red)' : dueUrgency === 'week' ? 'var(--amber)' : '';
+    const dueDisplay = dueUrgency === 'overdue' ? '⚠️ Due ' + dueStr : 'Due ' + dueStr;
     const ri = S.debts.indexOf(d);
     const dailyInt = (d.rate > 0) ? (d.amt * d.rate / 100 / 365) : 0;
     const intTicker = dailyInt > 0
       ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day</div>'
       : '';
     const pri = d.priority || (i+1);
-    const priBadge = '<span class="pri-badge">'+pri+'</span>';
+    const priBadge = '<span class="pri-badge" style="background:' +
+      (pri===1?'var(--green-dim)':pri===2?'var(--amber-dim)':'var(--bg4)') + ';color:' +
+      (pri===1?'var(--green)':pri===2?'var(--amber)':'var(--text3)') + ';border:1px solid ' +
+      (pri===1?'var(--green-border)':pri===2?'var(--amber-border)':'var(--border2)') + '">' + pri + '</span>';
     return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
-      '<div class="dt-name">'+priBadge + esc(d.name) + '</div>' +
+      '<div class="dt-name">'+priBadge + esc(d.name) + (d.linkedLiability ? '<span style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:700;background:var(--red-dim);padding:1px 4px;border-radius:3px;margin-left:3px">⚠️ LINKED</span>' : '') + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
       intTicker +
       '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
-      '<div class="dt-status '+col+'">' + (dueStr === 'ASAP' ? '<span style="color:var(--red);font-weight:700">⚡ Pay now</span>' : 'Due ' + dueStr) + '</div>' +
+      '<div class="dt-status" style="' + (dueColor ? 'color:' + dueColor : '') + '">' +
+        (dueStr === 'ASAP' ? '<span style="color:var(--red);font-weight:700">⚡ Pay now</span>' : dueDisplay) + '</div>' +
       '</div>';
   }).join('');
+}
+
+function renderLtTiles() {
+  const carTile = $('lt-car-tile');
+  const ccTile = $('lt-cc-tile');
+  if (!carTile || !ccTile) return;
+
+  // Car loan tile
+  const carAmt = S.carloan || 0;
+  const carOrig = S.carloanOriginal || carAmt || 1;
+  const carPct = carOrig > 0 ? Math.round(((carOrig - carAmt) / carOrig) * 100) : 0;
+  carTile.innerHTML = '<div class="dt-name">Car Loan</div>' +
+    '<div class="dt-amt bad">' + fmtC(carAmt) + '</div>' +
+    '<div class="dt-sub">' + carPct + '% paid off</div>' +
+    '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + carPct + '% cleared</div>' +
+    '<div class="dt-bar"><div class="dt-fill" style="width:' + carPct + '%;background:var(--green)"></div></div></div>' +
+    '<div class="dt-status">Firstmac · ' + (S.carloan > 0 ? 'Active' : 'Cleared \u2713') + '</div>';
+
+  // CC tile
+  const ccAmt = S.cc || 0;
+  const ccLimit = S.ccLimit || 1500;
+  const ccUtil = ccLimit > 0 ? Math.round((ccAmt / ccLimit) * 100) : 0;
+  const ccMinPay = Math.max(25, Math.round(ccAmt * 0.02));
+  const ccColor = ccUtil >= 80 ? 'var(--red)' : ccUtil >= 50 ? 'var(--amber)' : 'var(--green)';
+  ccTile.innerHTML = '<div class="dt-name">Credit Card</div>' +
+    '<div class="dt-amt bad">' + fmtC(ccAmt) + '</div>' +
+    '<div class="dt-sub">' + ccUtil + '% utilisation · min ~' + fmtC(ccMinPay) + '/mo</div>' +
+    '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + ccUtil + '% of $' + ccLimit.toLocaleString() + ' limit</div>' +
+    '<div class="dt-bar"><div class="dt-fill" style="width:' + ccUtil + '%;background:' + ccColor + '"></div></div></div>' +
+    '<div class="dt-status">ANZ · ' + (ccAmt > 0 ? ccUtil + '% used' : 'Clear \u2713') + '</div>';
 }
 
 function openDebtModal(idx) {
@@ -2108,6 +2204,16 @@ function markDebtPaid() {
   S.debts[idx].paid = true;
   save(); closeModal('debt-modal'); renderAll();
   showUndoToast('Debt marked paid');
+  // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill paid
+  if (d.name.toLowerCase().includes('afterpay')) {
+    const now = new Date();
+    const apBill = BILLS.find(b => b.name.toLowerCase().includes('afterpay'));
+    if (apBill) {
+      if (!S.paidBills) S.paidBills = {};
+      const apKey = now.getFullYear() + '-' + (now.getMonth()+1) + '-' + apBill.name + '-' + apBill.day;
+      S.paidBills[apKey] = true;
+    }
+  }
   // UX2: debt cleared celebration
   const overlay = $('debt-celebrate-overlay');
   const msg = $('debt-celebrate-msg');
@@ -2139,7 +2245,23 @@ function saveNewDebt() {
   const notes = $('nd-notes').value.trim();
   if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
   if (!S.nextDebtId) S.nextDebtId = S.debts.length;
-  S.debts.push({id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes});
+  // Missed payment detection: scan for linked liabilities
+  const LINKED_KEYWORDS = ['missed', 'late', 'overdue', 'car', 'firstmac', 'loan', 'credit', 'card', 'cc', 'visa', 'afterpay'];
+  const combinedText = (name + ' ' + notes).toLowerCase();
+  let linkedLiability = null;
+  if (LINKED_KEYWORDS.some(kw => combinedText.includes(kw))) {
+    const isCarRelated = ['car','firstmac','loan'].some(kw => combinedText.includes(kw));
+    const isCcRelated = ['credit','card','cc','visa'].some(kw => combinedText.includes(kw));
+    if (isCarRelated || isCcRelated) {
+      const linkMsg = isCarRelated
+        ? 'Is this linked to your Car Loan (Firstmac)?'
+        : 'Is this linked to your Credit Card (ANZ)?';
+      if (confirm(linkMsg)) {
+        linkedLiability = isCarRelated ? 'carloan' : 'cc';
+      }
+    }
+  }
+  S.debts.push({id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes, ...(linkedLiability ? {linkedLiability} : {})});
   save(); closeModal('add-debt-modal'); renderAll();
 }
 
@@ -2441,18 +2563,18 @@ function renderBillsGrouped() {
 
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
-  // FIX 2: Replace Next Week + Later with one combined monthly summary table sorted by amount
-  const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => b.amt - a.amt);
+  // FIX 2: Replace Next Week + Later with one combined monthly summary table sorted by day (ascending)
+  const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => a.day - b.day);
   let monthlyHtml = '';
   if (upcoming.length) {
     const monthlyTotal = upcoming.reduce((s,b) => s+b.amt, 0);
-    let runBal = liveBal - weekTotal - bucketTotal; // H10: deduct buckets for consistency with weekly panel
+    let runBal = getLiveBal(); // Running balance from live balance, deducting each bill in day order
     monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
       '<div class="card" style="padding:4px 16px">' +
       upcoming.map(b => {
         const ri = BILLS.findIndex(x => x.name === b.name);
         runBal -= b.amt;
-        const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--text3)';
+        const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
           '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+'</div>' +
           '<div style="font-size:11px;color:var(--text3)">day '+b.day+'</div></div>' +
@@ -2496,7 +2618,11 @@ function renderCalendar() {
   const grid = $('cal-grid'); if (!grid) return;
   const today = new Date(), payday = S.payday || 15;
   const billMap = {};
-  getExpandedBills().forEach(b => { if (!billMap[b.day]) billMap[b.day] = []; billMap[b.day].push(b); });
+  getExpandedBills().filter(b => {
+    const _calNow = new Date();
+    const key = _calNow.getFullYear()+'-'+(_calNow.getMonth()+1)+'-'+b.name+'-'+b.day;
+    return !(S.paidBills && S.paidBills[key]);
+  }).forEach(b => { if (!billMap[b.day]) billMap[b.day] = []; billMap[b.day].push(b); });
   const firstDay = new Date(calYear, calMonth, 1);
   let startDow = firstDay.getDay() - 1; if (startDow < 0) startDow = 6;
   const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
@@ -2660,8 +2786,12 @@ function renderCalWeekSummary() {
   const surplus = getGenuineSurplus();
   if (surplus > 0 && S.debts) {
     const activeDebts = S.debts.filter(d => !d.paid);
-    // Sort by priority (same order as payday plan), then rate descending for ties
-    activeDebts.sort((a,b) => (a.priority||99) - (b.priority||99) || (b.rate||0) - (a.rate||0));
+    // Sort using debtStrategy (consistent with payday plan)
+    const surplusStrategy = S.debtStrategy || 'avalanche';
+    activeDebts.sort((a,b) => {
+      if (surplusStrategy === 'snowball') return a.amt - b.amt || (a.priority||99) - (b.priority||99);
+      return (b.rate||0) - (a.rate||0) || (a.priority||99) - (b.priority||99);
+    });
     const target = activeDebts[0];
     if (target) {
       const canPay = Math.min(surplus, target.amt);
