@@ -110,7 +110,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .dt-amt.bad{color:var(--red)}.dt-amt.warn{color:var(--amber)}.dt-amt.ok{color:var(--green)}
 .dt-sub{font-size:11px;color:var(--text3);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dt-bar-wrap{margin-bottom:4px}
-.dt-bar-lbl{font-size:9px;color:var(--text3);font-family:var(--mono);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
+.dt-bar-lbl{font-size:10px;color:var(--text3);font-family:var(--mono);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em}
 .dt-bar{height:3px;background:var(--bg5);border-radius:2px;overflow:hidden}
 .dt-fill{height:3px;border-radius:2px}
 .dt-status{font-size:10px;font-family:var(--mono);font-weight:700;letter-spacing:.05em;margin-top:6px}
@@ -125,7 +125,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .bills-group-title{font-size:11px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.08em}
 .bills-group-title.today{color:var(--red)}.bills-group-title.week{color:var(--amber)}
 .bills-group-total{font-family:var(--mono);font-size:13px;font-weight:700}
-.bill-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.bill-row{display:flex;align-items:center;gap:12px;padding:14px 0;min-height:44px;border-bottom:1px solid var(--border);cursor:pointer}
 .bill-row:last-child{border-bottom:none}
 .bill-chip{min-width:36px;height:36px;border-radius:var(--r-xs);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;font-weight:700;flex-shrink:0}
 .bill-chip.today{background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)}
@@ -134,7 +134,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .bill-info{flex:1;min-width:0}
 .bill-name{font-size:14px;color:var(--text);font-weight:500}
 .bill-tag{font-size:11px;color:var(--text3);margin-top:2px;display:flex;align-items:center;gap:6px}
-.bill-recurring{font-size:9px;font-family:var(--mono);font-weight:700;color:var(--green);background:var(--green-dim);padding:1px 5px;border-radius:3px;letter-spacing:.05em}
+.bill-recurring{font-size:10px;font-family:var(--mono);font-weight:700;color:var(--green);background:var(--green-dim);padding:1px 5px;border-radius:3px;letter-spacing:.05em}
 .bill-amt{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);white-space:nowrap}
 /* CALENDAR */
 .cal-day{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px 2px;cursor:pointer;border:1px solid transparent;transition:background .1s}
@@ -146,7 +146,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .cal-day-num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);line-height:1}
 .cal-day.today .cal-day-num{color:var(--green)}
 .cal-day-dot{width:4px;height:4px;border-radius:50%;margin-top:2px}
-.cal-day-amt{font-size:9px;font-family:var(--mono);color:var(--text3);margin-top:1px;line-height:1;text-align:center}
+.cal-day-amt{font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:1px;line-height:1;text-align:center}
 /* AFFORD */
 .afford-row{display:flex;gap:8px;margin-bottom:12px}
 .s-input{flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:13px 14px;font-size:15px;color:var(--text);outline:none;min-width:0;transition:border-color .2s}
@@ -165,7 +165,7 @@ select.s-input{cursor:pointer}
 .cut-save{font-size:12px;color:var(--text3);font-family:var(--mono)}
 /* BUDGET */
 .seg{display:flex;background:var(--bg3);border-radius:var(--r-sm);padding:3px;margin-bottom:16px}
-.seg-btn{flex:1;padding:9px;font-size:12px;font-weight:600;border:none;background:none;color:var(--text3);cursor:pointer;border-radius:7px;transition:all .15s}
+.seg-btn{flex:1;padding:12px 10px;font-size:12px;font-weight:600;border:none;background:none;color:var(--text3);cursor:pointer;border-radius:7px;transition:all .15s}
 .seg-btn.on{background:var(--bg5);color:var(--text);border:1px solid var(--border2)}
 .slider-row{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .slider-lbl{font-size:13px;color:var(--text2);min-width:150px;font-weight:500}
@@ -194,7 +194,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* SETTINGS */
 .settings-section{margin-bottom:20px}
 .settings-title{font-size:12px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
-.settings-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--border)}
+.settings-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;min-height:44px;border-bottom:1px solid var(--border)}
 .settings-row:last-child{border-bottom:none}
 .settings-lbl{font-size:14px;color:var(--text2);font-weight:500}
 .settings-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 12px;font-size:14px;font-family:var(--mono);color:var(--text);width:120px;text-align:right;outline:none;transition:border-color .2s}
@@ -215,7 +215,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;display:flex;background:var(--bg2);border-top:1px solid var(--border2);padding:6px 4px env(safe-area-inset-bottom,6px);z-index:100;align-items:center}
 .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 4px;background:none;border:none;cursor:pointer;border-radius:var(--r-sm)}
 .nav-btn svg{opacity:.45;transition:opacity .15s;color:var(--text)}
-.nav-lbl{font-size:10px;color:var(--text3);font-weight:500;letter-spacing:.03em;transition:color .15s}
+.nav-lbl{font-size:11px;color:var(--text3);font-weight:500;letter-spacing:.03em;transition:color .15s}
 .nav-btn.active svg{opacity:1}
 .nav-btn.active .nav-lbl{color:var(--green)}
 .nav-center-btn{width:56px;height:56px;border-radius:50%;background:var(--green);color:#000;border:none;font-size:28px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,232,122,0.4);display:flex;align-items:center;justify-content:center;margin-top:-16px;flex-shrink:0;transition:transform .15s,box-shadow .15s}
@@ -234,7 +234,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .modal-checkbox-row label{font-size:14px;color:var(--text2);font-weight:500;cursor:pointer}
 .modal-checkbox{width:18px;height:18px;cursor:pointer;accent-color:var(--green)}
 .modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
-.modal-btn{padding:13px;border-radius:var(--r-sm);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.modal-btn{min-height:48px;padding:14px;border-radius:var(--r-sm);font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
 .modal-btn:active{transform:scale(.97)}
 .modal-btn-save{background:var(--green);color:#000;grid-column:span 2}
 .modal-btn-paid{background:var(--green);color:#000}
@@ -274,7 +274,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .nw-val{font-family:var(--mono);font-size:14px;font-weight:700}
 .nw-val.pos{color:var(--green)}.nw-val.neg{color:var(--red)}
 /* PRIORITY */
-.pri-badge{width:16px;height:16px;border-radius:50%;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);font-size:9px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);vertical-align:middle;margin-right:3px;flex-shrink:0}
+.pri-badge{width:16px;height:16px;border-radius:50%;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);vertical-align:middle;margin-right:3px;flex-shrink:0}
 /* COMPACT INFO LINE */
 .info-line{font-size:12px;color:var(--text3);padding:2px 0;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 /* EXPAND CARD */
@@ -380,7 +380,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
-        <div class="icon-btn" onclick="softRefresh()" title="Refresh">
+        <div class="icon-btn" onclick="softRefresh()" title="Sync latest balance from Virgin Money">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <div class="icon-btn" onclick="goPage('pg-settings')" title="Settings">
@@ -410,7 +410,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="metrics">
         <div class="met"><div class="met-l">Safe/Day</div><div class="met-v" id="m-daily">$0</div><div class="met-s">max today</div></div>
         <div class="met"><div class="met-l">Today</div><div class="met-v" id="m-today-spent">$0</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div id="m-today-bar" style="height:3px;border-radius:2px;transition:width .4s"></div></div></div>
-        <div class="met"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s" id="m-surplus-lbl">now</div></div>
+        <div class="met"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s" id="m-surplus-lbl">after bills</div></div>
       </div>
       <div id="dash-overspend"></div>
 
@@ -426,9 +426,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="card" style="margin-bottom:12px">
         <div class="card-hdr" onclick="toggleExpandCard('payday-plan-body','payday-plan-tog')" style="cursor:pointer;margin-bottom:0">
           <div class="card-title">Payday Plan — 15th</div>
-          <span id="payday-plan-tog" style="font-size:14px;color:var(--text3)">▾</span>
+          <span id="payday-plan-tog" style="font-size:14px;color:var(--text3)">▴</span>
         </div>
-        <div id="payday-plan-body" class="expand-body" style="max-height:0"></div>
+        <div id="payday-plan-body" class="expand-body" style="max-height:2000px"></div>
       </div>
       <!-- IMMEDIATE DEBTS -->
       <div class="card">
@@ -449,13 +449,13 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="card-hdr"><div class="card-title">Long-Term Liabilities</div></div>
         <div class="debt-grid">
           <div class="debt-tile" onclick="openLtDebtModal('car')">
-            <div class="dt-name">Car Loan <span style="font-size:9px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
+            <div class="dt-name">Car Loan <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
             <div class="dt-amt bad" id="dt-car">$23,990</div>
             <div class="dt-sub" id="dt-car-sub"></div>
             <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-car-fill" style="width:64%;background:var(--red)"></div></div></div>
           </div>
           <div class="debt-tile" onclick="openLtDebtModal('cc')">
-            <div class="dt-name">Credit Card <span style="font-size:9px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
+            <div class="dt-name">Credit Card <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">TAP</span></div>
             <div class="dt-amt bad" id="dt-cc">$4,595</div>
             <div class="dt-sub" id="dt-cc-sub"></div>
             <div class="dt-bar-wrap"><div class="dt-bar-lbl">% paid off</div><div class="dt-bar"><div class="dt-fill" id="dt-cc-fill" style="width:100%;background:var(--red)"></div></div></div>
@@ -487,9 +487,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="pad">
       <div class="card" style="padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-          <button onclick="calPrev()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-xs);width:32px;height:32px;color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">&#8249;</button>
+          <button onclick="calPrev()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-xs);width:44px;height:44px;min-height:44px;color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">&#8249;</button>
           <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)" id="cal-month-label">April 2026</div>
-          <button onclick="calNext()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-xs);width:32px;height:32px;color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">&#8250;</button>
+          <button onclick="calNext()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-xs);width:44px;height:44px;min-height:44px;color:var(--text2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center">&#8250;</button>
         </div>
         <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:4px">
           <div style="font-size:10px;color:var(--text3);text-align:center;padding:4px;font-weight:600">M</div>
@@ -648,7 +648,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="section-hdr">Export — paste into Claude to sync</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠️ This export contains real financial data. Only paste into trusted conversations.</div>
         <div class="export-box" id="export-box"></div>
-        <button class="action-btn" onclick="copyExport()">Copy Export Code</button>
+        <button class="action-btn" onclick="copyExport()" title="⚠️ Export contains sensitive financial data — store securely">Copy Export Code</button>
         <div class="section-hdr">Import — paste Claude's updated code</div>
         <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
         <button class="action-btn" onclick="doImport()">Import &amp; Apply</button>
@@ -915,7 +915,6 @@ const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11'
 // SEC2: sanitize user-supplied strings before inserting into innerHTML
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
 const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
-const DISC_BASELINE = 750+300+200+75+25;
 
 let activeDebtIdx = -1;
 let activeBillIdx = -1;
@@ -1026,17 +1025,17 @@ function daysLeft(payday) {
 // --- Core financial helpers ---
 
 // Average daily discretionary spend — excludes non-spending categories
-// 7-day minimum floor on daySpan; $80 fallback if insufficient data
+// 7-day minimum floor on daySpan; S.weekdayBudget||60 fallback if insufficient data
 const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer']);
 function getAvgDailySpend() {
   const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
-  if (expTxns.length < 2) return 80;
+  if (expTxns.length < 3) return S.weekdayBudget || 60;
   const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
   const newest = Math.max(...timestamps);
   const daySpan = Math.max(7, (newest - oldest) / (1000 * 60 * 60 * 24));
   const totalSpent = expTxns.reduce((s, t) => s + t.amt, 0);
-  return Math.max(20, Math.min(200, totalSpent / daySpan));
+  return Math.max(20, Math.min(getDailyBudget(), totalSpent / daySpan));
 }
 
 // Correct Max/Day: (liveBal - allBillsDueBeforePayday - bucketTotal - $500 buffer) / daysLeft; capped at weekday/weekend budget
@@ -1051,7 +1050,7 @@ function getMaxDay() {
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const spendable = liveBal - allBillsDue - bucketTotal - getDynamicBuffer();
   if (days <= 0 || spendable <= 0) return 0;
-  return Math.min(getDailyBudget(), spendable / days);
+  return Math.min(getDailyBudget(), Math.max(0, spendable / days));
 }
 
 // Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
@@ -1061,7 +1060,7 @@ function getGenuineSurplus() {
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
-  return liveBal - allBillsDue - bucketTotal - livingReserve - getDynamicBuffer();
+  return Math.max(0, liveBal - allBillsDue - bucketTotal - livingReserve - getDynamicBuffer());
 }
 
 // Analysis only — never participates in balance calculations
@@ -1069,13 +1068,12 @@ function getTxnSpent() {
   return S.txns.filter(t => !t.income).reduce((s,t) => s+t.amt, 0);
 }
 // S.bal IS the live balance — single source of truth. No arithmetic.
-function getLiveBal() {
-  return isNaN(S.bal) ? 0 : (S.bal || 0);
-}
+function getLiveBal() { return S.bal; }
 // FA2: dynamic buffer — $500 default, rises with upcoming bills
 function getDynamicBuffer() {
   const due7 = getExpandedBills().filter(b => {
     if (b.recurring === false) return false;
+    const now2 = new Date(); const paidKey = now2.getFullYear()+'-'+(now2.getMonth()+1)+'-'+b.name+'-'+b.day; if (S.paidBills && S.paidBills[paidKey]) return false;
     const today = new Date().getDate();
     const diff = b.day >= today ? b.day - today : 31 - today + b.day;
     return diff >= 0 && diff <= 7;
@@ -1090,7 +1088,8 @@ function getTodaySpent() {
   return S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
 }
 function getNoSpendStreak() {
-  const expenseTxns = S.txns.filter(t => !t.income);
+  // Only discretionary transactions break the streak — debt repayments do NOT count
+  const expenseTxns = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat));
   if (!expenseTxns.length) return 0;
   const today = new Date(); today.setHours(0,0,0,0);
   const todayHasTxn = expenseTxns.some(t => new Date(t.ts) >= today);
@@ -1121,9 +1120,19 @@ function getMonthPhase() {
   const today = new Date().getDate();
   const payday = S.payday || 15;
   const days = daysLeft(payday);
-  if (today === payday) return 'PAYDAY';
-  if (days <= 3) return 'PRE_PAYDAY';
-  if (today > payday && today <= 25) return 'MID_MONTH';
+  // PAYDAY: it's payday and pay hasn't been marked received yet
+  if (today === payday && !S.paydayReceived) return 'PAYDAY';
+  // PRE_PAYDAY: 3 days or fewer until payday and not yet received
+  if (days <= 3 && !S.paydayReceived) return 'PRE_PAYDAY';
+  // Post-payday phases: only when paydayReceived is true
+  if (S.paydayReceived) {
+    const recDate = S.paydayReceivedDate ? new Date(S.paydayReceivedDate) : new Date();
+    const now = new Date();
+    const daysSincePayday = Math.floor((now - recDate) / (1000 * 60 * 60 * 24));
+    return daysSincePayday <= 15 ? 'MID_MONTH' : 'END_OF_MONTH';
+  }
+  // Default: mid-month if payday has passed this month but not received
+  if (today > payday) return 'MID_MONTH';
   return 'END_OF_MONTH';
 }
 
@@ -1143,6 +1152,7 @@ function showOb() {
 function launchApp() {
   const b = parseFloat($('ob-bal').value);
   if (isNaN(b)) { alert('Enter your Virgin Money balance.'); return; }
+  if (!b || b <= 0) { alert('Enter your Virgin Money balance to continue.'); return; }
   const prevExpected = getLiveBal(); // H1/H2: snapshot before balance change
   S.bal = b;
   save();
@@ -1394,7 +1404,7 @@ function renderAnalysisTab() {
     const col = CHIP_COLORS[i % CHIP_COLORS.length];
     const baseline = baselines[k] || 200;
     const isOver = v > baseline;
-    const overBadge = isOver ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">'+(i===0?'WORST':'OVER')+'</span>' : '';
+    const overBadge = isOver ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">'+(i===0?'WORST':'OVER')+'</span>' : '';
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">' +
       '<div style="width:32px;height:32px;border-radius:8px;background:'+col+'22;color:'+col+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+k[0].toUpperCase()+'</div>' +
       '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k+overBadge+'</div>' +
@@ -1404,11 +1414,24 @@ function renderAnalysisTab() {
   }).join('');
   html += '</div>';
 
-  // --- Debt payments this month ---
+  // --- Opportunity cost coaching ---
+  const worstCat = sortedCats[0];
+  if (worstCat && worstCat[1] > 150) {
+    const monthly = worstCat[1];
+    const yearly = monthly * 12;
+    const ccMonths = S.cc > 0 ? Math.ceil(S.cc / monthly) : 0;
+    html += '<div class="card"><div class="card-title">&#x1F4A1; Opportunity Cost</div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7;padding-top:6px">' +
+      '<strong>' + fmtC(monthly) + '/mo on ' + worstCat[0] + '</strong> = ' + fmtC(yearly) + '/year.<br>' +
+      (ccMonths > 0 ? 'Redirected to CC: cleared in <strong>' + ccMonths + ' months</strong>.' : '') +
+      '</div></div>';
+  }
+
+  // --- Financial Progress ---
   const debtPaidThisMonth = S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
   if (debtPaidThisMonth > 0) {
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">Debt Payments</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">'+fmt(debtPaidThisMonth)+'</div></div>' +
-      '<div style="font-size:13px;color:var(--text2);line-height:1.7">Debt repayments logged this month — not counted as discretionary spending. This money is reducing your liabilities.</div></div>';
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Financial Progress &#x2713;</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">'+fmt(debtPaidThisMonth)+'</div></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">Debt repayments logged this month — not counted as discretionary spending. <strong style="color:var(--green)">Debt repayments are not spending — they build your net worth.</strong></div></div>';
   }
 
   // --- Income received ---
@@ -1610,7 +1633,8 @@ function renderAll() {
   const due = getBillsDue();
   const dueTotal = due.reduce((s,b) => s + b.amt, 0);
   const bonusTotal = S.bonuses.reduce((s,b) => s + (+b.amt || 0), 0);
-  const safe = liveBal - dueTotal + bonusTotal;
+  const bucketSafe = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  const safe = liveBal - dueTotal + bonusTotal - bucketSafe;
   const days = daysLeft(S.payday);
   const maxDay = getMaxDay();
   const today = new Date().getDate();
@@ -1620,12 +1644,16 @@ function renderAll() {
   $('h-bal').className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
   const hn = $('h-note');
   if (hn) {
-    if (txnSpent > 0) {
-      const debtSpent = S.txns ? S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0) : 0;
-      const livingSpent = txnSpent - debtSpent;
-      hn.textContent = debtSpent > 0
-        ? fmt(livingSpent) + ' spent · ' + fmt(debtSpent) + ' in debt payments'
-        : fmt(txnSpent) + ' spent this cycle';
+    const _todayStr = new Date().toDateString();
+    const _todayDebtPayments = S.txns ? S.txns.filter(t => !t.income && t.cat === 'Debt repayment' && new Date(t.ts).toDateString() === _todayStr) : [];
+    const _todayDebtTotal = _todayDebtPayments.reduce((s,t) => s+t.amt, 0);
+    const _todayDiscSpent = getTodaySpent();
+    if (_todayDebtTotal > 0) {
+      hn.textContent = fmt(_todayDiscSpent) + ' spent today · ' + fmt(_todayDebtTotal) + ' in debt payments \u2193';
+    } else if (_todayDiscSpent > 0) {
+      hn.textContent = fmt(_todayDiscSpent) + ' spent today';
+    } else if (txnSpent > 0) {
+      hn.textContent = 'Nothing spent today · ' + fmt(txnSpent) + ' this cycle';
     } else {
       hn.textContent = 'Enter your Virgin Money balance to start';
     }
@@ -1712,7 +1740,7 @@ function renderAll() {
     surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
   }
   const surplusLbl = $('m-surplus-lbl');
-  if (surplusLbl) surplusLbl.textContent = 'Available now';
+  if (surplusLbl) surplusLbl.textContent = 'after bills+buffer';
 
   // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
   const remaining = dailyBudget - todaySpent;
@@ -1752,6 +1780,13 @@ function renderAll() {
   renderAlerts(safe, liveBal, dueTotal, txnSpent);
   renderMonthlyPosition();
   renderPaydayPlan();
+  // A: Auto-expand payday plan on payday or when payday has been received
+  const pdPlanBody = document.querySelector('#payday-plan-body');
+  const pdPlanBtn = document.querySelector('#payday-plan-tog');
+  if (pdPlanBody && (S.paydayReceived || new Date().getDate() === (S.payday||15))) {
+    pdPlanBody.style.maxHeight = pdPlanBody.scrollHeight + 'px';
+    if (pdPlanBtn) { pdPlanBtn.textContent = pdPlanBtn.textContent.replace('▾','▴'); }
+  }
   renderDebtTiles();
   renderDashTxns();
   renderBillsGrouped();
@@ -2005,7 +2040,7 @@ function renderDebtTiles() {
       '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
-      '<div class="dt-status '+col+'">Due ' + dueStr + '</div>' +
+      '<div class="dt-status '+col+'">' + (dueStr === 'ASAP' ? '<span style="color:var(--red);font-weight:700">⚡ Pay now</span>' : 'Due ' + dueStr) + '</div>' +
       '</div>';
   }).join('');
 }
@@ -2165,6 +2200,7 @@ function deleteBill() {
 function markBillPaidMonth() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
+  saveUndoState(); // L3: undo support
   // Deduct from S.bal and log to history
   S.bal -= b.amt;
   S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
@@ -2173,6 +2209,7 @@ function markBillPaidMonth() {
   if (!S.paidBills) S.paidBills = {};
   S.paidBills[key] = true;
   save(); closeModal('bill-modal'); renderAll();
+  if(navigator.vibrate) navigator.vibrate(50);
 }
 
 // FIX 3: undo paid — only accessible inside the modal
@@ -2388,11 +2425,11 @@ function renderBillsGrouped() {
       const freqLabel = b.freq === 'fortnightly' ? 'FORTNIGHTLY' : b.freq === 'weekly' ? 'WEEKLY' : 'MONTHLY';
       const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
       const isPaid = S.paidBills && S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
-      const paidBadge = isPaid ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
-      const todayBadge = b.diff === 0 ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
+      const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
+      const todayBadge = b.diff === 0 ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
       return '<div class="bill-row">' +
         '<div class="bill-chip '+cc+'" onclick="openBillModal('+ri+')" style="min-width:38px">'+String(b.day).padStart(2,'0')+'</div>' +
-        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
+        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
         '<div style="display:flex;align-items:center;gap:6px">' +
         '<div class="bill-amt" style="'+(isPaid?'text-decoration:line-through;color:var(--text3)':b.diff===0?'color:var(--red)':'')+'">'+fmt(b.amt)+'</div>' +
         '</div></div>';
@@ -2417,7 +2454,7 @@ function renderBillsGrouped() {
         runBal -= b.amt;
         const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--text3)';
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
-          '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+'</div>' +
+          '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+'</div>' +
           '<div style="font-size:11px;color:var(--text3)">day '+b.day+'</div></div>' +
           '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(b.amt)+'</div>' +
           '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div></div></div>';
@@ -2586,18 +2623,18 @@ function renderCalWeekSummary() {
   // Balance flow — Now label + note changes when payday is this week
   const nowLabel = paydayInWeek ? 'Now + Pay' : 'Now';
   const nowNote = paydayInWeek
-    ? '<div style="font-size:9px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
+    ? '<div style="font-size:10px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
     : '';
   const projLabel = S.paydayReceived
     ? 'Projected end of week balance'
     : 'Projected Virgin Money<br>after this week\'s bills';
   const projNote = S.paydayReceived
-    ? '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 ' + remainingWindowDays + '</div>'
-    : '<div style="font-size:9px;margin-top:3px;visibility:hidden">x</div>';
+    ? '<div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 ' + remainingWindowDays + '</div>'
+    : '<div style="font-size:10px;margin-top:3px;visibility:hidden">x</div>';
   html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
   html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
   html += '<div style="font-size:18px;color:var(--text3);text-align:center;padding-top:18px">&#x2192;</div>';
-  html += '<div style="text-align:center"><div style="font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
   html += '</div>';
   // Max/day row below the grid
   const maxDayLabel = weekMaxDay >= getDailyBudget() ? fmtC(getDailyBudget()) + ' \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
@@ -2647,7 +2684,7 @@ function renderSavingsBuckets() {
   let html = buckets.map((b, i) => {
     const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
     const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
-    const accountBadge = '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
+    const accountBadge = '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
     return '<div onclick="openBucketModal('+i+')" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:var(--r-xs);margin:0 -4px;padding:12px 4px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
       '<span style="font-size:14px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">'+b.name+accountBadge+'</span>' +
@@ -2827,7 +2864,7 @@ function renderCutSliders() {
     const cut = isOver ? Math.round(over * 0.5) : 0;
     totalPotential += cut;
     const worstBadge = isOver && i === 0
-      ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle">WORST</span>'
+      ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle">WORST</span>'
       : '';
     return '<div style="margin-bottom:16px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
@@ -2909,7 +2946,7 @@ function renderDashTxns() {
     const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
     const d = new Date(t.ts);
     const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
-    const flag = t.flagged ? ' <span style="font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
+    const flag = t.flagged ? ' <span style="font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
     const isIncome = t.income;
     const chipCol = isIncome ? 'var(--green)' : col;
     const amtStr = isIncome ? '<span style="color:var(--green)">+'+fmt(t.amt)+'</span>' : '-'+fmt(t.amt);
@@ -2964,6 +3001,7 @@ function quickLogTxn() {
   if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
   day = Math.min(28, Math.max(1, day));
   if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
+  saveUndoState(); // L3: undo support
   if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
   // Income: add to balance
   if (cat === 'Income') {
@@ -3148,7 +3186,6 @@ function undoLastAction() {
 let _chatRendering = false;
 
 function buildSystemPrompt() {
-  // ── PART 1: Snapshot all live values ─────────────────────────────────────
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-AU', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const liveBal = getLiveBal();
@@ -3162,10 +3199,24 @@ function buildSystemPrompt() {
   const buckets = S.savingsBuckets || [];
   const bucketTotal = buckets.reduce((s,b) => s+(b.saved||0), 0);
   const wrxValue = S.wrxValue || 0;
+  const ccLimit = S.ccLimit || 6000;
+  const ccUtilPct = ccLimit > 0 ? Math.round(((S.cc||0)/ccLimit)*100) : 0;
+  const ccDailyInterest = ((S.cc||0) * 0.1999 / 365).toFixed(2);
+  const carPayoffPct = S.carloanOriginal > 0 ? Math.round(((S.carloanOriginal-(S.carloan||0))/S.carloanOriginal)*100) : 0;
+  const allBillsDueAmt = getBillsDue().reduce((s,b)=>s+b.amt, 0);
+  const livingReserve = Math.round(avgDaily * days);
+
+  // Today's transactions
+  const todayTxns = (S.txns||[]).filter(t => new Date(t.ts).toDateString() === now.toDateString());
+  const todayDebtPaid = todayTxns.filter(t => t.cat==='Debt repayment').reduce((s,t)=>s+t.amt, 0);
 
   // ── PART 2: Debts, bills, transactions ───────────────────────────────────
   const activeDebts = (S.debts||[]).filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
   const billsDue = getBillsDue();
+
+  const mtdIncome = (S.txns||[]).filter(t => t.income).reduce((s,t)=>s+t.amt, 0);
+  const mtdDebtPaid = (S.txns||[]).filter(t => t.cat==='Debt repayment').reduce((s,t)=>s+t.amt, 0);
+  const mtdDiscretionary = (S.txns||[]).filter(t=>!t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t)=>s+t.amt, 0);
 
   // Bills paid this month
   const paidBillsThisMonth = getExpandedBills().filter(b => {
@@ -3175,6 +3226,7 @@ function buildSystemPrompt() {
   });
 
   const recentTxns = (S.txns||[]).slice(-10).reverse();
+  const bucketList = buckets.length ? buckets.map(b=>'- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal').join('\n') : '- No savings buckets';
 
   // Month-to-date performance
   const mtdIncome = (S.txns||[]).filter(t => t.income).reduce((s,t) => s+t.amt, 0);
@@ -3237,17 +3289,18 @@ function buildSystemPrompt() {
     '═══ IMMEDIATE DEBTS (priority order) ═══\n'+debtList+'\n\n'+
     '═══ LONG-TERM LIABILITIES ═══\n'+
     '- Car loan: $'+(S.carloan||0).toFixed(2)+' at 9.87% \u2014 $387.69 fortnightly\n'+
-    '- Credit card: $'+(S.cc||0).toFixed(2)+' at 19.99%\n\n'+
+    '- Credit card: $'+(S.cc||0).toFixed(2)+' of $'+ccLimit+' limit ('+ccUtilPct+'% utilised) at 19.99% \u2014 '+(ccUtilPct > 80 ? 'NEAR LIMIT \u2014 prioritise paying this down' : ccUtilPct > 60 ? 'high utilisation' : 'manageable')+'\n\n'+
     '═══ BILLS DUE BEFORE NEXT PAYDAY ═══\n'+billsList+'\n\n'+
     '═══ BILLS ALREADY PAID THIS MONTH ═══\n'+paidBillsList+'\n\n'+
     '═══ RECENT TRANSACTIONS (newest first) ═══\n'+txnList+'\n\n'+
     '═══ SAVINGS BUCKETS ═══\n'+bucketList+'\n\n'+
     '═══ MAJOR ASSETS ═══\n'+
-    '- WRX (estimated value): $'+wrxValue.toFixed(2)+'\n'+
+    '- WRX (planned for sale \u2014 not yet liquid): $'+wrxValue.toFixed(2)+' estimated. Do NOT treat as available cash until sold.\n'+
     '- Savings buckets: $'+bucketTotal.toFixed(2)+'\n\n'+
     '═══ KEY METRICS ═══\n'+
     '- Safe to spend: '+safeToday+'\n'+
     '- Genuine surplus (after bills + buffer): $'+surplus.toFixed(2)+'\n'+
+    '  (= $'+liveBal.toFixed(2)+' balance \u2212 $'+allBillsDueAmt.toFixed(2)+' bills \u2212 $'+Math.round(avgDaily*days).toFixed(2)+' living reserve \u2212 $'+getDynamicBuffer()+' buffer \u2212 $'+bucketTotal.toFixed(2)+' buckets)\n'+
     '- Net worth: $'+nw.net.toFixed(2)+' (assets: $'+nw.assets.toFixed(2)+', liabilities: $'+nw.liabilities.toFixed(2)+')\n'+
     '- Average daily spend: $'+avgDaily.toFixed(2)+'\n'+
     '- Debt repayment strategy: '+(S.debtStrategy||'avalanche')+'\n\n'+
@@ -3265,7 +3318,9 @@ function buildSystemPrompt() {
     '- If asked about a purchase, check against real surplus ($'+surplus.toFixed(2)+') and give a real yes/no\n'+
     '- Never say "I cannot access real-time data" \u2014 you have all his data above\n'+
     '- Keep responses concise and mobile-friendly \u2014 short paragraphs, no walls of text\n'+
-    '- Use dollar amounts and specific dates when relevant';
+    '- Use dollar amounts and specific dates when relevant\n'+
+    '- Distinguish recurring payday income (salary, already in balance if paydayReceived=true) from irregular income (tax refunds, bonuses \u2014 one-time, do not affect payday cycle)\n'+
+    '- IMPORTANT: You are an AI tool, not a licensed financial advisor. For major financial decisions, always recommend consulting a professional.';
 }
 
 function renderChatTab() {
@@ -3277,7 +3332,7 @@ function renderChatTab() {
       '<div style="font-size:14px;color:var(--text2);margin-bottom:28px;line-height:1.7;max-width:300px">Enter your Anthropic API key to activate SLYGHT AI</div>' +
       '<input id="chat-key-input" type="password" class="s-input" placeholder="sk-ant-api03-..." style="width:100%;margin-bottom:12px;font-family:var(--mono);font-size:13px;letter-spacing:.03em" autocomplete="off">' +
       '<button onclick="saveChatKey()" class="submit-btn">Activate SLYGHT AI</button>' +
-      '<div style="font-size:11px;color:var(--text3);margin-top:20px;line-height:1.7;max-width:280px">Your key is stored locally on this device only.</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:20px;line-height:1.7;max-width:280px">Your key is stored locally on this device only. <a href="https://console.anthropic.com/account/keys" target="_blank" style="color:var(--green)">Get a key at console.anthropic.com →</a></div>' +
       '</div>';
     return;
   }
@@ -3479,6 +3534,17 @@ function updateOnlineStatus() {
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();
+
+// Pull-to-refresh on dashboard
+(function() {
+  let startY = 0, pulling = false;
+  const dash = $('pg-dash');
+  if (!dash) return;
+  dash.addEventListener('touchstart', e => { if (dash.scrollTop === 0) { startY = e.touches[0].clientY; pulling = true; } }, {passive:true});
+  dash.addEventListener('touchmove', e => { if (!pulling) return; const dy = e.touches[0].clientY - startY; if (dy > 60) { pulling = false; renderAll(); if(navigator.vibrate) navigator.vibrate(30); } }, {passive:true});
+  dash.addEventListener('touchend', () => { pulling = false; }, {passive:true});
+})();
+
 if ('serviceWorker' in navigator) {
   // Unregister any old broken service workers first
   navigator.serviceWorker.getRegistrations().then(registrations => {
@@ -3489,8 +3555,7 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Seed v10: real state 14 Apr 2026. S.bal=3345.99, getLiveBal()=6664.82
-// Math: 3345.99 - (2500+1170+250.84+141.76+0.90) + (7282.33+100) = 3345.99 - 4063.50 + 7382.33 = 6664.82
+// Seed v11: real state 14 Apr 2026. S.bal=3345.99 (getLiveBal() = S.bal, pure identity)
 (function seedV11() {
   if (localStorage.getItem('slyght_seeded_v11')) return;
   // S.bal = 3345.99 is the real Virgin Money balance — single source of truth.
@@ -3512,7 +3577,7 @@ if ('serviceWorker' in navigator) {
       "carloan":23214.32,"cc":4658.39,"pin":"2103","carloanOriginal":37400,"ccLimit":6000,
       "monthlyHistory":[],"income_log":[],"iid":0,
       "debts":[
-        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0},
+        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":5,"notes":"Cleared 14 Apr"},
         {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"rate":0,"priority":1,"notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},
         {"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid \u2014 next due 6 May"},
         {"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"rate":0,"priority":3,"notes":"LIST THE WRX THIS WEEK"},
