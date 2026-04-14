@@ -201,6 +201,61 @@ const checks = [
   // Money mutations wrapped
   { name: 'Money mutations wrapped with auditedMutation',
     test: () => html.includes('auditedMutation') ? 'OK' : 'MISSING — mutations not audited'
+  },
+
+  // SNAPSHOTS system exists
+  { name: 'SNAPSHOTS system exists',
+    test: () => html.includes('const SNAPSHOTS') ? 'OK' : 'MISSING — state snapshot system not found'
+  },
+
+  // RECONCILER system exists
+  { name: 'RECONCILER system exists',
+    test: () => html.includes('const RECONCILER') ? 'OK' : 'MISSING — reconciliation engine not found'
+  },
+
+  // CONSISTENCY system exists
+  { name: 'CONSISTENCY system exists',
+    test: () => html.includes('const CONSISTENCY') ? 'OK' : 'MISSING — consistency checker not found'
+  },
+
+  // HEALTH system exists
+  { name: 'HEALTH system exists',
+    test: () => html.includes('const HEALTH') ? 'OK' : 'MISSING — data health monitor not found'
+  },
+
+  // TRACER system exists and wired to metric tiles
+  { name: 'TRACER system exists and wired to surplus/maxday tiles',
+    test: () => {
+      if (!html.includes('const TRACER')) return 'MISSING — calculation tracer not found';
+      if (!html.includes("TRACER.show('surplus')") && !html.includes('TRACER.show("surplus")')) return 'WARNING — TRACER not wired to surplus tile';
+      if (!html.includes("TRACER.show('maxday')") && !html.includes('TRACER.show("maxday")')) return 'WARNING — TRACER not wired to maxday tile';
+      return 'OK';
+    }
+  },
+
+  // APP_HEALTH system exists
+  { name: 'APP_HEALTH system exists',
+    test: () => html.includes('const APP_HEALTH') ? 'OK' : 'MISSING — app health monitor not found'
+  },
+
+  // EOM export reminder check exists
+  { name: 'EOM export reminder in APP_HEALTH',
+    test: () => {
+      const match = html.match(/const APP_HEALTH[\s\S]*?^};/m);
+      if (!match) return 'MISSING';
+      return (match[0].includes('slyght_last_export') || match[0].includes('eomCheck') || match[0].includes('export'))
+        ? 'OK' : 'WARNING — EOM export reminder may be missing';
+    }
+  },
+
+  // Monthly paidBills reset check exists
+  { name: 'Monthly paidBills reset in APP_HEALTH',
+    test: () => {
+      const match = html.match(/const APP_HEALTH[\s\S]*?^};/m);
+      if (!match) return 'MISSING';
+      return (match[0].includes('paidBills') || match[0].includes('monthlyReset') || match[0].includes('bills_reset'))
+        ? 'OK' : 'WARNING — monthly paidBills reset may be missing';
+    }
   }
 ];
 
