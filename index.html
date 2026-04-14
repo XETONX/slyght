@@ -376,6 +376,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="met"><div class="met-l">Today</div><div class="met-v" id="m-today-spent">$0</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div id="m-today-bar" style="height:3px;border-radius:2px;transition:width .4s"></div></div></div>
         <div class="met"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s">monthly est.</div></div>
       </div>
+      <div id="dash-overspend"></div>
 
       <!-- MONTHLY POSITION (FIX 4) -->
       <div class="card" style="margin-bottom:12px">
@@ -557,6 +558,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div class="settings-title">Income</div>
           <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
           <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" type="number" id="s-payday" value="15" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Debts</div>
@@ -787,6 +790,19 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   </div>
 </div>
 
+<!-- END-OF-DAY RECONCILIATION MODAL -->
+<div class="recon-overlay" id="eod-recon-modal">
+  <div class="recon-modal">
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px;color:var(--text)">End of day check</div>
+    <div style="font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:16px" id="eod-recon-body"></div>
+    <div style="display:grid;grid-template-columns:1fr;gap:8px">
+      <button class="submit-btn" onclick="eodReconLog()">Log the missing transaction now</button>
+      <button class="action-btn" style="background:var(--bg3)" onclick="eodReconUntracked()">Mark as untracked — adjust balance</button>
+      <button class="action-btn" style="background:var(--bg3)" onclick="eodReconAccept()">Accept &amp; move on</button>
+    </div>
+  </div>
+</div>
+
 <!-- RECONCILIATION MODAL -->
 <div class="recon-overlay" id="recon-modal">
   <div class="recon-modal">
@@ -846,7 +862,10 @@ let S = {
   ],
   nextBucketId: 4,
   paydayReceived: false,
-  paydayReceivedDate: null
+  paydayReceivedDate: null,
+  weekdayBudget: 60,
+  weekendBudget: 180,
+  lastOpenDate: null
 };
 
 let BILLS = [
@@ -890,7 +909,12 @@ const fmtS = n => (n < 0 ? '-' : '') + fmt(n);
 const fmtC = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
 const $ = id => document.getElementById(id);
 
-function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify({S, BILLS})); } catch(e) {} }
+function save() {
+  try {
+    if (!S.txns) S.txns = []; // guard: never let txns become undefined
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({S, BILLS}));
+  } catch(e) {}
+}
 function load() {
   try {
     const d = localStorage.getItem(STORAGE_KEY);
@@ -919,7 +943,11 @@ function getAvgDailySpend() {
   return Math.max(20, Math.min(200, totalSpent / daySpan));
 }
 
-// Correct Max/Day: (liveBal - allBillsDueBeforePayday - bucketTotal - $500 buffer) / daysLeft; hard cap $100/day
+// Correct Max/Day: (liveBal - allBillsDueBeforePayday - bucketTotal - $500 buffer) / daysLeft; capped at weekday/weekend budget
+function getDailyBudget() {
+  const dow = new Date().getDay(); // 0=Sun, 6=Sat
+  return (dow === 0 || dow === 6) ? (S.weekendBudget || 180) : (S.weekdayBudget || 60);
+}
 function getMaxDay() {
   const liveBal = getLiveBal();
   const days = daysLeft(S.payday);
@@ -927,7 +955,7 @@ function getMaxDay() {
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const spendable = liveBal - allBillsDue - bucketTotal - 500;
   if (days <= 0 || spendable <= 0) return 0;
-  return Math.min(100, spendable / days);
+  return Math.min(getDailyBudget(), spendable / days);
 }
 
 // Genuine surplus: only positive when bills + living costs + buckets + $500 buffer are all covered
@@ -1029,6 +1057,41 @@ function showMain() {
     delete S._pendingRecon;
     runRecon(newBal, prevBal, prevTxns);
   }
+  checkEodRecon();
+}
+
+function checkEodRecon() {
+  const today = new Date().toISOString().slice(0, 10);
+  const lastOpen = S.lastOpenDate;
+  S.lastOpenDate = today;
+  save();
+  if (!lastOpen || lastOpen === today) return; // same day or first open — skip
+  // Different day: check if getLiveBal() disagrees with S.bal by more than $1
+  const expectedBal = S.bal; // base
+  const liveBal = getLiveBal();
+  const discrepancy = Math.abs(expectedBal - liveBal);
+  // Only fire if there are no unrecorded changes (discrepancy > $1 AND no explanation)
+  if (discrepancy <= 1) return;
+  const eodBody = $('eod-recon-body');
+  if (eodBody) {
+    eodBody.innerHTML = 'Yesterday\'s spending may not be fully logged. Your base balance is <strong>' + fmtC(expectedBal) + '</strong> but live balance shows <strong>' + fmtC(liveBal) + '</strong> — a <strong>' + fmtC(discrepancy) + '</strong> gap. What happened?';
+  }
+  $('eod-recon-modal').classList.add('open');
+}
+
+function eodReconLog() {
+  $('eod-recon-modal').classList.remove('open');
+  // Navigate to log page so user can log the missing txn
+  goPage('pg-log');
+}
+function eodReconUntracked() {
+  // Adjust S.bal to match getLiveBal — absorb the discrepancy
+  S.bal = getLiveBal();
+  save(); renderAll();
+  $('eod-recon-modal').classList.remove('open');
+}
+function eodReconAccept() {
+  $('eod-recon-modal').classList.remove('open');
 }
 
 function runRecon(newBal, prevBal, prevTxns) {
@@ -1097,7 +1160,7 @@ function confirmRecon() {
   if (!reason) return;
   if (!S.reconLog) S.reconLog = [];
   S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
-  S.txns = [];
+  // S.txns is sacred — never wipe transactions during reconciliation
   save();
   $('recon-modal').classList.remove('open');
   selectedReason = '';
@@ -1323,19 +1386,34 @@ function renderAll() {
   }
 
   // 3 metrics (FIX 3)
-  const dailyLabel = maxDay >= 100 ? '$100 \u2605' : (maxDay > 0 ? fmtC(maxDay) : '$0');
+  const dailyBudget = getDailyBudget();
+  const dailyLabel = maxDay >= dailyBudget ? fmtC(dailyBudget) + ' \u2605' : (maxDay > 0 ? fmtC(maxDay) : '$0');
   $('m-daily').textContent = dailyLabel;
   $('m-daily').className = 'met-v ' + (maxDay <= 0 ? 'bad' : maxDay < 30 ? 'warn' : 'ok');
   const todaySpent = getTodaySpent();
   const todayEl = $('m-today-spent'), barEl = $('m-today-bar');
   if (todayEl) { todayEl.textContent = fmt(todaySpent); todayEl.className = 'met-v ' + (todaySpent >= maxDay && maxDay > 0 ? 'bad' : todaySpent >= maxDay * 0.7 ? 'warn' : 'ok'); }
   if (barEl) { const barPct = maxDay > 0 ? Math.min(100, Math.round((todaySpent/maxDay)*100)) : 0; barEl.style.width = barPct + '%'; barEl.style.background = barPct >= 100 ? 'var(--red)' : barPct >= 70 ? 'var(--amber)' : 'var(--green)'; }
+  // Overspend rollover display
+  const overspendEl = $('dash-overspend');
+  if (overspendEl) {
+    const overspend = todaySpent - dailyBudget;
+    if (overspend > 0 && maxDay > 0) {
+      const daysLeftVal = daysLeft(S.payday);
+      const allBillsDue2 = getBillsDue().reduce((s,b) => s+b.amt, 0);
+      const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - 500) / daysLeftVal) : 0;
+      overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today' +
+        (daysLeftVal > 1 ? ' &middot; <span style="color:var(--amber)">Adjusted: ' + fmtC(adjustedDay) + '/day for ' + daysLeftVal + ' days</span>' : '') + '</div>';
+    } else {
+      overspendEl.innerHTML = '';
+    }
+  }
   const surplus = getMonthlySurplus();
   const surplusEl = $('m-surplus');
   if (surplusEl) { surplusEl.textContent = (surplus >= 0 ? '+' : '') + fmt(surplus); surplusEl.className = 'met-v ' + (surplus < 0 ? 'bad' : surplus < 500 ? 'warn' : 'ok'); }
 
   // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
-  const remaining = maxDay - todaySpent;
+  const remaining = dailyBudget - todaySpent;
   const billsDueVeryShortly = getExpandedBills().filter(b => b.recurring !== false && (b.day === today || b.day === today + 1));
   const velEl = $('dash-velocity');
   if (remaining <= 30 && remaining >= 0 && maxDay > 0 && (isPayday || billsDueVeryShortly.length > 0)) {
@@ -1390,6 +1468,8 @@ function renderAll() {
   $('dt-car').textContent = fmt(S.carloan);
   $('dt-cc').textContent = fmt(S.cc);
   if ($('s-bal')) $('s-bal').value = S.bal || '';
+  if ($('s-weekday-budget')) $('s-weekday-budget').value = S.weekdayBudget || 60;
+  if ($('s-weekend-budget')) $('s-weekend-budget').value = S.weekendBudget || 180;
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
 }
 
@@ -1622,7 +1702,13 @@ function saveDebtDelay() {
 
 function markDebtPaid() {
   if (activeDebtIdx < 0) return;
+  const d = S.debts[activeDebtIdx];
+  // Auto-log debt clearance — reduces getLiveBal via getTxnSpent automatically
+  S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false});
   S.debts[activeDebtIdx].paid = true;
+  if (d.rate > 0) {
+    setTimeout(() => alert('Interest stopped! ' + d.name + ' cleared \u2014 $' + d.amt.toFixed(2) + ' at ' + d.rate + '% no longer accruing daily.'), 150);
+  }
   save(); closeModal('debt-modal'); renderAll();
 }
 
@@ -2052,10 +2138,14 @@ function renderCalWeekSummary() {
   const liveBal = getLiveBal();
   const days = daysLeft(S.payday);
 
-  // If payday falls within the next 7 days, include income in Now balance
-  const paydayInWeek = S.payday >= todayD && S.payday <= endOfWeek;
+  // If payday falls within the next 7 days AND not yet received, include income in Now balance
+  const paydayInWeek = !S.paydayReceived && S.payday >= todayD && S.payday <= endOfWeek;
   const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
-  const afterBills = effectiveBal - weekTotal;
+  // When paydayReceived: projected = current - bills this week - daily budget × 7
+  const projectedWeekBal = S.paydayReceived
+    ? liveBal - weekTotal - getDailyBudget() * 7
+    : effectiveBal - weekTotal;
+  const afterBills = projectedWeekBal;
   // Max/Day for week summary: uses effectiveBal so payday income is reflected when within 7 days
   const weekMaxDay = (() => {
     const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
@@ -2072,10 +2162,10 @@ function renderCalWeekSummary() {
   const sdim = afterBills < 0 && !coveredByPayday ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
   const sbord = afterBills < 0 && !coveredByPayday ? 'var(--red-border)' : afterBills < 200 ? 'var(--amber-border)' : 'var(--green-border)';
 
-  // FIX 2: Persistent payday banner — shows whenever payday is within 7 days from TODAY
+  // Payday banner in week summary — suppressed entirely when paydayReceived
   const daysToPayday = daysLeft(S.payday);
   let html = '';
-  if (daysToPayday <= 7) {
+  if (!S.paydayReceived && daysToPayday <= 7) {
     const pdLabel = daysToPayday === 0 ? 'Today is payday' : 'Payday in ' + daysToPayday + (daysToPayday === 1 ? ' day' : ' days');
     html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px">' +
       '<span style="font-size:18px">&#x1F4B0;</span>' +
@@ -2083,16 +2173,21 @@ function renderCalWeekSummary() {
       '<div style="font-size:11px;color:var(--text3)">Virgin Money Go \u2014 Manhattan Associates</div></div></div>';
   }
 
-  // 3-step balance flow — Now label + note changes when payday is this week
+  // Balance flow — Now label + note changes when payday is this week
   const nowLabel = paydayInWeek ? 'Now + Pay' : 'Now';
   const nowNote = paydayInWeek
     ? '<div style="font-size:9px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
     : '';
-  // FIX 1: 2-column layout, removed second arrow
+  const projLabel = S.paydayReceived
+    ? 'Projected end of week balance'
+    : 'Projected Virgin Money<br>after this week\'s bills';
+  const projNote = S.paydayReceived
+    ? '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 7</div>'
+    : '<div style="font-size:9px;margin-top:3px;visibility:hidden">x</div>';
   html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
   html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
   html += '<div style="font-size:18px;color:var(--text3);text-align:center;padding-top:18px">&#x2192;</div>';
-  html += '<div style="text-align:center"><div style="font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">Projected Virgin Money<br>after this week\'s bills</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div><div style="font-size:9px;margin-top:3px;visibility:hidden">x</div></div>';
+  html += '<div style="text-align:center"><div style="font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
   html += '</div>';
   // Max/day row below the grid
   const maxDayLabel = weekMaxDay >= 100 ? '$100 \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
@@ -2551,6 +2646,8 @@ function saveSettings() {
   S.payday = +$('s-payday').value || 15;
   S.carloan = +$('s-car').value || 23989.70;
   S.cc = +$('s-cc').value || 4595.35;
+  S.weekdayBudget = +$('s-weekday-budget').value || 60;
+  S.weekendBudget = +$('s-weekend-budget').value || 180;
   const np = $('s-pin').value;
   if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
   save(); renderAll();
@@ -2601,9 +2698,19 @@ function doImport() {
   const raw = $('import-area').value.trim(), msg = $('import-msg');
   try {
     const p = JSON.parse(raw);
-    if (p.S) S = {...S, ...p.S}; if (p.BILLS) BILLS = p.BILLS;
+    if (p.S) {
+      // Merge txns by ts (dedup) — never overwrite existing transactions
+      const existingKeys = new Set(S.txns.map(t => t.id != null ? t.id : t.ts));
+      const incoming = (p.S.txns || []).filter(t => !existingKeys.has(t.id != null ? t.id : t.ts));
+      const mergedTxns = [...S.txns, ...incoming];
+      S = {...S, ...p.S, txns: mergedTxns};
+    }
+    if (p.BILLS) BILLS = p.BILLS;
     save(); renderAll();
-    msg.style.color = 'var(--green)'; msg.textContent = 'Imported successfully.'; $('import-area').value = '';
+    const preserved = S.txns.length;
+    msg.style.color = 'var(--green)';
+    msg.textContent = 'Data updated \u2014 ' + preserved + ' transaction' + (preserved !== 1 ? 's' : '') + ' preserved.';
+    $('import-area').value = '';
   } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid data. Paste the full export code.'; }
 }
 
@@ -2620,13 +2727,65 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Fix 10: One-time data seed — restores user state on first load after this update
-(function seedV7() {
-  if (localStorage.getItem('slyght_seeded_v7')) return;
-  const seed = {"S":{"bal":7166.99,"txns":[],"bonuses":[],"bid":0,"seg":"1m","income":7282,"payday":15,"carloan":23989.7,"cc":4595.35,"pin":"2103","cuts":{"entertainment":750,"weed":300,"food_work":200,"streaming":75,"games":25},"monthlyHistory":[],"chinaBal":61.82,"income_log":[],"iid":0,"debts":[{"id":0,"name":"Afterpay","amt":250.84,"paid":false,"delayed":false,"delayDate":"2026-04-16","notes":"$121.16 due 16 Apr","rate":0},{"id":1,"name":"Owed to Michael","amt":550,"paid":false,"delayed":false,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing","rate":0},{"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid — next due 6 May","rate":19.99},{"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"delayed":false,"delayDate":"","notes":"LIST THE WRX THIS WEEK","rate":0}],"nextDebtId":4,"savingsBuckets":[{"id":0,"name":"China Holiday","goal":4000,"saved":61.82,"account":"ING"},{"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},{"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},{"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}],"nextBucketId":4,"paydayReceived":true,"paydayReceivedDate":"2026-04-14","paydayPlanAutoExpanded":false,"weekdayBudget":60,"weekendBudget":180},"BILLS":[{"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},{"name":"Car Loan — Firstmac","amt":387.69,"day":1,"tag":"Loan","recurring":true,"freq":"fortnightly"},{"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},{"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},{"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},{"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},{"name":"Pet Insurance — Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},{"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},{"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},{"name":"Afterpay instalment","amt":121.16,"day":16,"tag":"Debt repayment","recurring":false},{"name":"Optus — Phone + Internet","amt":199,"day":16,"tag":"Fixed","recurring":true},{"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},{"name":"Parking — CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},{"name":"Pet Food","amt":45,"day":25,"tag":"Fixed","recurring":true},{"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},{"name":"Spotify","amt":15.99,"day":29,"tag":"Streaming","recurring":true},{"name":"Food at Work","amt":200,"day":28,"tag":"Variable","recurring":true}]};
-  // S.txns stays empty — balance already reflects salary and all spending to date
+// Seed v8: S.bal=-945.74 so getLiveBal()=3245.99 with 6 historical transactions included.
+// Math: -945.74 - (250.84+2436.96+142+120.47+140) + 7282 = -945.74 - 3090.27 + 7282 = 3245.99
+(function seedV8() {
+  if (localStorage.getItem('slyght_seeded_v8')) return;
+  const t = Date.parse('2026-04-14T09:00:00');
+  const seed = {
+    "S":{
+      "bal":-945.74,
+      "txns":[
+        {"amt":7282,"note":"Salary \u2014 Manhattan Associates","cat":"Income","ts":t+1000,"income":true},
+        {"amt":250.84,"note":"Afterpay \u2014 cleared","cat":"Debt repayment","ts":t+2000,"income":false},
+        {"amt":2436.96,"note":"Credit Card payment","cat":"Debt repayment","ts":t+3000,"income":false},
+        {"amt":142,"note":"Claude Max subscription","cat":"Subscriptions","ts":t+4000,"income":false},
+        {"amt":120.47,"note":"Pet Insurance Reconciliation","cat":"Fixed","ts":t+5000,"income":false},
+        {"amt":140,"note":"Parking Fine","cat":"Other","ts":t+6000,"income":false}
+      ],
+      "bonuses":[],"bid":0,"seg":"1m","income":7282,"payday":15,
+      "carloan":23989.7,"cc":2158.39,"pin":"2103",
+      "cuts":{"entertainment":750,"weed":300,"food_work":200,"streaming":75,"games":25},
+      "monthlyHistory":[],"chinaBal":61.82,"income_log":[],"iid":0,
+      "debts":[
+        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"delayed":false,"delayDate":"2026-04-16","notes":"Cleared 14 Apr","rate":0},
+        {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"delayed":false,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing","rate":0},
+        {"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid \u2014 next due 6 May","rate":19.99},
+        {"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"delayed":false,"delayDate":"","notes":"LIST THE WRX THIS WEEK","rate":0}
+      ],
+      "nextDebtId":4,
+      "savingsBuckets":[
+        {"id":0,"name":"China Holiday","goal":4000,"saved":61.82,"account":"ING"},
+        {"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},
+        {"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},
+        {"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}
+      ],
+      "nextBucketId":4,
+      "paydayReceived":true,"paydayReceivedDate":"2026-04-14",
+      "paydayPlanAutoExpanded":false,
+      "weekdayBudget":60,"weekendBudget":180,"lastOpenDate":"2026-04-14"
+    },
+    "BILLS":[
+      {"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},
+      {"name":"Car Loan \u2014 Firstmac","amt":387.69,"day":1,"tag":"Loan","recurring":true,"freq":"fortnightly"},
+      {"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},
+      {"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},
+      {"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},
+      {"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},
+      {"name":"Pet Insurance \u2014 Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},
+      {"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},
+      {"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},
+      {"name":"Optus \u2014 Phone + Internet","amt":199,"day":16,"tag":"Fixed","recurring":true},
+      {"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},
+      {"name":"Parking \u2014 CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},
+      {"name":"Pet Food","amt":45,"day":25,"tag":"Fixed","recurring":true},
+      {"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},
+      {"name":"Spotify","amt":15.99,"day":29,"tag":"Streaming","recurring":true},
+      {"name":"Food at Work","amt":200,"day":28,"tag":"Variable","recurring":true}
+    ]
+  };
   localStorage.setItem('slyght_v5', JSON.stringify(seed));
-  localStorage.setItem('slyght_seeded_v7', '1');
+  localStorage.setItem('slyght_seeded_v8', '1');
 })();
 
 load();
@@ -2635,7 +2794,7 @@ if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? 
 // Always show splash first — splashTap() handles routing
 function splashTap() {
   $('splash-screen').style.display = 'none';
-  if (S.bal > 0) {
+  if (S.bal > 0 || BILLS.length > 0 || (S.txns && S.txns.length > 0)) {
     showMain();
   } else {
     $('ob-screen').style.display = 'block';
