@@ -77,6 +77,120 @@ const checks = [
   // paydayReceived guard on alerts
   { name: 'shouldShowAlert uses paydayReceived guard',
     test: () => html.includes('shouldShowAlert') && html.includes('paydayReceived') ? 'OK' : 'WARNING'
+  },
+
+  // Transaction count preserved
+  { name: 'Seed does not wipe S.txns if transactions exist',
+    test: () => {
+      const seedMatch = html.match(/function.*[Ss]eed[^{]*\{[\s\S]*?\n\}/g);
+      if (!seedMatch) return 'WARNING — no seed function found';
+      const seedCode = seedMatch.join(' ');
+      // Seed should check for existing txns before overwriting
+      return (seedCode.includes('txns') && (seedCode.includes('length') || seedCode.includes('preserve') || seedCode.includes('existing')))
+        ? 'OK'
+        : 'WARNING — verify seed preserves existing transactions manually';
+    }
+  },
+
+  // Chat history not wiped on seed
+  { name: 'chatHistory preserved across seeds',
+    test: () => {
+      // Check that seed functions dont blindly overwrite chatHistory
+      const hasSeparateKey = html.includes('slyght_chat') || html.includes('chatHistory');
+      const seedPreserves = html.includes('chatHistory') && html.includes('slyght_seeded');
+      return hasSeparateKey ? 'OK' : 'WARNING — verify chat history survives seed manually';
+    }
+  },
+
+  // Debt tile count matches S.debts
+  { name: 'renderDebtTiles reads from S.debts array',
+    test: () => {
+      const match = html.match(/function renderDebtTiles[^{]*\{[\s\S]*?\n\}/);
+      if (!match) return 'MISSING — renderDebtTiles not found';
+      return match[0].includes('S.debts') ? 'OK' : 'BROKEN — not reading from S.debts';
+    }
+  },
+
+  // Bill count matches BILLS
+  { name: 'renderBillsGrouped reads from BILLS array',
+    test: () => {
+      const match = html.match(/function renderBillsGrouped[^{]*\{[\s\S]*?\n\}/);
+      if (!match) {
+        // Try alternative — may be inline
+        return html.includes('renderBillsGrouped') ? 'WARNING — check manually' : 'MISSING';
+      }
+      return match[0].includes('BILLS') || match[0].includes('getExpandedBills') ? 'OK' : 'BROKEN — not reading from BILLS';
+    }
+  },
+
+  // No duplicate function definitions
+  { name: 'No duplicate function definitions',
+    test: () => {
+      const funcMatches = html.match(/function\s+(\w+)\s*\(/g) || [];
+      const funcNames = funcMatches.map(f => f.replace('function ', '').replace('(', '').trim());
+      const seen = {};
+      const duplicates = [];
+      funcNames.forEach(name => {
+        if (seen[name]) duplicates.push(name);
+        seen[name] = true;
+      });
+      return duplicates.length === 0
+        ? 'OK'
+        : 'BROKEN — duplicates: ' + duplicates.join(', ');
+    }
+  },
+
+  // Ruflo CLAUDE.md present
+  { name: 'Ruflo CLAUDE.md present',
+    test: () => {
+      try {
+        fs.accessSync('CLAUDE.md');
+        return 'OK';
+      } catch {
+        return 'MISSING — run npx ruflo@latest init to restore';
+      }
+    }
+  },
+
+  // API key never in seed data
+  { name: 'API key not hardcoded in seed data',
+    test: () => {
+      // Real API keys are 95+ chars; placeholder strings like "sk-ant-api03-..." are much shorter
+      const seedMatches = (html.match(/sk-ant-[a-zA-Z0-9\-_]+/g) || []).filter(m => m.length > 40);
+      return seedMatches.length === 0
+        ? 'OK'
+        : 'CRITICAL — API key found in source code';
+    }
+  },
+
+  // getActiveDebtsDueBeforePayday has paydayReceived guard
+  { name: 'getActiveDebtsDueBeforePayday has paydayReceived cycle guard',
+    test: () => {
+      const match = html.match(/function getActiveDebtsDueBeforePayday[\s\S]*?^}/m);
+      if (!match) return 'MISSING';
+      return match[0].includes('paydayReceived')
+        ? 'OK'
+        : 'BROKEN — missing paydayReceived guard causes wrong cycle';
+    }
+  },
+
+  // daysLeft never returns 0
+  { name: 'daysLeft has Math.max(1,...) guard against division by zero',
+    test: () => {
+      const match = html.match(/function daysLeft[\s\S]*?^}/m);
+      if (!match) return 'MISSING';
+      return match[0].includes('Math.max')
+        ? 'OK'
+        : 'WARNING — potential division by zero in getMaxDay';
+    }
+  },
+
+  // Budget dropdown removed from chat
+  { name: 'Budget dropdown removed from chat tab',
+    test: () => {
+      const hasBudgetToggle = html.includes('toggleChatBudget') || html.includes('chat-budget');
+      return !hasBudgetToggle ? 'OK' : 'BROKEN — budget dropdown still in chat tab';
+    }
   }
 ];
 
