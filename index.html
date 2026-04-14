@@ -275,10 +275,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .info-line{font-size:12px;color:var(--text3);padding:2px 0;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 /* EXPAND CARD */
 .expand-body{transition:max-height .2s ease;overflow:hidden}
-/* SLYGHT S LOGO */
-:root{--s-trail1:rgba(255,255,255,.28);--s-trail2:rgba(255,255,255,.13);--s-trail3:rgba(255,255,255,.06)}
-@media(prefers-color-scheme:light){:root{--s-trail1:rgba(0,0,0,.2);--s-trail2:rgba(0,0,0,.09);--s-trail3:rgba(0,0,0,.04)}}
-.slyght-s{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:900;letter-spacing:-1px;display:inline-block;transform:skewX(-4deg);text-shadow:5px 0 8px var(--s-trail1),12px 0 14px var(--s-trail2),20px 0 12px var(--s-trail3)}
 /* DESKTOP */
 @media(min-width:768px){
   .app{max-width:100%;flex-direction:row;height:100vh;height:100dvh}
@@ -302,7 +298,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <!-- SPLASH SCREEN -->
 <div id="splash-screen" onclick="splashTap()">
-  <div class="splash-logo"><span class="slyght-s">S</span>LYGHT</div>
+  <div class="splash-logo">SLYGHT</div>
   <div class="splash-tag">Know your money. Always.</div>
   <div class="splash-hint">tap to continue</div>
 </div>
@@ -310,7 +306,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <!-- ONBOARD -->
 <div id="ob-screen" style="display:none">
   <div class="ob-wrap">
-    <div class="ob-logo"><span class="slyght-s">S</span>LYGHT</div>
+    <div class="ob-logo">SLYGHT</div>
     <div class="ob-tag">Know your money. Always.</div>
     <div class="ob-lbl">Virgin Money balance right now</div>
     <input class="ob-inp" type="number" id="ob-bal" placeholder="$0.00" inputmode="decimal">
@@ -324,7 +320,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <!-- PIN -->
 <div id="pin-screen" style="display:none">
   <div class="pin-wrap">
-    <div class="pin-logo"><span class="slyght-s">S</span>LYGHT</div>
+    <div class="pin-logo">SLYGHT</div>
     <div class="pin-lbl">Enter your PIN to continue</div>
     <div class="pin-dots" id="pin-dots">
       <div class="pin-dot" id="pd0"></div><div class="pin-dot" id="pd1"></div>
@@ -347,7 +343,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <!-- DASHBOARD -->
   <div class="screen active" id="pg-dash">
     <div class="hdr">
-      <div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div>
+      <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
         <div class="icon-btn" onclick="softRefresh()" title="Refresh">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -450,7 +446,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- BILLS (Calendar) -->
   <div class="screen" id="pg-cal">
-    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Bills</div></div>
+    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Bills</div></div>
     <div class="pad">
       <div class="card" style="padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -491,7 +487,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- BUDGET -->
   <div class="screen" id="pg-budget">
-    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Budget</div></div>
+    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Budget</div></div>
     <div class="pad">
       <!-- CUT SPENDING -->
       <div class="card">
@@ -536,7 +532,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- ANALYSIS -->
   <div class="screen" id="pg-spend">
-    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Analysis</div></div>
+    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Analysis</div></div>
     <div class="pad">
       <div id="analysis-content"></div>
     </div>
@@ -544,7 +540,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
   <!-- SETTINGS -->
   <div class="screen" id="pg-settings">
-    <div class="hdr"><div class="hdr-logo"><span class="slyght-s">S</span>LYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
+    <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
     <div class="pad">
       <div class="card">
         <div class="settings-section">
