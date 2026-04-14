@@ -416,14 +416,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       </div>
       <div id="dash-overspend"></div>
 
-      <!-- MONTHLY POSITION (FIX 4) -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-hdr" onclick="toggleExpandCard('monthly-pos-body','monthly-pos-tog')" style="cursor:pointer;margin-bottom:0">
-          <div class="card-title">Monthly Position</div>
-          <span id="monthly-pos-tog" style="font-size:14px;color:var(--text3)">▾</span>
-        </div>
-        <div id="monthly-pos-body" class="expand-body" style="max-height:0"></div>
-      </div>
       <!-- PAYDAY PLAN (FIX 8) -->
       <div class="card" style="margin-bottom:12px">
         <div class="card-hdr" onclick="toggleExpandCard('payday-plan-body','payday-plan-tog')" style="cursor:pointer;margin-bottom:0">
@@ -523,50 +515,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
-        <button class="chat-budget-btn" id="chat-budget-btn" onclick="toggleChatBudget()">Budget ▾</button>
         <div class="icon-btn" onclick="clearChat()" title="Clear chat">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M4 6h12M8 6V4h4v2M9 10v5M11 10v5M5 6l1 11a1 1 0 001 1h6a1 1 0 001-1l1-11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <div class="icon-btn" onclick="openChatKeyModal()" title="API key settings">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><circle cx="8" cy="12" r="3.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M11 9l6-6M15 3l2 2M13 5l2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </div>
-      </div>
-    </div>
-    <!-- Budget collapsible -->
-    <div class="chat-budget-section" id="chat-budget-section" style="display:none">
-      <div class="pad">
-        <div class="card">
-          <div class="card-hdr"><div class="card-title">What If I Cut Spending?</div></div>
-          <div class="seg">
-            <button class="seg-btn on" id="sg-1m" onclick="setSeg('1m')">1 Month</button>
-            <button class="seg-btn" id="sg-3m" onclick="setSeg('3m')">3 Months</button>
-            <button class="seg-btn" id="sg-6m" onclick="setSeg('6m')">6 Months</button>
-          </div>
-          <div id="cut-sliders"></div>
-          <div class="impact-box">
-            <div class="impact-num" id="cut-saving">$0</div>
-            <div class="impact-desc" id="cut-desc">saved per month</div>
-            <div class="impact-bar"><div class="impact-fill" id="cut-bar"></div></div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-hdr"><div class="card-title">Month-on-Month Progress</div></div>
-          <div id="trend-view"></div>
-        </div>
-        <div class="card">
-          <div class="card-hdr"><div class="card-title">Spending by Category</div></div>
-          <div id="cat-breakdown"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;margin:8px 0 4px">
-          <div style="flex:1;height:1px;background:var(--border2)"></div>
-          <div style="font-size:11px;font-family:var(--mono);font-weight:700;color:var(--text3);letter-spacing:.1em;text-transform:uppercase">Savings &amp; Goals</div>
-          <div style="flex:1;height:1px;background:var(--border2)"></div>
-        </div>
-        <div class="card" id="savings-buckets-card">
-          <div class="card-hdr"><div class="card-title">Savings Buckets</div></div>
-          <div id="savings-buckets-content"></div>
-        </div>
-        <div id="spending-coach"></div>
       </div>
     </div>
     <!-- Messages -->
@@ -1084,6 +1038,13 @@ function getGenuineSurplus() {
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
   const immDebts = getActiveDebtsDueBeforePayday();
+  console.log('SURPLUS DEBUG - S.bal:', S.bal);
+  console.log('SURPLUS DEBUG - billsDue:', allBillsDue);
+  console.log('SURPLUS DEBUG - debtsDue:', immDebts);
+  console.log('SURPLUS DEBUG - buckets:', bucketTotal);
+  console.log('SURPLUS DEBUG - living:', getAvgDailySpend(), 'x', days, '=', livingReserve);
+  console.log('SURPLUS DEBUG - buffer:', getDynamicBuffer());
+  console.log('SURPLUS DEBUG - RESULT:', liveBal - allBillsDue - immDebts - bucketTotal - livingReserve - getDynamicBuffer());
   return Math.max(0, liveBal - allBillsDue - immDebts - bucketTotal - livingReserve - getDynamicBuffer());
 }
 function getActiveDebtsDueBeforePayday() {
@@ -4029,18 +3990,6 @@ function clearChat() {
   renderChatMessages();
 }
 
-function toggleChatBudget() {
-  const section = $('chat-budget-section');
-  const btn = $('chat-budget-btn');
-  if (!section) return;
-  const isOpen = section.style.display !== 'none';
-  section.style.display = isOpen ? 'none' : 'block';
-  if (btn) {
-    btn.textContent = isOpen ? 'Budget \u25BE' : 'Budget \u25B4';
-    btn.classList.toggle('open', !isOpen);
-  }
-  if (!isOpen) { renderCutSliders(); renderSavingsBuckets(); } // targeted renders — avoid re-rendering chat messages
-}
 
 function saveChatKey() {
   const input = $('chat-key-input');
