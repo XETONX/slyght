@@ -3228,99 +3228,102 @@ function buildSystemPrompt() {
   const recentTxns = (S.txns||[]).slice(-10).reverse();
   const bucketList = buckets.length ? buckets.map(b=>'- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal').join('\n') : '- No savings buckets';
 
-  // Month-to-date performance
-  const mtdIncome = (S.txns||[]).filter(t => t.income).reduce((s,t) => s+t.amt, 0);
-  const mtdDiscretionary = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
-  const mtdDebtPaid = (S.txns||[]).filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
+  // PART 1: DISCLAIMER
+  const part1 = 'IMPORTANT DISCLAIMER: You are SLYGHT, an AI financial coaching tool. You are NOT a licensed financial advisor. For any response involving significant money decisions, include: "This is personal coaching guidance, not licensed financial advice. For major decisions, consult a qualified financial advisor."\n\n';
 
-  // ── PART 3: Build text sections ──────────────────────────────────────────
-  const debtList = activeDebts.length
-    ? activeDebts.map(d => '- P'+(d.priority||'?')+' '+d.name+': $'+d.amt.toFixed(2)+
-        (d.rate>0?' @ '+d.rate+'% p.a.':'')+
+  // PART 2: VERIFIED FACTS
+  const todayTxnLines = todayTxns.length
+    ? todayTxns.map(t=>'  - '+t.note+': '+(t.income?'+':'-')+'$'+t.amt.toFixed(2)+' ('+t.cat+')').join('\n')
+    : '  - None logged yet today';
+  const part2 = 'VERIFIED FINANCIAL STATE \u2014 these are facts from John\'s live data. Do not contradict them.\n\n'+
+    'Today: '+todayStr+'\n'+
+    'Real balance: $'+liveBal.toFixed(2)+' \u2014 Virgin Money Go Account \u2014 THIS IS THE REAL NUMBER\n'+
+    'Payday status: '+(S.paydayReceived
+      ? 'RECEIVED \u2014 John\'s $'+(S.income||7282)+' salary LANDED on '+S.paydayReceivedDate+'. It is ALREADY IN the $'+liveBal.toFixed(2)+' balance. NEVER add it again. Do not reference it as incoming.'
+      : 'NOT YET RECEIVED \u2014 Salary of $'+(S.income||7282)+' expected around the '+(S.payday||15)+'th.')+'\n\n'+
+    'TODAY\'S COMPLETED TRANSACTIONS (already in balance \u2014 DO NOT subtract again):\n'+todayTxnLines+'\n'+
+    (todayDebtPaid > 0 ? '\nToday\'s debt payments: $'+todayDebtPaid.toFixed(2)+' \u2014 THIS IS EXCEPTIONAL PROGRESS. Celebrate it.\n' : '')+
+    '\nThis month total income received: $'+mtdIncome.toFixed(2)+
+    '\nThis month total debt payments made: $'+mtdDebtPaid.toFixed(2)+' \u2014 PROGRESS, NOT A PROBLEM\n\n';
+
+  // PART 3: ACTIVE OBLIGATIONS
+  const debtLines = activeDebts.length
+    ? activeDebts.map(d=>'- P'+(d.priority||'?')+' '+d.name+': $'+d.amt.toFixed(2)+
+        (d.rate>0?' @ '+d.rate+'% = +$'+(d.amt*d.rate/100/365).toFixed(2)+'/day interest':'')+
         (d.delayed?' [PAYMENT ARRANGED]':'')+
-        (d.delayDate?' due '+d.delayDate:' (ASAP)')+
+        (d.delayDate?' due '+d.delayDate:' (pay ASAP)')+
         (d.notes?' \u2014 '+d.notes:'')).join('\n')
     : '- No active immediate debts';
-
-  const billsList = billsDue.length
-    ? billsDue.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (day '+b.day+')').join('\n')
-    : '- No bills due before payday';
-
-  const paidBillsList = paidBillsThisMonth.length
-    ? paidBillsThisMonth.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (PAID)').join('\n')
+  const billLines = billsDue.length
+    ? billsDue.map(b=>'- '+b.name+': $'+b.amt.toFixed(2)+' on the '+b.day+'th').join('\n')
+    : '- No bills due before next payday';
+  const paidBillLines = paidBillsThisMonth.length
+    ? paidBillsThisMonth.map(b=>'- '+b.name+': $'+b.amt.toFixed(2)+' \u2713 PAID').join('\n')
     : '- None yet';
+  const part3 = 'WHAT JOHN STILL OWES (not yet paid):\n\n'+
+    'Immediate debts (unpaid, priority order):\n'+debtLines+'\nTotal: $'+activeDebts.reduce((s,d)=>s+d.amt,0).toFixed(2)+'\n\n'+
+    'Bills due before next payday:\n'+billLines+'\nTotal: $'+allBillsDueAmt.toFixed(2)+'\n\n'+
+    'Bills already paid this month:\n'+paidBillLines+'\n\n'+
+    'Credit card:\n'+
+    '- Balance: $'+(S.cc||0).toFixed(2)+' of $'+ccLimit+' limit ('+ccUtilPct+'% utilised'+(ccUtilPct>80?' \u2014 NEAR LIMIT':'')+')\n'+
+    '- At 19.99% APR: accruing ~$'+ccDailyInterest+'/day in interest\n\n'+
+    'Car loan:\n'+
+    '- Remaining: $'+(S.carloan||0).toFixed(2)+' of $'+(S.carloanOriginal||37400)+' original ('+carPayoffPct+'% paid off)\n'+
+    '- Rate: 9.87% \u2014 $387.69 per fortnight\n\n';
 
-  const txnList = recentTxns.length
-    ? recentTxns.map(t => {
-        const d = new Date(t.ts);
-        return '- '+d.getDate()+'/'+(d.getMonth()+1)+': '+t.note+' \u2014 '+(t.income?'+':'-')+'$'+t.amt.toFixed(2)+' ('+t.cat+')';
-      }).join('\n')
-    : '- No transactions logged';
-
-  const bucketList = buckets.length
-    ? buckets.map(b => '- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal').join('\n')
-    : '- No savings buckets';
-
+  // PART 4: CALCULATED METRICS
   const safeToday = maxDay > 0
-    ? '$'+maxDay.toFixed(2)+'/day avg remaining (daily budget: $'+dailyBudget.toFixed(2)+', spent today: $'+todaySpent.toFixed(2)+', remaining today: $'+Math.max(0, dailyBudget - todaySpent).toFixed(2)+')'
-    : '$0 (daily budget exhausted or bills exceed balance)';
+    ? '$'+maxDay.toFixed(2)+'/day avg ('+dailyBudget+' '+((new Date().getDay()===0||new Date().getDay()===6)?'weekend':'weekday')+' cap, $'+todaySpent.toFixed(2)+' spent today, $'+Math.max(0,dailyBudget-todaySpent).toFixed(2)+' remaining)'
+    : '$0 (budget exhausted or bills exceed balance)';
+  const part4 = 'KEY METRICS:\n\n'+
+    'Genuine surplus NOW: $'+surplus.toFixed(2)+'\n'+
+    'Surplus breakdown: $'+liveBal.toFixed(2)+' balance \u2212 $'+allBillsDueAmt.toFixed(2)+' bills \u2212 $'+bucketTotal.toFixed(2)+' savings buckets \u2212 $'+livingReserve+' living reserve ('+avgDaily.toFixed(0)+'/day \xd7 '+days+' days) \u2212 $'+getDynamicBuffer()+' buffer = $'+surplus.toFixed(2)+'\n\n'+
+    'Safe to spend today: '+safeToday+'\n'+
+    'Net worth: $'+nw.net.toFixed(2)+' (assets $'+nw.assets.toFixed(2)+' \u2212 liabilities $'+nw.liabilities.toFixed(2)+')\n'+
+    'Avg daily discretionary spend: $'+avgDaily.toFixed(2)+'/day\n'+
+    'Month phase: '+getMonthPhase()+'\n'+
+    'Days to next payday: '+(S.paydayReceived?'Paid this cycle \u2014 next approx '+(S.payday||15)+'th next month':days+' days')+'\n\n'+
+    'WRX: PLANNED FOR SALE \u2014 NOT LIQUID CASH. Estimated value $'+wrxValue.toFixed(2)+'. Do not treat as available funds until sold.\n'+
+    'If WRX sells at $'+wrxValue.toFixed(2)+' (\u22128% costs = ~$'+(wrxValue*0.92).toFixed(0)+'): would cover '+
+    (activeDebts.length?activeDebts.map(d=>d.name+'($'+d.amt.toFixed(0)+')').slice(0,3).join(', '):'debts')+
+    ' and reduce car loan by ~$'+(Math.max(0,wrxValue*0.92-(S.carloan||0)>0?0:wrxValue*0.92)).toFixed(0)+'\n\n'+
+    'SAVINGS BUCKETS:\n'+bucketList+'\n\n'+
+    'RECENT TRANSACTIONS (newest first):\n'+(recentTxns.length?recentTxns.map(t=>{const d=new Date(t.ts);return'- '+d.getDate()+'/'+(d.getMonth()+1)+': '+t.note+' '+(t.income?'+':'-')+'$'+t.amt.toFixed(2)+' ('+t.cat+')'}).join('\n'):'- None logged')+'\n\n';
 
-  // ── PART 4: Anti-double-counting chain-of-thought rules ──────────────────
-  const antiDoubleCount =
-    'CRITICAL — NEVER DOUBLE-COUNT (read before every financial answer):\n'+
-    '1. S.bal ($'+liveBal.toFixed(2)+') IS the live bank account balance. It already includes income received. NEVER add income to it.\n'+
-    '2. Bills are auto-paid from S.bal when due. NEVER subtract them again manually.\n'+
-    '3. S.txns is a HISTORY LOG only. It does NOT change S.bal retroactively.\n'+
-    '4. Debt repayments in txns already reduced S.bal when paid. NEVER subtract them again.\n'+
-    '5. When computing "money available", start from S.bal ($'+liveBal.toFixed(2)+') and subtract only future obligations (upcoming bills, buffer). That is all.\n'+
-    '6. The "genuine surplus" ($'+surplus.toFixed(2)+') has already deducted upcoming bills, living reserve, and buffer. Trust it.\n'+
-    '7. If payday has been received ('+S.paydayReceived+'), stop referencing income as incoming — it is already in S.bal.';
+  // PART 5: CHAIN OF THOUGHT RULES
+  const part5 = 'MANDATORY REASONING \u2014 check ALL before responding:\n\n'+
+    '1. PAYDAY CHECK: S.paydayReceived='+(S.paydayReceived?'TRUE \u2014 STOP. Salary is in the balance. Do not add $'+(S.income||7282)+' to anything.':'FALSE \u2014 salary not yet received.')+'\n'+
+    '2. TRANSACTION CHECK: Today\'s transactions are DONE and already in S.bal ($'+liveBal.toFixed(2)+'). Do not subtract them.\n'+
+    '3. DOUBLE-COUNT CHECK: Am I about to subtract any payment that appears in today\'s completed transactions? If yes, STOP.\n'+
+    '4. OBLIGATION CHECK: Am I only counting UNPAID debts/bills? Paid ones must not appear in calculations.\n'+
+    '5. SURPLUS CHECK: Genuine surplus = $'+surplus.toFixed(2)+'. This is canonical. Do not recalculate differently.\n'+
+    '6. CATASTROPHE CHECK: Before saying John is in trouble \u2014 surplus $'+surplus.toFixed(2)+' and paydayReceived='+(S.paydayReceived?'TRUE \u2014 he is in a manageable position.':'FALSE.')+'\n'+
+    '7. DEBT PAYMENT CHECK: Debt repayments = POSITIVE PROGRESS. Never flag as overspending. Celebrate them.\n'+
+    '8. CC RISK CHECK: CC at '+ccUtilPct+'% utilisation. Flag interest cost if suggesting actions that increase CC balance.\n'+
+    '9. RECOMMENDATION: End every substantive response with ONE specific actionable recommendation with a real dollar amount.\n\n';
 
-  // ── PART 5: Assemble full prompt ─────────────────────────────────────────
-  return 'You are SLYGHT, a brutally honest personal finance coach for John. You have complete real-time access to all his financial data.\n\n'+
-    antiDoubleCount+'\n\n'+
-    '═══ FINANCIAL STATE ═══\n'+
-    '- Today: '+todayStr+'\n'+
-    '- Live balance (Virgin Money): $'+liveBal.toFixed(2)+'\n'+
-    '- Monthly income: $'+(S.income||7282)+'\n'+
-    '- Payday: '+(S.payday||15)+'th of each month\n'+
-    '- Payday received this month: '+(S.paydayReceived?'YES — income is already in balance':'NO — income not yet landed')+'\n'+
-    '- Days until next payday: '+days+'\n\n'+
-    '═══ IMMEDIATE DEBTS (priority order) ═══\n'+debtList+'\n\n'+
-    '═══ LONG-TERM LIABILITIES ═══\n'+
-    '- Car loan: $'+(S.carloan||0).toFixed(2)+' at 9.87% \u2014 $387.69 fortnightly\n'+
-    '- Credit card: $'+(S.cc||0).toFixed(2)+' of $'+ccLimit+' limit ('+ccUtilPct+'% utilised) at 19.99% \u2014 '+(ccUtilPct > 80 ? 'NEAR LIMIT \u2014 prioritise paying this down' : ccUtilPct > 60 ? 'high utilisation' : 'manageable')+'\n\n'+
-    '═══ BILLS DUE BEFORE NEXT PAYDAY ═══\n'+billsList+'\n\n'+
-    '═══ BILLS ALREADY PAID THIS MONTH ═══\n'+paidBillsList+'\n\n'+
-    '═══ RECENT TRANSACTIONS (newest first) ═══\n'+txnList+'\n\n'+
-    '═══ SAVINGS BUCKETS ═══\n'+bucketList+'\n\n'+
-    '═══ MAJOR ASSETS ═══\n'+
-    '- WRX (planned for sale \u2014 not yet liquid): $'+wrxValue.toFixed(2)+' estimated. Do NOT treat as available cash until sold.\n'+
-    '- Savings buckets: $'+bucketTotal.toFixed(2)+'\n\n'+
-    '═══ KEY METRICS ═══\n'+
-    '- Safe to spend: '+safeToday+'\n'+
-    '- Genuine surplus (after bills + buffer): $'+surplus.toFixed(2)+'\n'+
-    '  (= $'+liveBal.toFixed(2)+' balance \u2212 $'+allBillsDueAmt.toFixed(2)+' bills \u2212 $'+Math.round(avgDaily*days).toFixed(2)+' living reserve \u2212 $'+getDynamicBuffer()+' buffer \u2212 $'+bucketTotal.toFixed(2)+' buckets)\n'+
-    '- Net worth: $'+nw.net.toFixed(2)+' (assets: $'+nw.assets.toFixed(2)+', liabilities: $'+nw.liabilities.toFixed(2)+')\n'+
-    '- Average daily spend: $'+avgDaily.toFixed(2)+'\n'+
-    '- Debt repayment strategy: '+(S.debtStrategy||'avalanche')+'\n\n'+
-    '═══ MONTH-TO-DATE ═══\n'+
-    '- Income logged: $'+mtdIncome.toFixed(2)+'\n'+
-    '- Discretionary spending: $'+mtdDiscretionary.toFixed(2)+'\n'+
-    '- Debt repayments made: $'+mtdDebtPaid.toFixed(2)+'\n\n'+
-    '═══ PERSONALITY ═══\n'+
-    '- Direct, honest, sometimes harsh but always constructive\n'+
-    '- Call out bad spending habits by name\n'+
-    '- Celebrate wins genuinely\n'+
-    '- Give specific actionable advice, never vague\n'+
-    '- John has a weed habit and spending addiction he is working on \u2014 be supportive but firm\n'+
-    '- Reference specific numbers from his actual data above, never generic advice\n'+
-    '- If asked about a purchase, check against real surplus ($'+surplus.toFixed(2)+') and give a real yes/no\n'+
-    '- Never say "I cannot access real-time data" \u2014 you have all his data above\n'+
-    '- Keep responses concise and mobile-friendly \u2014 short paragraphs, no walls of text\n'+
-    '- Use dollar amounts and specific dates when relevant\n'+
-    '- Distinguish recurring payday income (salary, already in balance if paydayReceived=true) from irregular income (tax refunds, bonuses \u2014 one-time, do not affect payday cycle)\n'+
-    '- IMPORTANT: You are an AI tool, not a licensed financial advisor. For major financial decisions, always recommend consulting a professional.';
+  // PART 6: PERSONALITY
+  const part6 = 'PERSONALITY & STYLE:\n\n'+
+    'You are SLYGHT \u2014 John\'s brutally honest finance coach.\n'+
+    '- Direct and specific \u2014 always use real dollar amounts from the data above\n'+
+    '- Honest but proportionate \u2014 only alarming when numbers are genuinely alarming\n'+
+    '- Celebrate wins enthusiastically \u2014 $'+todayDebtPaid.toFixed(0)+' in debt payments today is exceptional progress\n'+
+    '- Supportive about habits (weed, spending) \u2014 firm coach, not a judge\n'+
+    '- Never catastrophise when the numbers are actually okay (surplus > 0 = okay)\n'+
+    '- Phase-aware: '+(S.paydayReceived?'Payday received \u2014 be energetic and action-oriented.':days<=3?'PRE_PAYDAY \u2014 be calming, hold-tight tone.':'Mid-month \u2014 coaching and tracking tone.')+'\n'+
+    '- Mobile-first format: short paragraphs max 3 sentences, bullets for 3+ items, bold key numbers\n'+
+    '- Never walls of text \u2014 max 4 paragraphs per response\n\n'+
+    'WHAT YOU KNOW ABOUT JOHN:\n'+
+    '- WMS Consultant at Manhattan Associates, Sydney\n'+
+    '- Virgin Money Go Account + CC 1474, banking primarily Virgin\n'+
+    '- Has a WRX to list for sale this week \u2014 this is his debt exit strategy\n'+
+    '- Working on reducing weed spending and impulse purchases\n'+
+    '- Building SLYGHT himself \u2014 technically capable, appreciates directness\n'+
+    '- China Holiday savings goal: $4,000 by Dec 2026 (currently $67.22 saved)\n'+
+    '- Month-to-date debt payments: $'+mtdDebtPaid.toFixed(2)+' \u2014 keep this energy\n\n'+
+    'IMPORTANT: You are an AI tool, not a licensed financial advisor. For major financial decisions, always recommend consulting a qualified professional.';
+
+  return part1 + part2 + part3 + part4 + part5 + part6;
 }
 
 function renderChatTab() {
@@ -3332,7 +3335,7 @@ function renderChatTab() {
       '<div style="font-size:14px;color:var(--text2);margin-bottom:28px;line-height:1.7;max-width:300px">Enter your Anthropic API key to activate SLYGHT AI</div>' +
       '<input id="chat-key-input" type="password" class="s-input" placeholder="sk-ant-api03-..." style="width:100%;margin-bottom:12px;font-family:var(--mono);font-size:13px;letter-spacing:.03em" autocomplete="off">' +
       '<button onclick="saveChatKey()" class="submit-btn">Activate SLYGHT AI</button>' +
-      '<div style="font-size:11px;color:var(--text3);margin-top:20px;line-height:1.7;max-width:280px">Your key is stored locally on this device only. <a href="https://console.anthropic.com/account/keys" target="_blank" style="color:var(--green)">Get a key at console.anthropic.com →</a></div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:20px;line-height:1.7;max-width:280px">Your key is stored locally on this device only.<br><a href="https://console.anthropic.com/account/keys" target="_blank" style="color:var(--green)">Get your free API key at console.anthropic.com →</a></div>' +
       '</div>';
     return;
   }
@@ -3346,7 +3349,10 @@ function renderChatMessages() {
   if (!history.length) {
     msgs.innerHTML = '<div style="padding:8px 0 16px">' +
       '<div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:14px;padding-top:8px">Ask SLYGHT anything about your finances</div>' +
-      ['Can I afford something today?','What should I pay off first?','How am I tracking this month?','What\'s my real financial position?']
+      ['What\'s my real position right now?',
+       'Can I afford something today? I have $'+getMaxDay().toFixed(0)+' safe',
+       'What should I pay off first?',
+       'Why is my surplus $'+getGenuineSurplus().toFixed(0)+'? Explain the maths']
         .map(p => '<button class="quick-prompt-btn" onclick="sendQuickPrompt(\''+p.replace(/'/g, "\\'")+'\')">'+p+'</button>')
         .join('') +
       '</div>';
