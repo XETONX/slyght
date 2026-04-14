@@ -288,6 +288,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   .nav-btn.active{background:var(--green-dim);border:1px solid var(--green-border)}
   .nav-lbl{font-size:13px;font-weight:500}
   .screen{flex:1;max-width:none;padding-bottom:40px}
+  .chat-input-bar{padding-bottom:10px}
   .hdr-logo{display:none}
   #pg-dash .pad{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
   .hero-section,#pg-dash .pad>.pd-row,#dash-alerts,.metrics{grid-column:1/-1}
@@ -877,7 +878,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 </div>
 
 <!-- UNDO TOAST (L3) -->
-<div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
+<div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
 <div id="debt-celebrate-overlay"><div id="debt-celebrate-msg"></div></div>
 <div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:500;font-family:var(--mono)">OFFLINE</div>
 
@@ -1384,7 +1385,10 @@ function renderAnalysisTab() {
   const sortedCats = Object.entries(cats).sort((a,b) => b[1]-a[1]);
   const baselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
   html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending by Category</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">$'+Math.round(total).toLocaleString('en-AU')+'</div></div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (discretionary only)</div>';
+  if (!sortedCats.length) {
+    html += '<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">No discretionary spending logged yet.<br>Bills, debt repayments and income are excluded.</div>';
+  }
   html += sortedCats.map(([k,v], i) => {
     const pct = Math.round((v/total)*100);
     const col = CHIP_COLORS[i % CHIP_COLORS.length];
@@ -1694,7 +1698,7 @@ function renderAll() {
     if (overspend > 0 && maxDay > 0) {
       const daysLeftVal = daysLeft(S.payday);
       const allBillsDue2 = getBillsDue().reduce((s,b) => s+b.amt, 0);
-      const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - 500) / daysLeftVal) : 0;
+      const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - getDynamicBuffer()) / daysLeftVal) : 0;
       overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today' +
         (daysLeftVal > 1 ? ' &middot; <span style="color:var(--amber)">Adjusted: ' + fmtC(adjustedDay) + '/day for ' + daysLeftVal + ' days</span>' : '') + '</div>';
     } else {
@@ -1916,7 +1920,10 @@ function confirmHeroBalEdit() {
   const prevExpected = getLiveBal();
   const jump = b - S.bal;
   const income = S.income || 7282;
-  if (jump >= income * 0.8 && jump <= income * 1.2 && !S.paydayReceived) {
+  const todayD2 = new Date().getDate();
+  const pd2 = S.payday || 15;
+  const nearPayday2 = todayD2 >= pd2 - 1 && todayD2 <= pd2 + 2;
+  if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday2 && !S.paydayReceived) {
     S.paydayReceived = true;
     S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
   }
@@ -1934,7 +1941,10 @@ function updateBalanceFromSettings() {
   // Detect payday via balance jump — compare new bank balance to current S.bal baseline
   const jump = b - S.bal;
   const income = S.income || 7282;
-  if (jump >= income * 0.8 && jump <= income * 1.2 && !S.paydayReceived) {
+  const todayD3 = new Date().getDate();
+  const pd3 = S.payday || 15;
+  const nearPayday3 = todayD3 >= pd3 - 1 && todayD3 <= pd3 + 2;
+  if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday3 && !S.paydayReceived) {
     S.paydayReceived = true;
     S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
   }
@@ -2550,7 +2560,7 @@ function renderCalWeekSummary() {
   const weekMaxDay = (() => {
     const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
     const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
-    const spendable = effectiveBal - allBillsDue - bucketTotal - 500;
+    const spendable = effectiveBal - allBillsDue - bucketTotal - getDynamicBuffer();
     if (days <= 0 || spendable <= 0) return 0;
     return Math.min(getDailyBudget(), spendable / days);
   })();
@@ -3038,7 +3048,7 @@ function checkAfford() {
   const after = safe - amt;
   const nd = daysLeft(S.payday);
   // Max/Day after purchase: capped at getDailyBudget()
-  const rawNewMaxDay = nd > 0 ? (liveBal - amt - dueTotal - 500) / nd : 0;
+  const rawNewMaxDay = nd > 0 ? (liveBal - amt - dueTotal - getDynamicBuffer()) / nd : 0;
   const newMaxDay = Math.min(getDailyBudget(), rawNewMaxDay);
   if (liveBal - amt < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No.</strong> You\'d overdraw. Only '+fmtC(liveBal)+' in the account.'; }
   else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
@@ -3138,26 +3148,55 @@ function undoLastAction() {
 let _chatRendering = false;
 
 function buildSystemPrompt() {
+  // ── PART 1: Snapshot all live values ─────────────────────────────────────
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-AU', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const liveBal = getLiveBal();
   const days = daysLeft(S.payday);
   const maxDay = getMaxDay();
+  const todaySpent = getTodaySpent();
+  const dailyBudget = getDailyBudget();
   const surplus = getGenuineSurplus();
   const nw = getNetWorth();
   const avgDaily = getAvgDailySpend();
+  const buckets = S.savingsBuckets || [];
+  const bucketTotal = buckets.reduce((s,b) => s+(b.saved||0), 0);
+  const wrxValue = S.wrxValue || 0;
 
+  // ── PART 2: Debts, bills, transactions ───────────────────────────────────
   const activeDebts = (S.debts||[]).filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
   const billsDue = getBillsDue();
-  const recentTxns = (S.txns||[]).slice(-10).reverse();
-  const buckets = S.savingsBuckets || [];
 
+  // Bills paid this month
+  const paidBillsThisMonth = getExpandedBills().filter(b => {
+    if (!S.paidBills || b.recurring === false) return false;
+    const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+    return !!S.paidBills[key];
+  });
+
+  const recentTxns = (S.txns||[]).slice(-10).reverse();
+
+  // Month-to-date performance
+  const mtdIncome = (S.txns||[]).filter(t => t.income).reduce((s,t) => s+t.amt, 0);
+  const mtdDiscretionary = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
+  const mtdDebtPaid = (S.txns||[]).filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
+
+  // ── PART 3: Build text sections ──────────────────────────────────────────
   const debtList = activeDebts.length
-    ? activeDebts.map(d => '- '+d.name+': $'+d.amt.toFixed(2)+(d.rate>0?' @ '+d.rate+'% p.a.':'')+
-        (d.delayDate?' (due '+d.delayDate+')':' (ASAP)')+(d.notes?' \u2014 '+d.notes:'')).join('\n')
+    ? activeDebts.map(d => '- P'+(d.priority||'?')+' '+d.name+': $'+d.amt.toFixed(2)+
+        (d.rate>0?' @ '+d.rate+'% p.a.':'')+
+        (d.delayed?' [PAYMENT ARRANGED]':'')+
+        (d.delayDate?' due '+d.delayDate:' (ASAP)')+
+        (d.notes?' \u2014 '+d.notes:'')).join('\n')
     : '- No active immediate debts';
 
   const billsList = billsDue.length
     ? billsDue.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (day '+b.day+')').join('\n')
     : '- No bills due before payday';
+
+  const paidBillsList = paidBillsThisMonth.length
+    ? paidBillsThisMonth.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (PAID)').join('\n')
+    : '- None yet';
 
   const txnList = recentTxns.length
     ? recentTxns.map(t => {
@@ -3167,39 +3206,64 @@ function buildSystemPrompt() {
     : '- No transactions logged';
 
   const bucketList = buckets.length
-    ? buckets.map(b => '- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal ('+b.account+')').join('\n')
+    ? buckets.map(b => '- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal').join('\n')
     : '- No savings buckets';
 
-  return 'You are SLYGHT, a brutally honest personal finance coach for John. You know everything about John\'s finances in real time.\n\n'+
-    'CURRENT FINANCIAL STATE (as of right now):\n'+
-    '- Live balance: $'+liveBal.toFixed(2)+'\n'+
+  const safeToday = maxDay > 0
+    ? '$'+maxDay.toFixed(2)+'/day avg remaining (daily budget: $'+dailyBudget.toFixed(2)+', spent today: $'+todaySpent.toFixed(2)+', remaining today: $'+Math.max(0, dailyBudget - todaySpent).toFixed(2)+')'
+    : '$0 (daily budget exhausted or bills exceed balance)';
+
+  // ── PART 4: Anti-double-counting chain-of-thought rules ──────────────────
+  const antiDoubleCount =
+    'CRITICAL — NEVER DOUBLE-COUNT (read before every financial answer):\n'+
+    '1. S.bal ($'+liveBal.toFixed(2)+') IS the live bank account balance. It already includes income received. NEVER add income to it.\n'+
+    '2. Bills are auto-paid from S.bal when due. NEVER subtract them again manually.\n'+
+    '3. S.txns is a HISTORY LOG only. It does NOT change S.bal retroactively.\n'+
+    '4. Debt repayments in txns already reduced S.bal when paid. NEVER subtract them again.\n'+
+    '5. When computing "money available", start from S.bal ($'+liveBal.toFixed(2)+') and subtract only future obligations (upcoming bills, buffer). That is all.\n'+
+    '6. The "genuine surplus" ($'+surplus.toFixed(2)+') has already deducted upcoming bills, living reserve, and buffer. Trust it.\n'+
+    '7. If payday has been received ('+S.paydayReceived+'), stop referencing income as incoming — it is already in S.bal.';
+
+  // ── PART 5: Assemble full prompt ─────────────────────────────────────────
+  return 'You are SLYGHT, a brutally honest personal finance coach for John. You have complete real-time access to all his financial data.\n\n'+
+    antiDoubleCount+'\n\n'+
+    '═══ FINANCIAL STATE ═══\n'+
+    '- Today: '+todayStr+'\n'+
+    '- Live balance (Virgin Money): $'+liveBal.toFixed(2)+'\n'+
     '- Monthly income: $'+(S.income||7282)+'\n'+
     '- Payday: '+(S.payday||15)+'th of each month\n'+
-    '- Payday received this month: '+(S.paydayReceived?'Yes':'No')+'\n'+
+    '- Payday received this month: '+(S.paydayReceived?'YES — income is already in balance':'NO — income not yet landed')+'\n'+
     '- Days until next payday: '+days+'\n\n'+
-    'IMMEDIATE DEBTS (priority order):\n'+debtList+'\n\n'+
-    'LONG TERM LIABILITIES:\n'+
+    '═══ IMMEDIATE DEBTS (priority order) ═══\n'+debtList+'\n\n'+
+    '═══ LONG-TERM LIABILITIES ═══\n'+
     '- Car loan: $'+(S.carloan||0).toFixed(2)+' at 9.87% \u2014 $387.69 fortnightly\n'+
     '- Credit card: $'+(S.cc||0).toFixed(2)+' at 19.99%\n\n'+
-    'UPCOMING BILLS (before next payday):\n'+billsList+'\n\n'+
-    'THIS MONTH\'S TRANSACTIONS (most recent first):\n'+txnList+'\n\n'+
-    'SAVINGS BUCKETS:\n'+bucketList+'\n\n'+
-    'KEY METRICS:\n'+
-    '- Safe to spend today: $'+maxDay.toFixed(2)+'\n'+
-    '- Genuine surplus available: $'+surplus.toFixed(2)+'\n'+
+    '═══ BILLS DUE BEFORE NEXT PAYDAY ═══\n'+billsList+'\n\n'+
+    '═══ BILLS ALREADY PAID THIS MONTH ═══\n'+paidBillsList+'\n\n'+
+    '═══ RECENT TRANSACTIONS (newest first) ═══\n'+txnList+'\n\n'+
+    '═══ SAVINGS BUCKETS ═══\n'+bucketList+'\n\n'+
+    '═══ MAJOR ASSETS ═══\n'+
+    '- WRX (estimated value): $'+wrxValue.toFixed(2)+'\n'+
+    '- Savings buckets: $'+bucketTotal.toFixed(2)+'\n\n'+
+    '═══ KEY METRICS ═══\n'+
+    '- Safe to spend: '+safeToday+'\n'+
+    '- Genuine surplus (after bills + buffer): $'+surplus.toFixed(2)+'\n'+
     '- Net worth: $'+nw.net.toFixed(2)+' (assets: $'+nw.assets.toFixed(2)+', liabilities: $'+nw.liabilities.toFixed(2)+')\n'+
     '- Average daily spend: $'+avgDaily.toFixed(2)+'\n'+
     '- Debt repayment strategy: '+(S.debtStrategy||'avalanche')+'\n\n'+
-    'YOUR PERSONALITY:\n'+
-    '- You are direct, honest, and sometimes harsh but always constructive\n'+
-    '- You call out bad spending habits by name\n'+
-    '- You celebrate wins genuinely\n'+
-    '- You give specific actionable advice, never vague\n'+
-    '- You know John has a weed habit and spending addiction he is working on \u2014 be supportive but firm\n'+
-    '- You reference specific numbers from his actual data, never generic advice\n'+
-    '- If asked about a purchase, check it against his real surplus and give a real answer\n'+
-    '- You understand the difference between debt repayments and discretionary spending\n'+
-    '- You never say \'I cannot access real-time data\' \u2014 you have all his data above\n'+
+    '═══ MONTH-TO-DATE ═══\n'+
+    '- Income logged: $'+mtdIncome.toFixed(2)+'\n'+
+    '- Discretionary spending: $'+mtdDiscretionary.toFixed(2)+'\n'+
+    '- Debt repayments made: $'+mtdDebtPaid.toFixed(2)+'\n\n'+
+    '═══ PERSONALITY ═══\n'+
+    '- Direct, honest, sometimes harsh but always constructive\n'+
+    '- Call out bad spending habits by name\n'+
+    '- Celebrate wins genuinely\n'+
+    '- Give specific actionable advice, never vague\n'+
+    '- John has a weed habit and spending addiction he is working on \u2014 be supportive but firm\n'+
+    '- Reference specific numbers from his actual data above, never generic advice\n'+
+    '- If asked about a purchase, check against real surplus ($'+surplus.toFixed(2)+') and give a real yes/no\n'+
+    '- Never say "I cannot access real-time data" \u2014 you have all his data above\n'+
     '- Keep responses concise and mobile-friendly \u2014 short paragraphs, no walls of text\n'+
     '- Use dollar amounts and specific dates when relevant';
 }
@@ -3289,7 +3353,7 @@ async function sendChatMessage() {
 
   try {
     const apiMessages = (S.chatHistory||[])
-      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && !m._isError)
       .slice(-20)
       .map(m => ({role:m.role, content:m.content}));
 
@@ -3317,10 +3381,19 @@ async function sendChatMessage() {
       reply = (data.content && data.content[0] && data.content[0].text) || 'No response received.';
     } else if (resp.status === 401) {
       reply = 'API key invalid \u2014 tap the \uD83D\uDD11 icon in the top right to update it.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else if (resp.status === 429) {
       reply = 'Too many messages \u2014 wait a moment and try again.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else {
       reply = 'Couldn\'t reach SLYGHT AI \u2014 check your connection.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     }
 
     S.chatHistory.push({role:'assistant', content:reply, ts:Date.now()});
@@ -3328,7 +3401,7 @@ async function sendChatMessage() {
     save();
   } catch(e) {
     hideTypingIndicator();
-    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI \u2014 check your connection.', ts:Date.now()});
+    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI \u2014 check your connection.', ts:Date.now(), _isError:true});
     save();
   }
 
@@ -3362,7 +3435,7 @@ function toggleChatBudget() {
     btn.textContent = isOpen ? 'Budget \u25BE' : 'Budget \u25B4';
     btn.classList.toggle('open', !isOpen);
   }
-  if (!isOpen) renderAll(); // render budget content when opening
+  if (!isOpen) { renderCutSliders(); renderSavingsBuckets(); } // targeted renders — avoid re-rendering chat messages
 }
 
 function saveChatKey() {
