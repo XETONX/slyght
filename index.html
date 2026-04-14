@@ -862,7 +862,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <script>
 const STORAGE_KEY = 'slyght_v5';
-const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10'];
+const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11'];
 // SEC2: sanitize user-supplied strings before inserting into innerHTML
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
 const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
@@ -974,10 +974,11 @@ function daysLeft(payday) {
 
 // --- Core financial helpers ---
 
-// Returns average daily spend from txn history; $80 fallback if insufficient data
-// C2: floor daySpan at 7 days so same-day transactions don't produce the $200 cap
+// Average daily discretionary spend — excludes non-spending categories
+// 7-day minimum floor on daySpan; $80 fallback if insufficient data
+const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer']);
 function getAvgDailySpend() {
-  const expTxns = S.txns ? S.txns.filter(t => !t.income && t.cat !== 'Debt repayment') : [];
+  const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
   if (expTxns.length < 2) return 80;
   const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
@@ -1012,14 +1013,13 @@ function getGenuineSurplus() {
   return liveBal - allBillsDue - bucketTotal - livingReserve - getDynamicBuffer();
 }
 
+// Analysis only — never participates in balance calculations
 function getTxnSpent() {
   return S.txns.filter(t => !t.income).reduce((s,t) => s+t.amt, 0);
 }
+// S.bal IS the live balance — single source of truth. No arithmetic.
 function getLiveBal() {
-  const spent = getTxnSpent();
-  const incomeAdded = S.txns.filter(t => t.income).reduce((s,t) => s+t.amt, 0);
-  const bal = isNaN(S.bal) ? 0 : (S.bal || 0); // H11: guard NaN propagation
-  return bal - spent + incomeAdded;
+  return isNaN(S.bal) ? 0 : (S.bal || 0);
 }
 // FA2: dynamic buffer — $500 default, rises with upcoming bills
 function getDynamicBuffer() {
@@ -1033,9 +1033,10 @@ function getDynamicBuffer() {
   if (due7 > 1000) return 1000;
   return 500;
 }
+// Only discretionary spend today — debt repayments/income/savings never count toward daily budget
 function getTodaySpent() {
   const today = new Date(); today.setHours(0,0,0,0);
-  return S.txns.filter(t => !t.income && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
+  return S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
 }
 function getNoSpendStreak() {
   const expenseTxns = S.txns.filter(t => !t.income);
@@ -1140,10 +1141,9 @@ function eodReconLog() {
   openQuickLogModal(); // H3: pg-log doesn't exist; open quick log modal instead
 }
 function eodReconUntracked() {
-  // Adjust S.bal to match getLiveBal — absorb the discrepancy
-  S.bal = getLiveBal();
-  save(); renderAll();
+  // Prompt user to enter their current real balance (S.bal is the source of truth)
   $('eod-recon-modal').classList.remove('open');
+  openHeroBalEdit();
 }
 function eodReconAccept() {
   $('eod-recon-modal').classList.remove('open');
@@ -1315,8 +1315,8 @@ function renderAnalysisTab() {
   }
 
   const cats = {};
-  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
-  const total = getTxnSpent();
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
   const income = S.income || 7282;
   const days = daysLeft(S.payday);
   const liveBal = getLiveBal();
@@ -1350,6 +1350,20 @@ function renderAnalysisTab() {
   }).join('');
   html += '</div>';
 
+  // --- Debt payments this month ---
+  const debtPaidThisMonth = S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
+  if (debtPaidThisMonth > 0) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Debt Payments</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">'+fmt(debtPaidThisMonth)+'</div></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">Debt repayments logged this month — not counted as discretionary spending. This money is reducing your liabilities.</div></div>';
+  }
+
+  // --- Income received ---
+  const incomeThisMonth = S.txns.filter(t => t.income).reduce((s,t) => s+t.amt, 0);
+  if (incomeThisMonth > 0) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Income Received</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">+'+fmt(incomeThisMonth)+'</div></div>' +
+      '<div style="font-size:13px;color:var(--text2)">Total income logged this month.</div></div>';
+  }
+
   // --- Flagged habits ---
   const flagged = S.txns.filter(t => t.flagged);
   if (flagged.length) {
@@ -1382,9 +1396,9 @@ function renderAnalysisTab() {
   }
 
   // --- Worst 5 vs baseline ---
-  const catBaselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300,'Debt repayment':0};
+  const catBaselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
   const catSpendW5 = {};
-  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat||'Other'; catSpendW5[k] = (catSpendW5[k]||0)+t.amt; });
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat||'Other'; catSpendW5[k] = (catSpendW5[k]||0)+t.amt; });
   const worst5 = Object.entries(catSpendW5)
     .map(([k,v]) => ({cat:k, spent:v, baseline: catBaselines[k]||200, over: v - (catBaselines[k]||200)}))
     .filter(x => x.over > 0)
@@ -1409,10 +1423,10 @@ function renderAnalysisTab() {
   html += '</div>';
 
   // --- FA3: Essential vs Discretionary breakdown ---
-  const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Debt repayment','Savings','Income']);
-  const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Debt repayment','Savings'];
+  const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
+  const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings'];
   let essTotal = 0, discTotal = 0;
-  S.txns.filter(t => !t.income).forEach(t => {
+  S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => {
     const k = t.cat || 'Other';
     if (ESSENTIAL_KEYS.includes(k) || k === 'Fuel') essTotal += t.amt;
     else discTotal += t.amt;
@@ -1992,8 +2006,9 @@ function markDebtPaid() {
   if (idx < 0) return;
   const d = S.debts[idx];
   saveUndoState(); // L3: undo support
-  // Auto-log debt clearance — reduces getLiveBal via getTxnSpent automatically
-  S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false});
+  // Deduct from S.bal and log to history
+  S.bal -= d.amt;
+  S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false, _balAffected: true});
   S.debts[idx].paid = true;
   save(); closeModal('debt-modal'); renderAll();
   showUndoToast('Debt marked paid');
@@ -2089,6 +2104,9 @@ function deleteBill() {
 function markBillPaidMonth() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
+  // Deduct from S.bal and log to history
+  S.bal -= b.amt;
+  S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
   const now = new Date();
   const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
   if (!S.paidBills) S.paidBills = {};
@@ -2886,15 +2904,18 @@ function quickLogTxn() {
   day = Math.min(28, Math.max(1, day));
   if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
   if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
-  // FIX 6: Income category adds to balance
+  // Income: add to balance
   if (cat === 'Income') {
-    S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true});
+    S.bal += amt;
+    S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true});
     closeModal('quick-log-modal');
     save(); renderAll();
     return;
   }
+  // Expense: deduct from balance immediately
+  S.bal -= amt;
   const flag = getHabitFlag(note, amt);
-  S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag});
+  S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag, _balAffected: true});
   if (flag) {
     const bal = fmtC(getLiveBal());
     const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
@@ -2909,6 +2930,12 @@ function quickLogTxn() {
 function rmTxn(i) {
   if (!confirm('Delete this transaction?')) return;
   saveUndoState();
+  const t = S.txns[i];
+  // Reverse S.bal only for transactions that updated it when logged
+  if (t && t._balAffected) {
+    if (t.income) S.bal -= t.amt;
+    else S.bal += t.amt;
+  }
   S.txns.splice(i, 1);
   save(); renderAll();
   showUndoToast('Transaction deleted');
@@ -3077,8 +3104,10 @@ if ('serviceWorker' in navigator) {
 
 // Seed v10: real state 14 Apr 2026. S.bal=3345.99, getLiveBal()=6664.82
 // Math: 3345.99 - (2500+1170+250.84+141.76+0.90) + (7282.33+100) = 3345.99 - 4063.50 + 7382.33 = 6664.82
-(function seedV10() {
-  if (localStorage.getItem('slyght_seeded_v10')) return;
+(function seedV11() {
+  if (localStorage.getItem('slyght_seeded_v11')) return;
+  // S.bal = 3345.99 is the real Virgin Money balance — single source of truth.
+  // Transactions are HISTORY LOG ONLY — no _balAffected flag, never recalculated into balance.
   const t = Date.parse('2026-04-14T09:00:00');
   const seed = {
     "S":{
@@ -3136,7 +3165,7 @@ if ('serviceWorker' in navigator) {
     ]
   };
   localStorage.setItem('slyght_v5', JSON.stringify(seed));
-  localStorage.setItem('slyght_seeded_v10', '1');
+  localStorage.setItem('slyght_seeded_v11', '1');
 })();
 
 load();
