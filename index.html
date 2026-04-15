@@ -1147,7 +1147,7 @@ function daysLeft(payday) {
 
 // Average daily discretionary spend — excludes non-spending categories
 // 7-day minimum floor on daySpan; S.weekdayBudget||60 fallback if insufficient data
-const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer']);
+const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer','Loan','Car Loan','CC Payment']);
 function getAvgDailySpend() {
   const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
   if (expTxns.length < 3) return S.weekdayBudget || 60;
@@ -1224,6 +1224,11 @@ function getDynamicBuffer() {
 function getTodaySpent() {
   const today = new Date(); today.setHours(0,0,0,0);
   return S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
+}
+// Alias: explicitly discretionary only — excludes all debt repayments, income, savings, loans, CC payments
+// Used by "Over by" alert and TODAY metric tile so debt repayments never trigger overspend warnings
+function getTodayDiscretionarySpend() {
+  return getTodaySpent();
 }
 function getNoSpendStreak() {
   // Only discretionary transactions break the streak — debt repayments do NOT count
@@ -1490,6 +1495,14 @@ function getExpandedBills() {
     }
   });
   return result;
+}
+
+function isThisMonthlyBillPaid(billName, billDay) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth()+1;
+  const key1 = y+'-'+m+'-'+billName+'-'+billDay;
+  const key2 = y+'-'+m+'-'+billName;
+  return !!(S.paidBills && (S.paidBills[key1] === true || S.paidBills[key2] === true));
 }
 
 function getBillsDue() {
@@ -3147,8 +3160,9 @@ function renderBillsGrouped() {
   });
   ['week','next','later'].forEach(k => grouped[k].sort((a,b) => a.diff - b.diff));
 
-  const todayTotal = grouped.today.reduce((s,b) => s+b.amt, 0);
-  const weekTotal = [...grouped.today,...grouped.week].reduce((s,b) => s+b.amt, 0);
+  // Exclude paid bills from totals — paid bills still render with PAID badge but don't count toward amounts
+  const todayTotal = grouped.today.filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
+  const weekTotal = [...grouped.today,...grouped.week].filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
   const liveBal = getLiveBal();
   const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   let warn = '';
@@ -3188,22 +3202,27 @@ function renderBillsGrouped() {
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
   // Combined monthly summary — replaced separate Next Week + Later sections with one table sorted by day (ascending)
-  const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => a.day - b.day);
+  // All upcoming bills for display (including paid — shown with strikethrough)
+  const upcomingAll = [...grouped.next, ...grouped.later].sort((a,b) => a.day - b.day);
+  // Only unpaid for totals and balance projection
+  const upcoming = upcomingAll.filter(b => !isThisMonthlyBillPaid(b.name, b.day));
   let monthlyHtml = '';
-  if (upcoming.length) {
+  if (upcomingAll.length) {
     const monthlyTotal = upcoming.reduce((s,b) => s+b.amt, 0);
-    let runBal = getLiveBal(); // Running balance from live balance, deducting each bill in day order
+    let runBal = getLiveBal(); // Running balance from live balance, deducting each unpaid bill in day order
     monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
       '<div class="card" style="padding:4px 16px">' +
-      upcoming.map(b => {
+      upcomingAll.map(b => {
         const ri = BILLS.findIndex(x => x.name === b.name);
-        runBal -= b.amt;
+        const bPaid = isThisMonthlyBillPaid(b.name, b.day);
+        if (!bPaid) runBal -= b.amt;
         const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
-          '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+'</div>' +
+        const paidBadgeM = bPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer'+(bPaid?';opacity:0.55':'')+'" onclick="openBillModal('+ri+')">' +
+          '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'+(bPaid?'text-decoration:line-through;color:var(--text3)':'')+'">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+paidBadgeM+'</div>' +
           '<div style="font-size:11px;color:var(--text3)">day '+b.day+'</div></div>' +
-          '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(b.amt)+'</div>' +
-          '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div></div></div>';
+          '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(bPaid?'var(--text3)':'var(--text)')+'">'+fmt(b.amt)+'</div>' +
+          (bPaid ? '<div style="font-family:var(--mono);font-size:10px;color:var(--green)">✓ paid</div>' : '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div>') + '</div></div>';
       }).join('') +
       '<div style="display:flex;justify-content:space-between;padding:10px 0 4px"><span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Monthly total</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(monthlyTotal)+'</span></div>' +
       '</div></div>';
@@ -3308,9 +3327,16 @@ function calDayClick(day) {
     }
   }
   if (bills.length) {
-    html += bills.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:14px;color:var(--text);font-weight:500">'+b.name+'</div><div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' &#x00B7; Recurring':'')+'</div></div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+b.amt.toFixed(2)+'</div></div>').join('');
-    const total = bills.reduce((s,b) => s+b.amt, 0);
-    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
+    html += bills.map(b => {
+      const bPaid = isThisMonthlyBillPaid(b.name, b.day);
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)'+(bPaid?';opacity:0.55':'')+'"><div><div style="font-size:14px;color:'+(bPaid?'var(--text3)':'var(--text)')+';font-weight:500;'+(bPaid?'text-decoration:line-through':'')+'">' +
+        b.name+(bPaid?'<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:6px">PAID</span>':'')+'</div>' +
+        '<div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' · Recurring':'')+'</div></div>' +
+        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(bPaid?'var(--green)':'var(--red)')+'">$'+b.amt.toFixed(2)+'</div></div>';
+    }).join('');
+    const total = bills.filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
+    if (total > 0) html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL DUE</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
+    else html += '<div style="padding:8px 0;font-size:13px;color:var(--green)">All bills on this day are paid ✓</div>';
   }
   html += '<button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
   content.innerHTML = html;
