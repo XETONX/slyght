@@ -291,6 +291,39 @@ const checks = [
   // Overdrive: Time Machine present
   { name: 'Time Machine present in Analysis tab',
     test: () => html.includes('Time Machine') && html.includes('SNAPSHOTS.restore') ? 'OK' : 'MISSING — time machine not found'
+  },
+
+  // HEARTBEAT replaces all separate intervals
+  { name: 'HEARTBEAT replaces all separate intervals',
+    test: () => {
+      const hasHeartbeat = html.includes('const HEARTBEAT');
+      const oldIntervals = (html.match(/setInterval/g) || []).length;
+      return hasHeartbeat && oldIntervals <= 2 ? 'OK' :
+        !hasHeartbeat ? 'MISSING — HEARTBEAT object not found' : 'WARNING — ' + oldIntervals + ' setIntervals found, check for duplicates';
+    }
+  },
+
+  // Export strips API key
+  { name: 'Export strips API key',
+    test: () => {
+      const exportFn = html.match(/function copyExport[\s\S]*?^}/m);
+      if (!exportFn) return 'WARNING — copyExport function not found';
+      return exportFn[0].includes('delete') && exportFn[0].includes('apiKey') ? 'OK' : 'BROKEN — API key not stripped from export';
+    }
+  },
+
+  // Chat inactivity check exists
+  { name: 'Chat inactivity check exists',
+    test: () => html.includes('checkChatInactivity') ? 'OK' : 'MISSING — checkChatInactivity function not found'
+  },
+
+  // Autofill disabled on inputs
+  { name: 'Autofill disabled on inputs',
+    test: () => {
+      const inputCount = (html.match(/<input/g) || []).length;
+      const autocompleteCount = (html.match(/autocomplete="off"|autocomplete="new-password"/g) || []).length;
+      return autocompleteCount >= inputCount * 0.5 ? 'OK' : 'WARNING — many inputs missing autocomplete=off (' + autocompleteCount + '/' + inputCount + ')';
+    }
   }
 ];
 

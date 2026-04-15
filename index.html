@@ -358,7 +358,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="ob-logo">SLYGHT</div>
     <div class="ob-tag">Know your money. Always.</div>
     <div class="ob-lbl">Virgin Money balance right now</div>
-    <input class="ob-inp" type="number" id="ob-bal" placeholder="$0.00" inputmode="decimal">
+    <input class="ob-inp" type="number" id="ob-bal" placeholder="$0.00" inputmode="decimal" autocomplete="off" data-lpignore="true" data-form-type="other">
     <div class="ob-lbl" style="margin-bottom:4px">Days until payday</div>
     <div class="ob-days-display" id="ob-days-display"></div>
     <div class="ob-hint">Check your <b>Virgin Money</b> app and enter your current balance.</div>
@@ -479,8 +479,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="card">
         <div class="card-hdr"><div class="card-title">Affordability Check</div></div>
         <div class="afford-row">
-          <input class="s-input" type="number" id="aff-amt" placeholder="Amount" inputmode="decimal" oninput="checkAfford()" style="max-width:130px">
-          <input class="s-input" type="text" id="aff-what" placeholder="For what?" oninput="checkAfford()">
+          <input class="s-input" type="number" id="aff-amt" placeholder="Amount" inputmode="decimal" oninput="checkAfford()" style="max-width:130px" autocomplete="off" data-lpignore="true" data-form-type="other">
+          <input class="s-input" type="text" id="aff-what" placeholder="For what?" oninput="checkAfford()" autocomplete="off" data-lpignore="true" data-form-type="other">
         </div>
         <div id="aff-verdict"></div>
         <div id="aff-cuts"></div>
@@ -548,7 +548,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <!-- Input bar -->
     <div class="chat-input-bar">
       <textarea class="chat-input" id="chat-input" placeholder="Ask SLYGHT anything..." rows="1"
-        onkeydown="chatInputKeydown(event)" oninput="chatInputResize(this)"></textarea>
+        onkeydown="chatInputKeydown(event)" oninput="chatInputResize(this)" autocomplete="off" data-lpignore="true" data-form-type="other"></textarea>
       <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()">
         <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M10 16V4M4 10l6-6 6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
@@ -570,28 +570,28 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="card">
         <div class="settings-section">
           <div class="settings-title">Balance</div>
-          <div class="settings-row"><span class="settings-lbl">Current balance ($)</span><input class="settings-input" type="number" id="s-bal" placeholder="0.00" inputmode="decimal"></div>
+          <div class="settings-row"><span class="settings-lbl">Current balance ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-bal" placeholder="0.00" inputmode="decimal"></div>
           <button class="add-btn" onclick="updateBalanceFromSettings()" style="margin-top:6px">Update Balance</button>
           <div id="s-bal-msg" style="font-size:13px;margin-top:6px"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">App Security</div>
-          <div class="settings-row"><span class="settings-lbl">App PIN</span><input class="settings-input" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">App PIN</span><input class="settings-input" autocomplete="new-password" data-lpignore="true" data-form-type="other" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Income</div>
-          <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
           <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
-          <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
           <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
-          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Mon–Fri</div>
-          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Sat–Sun</div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Assets</div>
-          <div class="settings-row"><span class="settings-lbl">Vehicle value ($)</span><input class="settings-input" type="number" id="s-wrx-value" value="21000" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Vehicle value ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-wrx-value" value="21000" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Debt Strategy</div>
@@ -606,10 +606,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
         <div class="settings-section">
           <div class="settings-title">Debts</div>
-          <div class="settings-row"><span class="settings-lbl">Car loan remaining</span><input class="settings-input" type="number" id="s-car" value="23989.70" oninput="saveSettings()"></div>
-          <div class="settings-row"><span class="settings-lbl">Car loan original amount</span><input class="settings-input" type="number" id="s-car-original" value="37400" oninput="saveSettings()"></div>
-          <div class="settings-row"><span class="settings-lbl">Credit card balance</span><input class="settings-input" type="number" id="s-cc" value="4595.35" oninput="saveSettings()"></div>
-          <div class="settings-row"><span class="settings-lbl">Credit card limit</span><input class="settings-input" type="number" id="s-cc-limit" value="6000" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Car loan remaining</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-car" value="23989.70" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Car loan original amount</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-car-original" value="37400" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Credit card balance</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-cc" value="4595.35" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Credit card limit</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-cc-limit" value="6000" oninput="saveSettings()"></div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Savings</div>
@@ -639,10 +639,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Financial Audit Log</div></div>
-        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Every balance change is recorded and verified here.</div>
+        <div class="card-hdr"><div class="card-title">Activity Log</div></div>
         <div id="audit-log-content"></div>
-        <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear audit log</button>
+        <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear log</button>
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Export / Import</div></div>
@@ -692,12 +691,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title" id="modal-title">Debt Details</div>
     <div class="modal-sub">Edit this debt — tap Save when done</div>
-    <div class="modal-field"><label>Name</label><input class="modal-input" type="text" id="modal-name"></div>
-    <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" type="number" id="modal-amt" inputmode="decimal"></div>
-    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="modal-rate" placeholder="0" inputmode="decimal"></div>
-    <div class="modal-field"><label>Due date</label><input class="modal-input" type="date" id="modal-due"></div>
-    <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="modal-notes"></div>
-    <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" type="number" id="modal-priority" min="1" max="99" value="1"><button onclick="document.getElementById('modal-priority').stepDown(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↓</button><button onclick="document.getElementById('modal-priority').stepUp(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↑</button></div>
+    <div class="modal-field"><label>Name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="modal-name"></div>
+    <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-amt" inputmode="decimal"></div>
+    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-rate" placeholder="0" inputmode="decimal"></div>
+    <div class="modal-field"><label>Due date</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="date" id="modal-due"></div>
+    <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="modal-notes"></div>
+    <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-priority" min="1" max="99" value="1"><button onclick="document.getElementById('modal-priority').stepDown(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↓</button><button onclick="document.getElementById('modal-priority').stepUp(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↑</button></div>
     <div id="modal-payoff-eta" style="font-size:12px;color:var(--text3);padding:8px 0;border-top:1px solid var(--border);margin-bottom:4px"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-paid" onclick="markDebtPaid()">Mark Cleared</button>
@@ -714,9 +713,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-title" id="bill-modal-title">Edit Bill</div>
     <div class="modal-sub">Tap Save Changes to update this bill</div>
     <div id="bill-extra-info" style="margin-bottom:12px"></div>
-    <div class="modal-field"><label>Bill name</label><input class="modal-input" type="text" id="bm-name"></div>
-    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="bm-amt" inputmode="decimal"></div>
-    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" type="number" id="bm-day" min="1" max="28"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 28</div></div>
+    <div class="modal-field"><label>Bill name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bm-name"></div>
+    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bm-amt" inputmode="decimal"></div>
+    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bm-day" min="1" max="28"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 28</div></div>
     <div class="modal-field"><label>Category</label>
       <select class="modal-input" id="bm-tag">
         <option>Fixed</option><option>Loan</option><option>Variable</option><option>Streaming</option>
@@ -749,11 +748,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Add Debt</div>
     <div class="modal-sub">Track a new obligation — it factors into your surplus and Max/Day calculations</div>
-    <div class="modal-field"><label>Debt name</label><input class="modal-input" type="text" id="nd-name" placeholder="e.g. Borrowed from friend"></div>
-    <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" type="number" id="nd-amt" placeholder="0.00" inputmode="decimal"></div>
-    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" type="number" id="nd-rate" placeholder="0" inputmode="decimal" value="0"></div>
-    <div class="modal-field"><label>Due date (optional)</label><input class="modal-input" type="date" id="nd-due"></div>
-    <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="nd-notes" placeholder="Any context..."></div>
+    <div class="modal-field"><label>Debt name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="nd-name" placeholder="e.g. Borrowed from friend"></div>
+    <div class="modal-field"><label>Amount owed ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="nd-amt" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="nd-rate" placeholder="0" inputmode="decimal" value="0"></div>
+    <div class="modal-field"><label>Due date (optional)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="date" id="nd-due"></div>
+    <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="nd-notes" placeholder="Any context..."></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveNewDebt()">Add Debt</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('add-debt-modal')">Cancel</button>
@@ -777,15 +776,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       </div>
     </div>
     <div id="lt-result" style="margin-bottom:14px;display:none"></div>
-    <div class="modal-field"><label id="lt-extra-label">Extra payment per fortnight / month ($)</label><input class="modal-input" type="number" id="lt-extra" placeholder="e.g. 100" oninput="calcLtDebt()"></div>
+    <div class="modal-field"><label id="lt-extra-label">Extra payment per fortnight / month ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="lt-extra" placeholder="e.g. 100" oninput="calcLtDebt()"></div>
 
     <div id="lt-lump-section" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);display:none">
       <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Lump Sum Calculator</div>
-      <div class="modal-field"><label>One-off extra payment ($)</label><input class="modal-input" type="number" id="lt-lump" placeholder="e.g. 500" inputmode="decimal" oninput="calcLtLumpSavings()"></div>
+      <div class="modal-field"><label>One-off extra payment ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="lt-lump" placeholder="e.g. 500" inputmode="decimal" oninput="calcLtLumpSavings()"></div>
       <div id="lt-lump-result" style="font-size:13px;color:var(--text2);background:var(--bg3);border-radius:var(--r-sm);padding:10px;margin-top:8px;display:none"></div>
     </div>
 
-    <div class="modal-field"><label>Update current balance ($)</label><input class="modal-input" type="number" id="lt-new-bal" placeholder="Enter latest balance"></div>
+    <div class="modal-field"><label>Update current balance ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="lt-new-bal" placeholder="Enter latest balance"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveLtDebt()">Save Balance</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('lt-debt-modal')">Close</button>
@@ -798,9 +797,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Add Savings Bucket</div>
     <div class="modal-sub">Create a new savings goal — locked from your spendable balance</div>
-    <div class="modal-field"><label>Bucket name</label><input class="modal-input" type="text" id="nb-name" placeholder="e.g. Emergency Fund"></div>
-    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" type="number" id="nb-goal" placeholder="0.00" inputmode="decimal"></div>
-    <div class="modal-field"><label>Account (e.g. ING, Westpac)</label><input class="modal-input" type="text" id="nb-account" placeholder="ING"></div>
+    <div class="modal-field"><label>Bucket name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="nb-name" placeholder="e.g. Emergency Fund"></div>
+    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="nb-goal" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Account (e.g. ING, Westpac)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="nb-account" placeholder="ING"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveNewBucket()">Add Bucket</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('add-bucket-modal')">Cancel</button>
@@ -814,16 +813,16 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-title" id="bkt-modal-title">Savings Bucket</div>
     <div class="modal-sub" id="bkt-modal-sub"></div>
     <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="bkt-modal-bar" style="height:6px;border-radius:3px;background:var(--blue);transition:width .4s"></div></div>
-    <div class="modal-field"><label>Bucket name</label><input class="modal-input" type="text" id="bkt-name"></div>
-    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" type="number" id="bkt-goal" inputmode="decimal"></div>
-    <div class="modal-field"><label>Current saved ($)</label><input class="modal-input" type="number" id="bkt-saved" inputmode="decimal"></div>
+    <div class="modal-field"><label>Bucket name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bkt-name"></div>
+    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-goal" inputmode="decimal"></div>
+    <div class="modal-field"><label>Current saved ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-saved" inputmode="decimal"></div>
     <div class="modal-field"><label>Account</label>
       <select class="modal-input" id="bkt-account">
         <option>ING</option><option>Westpac</option><option>CommBank</option><option>NAB</option><option>ANZ</option><option>Other</option>
       </select>
     </div>
-    <div class="modal-field"><label>Notes</label><input class="modal-input" type="text" id="bkt-notes" placeholder="e.g. transfer every fortnight"></div>
-    <div class="modal-field"><label>Add funds ($)</label><input class="modal-input" type="number" id="bkt-add-funds" placeholder="0.00" inputmode="decimal"></div>
+    <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bkt-notes" placeholder="e.g. transfer every fortnight"></div>
+    <div class="modal-field"><label>Add funds ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-add-funds" placeholder="0.00" inputmode="decimal"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveBucketModal()">Save Changes</button>
       <button class="modal-btn modal-btn-paid" onclick="addFundsBucketModal()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Add Funds</button>
@@ -838,8 +837,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Log a Transaction</div>
     <div class="modal-sub">Quick-log a spend from your Virgin Money notification</div>
-    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal"></div>
-    <div class="modal-field"><label>Description</label><input class="modal-input" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles"></div>
+    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field"></div>
+    <div class="modal-field"><label>Description</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles" name="ql-note-field"></div>
     <div class="modal-field"><label>Category</label>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
         <button type="button" onclick="setQlCat('Food / Coffee')" class="cat-chip">☕ Food</button>
@@ -861,7 +860,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <label for="ql-recurring">Recurring — add to bills list</label>
     </div>
     <div id="ql-recurring-fields" style="display:none;margin-bottom:10px">
-      <input class="modal-input" type="number" id="ql-day" placeholder="Day of month (1–28)" min="1" max="28">
+      <input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-day" placeholder="Day of month (1–28)" min="1" max="28">
     </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
@@ -953,7 +952,7 @@ let S = {
   income: 7282,
   payday: 15,
   carloan: 23989.70,
-  cc: 4595.35,
+  cc: 0,
   carloanOriginal: 37400,
   ccLimit: 6000,
   pin: '2103',
@@ -965,8 +964,9 @@ let S = {
     {id:1, name:'Owed to Michael', amt:550, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill + $200 additional borrowing', rate:0},
     {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May', rate:19.99},
     {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK', rate:0},
+    {id:7, name:'Owed to Mum', amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, notes:'CC payoff $2,158 + missed rent $2,500. $500/month extra included in $3,000 rent. ~9 months to clear. Pay remainder when WRX sells.', delayDate:'2027-01-15', viaRent:true},
   ],
-  nextDebtId: 4,
+  nextDebtId: 8,
   savingsBuckets: [
     {id:0, name:'China Holiday', goal:4000, saved:61.82, account:'ING'},
     {id:1, name:'Rainy Day Fund', goal:2000, saved:0, account:'ING'},
@@ -974,6 +974,7 @@ let S = {
     {id:3, name:'Gifts & Celebrations', goal:500, saved:0, account:'Other'},
   ],
   nextBucketId: 4,
+  paidBills: {'2026-4-Rent-15': true},
   paydayReceived: false,
   paydayReceivedDate: null,
   weekdayBudget: 60,
@@ -986,7 +987,7 @@ let S = {
 };
 
 let BILLS = [
-  {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:false},
+  {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:true},
   {name:'Car Loan — Firstmac', amt:387.69, day:1, tag:'Loan', recurring:true, freq:'fortnightly'},
   {name:'Health Insurance (qtrly avg)', amt:119.04, day:1, tag:'Fixed', recurring:true},
   {name:'Amazon Prime', amt:9.99, day:3, tag:'Subscription', recurring:true},
@@ -1098,7 +1099,7 @@ function getActiveDebtsDueBeforePayday() {
     nextPayday.setMonth(nextPayday.getMonth() + 1);
   }
   return (S.debts || [])
-    .filter(d => !d.paid && (
+    .filter(d => !d.paid && !d.viaRent && (
       (d.delayDate && new Date(d.delayDate + 'T00:00') <= nextPayday) ||
       (!d.delayDate && (d.priority || 99) <= 3)
     ))
@@ -1357,6 +1358,7 @@ function goPage(id) {
   const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-chat':'nav-chat','pg-spend':'nav-spend'};
   if (map[id]) $(map[id]).classList.add('active');
   if (id === 'pg-cal') setTimeout(() => renderCalendar(), 50);
+  if (id === 'pg-chat') { checkChatInactivity(); setTimeout(() => scrollChatToBottom(), 150); }
   if (typeof UX !== 'undefined') UX.trackTabVisit(id);
   renderAll();
 }
@@ -2337,6 +2339,9 @@ function renderDebtTiles() {
     const intTicker = dailyInt > 0
       ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day</div>'
       : '';
+    const monthlyPayStr = d.monthlyPayment
+      ? '<div style="font-size:10px;color:var(--green);font-family:var(--mono);margin-bottom:4px">$'+d.monthlyPayment+'/mo · ~'+Math.ceil(d.amt/d.monthlyPayment)+' months'+(d.viaRent?' (via rent — already counted)':'')+'</div>'
+      : '';
     const canAfford = d.amt <= surplus;
     const shortBy = surplus > 0 ? d.amt - surplus : d.amt;
     const affordStr = canAfford
@@ -2355,6 +2360,7 @@ function renderDebtTiles() {
       '<div class="dt-name">'+priBadge + esc(d.name) + (d.linkedLiability ? '<span style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:700;background:var(--red-dim);padding:1px 4px;border-radius:3px;margin-left:3px">⚠️ LINKED</span>' : '') + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
       intTicker +
+      monthlyPayStr +
       affordStr +
       etaStr +
       '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
@@ -2416,15 +2422,24 @@ function renderLtTiles() {
   // CC tile
   const ccAmt = S.cc || 0;
   const ccLimit = S.ccLimit || 1500;
-  const ccUtil = ccLimit > 0 ? Math.round((ccAmt / ccLimit) * 100) : 0;
-  const ccMinPay = Math.max(25, Math.round(ccAmt * 0.02));
-  const ccColor = ccUtil >= 80 ? 'var(--red)' : ccUtil >= 50 ? 'var(--amber)' : 'var(--green)';
-  ccTile.innerHTML = '<div class="dt-name">Credit Card</div>' +
-    '<div class="dt-amt bad">' + fmtC(ccAmt) + '</div>' +
-    '<div class="dt-sub">' + ccUtil + '% utilisation · min ~' + fmtC(ccMinPay) + '/mo</div>' +
-    '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + ccUtil + '% of $' + ccLimit.toLocaleString() + ' limit</div>' +
-    '<div class="dt-bar"><div class="dt-fill" style="width:' + ccUtil + '%;background:' + ccColor + '"></div></div></div>' +
-    '<div class="dt-status">ANZ · ' + (ccAmt > 0 ? ccUtil + '% used' : 'Clear \u2713') + '</div>';
+  if (ccAmt === 0) {
+    ccTile.innerHTML = '<div class="dt-name">Credit Card</div>' +
+      '<div class="dt-amt ok" style="font-size:15px;line-height:1.4">✅ Cleared by mum<br>15 Apr</div>' +
+      '<div class="dt-sub" style="color:var(--amber);font-weight:600">— cancel card</div>' +
+      '<div class="dt-bar-wrap"><div class="dt-bar-lbl">100% cleared</div>' +
+      '<div class="dt-bar"><div class="dt-fill" style="width:100%;background:var(--green)"></div></div></div>' +
+      '<div class="dt-status ok">ANZ · CANCEL THIS CARD</div>';
+  } else {
+    const ccUtil = ccLimit > 0 ? Math.round((ccAmt / ccLimit) * 100) : 0;
+    const ccMinPay = Math.max(25, Math.round(ccAmt * 0.02));
+    const ccColor = ccUtil >= 80 ? 'var(--red)' : ccUtil >= 50 ? 'var(--amber)' : 'var(--green)';
+    ccTile.innerHTML = '<div class="dt-name">Credit Card</div>' +
+      '<div class="dt-amt bad">' + fmtC(ccAmt) + '</div>' +
+      '<div class="dt-sub">' + ccUtil + '% utilisation · min ~' + fmtC(ccMinPay) + '/mo</div>' +
+      '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + ccUtil + '% of $' + ccLimit.toLocaleString() + ' limit</div>' +
+      '<div class="dt-bar"><div class="dt-fill" style="width:' + ccUtil + '%;background:' + ccColor + '"></div></div></div>' +
+      '<div class="dt-status">ANZ · ' + (ccAmt > 0 ? ccUtil + '% used' : 'Clear \u2713') + '</div>';
+  }
 }
 
 function renderWrxTracker() {
@@ -2799,7 +2814,7 @@ function closeModal(id, actionTaken) {
     window.visualViewport.removeEventListener('resize', el._vvResize);
     window.visualViewport.removeEventListener('scroll', el._vvScroll);
     el._vvResize = null; el._vvScroll = null;
-    el.style.height = ''; el.style.top = ''; el.style.bottom = '';
+    el.style.height = ''; el.style.top = ''; el.style.bottom = ''; el.style.transform = '';
   }
 }
 
@@ -3640,10 +3655,8 @@ function openQuickLogModal() {
       window.visualViewport.removeEventListener('scroll', overlay._vvScroll);
     }
     const reposition = () => {
-      const vv = window.visualViewport;
-      overlay.style.height = vv.height + 'px';
-      overlay.style.top = vv.offsetTop + 'px';
-      overlay.style.bottom = 'auto';
+      const offsetFromBottom = window.innerHeight - window.visualViewport.height - window.visualViewport.offsetTop;
+      overlay.style.transform = offsetFromBottom > 0 ? 'translateY(-' + offsetFromBottom + 'px)' : '';
     };
     window.visualViewport.addEventListener('resize', reposition);
     window.visualViewport.addEventListener('scroll', reposition);
@@ -3741,7 +3754,7 @@ function rmTxn(i) {
 
 function renderSettingsBills() {
   const c = $('settings-bills'); if (!c) return;
-  c.innerHTML = BILLS.map((b,i) => '<div class="settings-row"><span class="settings-lbl">'+b.name+' <span style="color:var(--text3);font-size:12px">(day '+b.day+')</span></span><input class="settings-input" type="number" value="'+b.amt+'" oninput="BILLS['+i+'].amt=+this.value;save();renderAll()"></div>').join('');
+  c.innerHTML = BILLS.map((b,i) => '<div class="settings-row"><span class="settings-lbl">'+b.name+' <span style="color:var(--text3);font-size:12px">(day '+b.day+')</span></span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" value="'+b.amt+'" oninput="BILLS['+i+'].amt=+this.value;save();renderAll()"></div>').join('');
 }
 
 // H4: validate required fields with inline errors instead of alerts
@@ -3862,9 +3875,46 @@ function updateExport() {
 }
 
 function copyExport() {
-  const d = JSON.stringify({S, BILLS, exported: new Date().toISOString()});
-  navigator.clipboard.writeText(d).then(() => { event.target.textContent = 'Copied!'; setTimeout(() => event.target.textContent = 'Copy Export Code', 2000); }).catch(() => {});
-  localStorage.setItem('slyght_last_export', Date.now().toString());
+  const exportS = Object.assign({}, S);
+  delete exportS.apiKey;
+  delete exportS._prevState;
+  delete exportS.chatHistory;
+  const snapshotCount = SNAPSHOTS.load().length;
+  const anomalies = AUDITOR.log.filter(e => !e.ok).length;
+  const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
+  const uxScore = JSON.parse(localStorage.getItem('slyght_ux_report') || '{}').score || null;
+  const activeDebts = S.debts.filter(d => !d.paid);
+  const nw = getNetWorth();
+  const monitoringSummary = {
+    exportedAt: new Date().toISOString(),
+    totalTransactions: S.txns.length,
+    activeDebts: activeDebts.map(d => ({name: d.name, amt: d.amt})),
+    currentBalance: S.bal,
+    genuineSurplus: getGenuineSurplus(),
+    netWorth: nw,
+    slyghtScore: slyghtScore,
+    uxScore: uxScore,
+    auditSummary: {
+      totalEntries: AUDITOR.log.length,
+      anomalies: anomalies,
+      lastEntry: AUDITOR.log[0] ? {action: AUDITOR.log[0].action, time: AUDITOR.log[0].time, ok: AUDITOR.log[0].ok} : null
+    },
+    snapshotCount: snapshotCount,
+    heartbeatTicks: typeof HEARTBEAT !== 'undefined' ? HEARTBEAT.tickCount : 0
+  };
+  const summary = '📊 Export Summary:\n' +
+    'Balance: $' + S.bal.toFixed(2) + ' · Transactions: ' + S.txns.length + ' · Active debts: ' + activeDebts.length + '\n' +
+    'SLYGHT Score: ' + (slyghtScore !== null ? slyghtScore : 'N/A') + ' · UX Score: ' + (uxScore !== null ? uxScore : 'N/A') + '\n' +
+    'Audit entries: ' + AUDITOR.log.length + ' · Anomalies: ' + anomalies + ' · Snapshots: ' + snapshotCount + '\n\n' +
+    'API key, chat history and raw audit data not included for security.\n\nCopy export data to clipboard?';
+  if (confirm(summary)) {
+    const d = JSON.stringify({S: exportS, BILLS, monitoringSummary, exported: new Date().toISOString()});
+    navigator.clipboard.writeText(d).then(() => {
+      const btn = document.querySelector('[onclick="copyExport()"]');
+      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy Export Code', 2000); }
+    }).catch(() => {});
+    localStorage.setItem('slyght_last_export', Date.now().toString());
+  }
 }
 
 function doImport() {
@@ -4095,6 +4145,7 @@ function renderChatTab() {
     return;
   }
   renderChatMessages();
+  setTimeout(() => scrollChatToBottom(), 150);
 }
 
 function renderMarkdown(text) {
@@ -4163,7 +4214,7 @@ function hideTypingIndicator() {
 
 function scrollChatToBottom() {
   const msgs = $('chat-messages');
-  if (msgs) setTimeout(() => { msgs.scrollTop = msgs.scrollHeight; }, 30);
+  if (msgs) setTimeout(() => { msgs.scrollTo({top: msgs.scrollHeight, behavior: 'smooth'}); }, 100);
 }
 
 async function sendChatMessage() {
@@ -4177,6 +4228,7 @@ async function sendChatMessage() {
   if (!S.chatHistory) S.chatHistory = [];
   S.chatHistory.push({role:'user', content:text, ts:Date.now()});
   if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+  updateChatActivity();
   save();
 
   _chatRendering = true;
@@ -4234,6 +4286,7 @@ async function sendChatMessage() {
 
     S.chatHistory.push({role:'assistant', content:reply, ts:Date.now()});
     if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+    updateChatActivity();
     save();
   } catch(e) {
     hideTypingIndicator();
@@ -4259,6 +4312,30 @@ function clearChat() {
   S.chatHistory = [];
   save();
   renderChatMessages();
+}
+
+function checkChatInactivity() {
+  const lastActive = parseInt(localStorage.getItem('slyght_chat_last_active') || '0');
+  const threeHours = 3 * 60 * 60 * 1000;
+  if (Date.now() - lastActive > threeHours && lastActive > 0) {
+    const chatMessages = document.getElementById('chat-messages');
+    if (chatMessages && S.apiKey) {
+      chatMessages.innerHTML =
+        '<div style="text-align:center;padding:32px 20px;color:var(--text3);font-size:13px">' +
+        '── Session ended · 3 hours inactive ──<br><br>' +
+        '<button onclick="renderChatHistory()" style="font-size:12px;padding:8px 16px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2)">Show previous messages</button>' +
+        '</div>';
+    }
+  }
+}
+
+function updateChatActivity() {
+  localStorage.setItem('slyght_chat_last_active', Date.now().toString());
+}
+
+function renderChatHistory() {
+  renderChatMessages();
+  setTimeout(() => scrollChatToBottom(), 100);
 }
 
 
@@ -4533,28 +4610,51 @@ updateBalanceFromSettings = function() {
 function renderAuditLog() {
   const el = document.getElementById('audit-log-content');
   if (!el) return;
-  if (AUDITOR.log.length === 0) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No financial events recorded yet.</div>';
+  const all = AUDITOR.log;
+  if (all.length === 0) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:8px 0">No activity recorded yet.</div>';
     return;
   }
-  el.innerHTML = AUDITOR.log.map(entry => {
-    const icon = entry.ok ? '✅' : '🚨';
-    const changeColor = entry.change >= 0 ? 'var(--green)' : 'var(--red)';
-    const changeSign = entry.change >= 0 ? '+' : '';
-    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+  const issues = all.filter(e => !e.ok || e.action.includes('ERROR') || e.action.includes('FAIL'));
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const todayCount = all.filter(e => new Date(e.ts || 0) >= todayStart).length;
+  const summaryLine = issues.length > 0
+    ? '<div style="color:var(--amber);font-size:13px;font-weight:600;padding:8px 0">⚠️ ' + issues.length + ' issue' + (issues.length !== 1 ? 's' : '') + ' detected</div>'
+    : '<div style="color:var(--green);font-size:13px;padding:8px 0">' + (todayCount > 0 ? todayCount + ' actions logged today · ' : '') + 'All clear ✓</div>';
+  const displayEntries = issues.slice(0, 20);
+  const entriesHtml = displayEntries.map(entry => {
+    const isError = entry.action.includes('ERROR') || (entry.action.includes('FAIL') && !entry.ok);
+    const color = isError ? 'var(--red)' : 'var(--amber)';
+    const icon = isError ? '🚨' : '⚠️';
+    return '<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">' +
       '<div style="display:flex;justify-content:space-between;align-items:center">' +
-        '<span style="color:var(--text);font-weight:600">' + icon + ' ' + esc(entry.action) + '</span>' +
+        '<span style="color:' + color + ';font-weight:600">' + icon + ' ' + esc(entry.action) + '</span>' +
         '<span style="color:var(--text3)">' + entry.time + '</span>' +
       '</div>' +
-      '<div style="display:flex;gap:12px;margin-top:4px">' +
-        '<span style="color:var(--text3)">Before: <span style="color:var(--text)">$' + entry.before.toFixed(2) + '</span></span>' +
-        '<span style="color:var(--text3)">After: <span style="color:var(--text)">$' + entry.after.toFixed(2) + '</span></span>' +
-        '<span style="color:' + changeColor + '">' + changeSign + entry.change.toFixed(2) + '</span>' +
-      '</div>' +
       (entry.notes ? '<div style="color:var(--text3);margin-top:2px">' + esc(entry.notes) + '</div>' : '') +
-      (!entry.ok ? '<div style="color:var(--red);margin-top:4px">⚠️ Expected: $' + (entry.expected?.toFixed(2) || '?') + ' — got: $' + entry.change.toFixed(2) + '</div>' : '') +
     '</div>';
   }).join('');
+  el.innerHTML = summaryLine + entriesHtml +
+    '<button onclick="renderAuditLogFull()" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Show all activity (' + all.length + ')</button>';
+}
+
+function renderAuditLogFull() {
+  const el = document.getElementById('audit-log-content');
+  if (!el) return;
+  const all = AUDITOR.log.slice(0, 20);
+  el.innerHTML = '<div style="color:var(--text2);font-size:13px;font-weight:600;padding:8px 0">All recent activity:</div>' +
+    all.map(entry => {
+      const color = entry.ok ? 'var(--text3)' : 'var(--amber)';
+      const icon = entry.ok ? '·' : '⚠️';
+      return '<div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px">' +
+        '<div style="display:flex;justify-content:space-between">' +
+          '<span style="color:' + color + '">' + icon + ' ' + esc(entry.action) + '</span>' +
+          '<span style="color:var(--text3)">' + entry.time + '</span>' +
+        '</div>' +
+        (entry.notes ? '<div style="color:var(--text3)">' + esc(entry.notes) + '</div>' : '') +
+      '</div>';
+    }).join('') +
+    '<button onclick="renderAuditLog()" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">← Back to summary</button>';
 }
 
 const _origRenderAll = renderAll;
@@ -4707,8 +4807,7 @@ const CONSISTENCY = {
     return failures;
   },
   start() {
-    if (this.interval) clearInterval(this.interval);
-    this.interval = setInterval(() => this.run(), 60000);
+    // Consistency checks now handled by HEARTBEAT
     setTimeout(() => this.run(), 3000);
   },
   stop() { if (this.interval) clearInterval(this.interval); }
@@ -5005,7 +5104,7 @@ const UX = {
       }, {passive:true});
     });
     window.addEventListener('error', (e) => { this.session.errors.push({msg: e.message, ts: Date.now()}); });
-    setInterval(() => { try { localStorage.setItem('slyght_ux_report', JSON.stringify({ts:new Date().toISOString(),...this.report()})); } catch(e){} }, 300000);
+    // UX report saving handled by HEARTBEAT
     console.log('👁️ UX Monitor active');
   }
 };
@@ -5224,9 +5323,18 @@ const NOTIFY = {
   },
   toggleDrawer() {
     const d=document.getElementById('notif-drawer');
+    const overlay=document.getElementById('notif-overlay');
     if (!d) return;
-    if (d.style.display==='none'||!d.style.display) { this._markRead(); this.renderDrawer(); d.style.display='block'; }
-    else { d.style.display='none'; }
+    if (d.style.display==='none'||!d.style.display) {
+      d.style.display='block';
+      if (overlay) overlay.style.display='block';
+      this._markRead();
+      this.renderDrawer();
+      requestAnimationFrame(() => { d.style.transform='translateX(-50%) translateY(0)'; });
+    } else {
+      d.style.transform='translateX(-50%) translateY(-100%)';
+      setTimeout(() => { d.style.display='none'; if (overlay) overlay.style.display='none'; }, 260);
+    }
   },
   _markRead() { (S.notifications||[]).forEach(n=>n.read=true); this.updateBadge(); save(); },
   dismiss(id) {
@@ -5256,8 +5364,7 @@ const NOTIFY = {
     }).join('');
   },
   startInterval() {
-    if (this._iid) clearInterval(this._iid);
-    this._iid = setInterval(()=>this.refresh(), 4*60*60*1000); // every 4 hours
+    // Notification refresh handled by HEARTBEAT every 60 min
   }
 };
 
@@ -5337,13 +5444,76 @@ const SLYGHT_SCORE = {
   }
 };
 
+// ─── HEARTBEAT ────────────────────────────────────────────────
+const HEARTBEAT = {
+  interval: null,
+  tickCount: 0,
+
+  start() {
+    if (this.interval) clearInterval(this.interval);
+    this.interval = setInterval(() => this.tick(), 120000);
+    setTimeout(() => this.tick(), 5000);
+    console.log('💓 Heartbeat started — 2 min interval');
+  },
+
+  tick() {
+    this.tickCount++;
+
+    // Every tick (2 min): consistency check
+    try {
+      const failures = CONSISTENCY.checks.filter(c => {
+        try { return !c.check(); } catch(e) { return false; }
+      });
+      if (failures.length > 0) {
+        AUDITOR.record('CONSISTENCY_FAIL', S.bal, S.bal, 0,
+          'Failed: ' + failures.map(f => f.name).join(' | '));
+      }
+    } catch(e) {}
+
+    // Every tick: save UX report
+    try {
+      if (typeof UX !== 'undefined') {
+        localStorage.setItem('slyght_ux_report', JSON.stringify({
+          ts: new Date().toISOString(),
+          ...UX.report()
+        }));
+      }
+    } catch(e) {}
+
+    // Every 30 ticks (60 min): refresh notifications
+    if (this.tickCount % 30 === 0) {
+      try { NOTIFY.refresh(); } catch(e) {}
+    }
+
+    // Every 60 ticks (2 hours): auto snapshot
+    if (this.tickCount % 60 === 0) {
+      try { SNAPSHOTS.autoSnapshot('heartbeat-2hr'); } catch(e) {}
+    }
+
+    // Every 120 ticks (4 hours): full health check
+    if (this.tickCount % 120 === 0) {
+      try {
+        const issues = HEALTH.check();
+        if (issues.issues.length > 0) {
+          AUDITOR.record('HEALTH_CHECK', S.bal, S.bal, 0,
+            'Issues: ' + issues.issues.join(' | '));
+        }
+      } catch(e) {}
+    }
+  },
+
+  stop() {
+    if (this.interval) clearInterval(this.interval);
+  }
+};
+
 load();
 RECONCILER.morningCheck();
 CONSISTENCY.start();
 APP_HEALTH.init();
 SNAPSHOTS.autoSnapshot('app_open');
 NOTIFY.refresh();
-NOTIFY.startInterval();
+HEARTBEAT.start();
 if (typeof UX !== 'undefined') UX.init();
 // API key in separate storage — never wiped by reset or seed
 const savedApiKey = localStorage.getItem('slyght_api_key');
@@ -5361,13 +5531,12 @@ function splashTap() {
 }
 </script>
 <!-- NOTIFICATION DRAWER -->
-<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:350;background:var(--bg2);border-bottom:1px solid var(--border2);max-height:72vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)">
+<div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999"></div>
+<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-100%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 4px 24px rgba(0,0,0,0.4);transition:transform 0.25s ease">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1">
+    <button onclick="NOTIFY.clearAll()" style="min-width:44px;min-height:44px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer">Clear all</button>
     <div style="font-size:14px;font-weight:700;color:var(--text)">Notifications</div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button onclick="NOTIFY.clearAll()" style="font-size:11px;color:var(--text3);background:none;border:1px solid var(--border);padding:4px 8px;border-radius:4px;cursor:pointer">Clear all</button>
-      <button onclick="NOTIFY.toggleDrawer()" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer;line-height:1">×</button>
-    </div>
+    <button onclick="NOTIFY.toggleDrawer()" style="min-width:44px;min-height:44px;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">×</button>
   </div>
   <div id="notif-drawer-body" style="padding:12px 16px 20px"></div>
 </div>
