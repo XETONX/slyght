@@ -941,7 +941,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 
 <script>
 const STORAGE_KEY = 'slyght_v5';
-const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12', 'slyght_seeded_v13'];
+const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12', 'slyght_seeded_v13', 'slyght_seeded_v14'];
 // SEC2: sanitize user-supplied strings before inserting into innerHTML
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
 const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
@@ -4491,6 +4491,42 @@ if ('serviceWorker' in navigator) {
   localStorage.setItem('slyght_seeded_v12', '1'); // v12 compat flag
 })();
 
+// Seed v14: patch cc=0, mum debt, rent recurring, wrxValue=21000
+(function seedV14() {
+  if (localStorage.getItem('slyght_seeded_v14')) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (raw) {
+      const store = JSON.parse(raw);
+      const s = store.S || {};
+      // cc cleared
+      s.cc = 0;
+      // add Mum debt if not present
+      if (!Array.isArray(s.debts)) s.debts = [];
+      if (!s.debts.find(d => d.id === 7)) {
+        s.debts.push({id:7, name:'Owed to Mum', amt:4658.39, rate:0, priority:1, paid:false,
+          monthlyPayment:500, viaRent:true,
+          notes:'CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.',
+          delayDate:'2027-01-15', originalAmt:4658.39});
+      }
+      s.nextDebtId = 8;
+      // fix rent
+      if (Array.isArray(store.BILLS)) {
+        const rent = store.BILLS.find(b => b.name === 'Rent');
+        if (rent) { rent.recurring = true; rent.amt = 3000; }
+      }
+      // mark April rent paid
+      if (!s.paidBills) s.paidBills = {};
+      s.paidBills['2026-4-Rent-15'] = true;
+      // wrx value
+      s.wrxValue = 21000;
+      store.S = s;
+      localStorage.setItem('slyght_v5', JSON.stringify(store));
+    }
+  } catch(e) { console.warn('seedV14 error', e); }
+  localStorage.setItem('slyght_seeded_v14', '1');
+})();
+
 // Seed v12: patch apiKey into existing v11 installs
 (function seedV12() {
   if (localStorage.getItem('slyght_seeded_v12')) return;
@@ -5944,7 +5980,7 @@ function splashTap() {
 
 <!-- NOTIFICATION DRAWER -->
 <div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999"></div>
-<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-100%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:transform 0.25s ease">
+<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:transform 0.25s ease">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1">
     <button onclick="NOTIFY.clearAll()" style="min-width:44px;min-height:44px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer">Clear all</button>
     <div style="font-size:14px;font-weight:700;color:var(--text)">Notifications</div>
