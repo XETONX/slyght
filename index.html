@@ -4062,10 +4062,13 @@ function copyExport() {
     netWorth: nw,
     slyghtScore: slyghtScore,
     uxScore: uxScore,
-    auditSummary: {
+    auditLog: {
       totalEntries: AUDITOR.log.length,
       anomalies: anomalies,
-      lastEntry: AUDITOR.log[0] ? {action: AUDITOR.log[0].action, time: AUDITOR.log[0].time, ok: AUDITOR.log[0].ok} : null
+      errors: AUDITOR.log.filter(e => !e.ok).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
+      consistencyFailures: AUDITOR.log.filter(e => e.type === 'consistency' || (e.action && e.action.includes('consistency'))).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
+      jsErrors: AUDITOR.log.filter(e => e.type === 'js_error' || (e.action && e.action.includes('js_error'))).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
+      exportedAt: new Date().toISOString()
     },
     snapshotCount: snapshotCount,
     heartbeatTicks: typeof HEARTBEAT !== 'undefined' ? HEARTBEAT.tickCount : 0
@@ -5650,9 +5653,9 @@ const NOTIFY = {
       if (overlay) overlay.style.display='block';
       this._markRead();
       this.renderDrawer();
-      requestAnimationFrame(() => { d.style.transform='translateX(-50%) translateY(0)'; });
+      requestAnimationFrame(() => { d.style.transform='translateY(0)'; });
     } else {
-      d.style.transform='translateX(-50%) translateY(-100%)';
+      d.style.transform='translateY(-100%)';
       setTimeout(() => { d.style.display='none'; if (overlay) overlay.style.display='none'; }, 260);
     }
   },
@@ -5690,6 +5693,13 @@ const NOTIFY = {
     // Notification refresh handled by HEARTBEAT every 60 min
   }
 };
+
+function closeNotifications() {
+  const d = document.getElementById('notif-drawer');
+  const overlay = document.getElementById('notif-overlay');
+  if (d) { d.style.transform = 'translateY(-100%)'; setTimeout(() => { d.style.display = 'none'; }, 260); }
+  if (overlay) overlay.style.display = 'none';
+}
 
 // ─── SLYGHT SCORE ─────────────────────────────────────────────
 const SLYGHT_SCORE = {
@@ -6087,46 +6097,56 @@ function showScanConfirmation(result) {
 }
 
 function confirmScanAdd(result) {
-  const name = document.getElementById('sc-name')?.value?.trim() || result.company || 'Scanned document';
-  const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
-  const dateVal = document.getElementById('sc-date')?.value || result.dueDate || null;
-  const rate = parseFloat(document.getElementById('sc-rate')?.value) || 0;
-  // ID collision guard (scan path): ensure nextDebtId exceeds highest existing debt id
-  if (S.debts && S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if ((S.nextDebtId||0) <= _maxId) S.nextDebtId = _maxId + 1; }
-  if (!S.nextDebtId) S.nextDebtId = 0;
-  const notes = document.getElementById('sc-notes')?.value?.trim() || '';
-  const addType = document.querySelector('input[name="sc-add-type"]:checked')?.value || 'debt';
-  SNAPSHOTS.autoSnapshot('pre_scan_add');
-  if (addType === 'debt') {
-    const urgency = result.urgency || 'future';
-    const priority = (urgency==='overdue'||urgency==='today') ? 1 : urgency==='this_week' ? 2 : 3;
-    const newDebt = {
-      id: S.nextDebtId++, name: name, amt: amt, rate: rate, priority: priority,
-      paid: false, delayed: false, delayDate: dateVal || null,
-      notes: notes, scanned: true, scanConfidence: result.confidence,
-      paymentMethod: (result.paymentMethods||[]).join(', '), reference: result.reference || ''
-    };
-    S.debts.push(newDebt);
-    save(); renderAll();
-    const _scc2 = $('scan-confirm'); if (_scc2) _scc2.style.display = 'none';
-    showToast('✅ ' + name + ' added as debt — factored into your surplus');
-    SNAPSHOTS.autoSnapshot('debt_added_via_scan');
-    if (dateVal) {
-      const daysUntil = Math.ceil((new Date(dateVal) - new Date()) / 86400000);
-      if (daysUntil <= 3) {
-        try { NOTIFY.refresh(); } catch(e) {}
+  console.log('[SCAN] confirmScanAdd called', result);
+  window._lastScanResult = result;
+  try {
+    const name = document.getElementById('sc-name')?.value?.trim() || result.company || 'Scanned document';
+    const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
+    const dateVal = document.getElementById('sc-date')?.value || result.dueDate || null;
+    const rate = parseFloat(document.getElementById('sc-rate')?.value) || 0;
+    // ID collision guard (scan path): ensure nextDebtId exceeds highest existing debt id
+    if (S.debts && S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if ((S.nextDebtId||0) <= _maxId) S.nextDebtId = _maxId + 1; }
+    if (!S.nextDebtId) S.nextDebtId = 0;
+    const notes = document.getElementById('sc-notes')?.value?.trim() || '';
+    const addType = document.querySelector('input[name="sc-add-type"]:checked')?.value || 'debt';
+    console.log('[SCAN] addType=' + addType + ' name=' + name + ' amt=' + amt);
+    SNAPSHOTS.autoSnapshot('pre_scan_add');
+    if (addType === 'debt') {
+      const urgency = result.urgency || 'future';
+      const priority = (urgency==='overdue'||urgency==='today') ? 1 : urgency==='this_week' ? 2 : 3;
+      const newDebt = {
+        id: S.nextDebtId++, name: name, amt: amt, rate: rate, priority: priority,
+        paid: false, delayed: false, delayDate: dateVal || null,
+        notes: notes, scanned: true, scanConfidence: result.confidence,
+        paymentMethod: (result.paymentMethods||[]).join(', '), reference: result.reference || ''
+      };
+      console.log('[SCAN] pushing debt', newDebt);
+      S.debts.push(newDebt);
+      save(); renderAll();
+      const _scc2 = $('scan-confirm'); if (_scc2) _scc2.style.display = 'none';
+      showToast('✅ ' + name + ' added as debt — factored into your surplus');
+      SNAPSHOTS.autoSnapshot('debt_added_via_scan');
+      if (dateVal) {
+        const daysUntil = Math.ceil((new Date(dateVal) - new Date()) / 86400000);
+        if (daysUntil <= 3) {
+          try { NOTIFY.refresh(); } catch(e) {}
+        }
       }
+    } else {
+      const dueDay = dateVal ? new Date(dateVal + 'T00:00').getDate() : 15;
+      const newBill = {
+        name: name, amt: amt, day: dueDay, tag: result.category || 'Other',
+        recurring: addType === 'recurring', scanned: true
+      };
+      console.log('[SCAN] pushing bill', newBill);
+      BILLS.push(newBill);
+      save(); renderAll();
+      const _scc3 = $('scan-confirm'); if (_scc3) _scc3.style.display = 'none';
+      showToast('✅ ' + name + ' added to bills');
     }
-  } else {
-    const dueDay = dateVal ? new Date(dateVal + 'T00:00').getDate() : 15;
-    const newBill = {
-      name: name, amt: amt, day: dueDay, tag: result.category || 'Other',
-      recurring: addType === 'recurring', scanned: true
-    };
-    BILLS.push(newBill);
-    save(); renderAll();
-    const _scc3 = $('scan-confirm'); if (_scc3) _scc3.style.display = 'none';
-    showToast('✅ ' + name + ' added to bills');
+  } catch(e) {
+    console.error('[SCAN] confirmScanAdd error:', e);
+    showToast('❌ Failed to add item: ' + e.message);
   }
 }
 
@@ -6298,8 +6318,8 @@ function triggerCamera() {
 </style>
 
 <!-- NOTIFICATION DRAWER -->
-<div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999"></div>
-<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:transform 0.25s ease">
+<div id="notif-overlay" onclick="closeNotifications()" style="display:none;position:fixed;inset:0;width:100vw;height:100vh;background:rgba(0,0,0,0.6);z-index:9998"></div>
+<div id="notif-drawer" style="display:none;position:fixed !important;top:0 !important;left:0 !important;right:0 !important;width:100% !important;max-width:480px !important;margin:0 auto !important;z-index:9999 !important;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:transform 0.25s ease">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1">
     <button onclick="NOTIFY.clearAll()" style="min-width:44px;min-height:44px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer">Clear all</button>
     <div style="font-size:14px;font-weight:700;color:var(--text)">Notifications</div>
