@@ -1,0 +1,2676 @@
+const STORAGE_KEY = 'slyght_v5';
+const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12'];
+// SEC2: sanitize user-supplied strings before inserting into innerHTML
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
+const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
+const DISC_BASELINE = 750+300+200+75+25;
+
+let activeDebtIdx = -1;
+let activeBillIdx = -1;
+let pinEntry = '';
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth();
+let ltDebtType = 'car';
+let selectedReason = '';
+
+let S = {
+  bal: 0,
+  txns: [],
+  bonuses: [],
+  bid: 0,
+  seg: '1m',
+  income: 7282,
+  payday: 15,
+  carloan: 23989.70,
+  cc: 4595.35,
+  carloanOriginal: 37400,
+  ccLimit: 6000,
+  pin: '2103',
+  monthlyHistory: [],
+  income_log: [],
+  iid: 0,
+  debts: [
+    {id:0, name:'Afterpay', amt:250.84, paid:false, delayed:false, delayDate:'2026-04-16', notes:'$121.16 due 16 Apr', rate:0},
+    {id:1, name:'Owed to Michael', amt:550, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill + $200 additional borrowing', rate:0},
+    {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May', rate:19.99},
+    {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK', rate:0},
+  ],
+  nextDebtId: 4,
+  savingsBuckets: [
+    {id:0, name:'China Holiday', goal:4000, saved:61.82, account:'ING'},
+    {id:1, name:'Rainy Day Fund', goal:2000, saved:0, account:'ING'},
+    {id:2, name:'Rego & Insurance', goal:1500, saved:0, account:'Westpac'},
+    {id:3, name:'Gifts & Celebrations', goal:500, saved:0, account:'Other'},
+  ],
+  nextBucketId: 4,
+  paydayReceived: false,
+  paydayReceivedDate: null,
+  weekdayBudget: 60,
+  weekendBudget: 180,
+  lastOpenDate: null,
+  wrxValue: 21000,
+  debtStrategy: 'avalanche',
+  chatHistory: [],
+  apiKey: ''
+};
+
+let BILLS = [
+  {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:true},
+  {name:'Car Loan — Firstmac', amt:387.69, day:1, tag:'Loan', recurring:true, freq:'fortnightly'},
+  {name:'Health Insurance (qtrly avg)', amt:119.04, day:1, tag:'Fixed', recurring:true},
+  {name:'Amazon Prime', amt:9.99, day:3, tag:'Subscription', recurring:true},
+  {name:'Fuel', amt:110, day:5, tag:'Variable', recurring:true},
+  {name:'Microsoft PC Game Pass', amt:19.45, day:7, tag:'Subscription', recurring:true},
+  {name:'Pet Insurance — Bowtie', amt:60.20, day:8, tag:'Fixed', recurring:true},
+  {name:'Claude Plus', amt:34, day:9, tag:'Subscription', recurring:true},
+  {name:'Netflix', amt:28.99, day:10, tag:'Streaming', recurring:true},
+  {name:'Afterpay instalment', amt:121.16, day:16, tag:'Debt repayment', recurring:false},
+  {name:'Optus — Phone + Internet', amt:199, day:16, tag:'Fixed', recurring:true},
+  {name:'YouTube Premium', amt:16.99, day:20, tag:'Streaming', recurring:true},
+  {name:'Parking — CBD Secure', amt:32.32, day:22, tag:'Fixed', recurring:true},
+  {name:'Pet Food', amt:45, day:25, tag:'Fixed', recurring:true},
+  {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
+  {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
+  {name:'Food at Work', amt:200, day:28, tag:'Variable', recurring:true},
+];
+
+const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
+const HABIT_MSGS = [
+  (l,b,d) => 'Heads up \u2014 you have '+b+' available and '+d+' in outstanding debts. Worth pausing on '+l+' right now?',
+  (l,b,d) => 'That '+l+' spend is flagged. At 19.99%, every dollar on the credit card costs you. Small wins add up.',
+  (l,b,d) => 'Habit check: '+l+' again. The WRX sale could clear debts fast \u2014 each small spend delays that.',
+  (l,b,d) => l+' \u2192 '+b+' left \u2192 '+d+' owed. You\'re building momentum \u2014 stay the course.',
+];
+
+const fmt = n => '$' + Math.round(Math.abs(n)).toLocaleString('en-AU');
+const fmtS = n => (n < 0 ? '-' : '') + fmt(n);
+const fmtC = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+const $ = id => document.getElementById(id);
+
+function save() {
+  try {
+    if (!S.txns) S.txns = []; // guard: never let txns become undefined
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({S, BILLS}));
+  } catch(e) {}
+}
+function load() {
+  try {
+    const d = localStorage.getItem(STORAGE_KEY);
+    if (d) { const p = JSON.parse(d); S = {...S, ...p.S}; if (p.BILLS) BILLS = p.BILLS; }
+  } catch(e) {}
+}
+
+// L1: clamp pd to actual days in month so day-31 in February doesn't wrap to March
+function daysLeft(payday) {
+  const now = new Date(), today = now.getDate();
+  const rawPd = payday || S.payday || 15;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const pd = Math.min(rawPd, daysInMonth);
+  if (today < pd) return pd - today;
+  const next = new Date(now.getFullYear(), now.getMonth() + 1, pd);
+  return Math.ceil((next - now) / (1000*60*60*24));
+}
+
+// --- Core financial helpers ---
+
+// Average daily discretionary spend — excludes non-spending categories
+// 7-day minimum floor on daySpan; $80 fallback if insufficient data
+const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer']);
+function getAvgDailySpend() {
+  const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
+  if (expTxns.length < 2) return 80;
+  const timestamps = expTxns.map(t => t.ts);
+  const oldest = Math.min(...timestamps);
+  const newest = Math.max(...timestamps);
+  const daySpan = Math.max(7, (newest - oldest) / (1000 * 60 * 60 * 24));
+  const totalSpent = expTxns.reduce((s, t) => s + t.amt, 0);
+  return Math.max(20, Math.min(200, totalSpent / daySpan));
+}
+
+// Correct Max/Day: (liveBal - allBillsDueBeforePayday - bucketTotal - $500 buffer) / daysLeft; capped at weekday/weekend budget
+function getDailyBudget() {
+  const dow = new Date().getDay(); // 0=Sun, 6=Sat
+  return (dow === 0 || dow === 6) ? (S.weekendBudget || 180) : (S.weekdayBudget || 60);
+}
+function getMaxDay() {
+  const liveBal = getLiveBal();
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
+  const spendable = liveBal - allBillsDue - bucketTotal - getDynamicBuffer();
+  if (days <= 0 || spendable <= 0) return 0;
+  return Math.min(getDailyBudget(), spendable / days);
+}
+
+// Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
+function getGenuineSurplus() {
+  const liveBal = getLiveBal();
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
+  const livingReserve = getAvgDailySpend() * days;
+  return liveBal - allBillsDue - bucketTotal - livingReserve - getDynamicBuffer();
+}
+
+// Analysis only — never participates in balance calculations
+function getTxnSpent() {
+  return S.txns.filter(t => !t.income).reduce((s,t) => s+t.amt, 0);
+}
+// S.bal IS the live balance — single source of truth. No arithmetic.
+function getLiveBal() {
+  return isNaN(S.bal) ? 0 : (S.bal || 0);
+}
+// FA2: dynamic buffer — $500 default, rises with upcoming bills
+function getDynamicBuffer() {
+  const due7 = getExpandedBills().filter(b => {
+    if (b.recurring === false) return false;
+    const today = new Date().getDate();
+    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    return diff >= 0 && diff <= 7;
+  }).reduce((s,b) => s+b.amt, 0);
+  if (due7 > 2000) return 1500;
+  if (due7 > 1000) return 1000;
+  return 500;
+}
+// Only discretionary spend today — debt repayments/income/savings never count toward daily budget
+function getTodaySpent() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
+}
+function getNoSpendStreak() {
+  const expenseTxns = S.txns.filter(t => !t.income);
+  if (!expenseTxns.length) return 0;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayHasTxn = expenseTxns.some(t => new Date(t.ts) >= today);
+  if (todayHasTxn) return 0;
+  const lastTs = Math.max(...expenseTxns.map(t => t.ts));
+  const lastDate = new Date(lastTs); lastDate.setHours(0,0,0,0);
+  return Math.floor((today - lastDate) / (1000*60*60*24));
+}
+function getNetWorth() {
+  const liveBal = getLiveBal();
+  const wrx = S.wrxValue || 0;
+  const buckets = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  const assets = liveBal + wrx + buckets;
+  const activeDebts = S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0);
+  const liabilities = S.carloan + S.cc + activeDebts;
+  return {assets, liabilities, net: assets - liabilities};
+}
+function toggleExpandCard(bodyId, togId) {
+  const body = $(bodyId), tog = $(togId);
+  if (!body) return;
+  const isOpen = body.style.maxHeight && body.style.maxHeight !== '0px' && body.style.maxHeight !== '0';
+  body.style.maxHeight = isOpen ? '0' : '800px';
+  if (tog) tog.textContent = isOpen ? '▾' : '▴';
+}
+
+// FIX 4: Month phase context — drives conditional messaging throughout
+function getMonthPhase() {
+  const today = new Date().getDate();
+  const payday = S.payday || 15;
+  const days = daysLeft(payday);
+  if (today === payday) return 'PAYDAY';
+  if (days <= 3) return 'PRE_PAYDAY';
+  if (today > payday && today <= 25) return 'MID_MONTH';
+  return 'END_OF_MONTH';
+}
+
+// FIX 8: Soft refresh — recalculate and re-render, never shows onboarding
+function softRefresh() {
+  renderAll();
+  if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
+}
+
+function showOb() {
+  $('splash-screen').style.display = 'none';
+  $('ob-screen').style.display = 'block';
+  $('pin-screen').style.display = 'none';
+  $('main-app').style.display = 'none';
+}
+
+function launchApp() {
+  const b = parseFloat($('ob-bal').value);
+  if (isNaN(b)) { alert('Enter your Virgin Money balance.'); return; }
+  const prevExpected = getLiveBal(); // H1/H2: snapshot before balance change
+  S.bal = b;
+  save();
+  $('ob-screen').style.display = 'none';
+  S._pendingRecon = {newBal: b, prevExpected};
+  showMain();
+}
+
+function showMain() {
+  $('main-app').style.display = 'flex';
+  renderAll();
+  if (S._pendingRecon) {
+    const {newBal, prevExpected} = S._pendingRecon;
+    delete S._pendingRecon;
+    runRecon(newBal, prevExpected);
+  }
+  checkEodRecon();
+}
+
+function checkEodRecon() {
+  const today = new Date().toISOString().slice(0, 10);
+  const lastOpen = S.lastOpenDate;
+  S.lastOpenDate = today;
+  save();
+  if (!lastOpen || lastOpen === today) return; // same day or first open — skip
+  // C3: compare against yesterday's bill schedule, not S.bal vs getLiveBal()
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const yd = yesterday.getDate(), ym = yesterday.getMonth() + 1, yy = yesterday.getFullYear();
+  const yesterdayBills = getExpandedBills().filter(b => b.recurring !== false && b.day === yd);
+  const unpaid = yesterdayBills.filter(b => {
+    const key = yy+'-'+ym+'-'+b.name+'-'+b.day;
+    return !(S.paidBills && S.paidBills[key]);
+  });
+  if (!unpaid.length) return;
+  const total = unpaid.reduce((s,b) => s+b.amt, 0);
+  const eodBody = $('eod-recon-body');
+  if (eodBody) {
+    eodBody.innerHTML = 'Yesterday (' + yd + '/' + ym + ') these were scheduled to debit:<br><br>' +
+      unpaid.map(b => '&bull; <strong>'+b.name+'</strong> — '+fmt(b.amt)).join('<br>') +
+      '<br><br>Total: <strong>'+fmt(total)+'</strong>. If they came out, update your balance.';
+  }
+  $('eod-recon-modal').classList.add('open');
+}
+
+function eodReconLog() {
+  $('eod-recon-modal').classList.remove('open');
+  openQuickLogModal(); // H3: pg-log doesn't exist; open quick log modal instead
+}
+function eodReconUntracked() {
+  // Prompt user to enter their current real balance (S.bal is the source of truth)
+  $('eod-recon-modal').classList.remove('open');
+  openHeroBalEdit();
+}
+function eodReconAccept() {
+  $('eod-recon-modal').classList.remove('open');
+}
+
+// H2: expects (newBal, prevExpected) where prevExpected = getLiveBal() before S.bal changed
+function runRecon(newBal, prevExpected) {
+  if (prevExpected === 0) return;
+  const diff = newBal - prevExpected;
+  const absDiff = Math.abs(diff);
+  if (absDiff < 1) return;
+  const rt = $('recon-title'), rb = $('recon-body'), rs = $('recon-reasons');
+
+  // Smart match: find bills whose amount is close to the difference
+  const today = new Date().getDate();
+  const matchedBills = BILLS.filter(b => Math.abs(b.amt - absDiff) < 1.5);
+  const todayBills = BILLS.filter(b => b.day === today);
+
+  let reasons = [];
+  if (diff < -1) {
+    rt.textContent = 'Something came out \u2193';
+    rt.style.color = 'var(--red)';
+    let bodyHtml = 'Balance is <strong>' + fmtC(absDiff) + ' less</strong> than expected.';
+    if (matchedBills.length > 0) {
+      bodyHtml += '<div style="margin-top:10px;padding:10px 12px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);font-size:13px;color:var(--amber);line-height:1.6">';
+      bodyHtml += '\uD83D\uDCA1 Was it: <strong>' + matchedBills.map(b => b.name + ' (' + fmt(b.amt) + ')').join(' or ') + '</strong>?</div>';
+      reasons = matchedBills.map(b => b.name + ' \u2014 ' + fmt(b.amt));
+      reasons.push('Different bill', 'Bank fee', 'Unlogged spend', 'Other');
+    } else if (todayBills.length > 0) {
+      bodyHtml += '<div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--r-sm);font-size:13px;color:var(--text2);line-height:1.6">';
+      bodyHtml += 'Scheduled today: <strong>' + todayBills.map(b => b.name + ' (' + fmt(b.amt) + ')').join(', ') + '</strong></div>';
+      reasons = todayBills.map(b => b.name + ' came out');
+      reasons.push('Different bill', 'Bank fee', 'Unlogged spend', 'Other');
+    } else {
+      reasons = ['Bill came out early','Bank fee','Forgot to log a spend','Direct debit','Other'];
+    }
+    rb.innerHTML = bodyHtml;
+  } else {
+    rt.textContent = 'Balance higher than expected \u2191';
+    rt.style.color = 'var(--green)';
+    rb.innerHTML = 'Balance is <strong>' + fmtC(absDiff) + ' more</strong> than expected. Refund, pay, or transfer in?';
+    reasons = ['Got paid','Refund received','Transfer in','Correcting previous error','Other'];
+  }
+  rs.innerHTML = reasons.map(r => '<button onclick="selectReason(this,\'' + r.replace(/'/g,"\\'") + '\')" style="padding:9px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left">' + r + '</button>').join('');
+  $('recon-custom').value = '';
+  const btn = $('recon-confirm-btn');
+  btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+  $('recon-modal').classList.add('open');
+}
+
+function selectReason(el, reason) {
+  selectedReason = reason;
+  document.querySelectorAll('#recon-reasons button').forEach(b => { b.style.borderColor = 'var(--border2)'; b.style.background = 'var(--bg3)'; b.style.color = 'var(--text2)'; });
+  el.style.borderColor = 'var(--green)'; el.style.background = 'var(--green-dim)'; el.style.color = 'var(--green)';
+  $('recon-custom').value = '';
+  checkReconReady();
+}
+
+function checkReconReady() {
+  const custom = $('recon-custom').value.trim();
+  if (custom.length > 2) { selectedReason = custom; document.querySelectorAll('#recon-reasons button').forEach(b => { b.style.borderColor = 'var(--border2)'; b.style.background = 'var(--bg3)'; b.style.color = 'var(--text2)'; }); }
+  const ready = selectedReason.length > 0 || custom.length > 2;
+  $('recon-confirm-btn').style.opacity = ready ? '1' : '.4';
+  $('recon-confirm-btn').style.pointerEvents = ready ? 'auto' : 'none';
+}
+
+function confirmRecon() {
+  const reason = selectedReason || $('recon-custom').value.trim();
+  if (!reason) return;
+  if (!S.reconLog) S.reconLog = [];
+  S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
+  // S.txns is sacred — never wipe transactions during reconciliation
+  save();
+  $('recon-modal').classList.remove('open');
+  selectedReason = '';
+  renderAll();
+}
+
+function pinKey(k) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += k;
+  updatePinDots();
+  if (pinEntry.length === 4) {
+    setTimeout(() => {
+      const correct = S.pin || '2103';
+      if (pinEntry === correct) {
+        $('pin-screen').style.display = 'none';
+        showMain();
+        pinEntry = '';
+        $('pin-err').textContent = '';
+      } else {
+        $('pin-dots').classList.add('shake');
+        document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
+        $('pin-err').textContent = 'Incorrect PIN. Try again.';
+        setTimeout(() => { pinEntry = ''; $('pin-dots').classList.remove('shake'); document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error')); updatePinDots(); }, 800);
+      }
+    }, 100);
+  }
+}
+function pinDel() { pinEntry = pinEntry.slice(0, -1); updatePinDots(); $('pin-err').textContent = ''; }
+function updatePinDots() { for (let i = 0; i < 4; i++) $('pd'+i).classList.toggle('filled', i < pinEntry.length); }
+
+function goPage(id) {
+  document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  $(id).classList.add('active');
+  const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-chat':'nav-chat','pg-spend':'nav-spend'};
+  if (map[id]) $(map[id]).classList.add('active');
+  if (id === 'pg-cal') setTimeout(() => renderCalendar(), 50);
+  renderAll();
+}
+
+// H1: always add second fortnightly occurrence; wrap day2 > 31 by -28 so it's never silently dropped
+function getExpandedBills() {
+  const result = [];
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  BILLS.forEach(b => {
+    result.push(b);
+    if (b.freq === 'fortnightly') {
+      // H1: use real month length instead of day2 - 28 hack
+      const day2 = b.day + 14;
+      if (day2 <= daysInMonth) {
+        result.push({...b, day: day2, _generated: true});
+      } else {
+        // Overflows into next month — skip (next month's occurrence handled when month changes)
+        result.push({...b, day: day2 - daysInMonth, _generated: true, _nextMonth: true});
+      }
+    } else if (b.freq === 'weekly') {
+      for (let w = 1; w <= 3; w++) {
+        const wd = b.day + w * 7;
+        if (wd <= daysInMonth) result.push({...b, day: wd, _generated: true});
+      }
+    }
+  });
+  return result;
+}
+
+function getBillsDue() {
+  const today = new Date().getDate();
+  const payday = S.payday || 15;
+  const bills = getExpandedBills();
+  const now = new Date();
+  // C2: exclude bills already marked paid this month
+  function isPaid(b) {
+    if (!S.paidBills) return false;
+    return !!S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
+  }
+  if (today < payday) {
+    // C1: when paydayReceived=true the pay has already landed — payday-day bills
+    // (e.g. Rent on the 15th) will debit imminently, so include them in "due" total.
+    const upperBound = S.paydayReceived ? payday + 1 : payday;
+    return bills.filter(b => b.recurring !== false && !isPaid(b) && b.day >= today && b.day < upperBound);
+  }
+  // On/after payday: bills from tomorrow up to next payday next month
+  return bills.filter(b => {
+    if (b.recurring === false) return false;
+    if (isPaid(b)) return false;
+    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    return diff > 0 && diff < daysLeft(payday);
+  });
+}
+
+function renderAnalysisTab() {
+  const c = $('analysis-content'); if (!c) return;
+  if (!S.txns || !S.txns.length) {
+    c.innerHTML = '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
+    return;
+  }
+
+  const cats = {};
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
+  const income = S.income || 7282;
+  const days = daysLeft(S.payday);
+  const liveBal = getLiveBal();
+  const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
+  const avgDaily = getAvgDailySpend();
+
+  let html = '';
+
+  // --- Trajectory warning ---
+  if (liveBal - (avgDaily * days) < allBillsDue) {
+    html += '<div class="alert bad" style="margin-bottom:12px"><strong>&#x26A0;&#xFE0F; Spending alert.</strong> At this rate you will not cover bills before payday. Cut discretionary spending now.</div>';
+  }
+
+  // --- Spending by category ---
+  const sortedCats = Object.entries(cats).sort((a,b) => b[1]-a[1]);
+  const baselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending by Category</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">$'+Math.round(total).toLocaleString('en-AU')+'</div></div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (discretionary only)</div>';
+  if (!sortedCats.length) {
+    html += '<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">No discretionary spending logged yet.<br>Bills, debt repayments and income are excluded.</div>';
+  }
+  html += sortedCats.map(([k,v], i) => {
+    const pct = Math.round((v/total)*100);
+    const col = CHIP_COLORS[i % CHIP_COLORS.length];
+    const baseline = baselines[k] || 200;
+    const isOver = v > baseline;
+    const overBadge = isOver ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">'+(i===0?'WORST':'OVER')+'</span>' : '';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">' +
+      '<div style="width:32px;height:32px;border-radius:8px;background:'+col+'22;color:'+col+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+k[0].toUpperCase()+'</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k+overBadge+'</div>' +
+      '<div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div>' +
+      '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(isOver?'var(--red)':'var(--text)')+';white-space:nowrap">'+fmt(v)+'</div>' +
+      '</div>';
+  }).join('');
+  html += '</div>';
+
+  // --- Debt payments this month ---
+  const debtPaidThisMonth = S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
+  if (debtPaidThisMonth > 0) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Debt Payments</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">'+fmt(debtPaidThisMonth)+'</div></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">Debt repayments logged this month — not counted as discretionary spending. This money is reducing your liabilities.</div></div>';
+  }
+
+  // --- Income received ---
+  const incomeThisMonth = S.txns.filter(t => t.income).reduce((s,t) => s+t.amt, 0);
+  if (incomeThisMonth > 0) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Income Received</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">+'+fmt(incomeThisMonth)+'</div></div>' +
+      '<div style="font-size:13px;color:var(--text2)">Total income logged this month.</div></div>';
+  }
+
+  // --- Flagged habits ---
+  const flagged = S.txns.filter(t => t.flagged);
+  if (flagged.length) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Flagged Habits</div><div style="font-size:11px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:2px 7px">'+flagged.length+' flags</div></div>';
+    html += flagged.slice().reverse().map(t => {
+      const d = new Date(t.ts);
+      const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1);
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="overflow:hidden"><div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t.note+'</div>' +
+        '<div style="font-size:11px;color:var(--text3)">'+t.cat+' \u00B7 '+time+'</div></div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red);white-space:nowrap;margin-left:8px">-'+fmt(t.amt)+'</div></div>';
+    }).join('');
+    html += '</div>';
+  }
+
+  // --- Month-on-month ---
+  const history = S.monthlyHistory || [];
+  if (history.length >= 1) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Month-on-Month</div></div>';
+    html += sortedCats.map(([k,v]) => {
+      const prev = (history[history.length-1]||{})[k] || 0;
+      const delta = prev > 0 ? Math.round(((v-prev)/prev)*100) : null;
+      const deltaStr = delta === null ? 'first month' : delta > 0 ? '+'+delta+'% vs last month' : delta+'% vs last month';
+      const deltaCol = delta === null ? 'var(--text3)' : delta > 0 ? 'var(--red)' : 'var(--green)';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<div><div style="font-size:13px;color:var(--text)">'+k+'</div><div style="font-size:11px;color:'+deltaCol+'">'+deltaStr+'</div></div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(v)+'</div></div>';
+    }).join('');
+    html += '</div>';
+  }
+
+  // --- Worst 5 vs baseline ---
+  const catBaselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
+  const catSpendW5 = {};
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat||'Other'; catSpendW5[k] = (catSpendW5[k]||0)+t.amt; });
+  const worst5 = Object.entries(catSpendW5)
+    .map(([k,v]) => ({cat:k, spent:v, baseline: catBaselines[k]||200, over: v - (catBaselines[k]||200)}))
+    .filter(x => x.over > 0)
+    .sort((a,b) => b.over - a.over)
+    .slice(0,5);
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Worst 5 vs Baseline</div></div>';
+  if (worst5.length) {
+    html += worst5.map((x,i) => {
+      const col = i === 0 ? 'var(--red)' : i === 1 ? 'var(--amber)' : 'var(--text3)';
+      const barPct = Math.min(100, Math.round((x.spent / (x.baseline||1)) * 100));
+      return '<div style="padding:9px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
+        '<span style="font-size:13px;color:var(--text);font-weight:500">'+x.cat+'</span>' +
+        '<span style="font-family:var(--mono);font-size:12px;font-weight:700;color:'+col+'">+'+fmt(x.over)+' over</span></div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+        '<div style="flex:1;height:4px;background:var(--bg5);border-radius:2px;overflow:hidden"><div style="width:'+barPct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>' +
+        '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+fmt(x.spent)+' vs '+fmt(x.baseline)+'</span></div></div>';
+    }).join('');
+  } else {
+    html += '<div class="empty-state">All categories within baseline — nice work.</div>';
+  }
+  html += '</div>';
+
+  // --- FA3: Essential vs Discretionary breakdown ---
+  const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
+  const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings'];
+  let essTotal = 0, discTotal = 0;
+  S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => {
+    const k = t.cat || 'Other';
+    if (ESSENTIAL_KEYS.includes(k) || k === 'Fuel') essTotal += t.amt;
+    else discTotal += t.amt;
+  });
+  if (essTotal + discTotal > 0) {
+    const essPct = Math.round((essTotal / (essTotal + discTotal)) * 100);
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Essential vs Discretionary</div></div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Essential</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)">'+fmt(essTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+essPct+'% of spend</div></div>' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Discretionary</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:'+(discTotal > 500 ? 'var(--red)' : 'var(--amber)')+'">'+fmt(discTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+(100-essPct)+'% of spend</div></div>' +
+      '</div>' +
+      // FA4: Opportunity cost coaching if discretionary > $150
+      (discTotal > 150 ? '<div style="background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:10px;font-size:13px;line-height:1.6;color:var(--amber)"><strong>Opportunity cost:</strong> ' + fmt(discTotal) + ' discretionary this cycle. Redirected to Credit Card (' + (S.cc > 0 ? '19.99%' : 'debt') + '), that\'s <strong>' + fmt(Math.round(discTotal * 0.1999 / 12)) + ' saved in annual interest</strong> per month you cut it.</div>' : '') +
+      '</div>';
+  }
+
+  // --- FA5: Emergency fund check ---
+  const avgDailyAdv = getAvgDailySpend();
+  const emergencyNeeded = Math.round(avgDailyAdv * 90);
+  const bucketSaved = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  const rainyDay = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('rainy') || b.name.toLowerCase().includes('emergency'));
+  const rainyAmt = rainyDay ? rainyDay.saved : 0;
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Emergency Fund</div></div>';
+  if (rainyAmt >= emergencyNeeded) {
+    html += '<div class="alert ok">90-day emergency fund covered — ' + fmtC(rainyAmt) + ' saved. Well done.</div>';
+  } else {
+    const gap = emergencyNeeded - rainyAmt;
+    const gapPct = Math.round((rainyAmt / emergencyNeeded) * 100);
+    html += '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px"><span>Saved: ' + fmtC(rainyAmt) + '</span><span>Target: ' + fmtC(emergencyNeeded) + ' (90 days)</span></div>' +
+      '<div style="height:6px;background:var(--bg5);border-radius:3px;overflow:hidden"><div style="width:'+Math.min(100,gapPct)+'%;height:6px;background:var(--amber);border-radius:3px"></div></div></div>' +
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">You need <strong>' + fmtC(gap) + ' more</strong> for a 90-day emergency buffer. Once immediate debts are cleared, allocate a portion each month.</div>';
+  }
+  html += '</div>';
+
+  // --- FA6: Net worth trend ---
+  const nwHistory = S.monthlyHistory || [];
+  if (nwHistory.length >= 1) {
+    const latest = nwHistory[nwHistory.length - 1];
+    const nw = getNetWorth();
+    const prevNW = latest.bal ? latest.bal - (S.carloan + S.cc) : null;
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Net Worth Trend</div></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
+    [['Assets', nw.assets, 'var(--green)'], ['Liabilities', nw.liabilities, 'var(--red)'], ['Net Worth', nw.net, nw.net >= 0 ? 'var(--green)' : 'var(--red)']].forEach(([lbl, val, col]) => {
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">'+lbl+'</div><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+col+'">'+(val >= 0 ? '' : '-')+fmt(Math.abs(val))+'</div></div>';
+    });
+    html += '</div>';
+    if (prevNW !== null) {
+      const delta = nw.net - prevNW;
+      const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
+      html += '<div style="font-size:13px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
+    }
+    html += '</div>';
+  }
+
+  // --- FA7: WRX sale scenario ---
+  if (S.wrxValue > 0) {
+    const wrxAfterSale = S.wrxValue * 0.92; // ~8% selling costs
+    const debtAfterWrx = Math.max(0, S.carloan + S.cc - wrxAfterSale);
+    const activeImm = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+    let remaining = wrxAfterSale;
+    const cleared = [];
+    for (const d of activeImm) {
+      if (remaining >= d.amt) { cleared.push(d.name); remaining -= d.amt; }
+    }
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">WRX Sale Scenario</div><div style="font-size:11px;font-family:var(--mono);font-weight:700;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:3px;padding:2px 7px">Optional</div></div>';
+    html += '<div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:10px">If you list and sell the WRX at <strong>' + fmtC(S.wrxValue) + '</strong>, after ~8% selling costs you\'d net <strong>' + fmtC(Math.round(wrxAfterSale)) + '</strong>.</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:4px">Car loan after</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+(S.carloan - wrxAfterSale <= 0 ? 'var(--green)' : 'var(--red)')+'">'+fmtC(Math.max(0, S.carloan - Math.round(wrxAfterSale)))+'</div></div>' +
+      '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:4px">Total debt after</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+(debtAfterWrx <= 0 ? 'var(--green)' : 'var(--amber)')+'">'+fmtC(Math.round(debtAfterWrx))+'</div></div>' +
+      '</div>';
+    if (cleared.length) {
+      html += '<div style="font-size:13px;color:var(--green);line-height:1.7">Also clears immediately: <strong>' + cleared.join(', ') + '</strong> — freeing ' + fmtC(Math.round(remaining)) + ' residual.</div>';
+    }
+    html += '</div>';
+  }
+
+  // H6: All transactions list with delete buttons
+  const allTxns = (S.txns || []).slice().reverse();
+  if (allTxns.length) {
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">All Transactions</div><div style="font-size:11px;color:var(--text3)">tap \uD83D\uDDD1 to delete</div></div>';
+    html += allTxns.map((t, revIdx) => {
+      const realIdx = S.txns.length - 1 - revIdx;
+      const d = new Date(t.ts);
+      const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+      const isIncome = t.income;
+      const amtCol = isIncome ? 'var(--green)' : 'var(--red)';
+      const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
+      return '<div class="txn-row">' +
+        '<div class="txn-info"><div class="txn-name">'+esc(t.note||'\u2014')+'</div><div class="txn-meta">'+esc(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
+        '<button onclick="rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;flex-shrink:0" title="Delete transaction">\uD83D\uDDD1</button>' +
+        '</div></div>';
+    }).join('');
+    html += '</div>';
+  }
+
+  c.innerHTML = html;
+}
+
+function renderAll() {
+  // L2: Month-end snapshot — write to S.monthlyHistory when month rolls over
+  const nowForSnap = new Date();
+  const snapKey = nowForSnap.getFullYear() + '-' + (nowForSnap.getMonth() + 1);
+  if (S._lastSnapMonth && S._lastSnapMonth !== snapKey) {
+    if (!S.monthlyHistory) S.monthlyHistory = [];
+    const prevMonth = S._lastSnapMonth;
+    const alreadySnapped = S.monthlyHistory.some(h => h.month === prevMonth);
+    if (!alreadySnapped) {
+      S.monthlyHistory.push({
+        month: prevMonth,
+        bal: getLiveBal(),
+        spent: getTxnSpent(),
+        surplus: getGenuineSurplus(),
+        ts: Date.now()
+      });
+      save();
+    }
+  }
+  // L4: persist _lastSnapMonth so month transition is detected after page reload
+  const prevSnapMonth = S._lastSnapMonth;
+  S._lastSnapMonth = snapKey;
+  if (prevSnapMonth !== snapKey) save();
+
+  const txnSpent = getTxnSpent();
+  const liveBal = getLiveBal();
+  const due = getBillsDue();
+  const dueTotal = due.reduce((s,b) => s + b.amt, 0);
+  const bonusTotal = S.bonuses.reduce((s,b) => s + (+b.amt || 0), 0);
+  const safe = liveBal - dueTotal + bonusTotal;
+  const days = daysLeft(S.payday);
+  const maxDay = getMaxDay();
+  const today = new Date().getDate();
+  const isPayday = today === (S.payday || 15);
+
+  $('h-bal').textContent = fmtC(liveBal);
+  $('h-bal').className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
+  const hn = $('h-note');
+  if (hn) {
+    if (txnSpent > 0) {
+      const debtSpent = S.txns ? S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0) : 0;
+      const livingSpent = txnSpent - debtSpent;
+      hn.textContent = debtSpent > 0
+        ? fmt(livingSpent) + ' spent · ' + fmt(debtSpent) + ' in debt payments'
+        : fmt(txnSpent) + ' spent this cycle';
+    } else {
+      hn.textContent = 'Enter your Virgin Money balance to start';
+    }
+  }
+
+  // Net worth (FIX 7)
+  const nwEl = $('nw-val');
+  if (nwEl) { const nw = getNetWorth(); nwEl.textContent = (nw.net >= 0 ? '+' : '') + fmtC(nw.net); nwEl.className = 'nw-val ' + (nw.net >= 0 ? 'pos' : 'neg'); }
+
+  // H3: calculate actual cycle length from last payday to next payday instead of hardcoded /31
+  const paydayDayV = S.payday || 15;
+  const nowForC = new Date();
+  const lastPdDate = nowForC.getDate() >= paydayDayV
+    ? new Date(nowForC.getFullYear(), nowForC.getMonth(), paydayDayV)
+    : new Date(nowForC.getFullYear(), nowForC.getMonth() - 1, paydayDayV);
+  const nextPdDate = new Date(lastPdDate.getFullYear(), lastPdDate.getMonth() + 1, paydayDayV);
+  const cycleLen = Math.max(1, Math.round((nextPdDate - lastPdDate) / (1000*60*60*24)));
+  const dayIntoC = Math.max(0, Math.round((nowForC - lastPdDate) / (1000*60*60*24)));
+  const pct = Math.max(3, Math.min(100, (dayIntoC / cycleLen) * 100));
+  $('pd-fill').style.width = pct + '%';
+  $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
+  $('pd-lbl').textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
+
+  // FIX 4: Timing context
+  const phase = getMonthPhase();
+
+  // Auto-reset paydayReceived when calendar month rolls over
+  if (S.paydayReceived && S.paydayReceivedDate) {
+    const rec = new Date(S.paydayReceivedDate), now2 = new Date();
+    if (rec.getMonth() !== now2.getMonth() || rec.getFullYear() !== now2.getFullYear()) {
+      S.paydayReceived = false; S.paydayReceivedDate = null; save();
+    }
+  }
+
+  // Payday banner — paydayReceived suppresses all countdown messaging
+  const bannerEl = $('dash-payday-banner');
+  if (bannerEl) {
+    if (S.paydayReceived) {
+      const recDateStr = S.paydayReceivedDate
+        ? new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric', month:'short'})
+        : '';
+      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">✓ <strong>Payday received' + (recDateStr ? ' ' + recDateStr : '') + '.</strong> Plan your allocation below.</div>';
+    } else if (phase === 'PAYDAY') {
+      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>';
+      const ppBody = $('payday-plan-body'), ppTog = $('payday-plan-tog');
+      if (ppBody && (!ppBody.style.maxHeight || ppBody.style.maxHeight === '0px' || ppBody.style.maxHeight === '0')) {
+        ppBody.style.maxHeight = '800px';
+        if (ppTog) ppTog.textContent = '▴';
+      }
+    } else if (phase === 'PRE_PAYDAY') {
+      bannerEl.innerHTML = '<div class="alert warn fade-up" style="margin-bottom:8px">💰 <strong>Payday in ' + days + ' day' + (days === 1 ? '' : 's') + '.</strong> Hold tight — projection resets on the ' + (S.payday||15) + 'th.</div>';
+    } else {
+      bannerEl.innerHTML = '';
+    }
+  }
+
+  // 3 metrics (FIX 3)
+  const dailyBudget = getDailyBudget();
+  const dailyLabel = maxDay >= dailyBudget ? fmtC(dailyBudget) + ' \u2605' : (maxDay > 0 ? fmtC(maxDay) : '$0');
+  $('m-daily').textContent = dailyLabel;
+  $('m-daily').className = 'met-v ' + (maxDay <= 0 ? 'bad' : maxDay < 30 ? 'warn' : 'ok');
+  const todaySpent = getTodaySpent();
+  const todayEl = $('m-today-spent'), barEl = $('m-today-bar');
+  if (todayEl) { todayEl.textContent = fmt(todaySpent); todayEl.className = 'met-v ' + (todaySpent >= maxDay && maxDay > 0 ? 'bad' : todaySpent >= maxDay * 0.7 ? 'warn' : 'ok'); }
+  if (barEl) { const barPct = maxDay > 0 ? Math.min(100, Math.round((todaySpent/maxDay)*100)) : 0; barEl.style.width = barPct + '%'; barEl.style.background = barPct >= 100 ? 'var(--red)' : barPct >= 70 ? 'var(--amber)' : 'var(--green)'; }
+  // Overspend rollover display
+  const overspendEl = $('dash-overspend');
+  if (overspendEl) {
+    const overspend = todaySpent - dailyBudget;
+    if (overspend > 0 && maxDay > 0) {
+      const daysLeftVal = daysLeft(S.payday);
+      const allBillsDue2 = getBillsDue().reduce((s,b) => s+b.amt, 0);
+      const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - getDynamicBuffer()) / daysLeftVal) : 0;
+      overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today' +
+        (daysLeftVal > 1 ? ' &middot; <span style="color:var(--amber)">Adjusted: ' + fmtC(adjustedDay) + '/day for ' + daysLeftVal + ' days</span>' : '') + '</div>';
+    } else {
+      overspendEl.innerHTML = '';
+    }
+  }
+  const genuineSurplus = getGenuineSurplus();
+  const surplusEl = $('m-surplus');
+  if (surplusEl) {
+    surplusEl.textContent = (genuineSurplus >= 0 ? '+' : '') + fmt(genuineSurplus);
+    surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
+  }
+  const surplusLbl = $('m-surplus-lbl');
+  if (surplusLbl) surplusLbl.textContent = 'Available now';
+
+  // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
+  const remaining = dailyBudget - todaySpent;
+  const billsDueVeryShortly = getExpandedBills().filter(b => b.recurring !== false && (b.day === today || b.day === today + 1));
+  const velEl = $('dash-velocity');
+  if (remaining <= 30 && remaining >= 0 && maxDay > 0 && (isPayday || billsDueVeryShortly.length > 0)) {
+    if (velEl) velEl.innerHTML = '<span style="color:var(--amber)">⚠️ Keep $30 for Opal and lunch — only ' + fmt(remaining) + ' left today</span>';
+  } else if (velEl && phase !== 'PRE_PAYDAY' && phase !== 'PAYDAY') {
+    // FIX 6: Spending velocity — suppress before payday
+    const avgDaily = getAvgDailySpend();
+    const projMonth = Math.round(avgDaily * 30);
+    const income = S.income || 7282;
+    const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+    const budget = income - billsTotal;
+    if (projMonth > budget) {
+      velEl.innerHTML = '<span style="color:var(--red)">📈 At this pace: ~' + fmt(projMonth) + '/mo — ' + fmt(projMonth - budget) + ' over budget</span>';
+    } else {
+      velEl.innerHTML = '<span>📈 Projected: ~' + fmt(projMonth) + '/mo</span>';
+    }
+  } else if (velEl && (phase === 'PRE_PAYDAY' || phase === 'PAYDAY')) {
+    velEl.innerHTML = '';
+  }
+
+  // No-spend streak (FIX 10)
+  const streakEl = $('dash-streak');
+  if (streakEl) {
+    const streak = getNoSpendStreak();
+    if (streak === 0 && getTodaySpent() === 0 && S.txns.filter(t => !t.income).length === 0) {
+      streakEl.innerHTML = '';
+    } else if (streak >= 1) {
+      streakEl.innerHTML = '<span>🔥 ' + streak + '-day no-spend streak</span>';
+    } else {
+      streakEl.innerHTML = '';
+    }
+  }
+
+  renderAlerts(safe, liveBal, dueTotal, txnSpent);
+  renderMonthlyPosition();
+  renderPaydayPlan();
+  renderDebtTiles();
+  renderDashTxns();
+  renderBillsGrouped();
+  renderBonusList(bonusTotal, safe);
+  renderCutSliders();
+  renderTrend();
+  renderCatBreakdown();
+  renderSettingsBills();
+  renderSavingsBuckets();
+  renderSpendingCoach();
+  renderAnalysisTab();
+  updateExport();
+  checkAfford();
+  $('dt-car').textContent = fmtC(S.carloan);
+  $('dt-cc').textContent = fmtC(S.cc);
+  // H8: dynamic subtexts and bar fills for long-term debt tiles
+  const carBill = BILLS.find(b => b.name && b.name.toLowerCase().includes('car loan'));
+  const carPayStr = carBill ? fmt(carBill.amt) + (carBill.freq === 'fortnightly' ? ' fortnightly' : '/mo') : '';
+  if ($('dt-car-sub')) $('dt-car-sub').textContent = carPayStr ? carPayStr + ' — Firstmac 9.87%' : 'Firstmac 9.87%';
+  // M1: show % paid off (not % remaining). M2: use S.carloanOriginal / S.ccLimit
+  const carOrig = S.carloanOriginal || 37400;
+  const carPct = Math.min(100, Math.max(0, Math.round(((carOrig - S.carloan) / carOrig) * 100)));
+  if ($('dt-car-fill')) { $('dt-car-fill').style.width = carPct + '%'; }
+  const ccDebt = S.debts && S.debts.find(d => !d.paid && d.name && d.name.toLowerCase().includes('credit card'));
+  if ($('dt-cc-sub')) $('dt-cc-sub').textContent = '19.99%' + (ccDebt ? ' — ' + fmt(ccDebt.amt) + ' overdue' : '');
+  const ccLim = S.ccLimit || 6000;
+  const ccPct = Math.min(100, Math.max(0, Math.round(((ccLim - S.cc) / ccLim) * 100)));
+  if ($('dt-cc-fill')) { $('dt-cc-fill').style.width = ccPct + '%'; }
+  if ($('s-bal')) $('s-bal').value = S.bal || '';
+  if ($('s-income')) $('s-income').value = S.income || 7282;
+  if ($('s-payday')) $('s-payday').value = S.payday || 15;
+  if ($('s-car')) $('s-car').value = S.carloan != null ? S.carloan : '';
+  if ($('s-cc')) $('s-cc').value = S.cc != null ? S.cc : '';
+  if ($('s-weekday-budget')) $('s-weekday-budget').value = S.weekdayBudget || 60;
+  if ($('s-weekend-budget')) $('s-weekend-budget').value = S.weekendBudget || 180;
+  if ($('s-wrx-value')) $('s-wrx-value').value = S.wrxValue != null ? S.wrxValue : 21000;
+  if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
+  if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
+  if ($('s-debt-strategy')) $('s-debt-strategy').value = S.debtStrategy || 'avalanche';
+  if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
+  if ($('pg-chat') && $('pg-chat').classList.contains('active') && !_chatRendering) renderChatTab();
+}
+
+function renderMonthlyPosition() {
+  const el = $('monthly-pos-body'); if (!el) return;
+  const income = S.income || 7282;
+  const billsTotal = getExpandedBills().filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+  const living = Math.round(getAvgDailySpend() * 30);
+  const surplus = getGenuineSurplus();
+  const rows = [
+    {label:'Income', val:income, col:'var(--green)'},
+    {label:'Bills (all recurring)', val:-billsTotal, col:'var(--red)'},
+    {label:'Living est.', val:-living, col:'var(--amber)'},
+    {label:'Available now', val:surplus, col: surplus >= 0 ? 'var(--green)' : 'var(--red)', bold:true},
+  ];
+  el.innerHTML = '<div style="padding-top:4px">' + rows.map(r =>
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">' +
+    '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">'+r.label+'</span>' +
+    '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+r.col+'">'+(r.val >= 0 ? '+' : '')+fmt(Math.abs(r.val))+'</span></div>'
+  ).join('') + '<div style="font-size:11px;color:var(--text3);padding:8px 0">After bills, living costs, savings & buffer</div></div>';
+}
+
+// FIX 5: Payday plan — deduplicated bills, 3-month avg living costs, all priority debts, directive tone
+function renderPaydayPlan() {
+  const el = $('payday-plan-body'); if (!el) return;
+  const income = S.income || 7282;
+  let remaining = income;
+  const lines = [];
+
+  // Step 1: Bills that auto-debit on payday — deduplicated by name (no generated fortnightly duplicates)
+  const paydayDay = S.payday || 15;
+  const seen = new Set();
+  const paydayBills = BILLS.filter(b => b.recurring !== false && b.day === paydayDay && !seen.has(b.name) && seen.add(b.name));
+  if (paydayBills.length) {
+    paydayBills.forEach(b => {
+      remaining -= b.amt;
+      lines.push({label: b.name, amt: -b.amt, note: 'auto-debit'});
+    });
+  }
+
+  // Step 2: Living costs — 3-month rolling average, daily × 30
+  const avgDaily = getAvgDailySpend();
+  const livingEst = Math.round(avgDaily * 30);
+  remaining -= livingEst;
+  lines.push({label: 'Living costs reserve', amt: -livingEst, note: fmt(avgDaily) + '/day avg'});
+
+  // Step 3: Priority debts — FA1: sort by debtStrategy (avalanche=highest rate, snowball=smallest balance)
+  const strategy = S.debtStrategy || 'avalanche';
+  const activeDebts = S.debts.filter(d => !d.paid).sort((a,b) => {
+    if (strategy === 'snowball') return a.amt - b.amt;
+    return (b.rate||0) - (a.rate||0) || (a.priority||99) - (b.priority||99);
+  });
+  if (activeDebts.length && remaining > 50) {
+    activeDebts.forEach(d => {
+      if (remaining <= 50) return;
+      const pool = Math.min(remaining - 50, d.amt);
+      if (pool < 5) return;
+      remaining -= pool;
+      lines.push({label: d.name, amt: -pool, directive: true, note: 'P'+(d.priority||'?')});
+    });
+  }
+
+  // Step 4: Buffer line
+  lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true});
+
+  el.innerHTML = '<div style="padding-top:4px">' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Do this in order when $' + Math.round(income).toLocaleString('en-AU') + ' lands on the ' + paydayDay + 'th:</div>' +
+    lines.map(r =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)'+(r.directive?';border-left:2px solid var(--amber);padding-left:8px;margin-left:-8px':'')+'">' +
+      '<span style="font-size:13px;color:var(--text2);font-weight:'+(r.bold?'600':'400')+'">' +
+        (r.directive ? '<span style="color:var(--amber);margin-right:4px">→</span>' : '') +
+        r.label +
+        (r.note ? '<span style="font-size:10px;color:var(--text3);margin-left:6px">'+r.note+'</span>' : '') +
+      '</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(r.col||(r.amt<0?'var(--red)':'var(--text)'))+'">'+(r.amt>=0?'+':'')+fmt(Math.abs(r.amt))+'</span>' +
+      '</div>'
+    ).join('') + '</div>';
+}
+
+function openNetWorthModal() {
+  const nw = getNetWorth();
+  const liveBal = getLiveBal();
+  const activeDebts = S.debts.filter(d => !d.paid);
+  const debtTotal = activeDebts.reduce((s,d) => s+d.amt, 0);
+  let html = '';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">';
+  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Assets</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green)">'+fmt(nw.assets)+'</div></div>';
+  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Liabilities</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--red)">'+fmt(nw.liabilities)+'</div></div>';
+  html += '</div>';
+  const assetRows = [
+    {label:'Virgin Money balance', val:liveBal},
+    {label:'WRX (est. value)', val: S.wrxValue || 21000}, // H2: read from S not hardcoded
+    ...(S.savingsBuckets||[]).map(b => ({label:b.name+' savings', val:b.saved})),
+  ];
+  const liabRows = [
+    {label:'Car Loan — Firstmac', val:S.carloan},
+    {label:'Credit Card', val:S.cc},
+    ...activeDebts.map(d => ({label:d.name, val:d.amt})),
+  ];
+  html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Assets</div>';
+  html += assetRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">+'+fmt(r.val)+'</span></div>').join('');
+  html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 8px">Liabilities</div>';
+  html += liabRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">-'+fmt(r.val)+'</span></div>').join('');
+  html += '<div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px;border-top:2px solid var(--border2)"><span style="font-size:14px;font-weight:600;color:var(--text)">Net Worth</span><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+(nw.net>=0?'var(--green)':'var(--red)')+'">'+fmtC(nw.net)+'</span></div>';
+  $('nw-modal-content').innerHTML = html;
+  $('nw-modal').classList.add('open');
+}
+
+// FIX 9: Balance update from settings also triggers reconciliation modal
+function openHeroBalEdit() {
+  $('h-bal').style.display = 'none';
+  const ed = $('h-bal-edit');
+  ed.style.display = 'flex';
+  ed.style.alignItems = 'center';
+  $('h-bal-input').value = S.bal || '';
+  $('h-bal-input').focus();
+}
+function cancelHeroBalEdit() {
+  $('h-bal-edit').style.display = 'none';
+  $('h-bal').style.display = '';
+}
+function confirmHeroBalEdit() {
+  const b = parseFloat($('h-bal-input').value);
+  if (isNaN(b)) { alert('Enter a valid balance.'); return; }
+  cancelHeroBalEdit();
+  const prevExpected = getLiveBal();
+  const jump = b - S.bal;
+  const income = S.income || 7282;
+  const todayD2 = new Date().getDate();
+  const pd2 = S.payday || 15;
+  const nearPayday2 = todayD2 >= pd2 - 1 && todayD2 <= pd2 + 2;
+  if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday2 && !S.paydayReceived) {
+    S.paydayReceived = true;
+    S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
+  }
+  S.bal = b;
+  save(); renderAll();
+  runRecon(b, prevExpected);
+}
+
+function updateBalanceFromSettings() {
+  const b = parseFloat($('s-bal').value);
+  const msg = $('s-bal-msg');
+  if (isNaN(b)) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; return; }
+  const prevExpected = getLiveBal(); // H2: snapshot before S.bal changes
+
+  // Detect payday via balance jump — compare new bank balance to current S.bal baseline
+  const jump = b - S.bal;
+  const income = S.income || 7282;
+  const todayD3 = new Date().getDate();
+  const pd3 = S.payday || 15;
+  const nearPayday3 = todayD3 >= pd3 - 1 && todayD3 <= pd3 + 2;
+  if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday3 && !S.paydayReceived) {
+    S.paydayReceived = true;
+    S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
+  }
+
+  S.bal = b;
+  save();
+  renderAll();
+  msg.style.color = 'var(--green)';
+  msg.textContent = S.paydayReceived && jump >= income * 0.8
+    ? 'Looks like you got paid — payday plan activated'
+    : 'Balance updated to ' + fmtC(b);
+  setTimeout(() => { if ($('s-bal-msg')) $('s-bal-msg').textContent = ''; }, 3000);
+  // Trigger reconciliation if difference is significant
+  runRecon(b, prevExpected);
+}
+
+function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
+  const c = $('dash-alerts'); c.innerHTML = '';
+  if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
+  else if (safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
+  else if (safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
+  // FIX 10: Trajectory alert — validate phase before firing; suppress in PRE_PAYDAY/PAYDAY
+  const avgDaily = getAvgDailySpend();
+  const days = daysLeft(S.payday);
+  const alertPhase = getMonthPhase();
+  if (dueTotal > 0 && liveBal - (avgDaily * days) < dueTotal && alertPhase !== 'PRE_PAYDAY' && alertPhase !== 'PAYDAY') {
+    c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
+  }
+  // Cap note
+  const maxDay = getMaxDay();
+  const dailyCapVal = getDailyBudget();
+  if (maxDay >= dailyCapVal) c.innerHTML += '<div class="alert ok fade-up"><strong>'+fmtC(dailyCapVal)+'/day cap active.</strong> Surplus above cap goes to debt repayment pool.</div>';
+}
+
+function renderDebtTiles() {
+  const active = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+  const grid = $('debt-grid'), congrats = $('debt-congrats');
+  const total = active.reduce((s,d) => s + d.amt, 0);
+  $('imm-total').textContent = active.length > 0 ? fmt(total) + ' total' : '';
+  if (!active.length) { grid.style.display = 'none'; congrats.style.display = 'block'; return; }
+  grid.style.display = 'grid'; congrats.style.display = 'none';
+  grid.innerHTML = active.map((d, i) => {
+    const col = d.delayed ? 'warn' : 'bad';
+    const pct = Math.min(100, Math.round((d.amt/total)*100));
+    const fillCol = d.delayed ? 'var(--amber)' : 'var(--red)';
+    const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
+    const ri = S.debts.indexOf(d);
+    const dailyInt = (d.rate > 0) ? (d.amt * d.rate / 100 / 365) : 0;
+    const intTicker = dailyInt > 0
+      ? '<div style="font-size:10px;color:var(--red);font-family:var(--mono);margin-bottom:4px">+$'+dailyInt.toFixed(2)+'/day</div>'
+      : '';
+    const pri = d.priority || (i+1);
+    const priBadge = '<span class="pri-badge">'+pri+'</span>';
+    return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
+      '<div class="dt-name">'+priBadge + esc(d.name) + '</div>' +
+      '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
+      intTicker +
+      '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
+      '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
+      '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
+      '<div class="dt-status '+col+'">Due ' + dueStr + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+function openDebtModal(idx) {
+  activeDebtIdx = idx;
+  const d = S.debts[idx];
+  $('modal-title').textContent = d.name;
+  $('modal-name').value = d.name;
+  $('modal-amt').value = d.amt;
+  $('modal-rate').value = d.rate !== undefined ? d.rate : 0;
+  $('modal-due').value = d.delayDate || '';
+  $('modal-notes').value = d.notes || '';
+  $('modal-priority').value = d.priority || (idx + 1);
+  // FIX 12: Payoff countdown
+  const surplus = getGenuineSurplus();
+  const etaEl = $('modal-payoff-eta');
+  if (etaEl) {
+    if (surplus > 0 && d.amt > 0) {
+      const months = Math.ceil(d.amt / surplus);
+      etaEl.innerHTML = '⏱ At current surplus — paid off in <strong style="color:var(--amber)">' + months + ' month' + (months !== 1 ? 's' : '') + '</strong>' +
+        (d.amt <= (S.carloan || 0) + (S.cc || 0) ? '' : ' · WRX sale clears it immediately if listed');
+    } else {
+      etaEl.innerHTML = surplus <= 0 ? '⚠️ No surplus — list the WRX to clear debt faster' : '';
+    }
+  }
+  $('debt-modal').classList.add('open');
+}
+
+function saveDebt() {
+  if (activeDebtIdx < 0) return;
+  const d = S.debts[activeDebtIdx];
+  d.name = $('modal-name').value || d.name;
+  d.amt = parseFloat($('modal-amt').value) || d.amt;
+  d.rate = parseFloat($('modal-rate').value) || 0;
+  d.delayDate = $('modal-due').value || '';
+  d.notes = $('modal-notes').value || d.notes;
+  d.priority = parseInt($('modal-priority').value) || 99;
+  save(); closeModal('debt-modal'); renderAll();
+}
+
+function saveDebtDelay() {
+  if (activeDebtIdx < 0) return;
+  const d = S.debts[activeDebtIdx];
+  d.delayed = true;
+  d.name = $('modal-name').value || d.name;
+  d.amt = parseFloat($('modal-amt').value) || d.amt;
+  d.rate = parseFloat($('modal-rate').value) || 0;
+  d.delayDate = $('modal-due').value || '';
+  d.notes = $('modal-notes').value || d.notes;
+  d.priority = parseInt($('modal-priority').value) || 99;
+  save(); closeModal('debt-modal'); renderAll();
+}
+
+function markDebtPaid() {
+  // H5: snapshot then immediately clear activeDebtIdx to prevent double-tap duplicate
+  const idx = activeDebtIdx;
+  activeDebtIdx = -1;
+  if (idx < 0) return;
+  const d = S.debts[idx];
+  saveUndoState(); // L3: undo support
+  // Deduct from S.bal and log to history
+  S.bal -= d.amt;
+  S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false, _balAffected: true});
+  S.debts[idx].paid = true;
+  save(); closeModal('debt-modal'); renderAll();
+  showUndoToast('Debt marked paid');
+  // UX2: debt cleared celebration
+  const overlay = $('debt-celebrate-overlay');
+  const msg = $('debt-celebrate-msg');
+  if (overlay && msg) {
+    msg.textContent = d.rate > 0
+      ? '\uD83C\uDF89 ' + d.name + ' — cleared! Interest stopped.'
+      : '\uD83C\uDF89 ' + d.name + ' — cleared!';
+    overlay.classList.add('show');
+    setTimeout(() => overlay.classList.remove('show'), 1100);
+  }
+  // UX7: haptic feedback
+  if (navigator.vibrate) navigator.vibrate([50, 30, 100]);
+}
+
+function openAddDebtModal() {
+  $('nd-name').value = '';
+  $('nd-amt').value = '';
+  $('nd-rate').value = '0';
+  $('nd-due').value = '';
+  $('nd-notes').value = '';
+  $('add-debt-modal').classList.add('open');
+}
+
+function saveNewDebt() {
+  const name = $('nd-name').value.trim();
+  const amt = parseFloat($('nd-amt').value);
+  const rate = parseFloat($('nd-rate').value) || 0;
+  const due = $('nd-due').value || '';
+  const notes = $('nd-notes').value.trim();
+  if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
+  if (!S.nextDebtId) S.nextDebtId = S.debts.length;
+  S.debts.push({id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes});
+  save(); closeModal('add-debt-modal'); renderAll();
+}
+
+function openBillModal(idx) {
+  activeBillIdx = idx;
+  const b = BILLS[idx];
+  $('bm-name').value = b.name; $('bm-amt').value = b.amt; $('bm-day').value = b.day;
+  $('bm-tag').value = b.tag; $('bm-recurring').checked = b.recurring !== false;
+  $('bm-freq').value = b.freq || 'monthly';
+  // FIX 3: show correct paid/undo button based on current paid state
+  const _n = new Date();
+  const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
+  const _isPaid = S.paidBills && S.paidBills[_key];
+  $('bill-modal-mark-paid').style.display = _isPaid ? 'none' : '';
+  $('bill-modal-undo-paid').style.display = _isPaid ? '' : 'none';
+  $('bill-modal').classList.add('open');
+}
+
+function saveBill() {
+  if (activeBillIdx < 0) return;
+  const recurring = $('bm-recurring').checked;
+  if (!recurring) {
+    if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
+      saveUndoState();
+      BILLS.splice(activeBillIdx, 1);
+      save(); closeModal('bill-modal'); renderAll();
+      showUndoToast('Bill removed');
+    }
+    return;
+  }
+  // C3: validate day is 1-28 — show inline error, not alert
+  const dayVal = parseInt($('bm-day').value);
+  const dayErrEl = $('bm-day-err');
+  if (!dayVal || dayVal < 1 || dayVal > 28) {
+    if (dayErrEl) { dayErrEl.style.display = 'block'; }
+    $('bm-day').focus();
+    return;
+  }
+  if (dayErrEl) dayErrEl.style.display = 'none';
+  BILLS[activeBillIdx] = {
+    name: $('bm-name').value || BILLS[activeBillIdx].name,
+    amt: parseFloat($('bm-amt').value) || BILLS[activeBillIdx].amt,
+    day: dayVal,
+    tag: $('bm-tag').value, recurring: true,
+    freq: $('bm-freq').value || 'monthly'
+  };
+  save(); closeModal('bill-modal'); renderAll();
+}
+
+function deleteBill() {
+  if (activeBillIdx < 0 || !confirm('Remove this bill permanently?')) return;
+  saveUndoState();
+  BILLS.splice(activeBillIdx, 1);
+  save(); closeModal('bill-modal'); renderAll();
+  showUndoToast('Bill deleted');
+}
+
+function markBillPaidMonth() {
+  if (activeBillIdx < 0) return;
+  const b = BILLS[activeBillIdx];
+  // Deduct from S.bal and log to history
+  S.bal -= b.amt;
+  S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  save(); closeModal('bill-modal'); renderAll();
+}
+
+// FIX 3: undo paid — only accessible inside the modal
+function undoBillPaid() {
+  if (activeBillIdx < 0) return;
+  const b = BILLS[activeBillIdx];
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+  if (S.paidBills) delete S.paidBills[key];
+  save(); closeModal('bill-modal'); renderAll();
+}
+
+function handleOverlayClick(e, id) { if (e.target.classList.contains('modal-overlay')) closeModal(id); }
+function closeModal(id) {
+  // H5: clear activeDebtIdx when debt modal closes to prevent stale index
+  if (id === 'debt-modal') activeDebtIdx = -1;
+  const el = $(id);
+  el.classList.remove('open');
+  if (el._vvResize && window.visualViewport) {
+    window.visualViewport.removeEventListener('resize', el._vvResize);
+    window.visualViewport.removeEventListener('scroll', el._vvScroll);
+    el._vvResize = null; el._vvScroll = null;
+    el.style.height = ''; el.style.top = ''; el.style.bottom = '';
+  }
+}
+
+function openLtDebtModal(type) {
+  ltDebtType = type;
+  const bal = type === 'car' ? S.carloan : S.cc;
+  $('lt-modal-title').textContent = type === 'car' ? 'Car Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
+  $('lt-balance').textContent = fmtC(bal);
+  if (type === 'car') {
+    $('lt-minpay').textContent = '$387.69 / fortnight (fixed)';
+  } else {
+    $('lt-minpay').textContent = '$92 / month (min — avoid this)';
+  }
+  $('lt-extra').value = '';
+  $('lt-new-bal').value = '';
+  $('lt-result').style.display = 'none';
+  $('lt-debt-modal').classList.add('open');
+  calcLtDebt();
+}
+
+function calcLtDebt() {
+  const bal = ltDebtType === 'car' ? S.carloan : S.cc;
+  if (bal <= 0) { $('lt-result').style.display = 'none'; return; }
+
+  if (ltDebtType === 'car') {
+    // Car loan: fortnightly $387.69 fixed. Show 6/12/24 month projections
+    const rate = 9.87;
+    const mr = rate/100/26; // fortnightly rate
+    const payment = 387.69;
+    const extra = parseFloat($('lt-extra').value) || 0;
+    const totalPayment = payment + extra;
+
+    function projectBalance(months) {
+      let b = bal;
+      const fortnights = months * 26/12;
+      for (let i = 0; i < fortnights; i++) {
+        const interest = b * mr;
+        b = b + interest - totalPayment;
+        if (b <= 0) return 0;
+      }
+      return Math.max(0, b);
+    }
+
+    function calcPayoff(pay) {
+      let b = bal, fortnights = 0, totalInt = 0;
+      while (b > 0 && fortnights < 1200) {
+        const interest = b * mr;
+        totalInt += interest;
+        b = b + interest - pay;
+        fortnights++;
+      }
+      const months = Math.ceil(fortnights * 12/26);
+      return { months, totalInt: Math.max(0, totalInt) };
+    }
+
+    const base = calcPayoff(payment);
+    const withExtra = calcPayoff(totalPayment);
+    const bal6 = projectBalance(6);
+    const bal12 = projectBalance(12);
+    const bal24 = projectBalance(24);
+    const saved = base.totalInt - withExtra.totalInt;
+    const mSaved = base.months - withExtra.months;
+    const yb = Math.floor(base.months/12), mb = base.months%12;
+    const yx = Math.floor(withExtra.months/12), mx = withExtra.months%12;
+
+    let html = '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Balance Projections (at $387.69/fortnight)</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
+    [['6 months', bal6], ['12 months', bal12], ['24 months', bal24]].forEach(([label, b]) => {
+      const reduced = bal - b;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px 8px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:4px">'+label+'</div>' +
+        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)">'+fmt(b)+'</div>' +
+        '<div style="font-size:10px;color:var(--green);margin-top:2px">-'+fmt(reduced)+'</div></div>';
+    });
+    html += '</div></div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
+    html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Paid off in</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">'+(yb>0?yb+'y '+mb+'m':mb+'m')+'</div></div>';
+    html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px"><div style="font-size:10px;color:var(--text3);margin-bottom:3px">Total interest</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)">'+fmt(base.totalInt)+'</div></div>';
+    html += '</div>';
+    if (extra > 0 && saved > 0) {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-bottom:10px">';
+      html += '<div style="font-size:13px;color:var(--green);font-weight:600;margin-bottom:4px">+$'+extra.toFixed(0)+'/fortnight extra</div>';
+      html += '<div style="font-size:13px;color:var(--text2);line-height:1.7">Pay off <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> — saves <strong>'+fmt(saved)+'</strong> in interest and finishes <strong>'+mSaved+' months sooner.</strong></div>';
+      html += '</div>';
+    } else {
+      const surplus = getGenuineSurplus();
+      const tipAmt = surplus > 200 ? Math.floor(Math.min(surplus * 0.5, 200) / 10) * 10 : 50;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.7">' +
+        'FA8 tip: You have a genuine surplus of <strong>' + fmtC(surplus) + '</strong>. Putting <strong>' + fmtC(tipAmt) + '/fortnight</strong> extra here at 9.87% could save hundreds in interest — enter it below to see exactly how much.</div>';
+    }
+    $('lt-result').innerHTML = html;
+    $('lt-result').style.display = 'block';
+
+  } else {
+    // Credit card: show min vs recommended payoff scenarios
+    const rate = 19.99;
+    const mr = rate/100/12;
+    const extra = parseFloat($('lt-extra').value) || 0;
+
+    function calcCC(monthlyPay) {
+      if (monthlyPay <= 0) return {months:9999, totalInt:9999};
+      let b = bal, months = 0, totalInt = 0;
+      while (b > 0 && months < 600) {
+        const interest = b * mr;
+        totalInt += interest;
+        b = b + interest - monthlyPay;
+        months++;
+      }
+      return {months, totalInt: Math.max(0, totalInt)};
+    }
+
+    const minPay = 92;
+    const pay12 = bal > 0 ? bal * mr / (1 - Math.pow(1+mr, -12)) + 1 : 0;
+    const pay24 = bal > 0 ? bal * mr / (1 - Math.pow(1+mr, -24)) + 1 : 0;
+    const withExtra = calcCC(minPay + extra);
+    const minResult = calcCC(minPay);
+    const res12 = calcCC(Math.ceil(pay12));
+    const res24 = calcCC(Math.ceil(pay24));
+
+    let html = '<div style="background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:12px;margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:4px">&#x26A0;&#xFE0F; Minimum payment trap</div>';
+    html += '<div style="font-size:13px;color:var(--text2);line-height:1.7">Paying only $92/month means <strong>'+Math.floor(minResult.months/12)+'+ years</strong> to clear this and <strong>'+fmt(minResult.totalInt)+'</strong> in interest. At 19.99% every dollar counts.</div></div>';
+
+    html += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Payoff Scenarios</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+    [
+      ['Minimum\n$92/mo', minResult, 'var(--red)'],
+      ['Clear in 24m\n$'+Math.ceil(pay24)+'/mo', res24, 'var(--amber)'],
+      ['Clear in 12m\n$'+Math.ceil(pay12)+'/mo', res12, 'var(--green)'],
+    ].forEach(([label, res, col]) => {
+      const yy = Math.floor(res.months/12), mm = res.months%12;
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px">' +
+        '<div style="font-size:10px;color:var(--text3);margin-bottom:4px;white-space:pre-line">'+label+'</div>' +
+        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+col+'">'+(yy>0?yy+'y '+mm+'m':mm+'m')+'</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+fmt(res.totalInt)+' interest</div></div>';
+    });
+    html += '</div></div>';
+    if (extra > 0) {
+      const yx = Math.floor(withExtra.months/12), mx = withExtra.months%12;
+      const saved = minResult.totalInt - withExtra.totalInt;
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;font-size:13px;color:var(--text2);line-height:1.7">';
+      html += 'Paying $'+(minPay+extra).toFixed(0)+'/month clears it in <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> saving <strong>'+fmt(saved)+'</strong> vs minimum.</div>';
+    }
+    $('lt-result').innerHTML = html;
+    $('lt-result').style.display = 'block';
+  }
+}
+
+function saveLtDebt() {
+  const nb = parseFloat($('lt-new-bal').value);
+  if (!isNaN(nb) && nb >= 0) { if (ltDebtType === 'car') S.carloan = nb; else S.cc = nb; save(); renderAll(); }
+  closeModal('lt-debt-modal');
+}
+
+function renderBillsGrouped() {
+  const c = $('bills-grouped'); if (!c) return;
+  const today = new Date().getDate();
+  const now = new Date();
+  const grouped = {today:[], week:[], next:[], later:[]};
+  getExpandedBills().filter(b => b.recurring !== false).forEach(b => {
+    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    if (diff === 0) grouped.today.push({...b, diff});
+    else if (diff <= 7) grouped.week.push({...b, diff});
+    else if (diff <= 14) grouped.next.push({...b, diff});
+    else grouped.later.push({...b, diff});
+  });
+  ['week','next','later'].forEach(k => grouped[k].sort((a,b) => a.diff - b.diff));
+
+  const todayTotal = grouped.today.reduce((s,b) => s+b.amt, 0);
+  const weekTotal = [...grouped.today,...grouped.week].reduce((s,b) => s+b.amt, 0);
+  const liveBal = getLiveBal();
+  const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  let warn = '';
+  if (todayTotal > 0) warn = '<div class="alert bad" style="margin-bottom:16px"><strong>' + fmt(todayTotal) + ' charging today.</strong><br>Real balance after: <strong>' + fmtC(liveBal - todayTotal) + '</strong></div>';
+  else if (weekTotal > 0) warn = '<div class="alert warn" style="margin-bottom:16px"><strong>' + fmt(weekTotal) + ' due this week.</strong><br>Real balance after bills: <strong>' + fmtC(liveBal - weekTotal) + '</strong></div>';
+
+  function renderGroup(title, bills, cls) {
+    if (!bills.length) return '';
+    const gt = bills.reduce((s,b) => s+b.amt, 0);
+    const isWeekSection = cls === 'today' || cls === 'week';
+    const tc = cls === 'today' ? 'var(--red)' : cls === 'week' ? 'var(--amber)' : 'var(--text3)';
+    // Week highlight border
+    const cardStyle = isWeekSection
+      ? 'padding:4px 16px;border-color:' + (cls==='today'?'var(--red-border)':'var(--amber-border)') + ';background:' + (cls==='today'?'rgba(255,68,85,0.04)':'rgba(245,166,35,0.04)')
+      : 'padding:4px 16px';
+
+    const rows = bills.map(b => {
+      const cc = b.diff === 0 ? 'today' : b.diff <= 7 ? 'soon' : 'normal';
+      const ri = BILLS.findIndex(x => x.name === b.name);
+      const freqLabel = b.freq === 'fortnightly' ? 'FORTNIGHTLY' : b.freq === 'weekly' ? 'WEEKLY' : 'MONTHLY';
+      const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
+      const isPaid = S.paidBills && S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
+      const paidBadge = isPaid ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
+      const todayBadge = b.diff === 0 ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
+      return '<div class="bill-row">' +
+        '<div class="bill-chip '+cc+'" onclick="openBillModal('+ri+')" style="min-width:38px">'+String(b.day).padStart(2,'0')+'</div>' +
+        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+        '<div class="bill-amt" style="'+(isPaid?'text-decoration:line-through;color:var(--text3)':b.diff===0?'color:var(--red)':'')+'">'+fmt(b.amt)+'</div>' +
+        '</div></div>';
+    }).join('');
+
+    // Running balance after this group (M5: today = liveBal - todayTotal; week = liveBal - weekTotal; M10: deduct buckets)
+    const runningAfter = (cls === 'today' ? liveBal - todayTotal : liveBal - weekTotal) - bucketTotal;
+    const afterNote = isWeekSection ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 4px;border-top:1px solid var(--border);margin-top:4px"><span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Balance after</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(runningAfter<0?'var(--red)':runningAfter<200?'var(--amber)':'var(--green)')+'">'+fmtC(runningAfter)+'</span></div>' : '';
+
+    return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
+  }
+  // FIX 2: Replace Next Week + Later with one combined monthly summary table sorted by amount
+  const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => b.amt - a.amt);
+  let monthlyHtml = '';
+  if (upcoming.length) {
+    const monthlyTotal = upcoming.reduce((s,b) => s+b.amt, 0);
+    let runBal = liveBal - weekTotal - bucketTotal; // H10: deduct buckets for consistency with weekly panel
+    monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
+      '<div class="card" style="padding:4px 16px">' +
+      upcoming.map(b => {
+        const ri = BILLS.findIndex(x => x.name === b.name);
+        runBal -= b.amt;
+        const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--text3)';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
+          '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+'</div>' +
+          '<div style="font-size:11px;color:var(--text3)">day '+b.day+'</div></div>' +
+          '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(b.amt)+'</div>' +
+          '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div></div></div>';
+      }).join('') +
+      '<div style="display:flex;justify-content:space-between;padding:10px 0 4px"><span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Monthly total</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(monthlyTotal)+'</span></div>' +
+      '</div></div>';
+  }
+  c.innerHTML = warn + renderGroup('Due Today', grouped.today, 'today') + renderGroup('This Week', grouped.week, 'week') + monthlyHtml;
+}
+
+function markBillPaid(event, name, day) {
+  event.stopPropagation();
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+name+'-'+day;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  save(); renderAll();
+}
+
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.paid-btn');
+  if (!btn) return;
+  e.stopPropagation();
+  const name = btn.dataset.name;
+  const day = parseInt(btn.dataset.day);
+  const now = new Date();
+  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+name+'-'+day;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  save(); renderAll();
+});
+
+function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
+function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
+
+function renderCalendar() {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const lbl = $('cal-month-label'); if (lbl) lbl.textContent = months[calMonth] + ' ' + calYear;
+  const grid = $('cal-grid'); if (!grid) return;
+  const today = new Date(), payday = S.payday || 15;
+  const billMap = {};
+  getExpandedBills().forEach(b => { if (!billMap[b.day]) billMap[b.day] = []; billMap[b.day].push(b); });
+  const firstDay = new Date(calYear, calMonth, 1);
+  let startDow = firstDay.getDay() - 1; if (startDow < 0) startDow = 6;
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  const daysInPrev = new Date(calYear, calMonth, 0).getDate();
+  const totalCells = Math.ceil((startDow + daysInMonth) / 7) * 7;
+  let html = '';
+  for (let i = 0; i < totalCells; i++) {
+    let d, isThis = true;
+    if (i < startDow) { d = daysInPrev - (startDow-1-i); isThis = false; }
+    else if (i >= startDow + daysInMonth) { d = i - startDow - daysInMonth + 1; isThis = false; }
+    else { d = i - startDow + 1; }
+    const isToday = isThis && calYear === today.getFullYear() && calMonth === today.getMonth() && d === today.getDate();
+    const isPayday = isThis && d === payday;
+    const bills = isThis ? (billMap[d] || []) : [];
+    const billTotal = bills.reduce((s,b) => s+b.amt, 0);
+    let cls = 'cal-day';
+    if (!isThis) cls += ' other-month';
+    // H7: apply both payday and bill classes so rent on payday day is visible
+    if (isPayday && bills.length > 1) cls += ' payday has-multi';
+    else if (isPayday && bills.length === 1) cls += ' payday has-bill';
+    else if (isPayday) cls += ' payday';
+    else if (bills.length > 1) cls += ' has-multi';
+    else if (bills.length === 1) cls += ' has-bill';
+    if (isToday) cls += ' today';
+    // H7: amber dot when payday has bills (both signals combined)
+    const dotColor = isPayday && bills.length ? 'var(--amber)' : isPayday ? 'var(--green)' : bills.length > 1 ? 'var(--amber)' : bills.length === 1 ? 'var(--red)' : 'transparent';
+    const amtStr = billTotal > 0 ? '$' + Math.round(billTotal) : '';
+    const clickFn = isThis ? 'calDayClick(' + d + ')' : '';
+    html += '<div class="'+cls+'" onclick="'+clickFn+'">' +
+      '<div class="cal-day-num">'+d+'</div>' +
+      (bills.length || isPayday ? '<div class="cal-day-dot" style="background:'+dotColor+'"></div>' : '') +
+      (amtStr ? '<div class="cal-day-amt">'+amtStr+'</div>' : '') +
+      '</div>';
+  }
+  grid.innerHTML = html;
+  renderCalWeekSummary();
+}
+
+function calDayClick(day) {
+  const bills = getExpandedBills().filter(b => b.day === day);
+  const isPayday = day === S.payday;
+  const detail = $('cal-day-detail'), content = $('cal-day-detail-content');
+  if (!detail || !content) return;
+  if (!bills.length && !isPayday) {
+    // UX5: show positive message for empty days
+    const months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    content.innerHTML = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:10px;color:var(--text)">'+day+' '+months2[calMonth]+'</div><div style="font-size:13px;color:var(--green)">Nothing due \u2014 enjoy the day \u2713</div><button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
+    detail.style.display = 'block';
+    return;
+  }
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let html = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)">' + day + ' ' + months[calMonth] + '</div>';
+  if (isPayday) {
+    if (S.paydayReceived) {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x2713;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday received &#x2014; $'+Math.round(S.income).toLocaleString()+' banked</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
+    } else {
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x1F4B0;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday &#x2014; $'+Math.round(S.income).toLocaleString()+' incoming</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
+    }
+  }
+  if (bills.length) {
+    html += bills.map(b => '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:14px;color:var(--text);font-weight:500">'+b.name+'</div><div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' &#x00B7; Recurring':'')+'</div></div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+b.amt.toFixed(2)+'</div></div>').join('');
+    const total = bills.reduce((s,b) => s+b.amt, 0);
+    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
+  }
+  html += '<button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
+  content.innerHTML = html;
+  detail.style.display = 'block';
+}
+
+function renderCalWeekSummary() {
+  const c = $('cal-week-content'); if (!c) return;
+  const todayD = new Date().getDate();
+  const endOfWeek = todayD + 7;
+  // FIX 1: de-duplicate fortnightly bills within same 7-day window (same name); exclude already-paid bills
+  const _wNow = new Date();
+  const rawWeekBills = getExpandedBills().filter(b => {
+    if (b.recurring === false) return false;
+    if (b.day < todayD || b.day > endOfWeek) return false;
+    const key = _wNow.getFullYear()+'-'+(_wNow.getMonth()+1)+'-'+b.name+'-'+b.day;
+    return !(S.paidBills && S.paidBills[key]);
+  });
+  const seenNames = new Set();
+  const weekBills = rawWeekBills.filter(b => { if (seenNames.has(b.name)) return false; seenNames.add(b.name); return true; });
+  const weekTotal = weekBills.reduce((s,b) => s+b.amt, 0);
+  const liveBal = getLiveBal();
+  const days = daysLeft(S.payday);
+
+  // If payday falls within the next 7 days AND not yet received, include income in Now balance
+  const paydayInWeek = !S.paydayReceived && S.payday >= todayD && S.payday <= endOfWeek;
+  const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
+  // M6: use actual remaining days in 7-day window (capped at days until payday)
+  const remainingWindowDays = Math.min(7, daysLeft(S.payday));
+  const projectedWeekBal = S.paydayReceived
+    ? liveBal - weekTotal - getDailyBudget() * remainingWindowDays
+    : effectiveBal - weekTotal;
+  const afterBills = projectedWeekBal;
+  // Max/Day for week summary: uses effectiveBal so payday income is reflected when within 7 days
+  const weekMaxDay = (() => {
+    const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
+    const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+    const spendable = effectiveBal - allBillsDue - bucketTotal - getDynamicBuffer();
+    if (days <= 0 || spendable <= 0) return 0;
+    return Math.min(getDailyBudget(), spendable / days);
+  })();
+  const dontSpend = Math.max(0, Math.floor(weekMaxDay));
+
+  // If afterBills negative but payday incoming covers it, show amber not red
+  const coveredByPayday = afterBills < 0 && paydayInWeek;
+  const sc = afterBills < 0 && !coveredByPayday ? 'var(--red)' : afterBills < 200 ? 'var(--amber)' : 'var(--green)';
+  const sdim = afterBills < 0 && !coveredByPayday ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
+  const sbord = afterBills < 0 && !coveredByPayday ? 'var(--red-border)' : afterBills < 200 ? 'var(--amber-border)' : 'var(--green-border)';
+
+  // Payday banner in week summary — suppressed entirely when paydayReceived
+  const daysToPayday = daysLeft(S.payday);
+  let html = '';
+  if (!S.paydayReceived && daysToPayday <= 7) {
+    const pdLabel = daysToPayday === 0 ? 'Today is payday' : 'Payday in ' + daysToPayday + (daysToPayday === 1 ? ' day' : ' days');
+    html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:18px">&#x1F4B0;</span>' +
+      '<div><div style="font-size:13px;font-weight:600;color:var(--green)">'+pdLabel+' \u2014 $'+Math.round(S.income||0).toLocaleString('en-AU')+' incoming</div>' +
+      '<div style="font-size:11px;color:var(--text3)">Virgin Money Go \u2014 Manhattan Associates</div></div></div>';
+  }
+
+  // Balance flow — Now label + note changes when payday is this week
+  const nowLabel = paydayInWeek ? 'Now + Pay' : 'Now';
+  const nowNote = paydayInWeek
+    ? '<div style="font-size:9px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
+    : '';
+  const projLabel = S.paydayReceived
+    ? 'Projected end of week balance'
+    : 'Projected Virgin Money<br>after this week\'s bills';
+  const projNote = S.paydayReceived
+    ? '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 ' + remainingWindowDays + '</div>'
+    : '<div style="font-size:9px;margin-top:3px;visibility:hidden">x</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
+  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
+  html += '<div style="font-size:18px;color:var(--text3);text-align:center;padding-top:18px">&#x2192;</div>';
+  html += '<div style="text-align:center"><div style="font-size:9px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
+  html += '</div>';
+  // Max/day row below the grid
+  const maxDayLabel = weekMaxDay >= getDailyBudget() ? fmtC(getDailyBudget()) + ' \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 10px"><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Max/day this week</span><span style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+sc+'">'+maxDayLabel+'</span></div>';
+
+  if (!weekBills.length) {
+    html += '<div style="font-size:13px;color:var(--text3);padding:8px 2px">No bills due in the next 7 days &#x2714;</div>';
+  } else {
+    html += weekBills.map(b => '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+b.name+' <span style="color:var(--text3);font-size:11px">day '+b.day+'</span></span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">'+fmt(b.amt)+'</span></div>').join('');
+    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">This week total</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">'+fmt(weekTotal)+'</span></div>';
+  }
+
+  const msg = coveredByPayday
+    ? 'This is covered by your ' + fmt(S.income||0) + ' payday on the ' + S.payday + 'th \u2014 you are not actually in deficit.'
+    : afterBills < 0
+    ? '&#x26A0;&#xFE0F; Bills will exceed your balance. Do not spend anything until payday.'
+    : afterBills < 200
+    ? 'Very tight after bills. Maximum '+fmt(dontSpend)+'/day until payday.'
+    : 'Stay under '+fmt(dontSpend)+'/day and you\'ll clear all bills comfortably.';
+  html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
+
+  // Genuine surplus: only fires when balance covers all bills + living costs + $500 buffer
+  const surplus = getGenuineSurplus();
+  if (surplus > 0 && S.debts) {
+    const activeDebts = S.debts.filter(d => !d.paid);
+    // Sort by priority (same order as payday plan), then rate descending for ties
+    activeDebts.sort((a,b) => (a.priority||99) - (b.priority||99) || (b.rate||0) - (a.rate||0));
+    const target = activeDebts[0];
+    if (target) {
+      const canPay = Math.min(surplus, target.amt);
+      const remaining = target.amt - canPay;
+      html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.7;color:var(--green)">' +
+        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong> spare after a $500 buffer. ' +
+        'Put <strong>'+fmt(canPay)+'</strong> toward <strong>'+target.name+'</strong>' +
+        (remaining > 0 ? ' — leaves '+fmt(remaining)+' still owed.' : ' — clears it completely!') +
+        '</div>';
+    }
+  }
+
+  c.innerHTML = html;
+}
+
+function renderSavingsBuckets() {
+  const c = $('savings-buckets-content'); if (!c) return;
+  const buckets = S.savingsBuckets || [];
+  if (!buckets.length) { c.innerHTML = '<div class="empty-state">No savings buckets yet.</div><button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>'; return; }
+  let html = buckets.map((b, i) => {
+    const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
+    const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
+    const accountBadge = '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
+    return '<div onclick="openBucketModal('+i+')" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:var(--r-xs);margin:0 -4px;padding:12px 4px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+      '<span style="font-size:14px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">'+b.name+accountBadge+'</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green);white-space:nowrap">'+fmtC(b.saved)+' / '+fmtC(b.goal)+'</span>' +
+      '</div>' +
+      '<div style="height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:5px">' +
+      '<div style="width:'+pct+'%;height:5px;border-radius:3px;background:'+barCol+';transition:width .5s"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">' +
+      '<span>'+pct+'% of goal</span>' +
+      // M5: floor "to go" at 0 and show celebration text when goal is met
+      '<span style="color:'+(b.saved >= b.goal ? 'var(--green)' : 'var(--text3)')+'">'+
+      (b.saved >= b.goal ? 'Goal reached! \uD83C\uDF89' : fmtC(Math.max(0, b.goal - b.saved))+' to go \u2192')+
+      '</span></div>' +
+      '</div>';
+  }).join('');
+  html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
+  c.innerHTML = html;
+}
+
+let activeBucketIdx = -1;
+
+function openBucketModal(i) {
+  activeBucketIdx = i;
+  const b = S.savingsBuckets[i];
+  const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
+  const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
+  $('bkt-modal-title').textContent = b.name;
+  $('bkt-modal-sub').textContent = fmtC(b.saved) + ' saved of ' + fmtC(b.goal) + ' goal \u2014 ' + pct + '% complete';
+  $('bkt-modal-bar').style.width = pct + '%';
+  $('bkt-modal-bar').style.background = barCol;
+  $('bkt-name').value = b.name;
+  $('bkt-goal').value = b.goal;
+  $('bkt-saved').value = b.saved;
+  $('bkt-account').value = b.account || 'ING';
+  $('bkt-notes').value = b.notes || '';
+  $('bkt-add-funds').value = '';
+  $('bucket-modal').classList.add('open');
+}
+
+function saveBucketModal() {
+  if (activeBucketIdx < 0) return;
+  const b = S.savingsBuckets[activeBucketIdx];
+  b.name = $('bkt-name').value.trim() || b.name;
+  b.goal = parseFloat($('bkt-goal').value) || b.goal;
+  b.saved = parseFloat($('bkt-saved').value) || 0;
+  b.account = $('bkt-account').value || b.account;
+  b.notes = $('bkt-notes').value.trim();
+  save(); closeModal('bucket-modal'); renderAll();
+}
+
+function addFundsBucketModal() {
+  if (activeBucketIdx < 0) return;
+  const v = parseFloat($('bkt-add-funds').value);
+  if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
+  S.savingsBuckets[activeBucketIdx].saved = (S.savingsBuckets[activeBucketIdx].saved||0) + v;
+  save(); closeModal('bucket-modal'); renderAll();
+}
+
+function deleteBucket() {
+  if (activeBucketIdx < 0) return;
+  const b = S.savingsBuckets[activeBucketIdx];
+  if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
+  saveUndoState();
+  S.savingsBuckets.splice(activeBucketIdx, 1);
+  save(); closeModal('bucket-modal'); renderAll();
+  showUndoToast('Bucket deleted');
+}
+
+function addToBucket(i) {
+  const input = $('bk-add-'+i);
+  const v = parseFloat(input.value);
+  if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
+  if (!S.savingsBuckets[i]) return;
+  S.savingsBuckets[i].saved = (S.savingsBuckets[i].saved||0) + v;
+  save(); renderAll();
+}
+
+function openAddBucketModal() {
+  $('nb-name').value = ''; $('nb-goal').value = ''; $('nb-account').value = '';
+  $('add-bucket-modal').classList.add('open');
+}
+
+function saveNewBucket() {
+  const name = $('nb-name').value.trim();
+  const goal = parseFloat($('nb-goal').value);
+  const account = $('nb-account').value.trim() || 'Other';
+  if (!name || isNaN(goal) || goal <= 0) { alert('Enter a name and goal amount.'); return; }
+  if (!S.savingsBuckets) S.savingsBuckets = [];
+  if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
+  S.savingsBuckets.push({id: S.nextBucketId++, name, goal, saved:0, account});
+  save(); closeModal('add-bucket-modal'); renderAll();
+}
+
+function renderSpendingCoach() {
+  const c = $('spending-coach'); if (!c) return;
+  const liveBal = getLiveBal();
+  const days = daysLeft(S.payday);
+  const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
+  const avgDaily = getAvgDailySpend();
+
+  let html = '';
+
+  // Category overspend flags — exclude Debt repayment (not discretionary spend)
+  const cats = {};
+  S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => { const k = t.cat||'Other'; cats[k] = (cats[k]||0)+t.amt; });
+  const overCats = Object.entries(cats).filter(([k,v]) => v > 200);
+  if (overCats.length) {
+    const income = S.income || 7282;
+    const flags = overCats.map(([k,v]) => {
+      const pct = Math.round((v/income)*100);
+      return '<div class="alert bad" style="margin-bottom:8px"><strong>'+k+':</strong> You spent '+fmt(v)+' this cycle — that\'s '+pct+'% of your '+fmt(income)+' income.</div>';
+    }).join('');
+    html += flags;
+  }
+
+  // Bill coverage trajectory alert
+  if (liveBal - (avgDaily * days) < allBillsDue) {
+    const nextBill = BILLS.filter(b => b.recurring !== false).sort((a,b) => {
+      const today = new Date().getDate();
+      const da = a.day >= today ? a.day - today : 31 - today + a.day;
+      const db = b.day >= today ? b.day - today : 31 - today + b.day;
+      return da - db;
+    })[0];
+    const billName = nextBill ? nextBill.name : 'upcoming bills';
+    html += '<div class="alert bad" style="margin-bottom:8px"><strong>At this rate you will not cover '+billName+' before payday.</strong> Reduce daily spending now.</div>';
+  }
+
+  c.innerHTML = html ? '<div style="padding:0 20px 12px">'+html+'</div>' : '';
+}
+
+function addBonus() { S.bonuses.push({id:S.bid++, label:'', amt:0}); save(); renderBonusList(0,0); }
+function renderBonusList(bonusTotal, safe) {
+  const c = $('bonus-list'); if (!c) return;
+  c.innerHTML = S.bonuses.map(b => '<div class="bonus-row"><input class="s-input" type="text" placeholder="What is it?" value="'+b.label+'" oninput="updBonus('+b.id+',\'label\',this.value)" style="flex:2"><input class="s-input" type="number" placeholder="$" value="'+(b.amt||'')+'" oninput="updBonus('+b.id+',\'amt\',+this.value)" inputmode="decimal"><button class="rm-btn" onclick="rmBonus('+b.id+')">&#x00D7;</button></div>').join('');
+  const el = $('bonus-impact'); if (!el) return;
+  el.innerHTML = bonusTotal > 0 ? '<div class="alert ok" style="margin-top:10px">+'+fmt(bonusTotal)+' expected. Safe-to-spend: '+fmtS(safe)+'.</div>' : '';
+}
+function updBonus(id, f, v) { const b = S.bonuses.find(x => x.id === id); if (b) { b[f] = v; save(); renderAll(); } }
+function rmBonus(id) { S.bonuses = S.bonuses.filter(x => x.id !== id); save(); renderBonusList(0,0); renderAll(); }
+
+function setSeg(s) { S.seg = s; ['1m','3m','6m'].forEach(x => $('sg-'+x).classList.toggle('on', x === s)); renderCutSliders(); }
+
+function renderCutSliders() {
+  const c = $('cut-sliders'); if (!c) return;
+  const mult = S.seg === '1m' ? 1 : S.seg === '3m' ? 3 : 6;
+
+  // Change 4: Use actual transaction data instead of static slider baselines
+  const cats = {};
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+
+  // Monthly reference baselines per category
+  const baselines = {
+    'Food / Coffee': 480, 'Entertainment': 750, 'Transport / Fuel': 300,
+    'Shopping': 300, 'Health': 100, 'Subscriptions': 95, 'Other': 300
+  };
+
+  if (Object.keys(cats).length === 0) {
+    c.innerHTML = '<div class="empty-state" style="padding:12px 0">No transactions logged yet. Log spending to see real category analysis and where to cut.</div>';
+    $('cut-saving').textContent = '$0';
+    $('cut-saving').style.color = 'var(--text3)';
+    $('cut-desc').textContent = 'log spending to activate real analysis';
+    $('cut-bar').style.width = '0%';
+    $('cut-bar').style.background = 'var(--bg5)';
+    return;
+  }
+
+  const sorted = Object.entries(cats).sort((a,b) => b[1]-a[1]);
+  let totalPotential = 0;
+
+  const rows = sorted.map(([cat, spent], i) => {
+    const baseline = baselines[cat] || 200;
+    const over = spent - baseline;
+    const isOver = over > 0;
+    // Bar width: 100% = at baseline; overflow shown as full red bar
+    const barPct = Math.min(100, Math.round((spent / Math.max(baseline, spent)) * 100));
+    const barCol = isOver ? 'var(--red)' : 'var(--green)';
+    const cut = isOver ? Math.round(over * 0.5) : 0;
+    totalPotential += cut;
+    const worstBadge = isOver && i === 0
+      ? '<span style="font-size:9px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:middle">WORST</span>'
+      : '';
+    return '<div style="margin-bottom:16px">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">' +
+      '<span style="font-size:13px;color:var(--text2);font-weight:500">'+cat+worstBadge+'</span>' +
+      '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(isOver?'var(--red)':'var(--text)')+'">'+fmt(spent)+'</span>' +
+      '</div>' +
+      '<div style="height:6px;background:var(--bg5);border-radius:3px;overflow:hidden;margin-bottom:5px">' +
+      '<div style="width:'+barPct+'%;height:6px;border-radius:3px;background:'+barCol+';transition:width .4s"></div></div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">' +
+      '<span>baseline: '+fmt(baseline)+'/mo</span>' +
+      (isOver
+        ? '<span style="color:var(--red)">+'+fmt(over)+' over &mdash; cut ~'+fmt(cut)+'/mo</span>'
+        : '<span style="color:var(--green)">'+fmt(baseline-spent)+' under &#x2713;</span>') +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">You actually spent '+fmt(spent)+' this month</div>' +
+      '</div>';
+  }).join('');
+
+  c.innerHTML = rows;
+
+  const totalSaved = totalPotential * mult;
+  $('cut-saving').textContent = fmt(Math.max(0, totalSaved));
+  $('cut-saving').style.color = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
+  $('cut-desc').textContent = 'potential savings over '+mult+' month'+(mult>1?'s':'')+' \u00B7 '+fmt(totalPotential)+'/month if cuts made';
+  const pct = Math.min(100, Math.max(0, (totalPotential / 500) * 100));
+  $('cut-bar').style.width = pct + '%';
+  $('cut-bar').style.background = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
+}
+
+function renderTrend() {
+  const c = $('trend-view'); if (!c) return;
+  const history = S.monthlyHistory || [];
+  if (history.length < 2) { c.innerHTML = '<div class="empty-state">Trend data builds up as you use Slyght each month.</div>'; return; }
+  const cats = {};
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
+    const prev = (history[history.length-1]||{})[k] || 0;
+    const delta = prev > 0 ? Math.round(((v-prev)/prev)*100) : 0;
+    const cls = delta < 0 ? 'better' : delta > 0 ? 'worse' : 'same';
+    return '<div class="trend-row"><div class="trend-lbl">'+k+'</div><div class="trend-vals"><div class="trend-val">'+fmt(v)+'</div><div class="trend-delta '+cls+'">'+(delta===0?'same':delta>0?'+'+delta+'%':delta+'%')+'</div></div></div>';
+  }).join('');
+}
+
+function renderCatBreakdown() {
+  const c = $('cat-breakdown'); if (!c) return;
+  if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
+  // M8: show time period label
+  const cats = {};
+  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  const total = Object.values(cats).reduce((s,v) => s+v, 0);
+  const timePeriodLabel = '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
+  c.innerHTML = timePeriodLabel + Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v],i) => {
+    const pct = Math.round((v/total)*100);
+    const col = CHIP_COLORS[i % CHIP_COLORS.length];
+    return '<div class="txn-row" onclick="openCatModal(\''+k.replace(/'/g,"\\'")+'\')" style="cursor:pointer"><div class="txn-chip" style="background:'+col+'22;color:'+col+'">'+k[0].toUpperCase()+'</div><div class="txn-info"><div class="txn-name">'+k+'</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div><div class="txn-amt" style="color:'+col+'">'+fmt(v)+'</div></div>';
+  }).join('');
+}
+
+function openCatModal(cat) {
+  const txns = S.txns.filter(t => !t.income && (t.cat || 'Other') === cat).slice().reverse();
+  const total = txns.reduce((s,t) => s+t.amt, 0);
+  const el = $('cat-modal-body');
+  if (!el) return;
+  el.innerHTML = '<div style="font-size:11px;color:var(--text3);margin-bottom:10px;font-weight:600;text-transform:uppercase">' + cat + ' — ' + fmt(total) + ' total</div>' +
+    (txns.length ? txns.map(t => {
+      const d = new Date(t.ts);
+      const time = String(d.getDate()).padStart(2,'0') + '/' + (d.getMonth()+1);
+      return '<div class="txn-row"><div class="txn-info"><div class="txn-name">' + (t.note||'—') + '</div><div class="txn-meta">' + time + '</div></div><div class="txn-amt">-' + fmt(t.amt) + '</div></div>';
+    }).join('') : '<div class="empty-state">No transactions in this category.</div>');
+  $('cat-modal-title').textContent = cat;
+  $('cat-modal').classList.add('open');
+}
+
+function renderDashTxns() {
+  const c = $('dash-txns');
+  const recent = S.txns.slice(-4).reverse();
+  if (!recent.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
+  c.innerHTML = recent.map(t => {
+    const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
+    const d = new Date(t.ts);
+    const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+    const flag = t.flagged ? ' <span style="font-size:9px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
+    const isIncome = t.income;
+    const chipCol = isIncome ? 'var(--green)' : col;
+    const amtStr = isIncome ? '<span style="color:var(--green)">+'+fmt(t.amt)+'</span>' : '-'+fmt(t.amt);
+    return '<div class="txn-row"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+esc(t.note)+flag+'</div><div class="txn-meta">'+esc(t.cat)+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
+  }).join('');
+}
+
+function getHabitFlag(note, amt) {
+  if (!note) return null;
+  const l = note.toLowerCase();
+  for (const m of HABIT_MERCHANTS) { if (l.includes(m)) return note; }
+  if (l.includes('uber eats') && amt >= 35) return 'Uber Eats (large)';
+  if ((l.includes('ea sports') || l.includes('steamgames') || l.includes('steam purchase')) && amt >= 50) return 'Gaming spend';
+  return null;
+}
+
+function openQuickLogModal() {
+  $('ql-amt').value = ''; $('ql-note').value = ''; $('ql-cat').value = '';
+  $('ql-recurring').checked = false;
+  $('ql-recurring-fields').style.display = 'none';
+  if ($('ql-day')) $('ql-day').value = '';
+  const overlay = $('quick-log-modal');
+  overlay.classList.add('open');
+  // M7: remove any existing listeners before adding new ones to prevent accumulation
+  if (window.visualViewport) {
+    if (overlay._vvResize) {
+      window.visualViewport.removeEventListener('resize', overlay._vvResize);
+      window.visualViewport.removeEventListener('scroll', overlay._vvScroll);
+    }
+    const reposition = () => {
+      const vv = window.visualViewport;
+      overlay.style.height = vv.height + 'px';
+      overlay.style.top = vv.offsetTop + 'px';
+      overlay.style.bottom = 'auto';
+    };
+    window.visualViewport.addEventListener('resize', reposition);
+    window.visualViewport.addEventListener('scroll', reposition);
+    overlay._vvResize = reposition;
+    overlay._vvScroll = reposition;
+    reposition();
+  }
+  setTimeout(() => $('ql-amt').focus(), 150);
+}
+
+function quickLogTxn() {
+  const amt = parseFloat($('ql-amt').value);
+  const note = $('ql-note').value.trim();
+  const cat = $('ql-cat').value;
+  const recurring = $('ql-recurring').checked;
+  let day = parseInt($('ql-day').value) || new Date().getDate();
+  // C3: clamp bill day to 1-28 when adding recurring
+  if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
+  day = Math.min(28, Math.max(1, day));
+  if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
+  if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
+  // Income: add to balance
+  if (cat === 'Income') {
+    S.bal += amt;
+    S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true});
+    closeModal('quick-log-modal');
+    save(); renderAll();
+    return;
+  }
+  // Expense: deduct from balance immediately
+  S.bal -= amt;
+  const flag = getHabitFlag(note, amt);
+  S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag, _balAffected: true});
+  if (flag) {
+    const bal = fmtC(getLiveBal());
+    const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
+    const msg = HABIT_MSGS[Math.floor(Math.random()*HABIT_MSGS.length)](flag, bal, debt);
+    setTimeout(() => alert('HABIT CHECK\n\n' + msg), 100);
+  }
+  if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
+  closeModal('quick-log-modal');
+  save(); renderAll();
+}
+
+function rmTxn(i) {
+  if (!confirm('Delete this transaction?')) return;
+  saveUndoState();
+  const t = S.txns[i];
+  // Reverse S.bal only for transactions that updated it when logged
+  if (t && t._balAffected) {
+    if (t.income) S.bal -= t.amt;
+    else S.bal += t.amt;
+  }
+  S.txns.splice(i, 1);
+  save(); renderAll();
+  showUndoToast('Transaction deleted');
+}
+
+function renderSettingsBills() {
+  const c = $('settings-bills'); if (!c) return;
+  c.innerHTML = BILLS.map((b,i) => '<div class="settings-row"><span class="settings-lbl">'+b.name+' <span style="color:var(--text3);font-size:12px">(day '+b.day+')</span></span><input class="settings-input" type="number" value="'+b.amt+'" oninput="BILLS['+i+'].amt=+this.value;save();renderAll()"></div>').join('');
+}
+
+// H4: validate required fields with inline errors instead of alerts
+function saveSettings() {
+  const incomeV = +$('s-income').value;
+  const paydayV = +$('s-payday').value;
+  const incErr = $('s-income-err'), pdErr = $('s-payday-err');
+  if (!incomeV || incomeV <= 0) { if (incErr) incErr.style.display = 'block'; return; }
+  if (incErr) incErr.style.display = 'none';
+  if (!paydayV || paydayV < 1 || paydayV > 28) { if (pdErr) pdErr.style.display = 'block'; return; }
+  if (pdErr) pdErr.style.display = 'none';
+  S.income = incomeV;
+  S.payday = paydayV;
+  // L5: 0 is valid for loan balances (paid off) and vehicle value (no car)
+  const carV = +$('s-car').value;
+  const ccV = +$('s-cc').value;
+  if (!isNaN(carV) && carV >= 0) S.carloan = carV;
+  if (!isNaN(ccV) && ccV >= 0) S.cc = ccV;
+  S.weekdayBudget = +$('s-weekday-budget').value || 60;
+  S.weekendBudget = +$('s-weekend-budget').value || 180;
+  S.wrxValue = +$('s-wrx-value').value; // 0 valid (no vehicle)
+  if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
+  if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
+  if ($('s-debt-strategy')) S.debtStrategy = $('s-debt-strategy').value;
+  const np = $('s-pin').value;
+  if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
+  save(); renderAll();
+}
+
+function checkAfford() {
+  const amt = parseFloat($('aff-amt').value) || 0;
+  const what = $('aff-what').value || 'this';
+  const el = $('aff-verdict'), el2 = $('aff-cuts');
+  if (!amt) { if (el) el.innerHTML = ''; if (el2) el2.innerHTML = ''; return; }
+  const liveBal = getLiveBal();
+  const dueTotal = getBillsDue().reduce((s,b) => s+b.amt, 0);
+  const bonusTotal = S.bonuses.reduce((s,b) => s+(+b.amt||0), 0);
+  const bucketTotalAff = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  // H8: deduct bucketTotal so affordability matches getMaxDay() universe
+  const safe = liveBal - dueTotal + bonusTotal - bucketTotalAff;
+  const after = safe - amt;
+  const nd = daysLeft(S.payday);
+  // Max/Day after purchase: capped at getDailyBudget()
+  const rawNewMaxDay = nd > 0 ? (liveBal - amt - dueTotal - getDynamicBuffer()) / nd : 0;
+  const newMaxDay = Math.min(getDailyBudget(), rawNewMaxDay);
+  if (liveBal - amt < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No.</strong> You\'d overdraw. Only '+fmtC(liveBal)+' in the account.'; }
+  else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
+  else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
+  else if (newMaxDay < 30) { el.className = 'verdict warn'; el.innerHTML = '<strong>Tight but possible.</strong> '+fmt(after)+' left &#x2014; '+fmt(newMaxDay)+'/day.'; }
+  else { el.className = 'verdict ok'; el.innerHTML = '<strong>Yes, you can.</strong> After '+what+' and bills you\'d have '+fmt(after)+' &#x2014; '+fmt(newMaxDay)+'/day.'; if (el2) el2.innerHTML = ''; return; }
+  if (after < 0 || newMaxDay < 20) {
+    // L4: Build "What to cut" from actual txn category spend data
+    const catSpend = {};
+    S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => { catSpend[t.cat||'Other'] = (catSpend[t.cat||'Other']||0) + t.amt; });
+    const cuts = Object.entries(catSpend).sort((a,b) => b[1]-a[1]).map(([n,s]) => ({n, s}));
+    if (!cuts.length) cuts.push({n:'Discretionary spending', s: 200}); // fallback if no data
+    let cum = 0, rows = '';
+    for (const d of cuts) {
+      cum += d.s; const covers = cum >= amt;
+      rows += '<div class="cut-row"><div class="cut-dot" style="background:'+(covers?'var(--green-dim)':'var(--amber-dim)')+';color:'+(covers?'var(--green)':'var(--amber)')+'">'+(covers?'&#x2713;':'&#x2192;')+'</div><div class="cut-label">'+d.n+'</div><div class="cut-save">'+fmt(d.s)+(covers?' &#x2713;':'')+'</div></div>';
+      if (covers) break;
+    }
+    if (el2) el2.innerHTML = '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 6px">What to cut to afford it</div>' + rows;
+  }
+}
+
+function updateExport() {
+  const el = $('export-box'); if (!el) return;
+  el.textContent = JSON.stringify({S, BILLS, exported: new Date().toISOString()});
+}
+
+function copyExport() {
+  const d = JSON.stringify({S, BILLS, exported: new Date().toISOString()});
+  navigator.clipboard.writeText(d).then(() => { event.target.textContent = 'Copied!'; setTimeout(() => event.target.textContent = 'Copy Export Code', 2000); }).catch(() => {});
+}
+
+function doImport() {
+  const raw = $('import-area').value.trim(), msg = $('import-msg');
+  try {
+    const p = JSON.parse(raw);
+    if (p.S) {
+      // Merge txns by ts (dedup) — never overwrite existing transactions
+      const existingKeys = new Set(S.txns.map(t => t.id != null ? t.id : t.ts));
+      const incoming = (p.S.txns || []).filter(t => !existingKeys.has(t.id != null ? t.id : t.ts));
+      const mergedTxns = [...S.txns, ...incoming];
+      S = {...S, ...p.S, txns: mergedTxns};
+    }
+    // L2: validate imported BILLS schema — skip invalid entries and warn
+    if (p.BILLS) {
+      const validBills = p.BILLS.filter(b => typeof b.name === 'string' && b.name.length > 0 && b.amt > 0 && b.day >= 1 && b.day <= 28);
+      const skipped = p.BILLS.length - validBills.length;
+      BILLS = validBills;
+      if (skipped > 0) { msg.style.color = 'var(--amber)'; msg.textContent += ' ⚠ ' + skipped + ' bill(s) skipped (invalid day/amount).'; }
+    }
+    save(); renderAll();
+    const preserved = S.txns.length;
+    msg.style.color = 'var(--green)';
+    msg.textContent = 'Data updated \u2014 ' + preserved + ' transaction' + (preserved !== 1 ? 's' : '') + ' preserved.';
+    $('import-area').value = '';
+  } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid data. Paste the full export code.'; }
+}
+
+// C4: clear all seed flags so onboarding shows after a reset
+function resetAll() {
+  if (confirm('Reset all Slyght data? This cannot be undone.')) {
+    saveUndoState();
+    localStorage.removeItem(STORAGE_KEY);
+    SEED_FLAGS.forEach(f => localStorage.removeItem(f));
+    location.reload();
+  }
+}
+
+// L3: Undo system — save snapshot before destructive actions, restore on tap
+let _undoTimer = null;
+function saveUndoState() {
+  try { S._prevState = JSON.stringify({S: Object.assign({}, S, {_prevState: null}), BILLS: BILLS.slice()}); } catch(e) {}
+}
+function showUndoToast(msg) {
+  if (_undoTimer) clearTimeout(_undoTimer);
+  const toast = $('undo-toast');
+  if (!toast) return;
+  toast.textContent = msg + ' — Tap to undo';
+  toast.style.display = 'block';
+  _undoTimer = setTimeout(() => { toast.style.display = 'none'; _undoTimer = null; }, 5000);
+}
+function undoLastAction() {
+  if (!S._prevState) return;
+  try {
+    const prev = JSON.parse(S._prevState);
+    S = Object.assign({}, S, prev.S);
+    if (prev.BILLS) BILLS = prev.BILLS;
+    save(); renderAll();
+    const toast = $('undo-toast');
+    if (toast) toast.style.display = 'none';
+    if (_undoTimer) { clearTimeout(_undoTimer); _undoTimer = null; }
+  } catch(e) {}
+}
+
+// ── CHAT / SLYGHT AI ──────────────────────────────────────────────────────
+
+let _chatRendering = false;
+
+function buildSystemPrompt() {
+  // ── PART 1: Snapshot all live values ─────────────────────────────────────
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-AU', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+  const liveBal = getLiveBal();
+  const days = daysLeft(S.payday);
+  const maxDay = getMaxDay();
+  const todaySpent = getTodaySpent();
+  const dailyBudget = getDailyBudget();
+  const surplus = getGenuineSurplus();
+  const nw = getNetWorth();
+  const avgDaily = getAvgDailySpend();
+  const buckets = S.savingsBuckets || [];
+  const bucketTotal = buckets.reduce((s,b) => s+(b.saved||0), 0);
+  const wrxValue = S.wrxValue || 0;
+
+  // ── PART 2: Debts, bills, transactions ───────────────────────────────────
+  const activeDebts = (S.debts||[]).filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+  const billsDue = getBillsDue();
+
+  // Bills paid this month
+  const paidBillsThisMonth = getExpandedBills().filter(b => {
+    if (!S.paidBills || b.recurring === false) return false;
+    const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
+    return !!S.paidBills[key];
+  });
+
+  const recentTxns = (S.txns||[]).slice(-10).reverse();
+
+  // Month-to-date performance
+  const mtdIncome = (S.txns||[]).filter(t => t.income).reduce((s,t) => s+t.amt, 0);
+  const mtdDiscretionary = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
+  const mtdDebtPaid = (S.txns||[]).filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
+
+  // ── PART 3: Build text sections ──────────────────────────────────────────
+  const debtList = activeDebts.length
+    ? activeDebts.map(d => '- P'+(d.priority||'?')+' '+d.name+': $'+d.amt.toFixed(2)+
+        (d.rate>0?' @ '+d.rate+'% p.a.':'')+
+        (d.delayed?' [PAYMENT ARRANGED]':'')+
+        (d.delayDate?' due '+d.delayDate:' (ASAP)')+
+        (d.notes?' \u2014 '+d.notes:'')).join('\n')
+    : '- No active immediate debts';
+
+  const billsList = billsDue.length
+    ? billsDue.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (day '+b.day+')').join('\n')
+    : '- No bills due before payday';
+
+  const paidBillsList = paidBillsThisMonth.length
+    ? paidBillsThisMonth.map(b => '- '+b.name+': $'+b.amt.toFixed(2)+' (PAID)').join('\n')
+    : '- None yet';
+
+  const txnList = recentTxns.length
+    ? recentTxns.map(t => {
+        const d = new Date(t.ts);
+        return '- '+d.getDate()+'/'+(d.getMonth()+1)+': '+t.note+' \u2014 '+(t.income?'+':'-')+'$'+t.amt.toFixed(2)+' ('+t.cat+')';
+      }).join('\n')
+    : '- No transactions logged';
+
+  const bucketList = buckets.length
+    ? buckets.map(b => '- '+b.name+': $'+(b.saved||0).toFixed(2)+' saved of $'+b.goal+' goal').join('\n')
+    : '- No savings buckets';
+
+  const safeToday = maxDay > 0
+    ? '$'+maxDay.toFixed(2)+'/day avg remaining (daily budget: $'+dailyBudget.toFixed(2)+', spent today: $'+todaySpent.toFixed(2)+', remaining today: $'+Math.max(0, dailyBudget - todaySpent).toFixed(2)+')'
+    : '$0 (daily budget exhausted or bills exceed balance)';
+
+  // ── PART 4: Anti-double-counting chain-of-thought rules ──────────────────
+  const antiDoubleCount =
+    'CRITICAL — NEVER DOUBLE-COUNT (read before every financial answer):\n'+
+    '1. S.bal ($'+liveBal.toFixed(2)+') IS the live bank account balance. It already includes income received. NEVER add income to it.\n'+
+    '2. Bills are auto-paid from S.bal when due. NEVER subtract them again manually.\n'+
+    '3. S.txns is a HISTORY LOG only. It does NOT change S.bal retroactively.\n'+
+    '4. Debt repayments in txns already reduced S.bal when paid. NEVER subtract them again.\n'+
+    '5. When computing "money available", start from S.bal ($'+liveBal.toFixed(2)+') and subtract only future obligations (upcoming bills, buffer). That is all.\n'+
+    '6. The "genuine surplus" ($'+surplus.toFixed(2)+') has already deducted upcoming bills, living reserve, and buffer. Trust it.\n'+
+    '7. If payday has been received ('+S.paydayReceived+'), stop referencing income as incoming — it is already in S.bal.';
+
+  // ── PART 5: Assemble full prompt ─────────────────────────────────────────
+  return 'You are SLYGHT, a brutally honest personal finance coach for John. You have complete real-time access to all his financial data.\n\n'+
+    antiDoubleCount+'\n\n'+
+    '═══ FINANCIAL STATE ═══\n'+
+    '- Today: '+todayStr+'\n'+
+    '- Live balance (Virgin Money): $'+liveBal.toFixed(2)+'\n'+
+    '- Monthly income: $'+(S.income||7282)+'\n'+
+    '- Payday: '+(S.payday||15)+'th of each month\n'+
+    '- Payday received this month: '+(S.paydayReceived?'YES — income is already in balance':'NO — income not yet landed')+'\n'+
+    '- Days until next payday: '+days+'\n\n'+
+    '═══ IMMEDIATE DEBTS (priority order) ═══\n'+debtList+'\n\n'+
+    '═══ LONG-TERM LIABILITIES ═══\n'+
+    '- Car loan: $'+(S.carloan||0).toFixed(2)+' at 9.87% \u2014 $387.69 fortnightly\n'+
+    '- Credit card: $'+(S.cc||0).toFixed(2)+' at 19.99%\n\n'+
+    '═══ BILLS DUE BEFORE NEXT PAYDAY ═══\n'+billsList+'\n\n'+
+    '═══ BILLS ALREADY PAID THIS MONTH ═══\n'+paidBillsList+'\n\n'+
+    '═══ RECENT TRANSACTIONS (newest first) ═══\n'+txnList+'\n\n'+
+    '═══ SAVINGS BUCKETS ═══\n'+bucketList+'\n\n'+
+    '═══ MAJOR ASSETS ═══\n'+
+    '- WRX (estimated value): $'+wrxValue.toFixed(2)+'\n'+
+    '- Savings buckets: $'+bucketTotal.toFixed(2)+'\n\n'+
+    '═══ KEY METRICS ═══\n'+
+    '- Safe to spend: '+safeToday+'\n'+
+    '- Genuine surplus (after bills + buffer): $'+surplus.toFixed(2)+'\n'+
+    '- Net worth: $'+nw.net.toFixed(2)+' (assets: $'+nw.assets.toFixed(2)+', liabilities: $'+nw.liabilities.toFixed(2)+')\n'+
+    '- Average daily spend: $'+avgDaily.toFixed(2)+'\n'+
+    '- Debt repayment strategy: '+(S.debtStrategy||'avalanche')+'\n\n'+
+    '═══ MONTH-TO-DATE ═══\n'+
+    '- Income logged: $'+mtdIncome.toFixed(2)+'\n'+
+    '- Discretionary spending: $'+mtdDiscretionary.toFixed(2)+'\n'+
+    '- Debt repayments made: $'+mtdDebtPaid.toFixed(2)+'\n\n'+
+    '═══ PERSONALITY ═══\n'+
+    '- Direct, honest, sometimes harsh but always constructive\n'+
+    '- Call out bad spending habits by name\n'+
+    '- Celebrate wins genuinely\n'+
+    '- Give specific actionable advice, never vague\n'+
+    '- John has a weed habit and spending addiction he is working on \u2014 be supportive but firm\n'+
+    '- Reference specific numbers from his actual data above, never generic advice\n'+
+    '- If asked about a purchase, check against real surplus ($'+surplus.toFixed(2)+') and give a real yes/no\n'+
+    '- Never say "I cannot access real-time data" \u2014 you have all his data above\n'+
+    '- Keep responses concise and mobile-friendly \u2014 short paragraphs, no walls of text\n'+
+    '- Use dollar amounts and specific dates when relevant';
+}
+
+function renderChatTab() {
+  const msgs = $('chat-messages');
+  if (!msgs) return;
+  if (!S.apiKey) {
+    msgs.innerHTML = '<div class="chat-key-screen">' +
+      '<div style="font-family:var(--mono);font-size:36px;font-weight:700;letter-spacing:-2px;margin-bottom:10px;color:var(--text)">SLYGHT AI</div>' +
+      '<div style="font-size:14px;color:var(--text2);margin-bottom:28px;line-height:1.7;max-width:300px">Enter your Anthropic API key to activate SLYGHT AI</div>' +
+      '<input id="chat-key-input" type="password" class="s-input" placeholder="sk-ant-api03-..." style="width:100%;margin-bottom:12px;font-family:var(--mono);font-size:13px;letter-spacing:.03em" autocomplete="off">' +
+      '<button onclick="saveChatKey()" class="submit-btn">Activate SLYGHT AI</button>' +
+      '<div style="font-size:11px;color:var(--text3);margin-top:20px;line-height:1.7;max-width:280px">Your key is stored locally on this device only.</div>' +
+      '</div>';
+    return;
+  }
+  renderChatMessages();
+}
+
+function renderChatMessages() {
+  const msgs = $('chat-messages');
+  if (!msgs) return;
+  const history = S.chatHistory || [];
+  if (!history.length) {
+    msgs.innerHTML = '<div style="padding:8px 0 16px">' +
+      '<div style="font-size:13px;color:var(--text3);text-align:center;margin-bottom:14px;padding-top:8px">Ask SLYGHT anything about your finances</div>' +
+      ['Can I afford something today?','What should I pay off first?','How am I tracking this month?','What\'s my real financial position?']
+        .map(p => '<button class="quick-prompt-btn" onclick="sendQuickPrompt(\''+p.replace(/'/g, "\\'")+'\')">'+p+'</button>')
+        .join('') +
+      '</div>';
+    return;
+  }
+  msgs.innerHTML = history.map(m => {
+    const d = new Date(m.ts || Date.now());
+    const t = String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    const isUser = m.role === 'user';
+    const content = isUser ? esc(m.content) : esc(m.content).replace(/\n/g,'<br>');
+    return '<div class="msg-wrap '+(isUser?'msg-wrap-user':'msg-wrap-assistant')+'">' +
+      '<div class="msg-bubble '+(isUser?'msg-user':'msg-assistant')+'">'+content+'</div>' +
+      '<div class="msg-time">'+t+'</div>' +
+      '</div>';
+  }).join('');
+}
+
+function showTypingIndicator() {
+  const msgs = $('chat-messages');
+  if (!msgs || $('chat-typing')) return;
+  const div = document.createElement('div');
+  div.id = 'chat-typing';
+  div.className = 'msg-wrap msg-wrap-assistant';
+  div.innerHTML = '<div class="msg-bubble msg-assistant"><div class="typing-dots"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>';
+  msgs.appendChild(div);
+  scrollChatToBottom();
+}
+
+function hideTypingIndicator() {
+  const el = $('chat-typing');
+  if (el) el.remove();
+}
+
+function scrollChatToBottom() {
+  const msgs = $('chat-messages');
+  if (msgs) setTimeout(() => { msgs.scrollTop = msgs.scrollHeight; }, 30);
+}
+
+async function sendChatMessage() {
+  const input = $('chat-input');
+  const text = (input ? input.value : '').trim();
+  if (!text || !S.apiKey || _chatRendering) return;
+
+  input.value = '';
+  if (input) { input.style.height = ''; }
+
+  if (!S.chatHistory) S.chatHistory = [];
+  S.chatHistory.push({role:'user', content:text, ts:Date.now()});
+  if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+  save();
+
+  _chatRendering = true;
+  renderChatMessages();
+  scrollChatToBottom();
+  showTypingIndicator();
+
+  const btn = $('chat-send-btn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const apiMessages = (S.chatHistory||[])
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && !m._isError)
+      .slice(-20)
+      .map(m => ({role:m.role, content:m.content}));
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': S.apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        system: buildSystemPrompt(),
+        messages: apiMessages
+      })
+    });
+
+    hideTypingIndicator();
+
+    let reply;
+    if (resp.ok) {
+      const data = await resp.json();
+      reply = (data.content && data.content[0] && data.content[0].text) || 'No response received.';
+    } else if (resp.status === 401) {
+      reply = 'API key invalid \u2014 tap the \uD83D\uDD11 icon in the top right to update it.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+    } else if (resp.status === 429) {
+      reply = 'Too many messages \u2014 wait a moment and try again.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+    } else {
+      reply = 'Couldn\'t reach SLYGHT AI \u2014 check your connection.';
+      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
+      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+    }
+
+    S.chatHistory.push({role:'assistant', content:reply, ts:Date.now()});
+    if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+    save();
+  } catch(e) {
+    hideTypingIndicator();
+    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI \u2014 check your connection.', ts:Date.now(), _isError:true});
+    save();
+  }
+
+  _chatRendering = false;
+  if (btn) btn.disabled = false;
+  renderChatMessages();
+  scrollChatToBottom();
+}
+
+function sendQuickPrompt(text) {
+  const input = $('chat-input');
+  if (input) input.value = text;
+  sendChatMessage();
+}
+
+function clearChat() {
+  if (!(S.chatHistory && S.chatHistory.length)) return;
+  if (!confirm('Clear chat history?')) return;
+  S.chatHistory = [];
+  save();
+  renderChatMessages();
+}
+
+function toggleChatBudget() {
+  const section = $('chat-budget-section');
+  const btn = $('chat-budget-btn');
+  if (!section) return;
+  const isOpen = section.style.display !== 'none';
+  section.style.display = isOpen ? 'none' : 'block';
+  if (btn) {
+    btn.textContent = isOpen ? 'Budget \u25BE' : 'Budget \u25B4';
+    btn.classList.toggle('open', !isOpen);
+  }
+  if (!isOpen) { renderCutSliders(); renderSavingsBuckets(); } // targeted renders — avoid re-rendering chat messages
+}
+
+function saveChatKey() {
+  const input = $('chat-key-input');
+  if (!input) return;
+  const key = input.value.trim();
+  if (!key) { alert('Enter an API key.'); return; }
+  S.apiKey = key;
+  save();
+  renderChatTab();
+}
+
+function openChatKeyModal() {
+  const current = S.apiKey || '';
+  const masked = current ? current.slice(0,12) + '...' : '';
+  const key = prompt('Anthropic API key' + (masked ? ' (current: '+masked+')' : '') + ':', '');
+  if (key === null) return;
+  if (!key.trim()) { S.apiKey = ''; } else { S.apiKey = key.trim(); }
+  save();
+  renderChatTab();
+}
+
+function chatInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+}
+
+function chatInputResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(120, el.scrollHeight) + 'px';
+}
+
+// ── END CHAT ──────────────────────────────────────────────────────────────
+
+$('ob-bal').addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
+
+// UX6: Offline indicator badge
+function updateOnlineStatus() {
+  const badge = $('offline-badge');
+  if (badge) badge.style.display = navigator.onLine ? 'none' : 'block';
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+if ('serviceWorker' in navigator) {
+  // Unregister any old broken service workers first
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    registrations.forEach(reg => reg.unregister());
+  }).then(() => {
+    // Register fresh
+    navigator.serviceWorker.register('/slyght/sw.js').catch(() => {});
+  });
+}
+
+// Seed v10: real state 14 Apr 2026. S.bal=3345.99, getLiveBal()=6664.82
+// Math: 3345.99 - (2500+1170+250.84+141.76+0.90) + (7282.33+100) = 3345.99 - 4063.50 + 7382.33 = 6664.82
+(function seedV11() {
+  if (localStorage.getItem('slyght_seeded_v11')) return;
+  // S.bal = 3345.99 is the real Virgin Money balance — single source of truth.
+  // Transactions are HISTORY LOG ONLY — no _balAffected flag, never recalculated into balance.
+  const t = Date.parse('2026-04-14T09:00:00');
+  const seed = {
+    "S":{
+      "bal":3345.99,
+      "txns":[
+        {"id":0,"amt":7282.33,"note":"Salary \u2014 Manhattan Associates","cat":"Income","ts":t+1000,"income":true},
+        {"id":1,"amt":2500,"note":"CC repayment \u2014 Virgin Money (pending)","cat":"Debt repayment","ts":t+2000,"income":false},
+        {"id":2,"amt":1170,"note":"Car Loan Firstmac \u2014 regular + missed payment + fees","cat":"Debt repayment","ts":t+3000,"income":false},
+        {"id":3,"amt":250.84,"note":"Afterpay \u2014 cleared","cat":"Debt repayment","ts":t+4000,"income":false},
+        {"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":t+5000,"income":false},
+        {"id":5,"amt":0.90,"note":"China Holiday round-ups","cat":"Savings","ts":t+6000,"income":false},
+        {"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":t+7000,"income":true}
+      ],
+      "bonuses":[],"bid":0,"seg":"1m","income":7282,"payday":15,
+      "carloan":23214.32,"cc":4658.39,"pin":"2103","carloanOriginal":37400,"ccLimit":6000,
+      "monthlyHistory":[],"income_log":[],"iid":0,
+      "debts":[
+        {"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0},
+        {"id":1,"name":"Owed to Michael","amt":550,"paid":false,"rate":0,"priority":1,"notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},
+        {"id":2,"name":"Credit Card (overdue)","amt":187.35,"paid":false,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Min paid \u2014 next due 6 May"},
+        {"id":3,"name":"WRX fines + rego","amt":1254,"paid":false,"rate":0,"priority":3,"notes":"LIST THE WRX THIS WEEK"},
+        {"id":4,"name":"Pet Insurance Reconciliation","amt":120.47,"paid":false,"rate":0,"priority":4},
+        {"id":5,"name":"Parking Fine","amt":140,"paid":false,"rate":0,"priority":5}
+      ],
+      "nextDebtId":6,
+      "savingsBuckets":[
+        {"id":0,"name":"China Holiday","goal":4000,"saved":67.22,"account":"Virgin Money"},
+        {"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},
+        {"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},
+        {"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}
+      ],
+      "nextBucketId":4,
+      "paydayReceived":true,"paydayReceivedDate":"2026-04-14",
+      "weekdayBudget":60,"weekendBudget":180,"lastOpenDate":"2026-04-14",
+      "wrxValue":21000,"debtStrategy":"avalanche",
+      "chatHistory":[],"apiKey":""
+    },
+    "BILLS":[
+      {"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},
+      {"name":"Car Loan \u2014 Firstmac","amt":387.69,"day":1,"tag":"Loan","recurring":true,"freq":"fortnightly"},
+      {"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},
+      {"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},
+      {"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},
+      {"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},
+      {"name":"Pet Insurance \u2014 Bowtie","amt":60.20,"day":8,"tag":"Fixed","recurring":true},
+      {"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},
+      {"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},
+      {"name":"Afterpay instalment","amt":121.16,"day":16,"tag":"Debt repayment","recurring":false},
+      {"name":"Optus \u2014 Phone + Internet","amt":199,"day":16,"tag":"Fixed","recurring":true},
+      {"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},
+      {"name":"Parking \u2014 CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},
+      {"name":"Pet Food","amt":45,"day":25,"tag":"Fixed","recurring":true},
+      {"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},
+      {"name":"Spotify","amt":15.99,"day":28,"tag":"Streaming","recurring":true},
+      {"name":"Food at Work","amt":200,"day":28,"tag":"Variable","recurring":true}
+    ]
+  };
+  localStorage.setItem('slyght_v5', JSON.stringify(seed));
+  localStorage.setItem('slyght_seeded_v11', '1');
+  localStorage.setItem('slyght_seeded_v12', '1'); // v12 included in v11 fresh install
+})();
+
+// Seed v12: patch apiKey into existing v11 installs
+(function seedV12() {
+  if (localStorage.getItem('slyght_seeded_v12')) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (d.S && !d.S.apiKey) {
+        d.S.apiKey = '';
+        if (!d.S.chatHistory) d.S.chatHistory = [];
+        localStorage.setItem('slyght_v5', JSON.stringify(d));
+      }
+    }
+  } catch(e) {}
+  localStorage.setItem('slyght_seeded_v12', '1');
+})();
+
+load();
+const obEl = $('ob-days-display');
+if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
+// Always show splash first — splashTap() handles routing
+function splashTap() {
+  $('splash-screen').style.display = 'none';
+  if ((S.txns && S.txns.length > 0) || BILLS.length > 0) {
+    showMain();
+  } else {
+    $('ob-screen').style.display = 'block';
+  }
+}

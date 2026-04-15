@@ -1,0 +1,239 @@
+Read index.html fully. Run node guardian-all.js first.
+Previous run fixed bills tab and dashboard. 
+Complete the remaining 8 agent scopes below.
+
+AGENT 3 — QA LEAD — Run complete test suite:
+Test every user journey and report ✓/✗ for each:
+
+SUITE 1 — Bill marked paid:
+- Bill disappears from Due Today ✓/✗
+- Bill disappears from This Week breakdown ✓/✗
+- Bill disappears from Monthly table ✓/✗
+- getBillsDue() total decreases ✓/✗
+- getGenuineSurplus() increases ✓/✗
+- getMaxDay() increases ✓/✗
+- Calendar dot removed ✓/✗
+- Notification removed ✓/✗
+
+SUITE 2 — Debt cleared:
+- S.bal decreases by debt amount ✓/✗
+- Transaction logged in S.txns ✓/✗
+- Debt tile disappears ✓/✗
+- getActiveDebtsDueBeforePayday() decreases ✓/✗
+- getGenuineSurplus() increases ✓/✗
+- Net worth improves ✓/✗
+- Celebration animation shows ✓/✗
+- Notification removed ✓/✗
+
+SUITE 3 — Transaction logged:
+- S.bal decreases ✓/✗
+- Transaction in history ✓/✗
+- Safe/Day updates immediately ✓/✗
+- TODAY metric updates ✓/✗
+- Analysis categories update ✓/✗
+- Over by alert uses discretionary only ✓/✗
+- Auto bill matching runs ✓/✗
+
+SUITE 4 — Edge cases:
+- Transaction same amount as bill triggers auto-match ✓/✗
+- Non-recurring bill vanishes from ALL calculations ✓/✗
+- daysLeft() returns minimum 1 never 0 ✓/✗
+- All debts paid — surplus suggestion shows "No active debts" ✓/✗
+- Balance exactly $0 — no division by zero crash ✓/✗
+- February 28 — all day calculations correct ✓/✗
+- Fortnightly bill on same day as payday — handled correctly ✓/✗
+
+Fix every failing test immediately. Report results.
+
+AGENT 4 — UX DESIGN LEAD:
+Fix dashboard information hierarchy.
+
+PROBLEM: "Over by $819 today" is stale — those were debt repayments not overspending.
+The TODAY metric and Over by alert must ONLY count discretionary spending.
+Discretionary = everything EXCEPT: Debt repayment, Income, Savings, Bills, Transfer, Loan categories.
+
+Fix getTodayDiscretionarySpend():
+function getTodayDiscretionarySpend() {
+  const today = new Date().toDateString();
+  const NON_DISC = ['Debt repayment','Income','Savings','Bills','Transfer','Loan'];
+  return S.txns
+    .filter(t => {
+      const d = new Date(t.ts || t.date);
+      return d.toDateString() === today && !t.income && !NON_DISC.includes(t.cat);
+    })
+    .reduce((s,t) => s + (t.amt||0), 0);
+}
+
+Wire getTodayDiscretionarySpend() to:
+- TODAY metric tile on dashboard
+- "Over by $X today" alert
+- Daily budget comparison
+
+DASHBOARD HIERARCHY FIXES:
+1. Move Safe/Day to be the LARGEST most prominent metric — it answers "what can I spend today"
+2. Move TODAY discretionary spend directly below Safe/Day
+3. Move SURPLUS to third position
+4. Collapse SLYGHT Score by default — show only the number not the full breakdown
+5. Move personality badge ("The Grinder") below the three metrics
+6. "Over by" alert should only fire if discretionary spend > getDailyBudget()
+7. "At this rate" projection should only show mid-month (day 5+ after payday)
+
+AGENT 5 — BILLS DOMAIN EXPERT (verification):
+Verify all bills fixes from previous run landed correctly.
+Test these specific scenarios:
+- Select April 16 in calendar — Car Loan should show PAID badge not red
+- Check "Due Today" section — Rent $3000 should not appear
+- Check This Week breakdown — paid bills excluded from total
+- Check Monthly table — paid bills show with PAID badge
+- Check getGenuineSurplus() value — should not include paid bill amounts
+If any of these fail, fix them.
+
+Also fix: when ALL bills in a section are paid, show:
+"✅ All bills paid — you're on top of it"
+Not an empty section.
+
+AGENT 6 — DEBT DOMAIN EXPERT:
+Audit and fix the complete debt calculation pipeline.
+
+Verify getActiveDebtsDueBeforePayday() currently returns:
+Expected: Pet Insurance $120.47 only (the only unpaid non-viaRent debt due before May 15)
+CC overdue: paid:true — should be excluded
+Afterpay: paid:true — excluded
+Michael: paid:true — excluded
+WRX debts: paid:true — excluded
+Owed to Mum: viaRent:true — excluded
+Parking Fine: paid:true — excluded
+
+If the function returns anything other than ~$120.47 — find and fix the bug.
+
+Verify surplus suggestion shows Pet Insurance as P1 target.
+Verify payday plan shows:
+- Rent $3,000 (marked paid this month — show as PAID)
+- Car Loan $780 (marked paid this month — show as PAID)
+- Pet Insurance $120.47 — show as outstanding action
+- Owed to Mum: $500 via rent — show as "included in rent"
+
+Fix any incorrect display in payday plan.
+
+AGENT 7 — SECURITY AND DATA ARCHITECT:
+Add screen data validation to UX monitor.
+
+Extend CONSISTENCY.checks to include:
+
+{
+  name: 'No paid bills showing as due on dashboard',
+  check: () => {
+    try {
+      const dueTodayEl = document.getElementById('bills-due-today');
+      if (!dueTodayEl) return true;
+      const billRows = dueTodayEl.querySelectorAll('.bill-row:not(.paid-bill)');
+      for (const row of billRows) {
+        const nameEl = row.querySelector('.row-name, .bill-name');
+        if (!nameEl) continue;
+        const name = nameEl.textContent.trim();
+        const bill = BILLS.find(b => b.name === name);
+        if (bill && isThisMonthlyBillPaid(bill.name, bill.day)) return false;
+      }
+      return true;
+    } catch(e) { return true; }
+  }
+},
+{
+  name: 'Over by alert excludes debt repayments',
+  check: () => {
+    try {
+      const overEl = document.querySelector('[id*="overspend"]');
+      if (!overEl || !overEl.textContent.includes('Over by')) return true;
+      const displayed = parseFloat(overEl.textContent.match(/\$([\d,.]+)/)?.[1]?.replace(',','') || '0');
+      const discretionary = getTodayDiscretionarySpend ? getTodayDiscretionarySpend() : 0;
+      const expected = Math.max(0, discretionary - getDailyBudget());
+      return Math.abs(displayed - expected) < 2;
+    } catch(e) { return true; }
+  }
+},
+{
+  name: 'Paid debts not in surplus calculation',
+  check: () => {
+    try {
+      const debtsDue = getActiveDebtsDueBeforePayday();
+      const paidDebtTotal = S.debts.filter(d => d.paid).reduce((s,d) => s+d.amt, 0);
+      return debtsDue < paidDebtTotal;
+    } catch(e) { return true; }
+  }
+}
+
+AGENT 8 — COMPETITOR ANALYSIS:
+Add these missing features that competitors have:
+
+QUICK ADD 1 — Transaction search/filter in Analysis tab:
+Add a search input at top of transaction list in Analysis tab.
+Filter S.txns by description text as user types.
+Clear button to reset filter.
+
+QUICK ADD 2 — Monthly spending comparison:
+In Analysis tab add a "vs last month" line under each category:
+"Food/Coffee: $33.62 this month (no data last month)"
+Reads from S.monthlyHistory if available.
+
+QUICK ADD 3 — Bill reminder accuracy:
+Add a "Next bill" prominent line on dashboard between the payday bar and the metrics:
+"Next bill: [name] $[amount] in [X] days"
+Shows the most imminent unpaid bill.
+Updates immediately when a bill is marked paid.
+
+MEDIUM EFFORT 1 — Running balance in transaction history:
+In Analysis tab transaction list, show running balance after each transaction:
+Transaction: -$33.62 Groceries → Balance after: $1,466.72
+Calculated from S.bal working backwards through S.txns.
+
+AGENT 9 — FIELD EXPERT:
+Test these exact real-world scenarios and fix friction points:
+
+SCENARIO 1 — "Can I afford $150 today?"
+Tap anywhere → how many taps to get answer?
+If > 2 taps: add a quick affordability shortcut.
+Suggestion: tap the Safe/Day tile → opens quick affordability check inline.
+Type amount → immediate yes/no with reasoning.
+
+SCENARIO 2 — Log a $20 coffee:
+Tap + → type 20 → select Food → tap Log It
+Count taps. Target: 4 taps maximum.
+Is the keyboard in the way? Fix if so.
+Does the category chip remember "Food / Coffee" from last time?
+
+SCENARIO 3 — Check upcoming bills:
+From dashboard, how many taps to see all bills due this month?
+Should be 1 tap to Bills tab.
+Is the monthly table immediately visible without scrolling?
+If not: make monthly table the first thing shown in Bills tab when no bills are due today.
+
+SCENARIO 4 — WRX listing reminder:
+Dashboard should prominently show "WRX not listed — costing $5.63/day"
+This is the single most impactful financial action available.
+Make it impossible to miss.
+
+AGENT 10 — INTEGRATION CONSULTANT:
+Verify and fix the complete integration cascade.
+
+For MARK BILL AS PAID — verify every downstream effect:
+After markBillPaidMonth() runs, trace through renderAll() and verify:
+[ ] getBillsDue() excludes this bill
+[ ] getGenuineSurplus() has increased
+[ ] getMaxDay() has increased  
+[ ] renderBillsGrouped() Due Today/This Week excludes this bill
+[ ] renderCalWeekSummary() This Week total excludes this bill
+[ ] renderCalendar() dot removed for this date
+[ ] calDayClick() panel shows bill as PAID not red
+[ ] getDynamicBuffer() recalculated
+[ ] Payday plan excludes this bill
+[ ] Monthly position card updated
+[ ] Dashboard surplus tile updated
+[ ] Dashboard Safe/Day tile updated
+
+For any cascade step that is NOT happening — fix it.
+
+QUEEN FINAL:
+1. Run node guardian-all.js — must pass
+2. Produce readiness report for all 10 areas
+3. List any remaining blockers
+4. Push with commit "feat: full project team round 2 — QA suite, UX hierarchy, competitor features, integration verification"

@@ -1,0 +1,30 @@
+{
+  "initialized": true,
+  "topology": "hierarchical-mesh",
+  "workers": [
+    "hive-worker-1776162825261-v8tp",
+    "hive-worker-1776163173219-1yhs",
+    "hive-worker-1776163747489-k8in",
+    "hive-worker-1776164677431-3tes",
+    "hive-worker-1776165015340-mp1c",
+    "hive-worker-1776177343242-itsi",
+    "hive-worker-1776248057834-r2on",
+    "hive-worker-1776248980093-j5q5",
+    "hive-worker-1776250356976-wv8r",
+    "hive-worker-1776252128709-9uiw",
+    "hive-worker-1776255162265-jnyd",
+    "hive-worker-1776256263748-9oid"
+  ],
+  "consensus": {
+    "pending": [],
+    "history": []
+  },
+  "sharedMemory": {},
+  "createdAt": "2026-04-14T10:33:43.945Z",
+  "updatedAt": "2026-04-15T12:31:03.749Z",
+  "queen": {
+    "agentId": "queen-1776162823945",
+    "electedAt": "2026-04-14T10:33:43.945Z",
+    "term": 1
+  }
+}
