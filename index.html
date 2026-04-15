@@ -2050,7 +2050,7 @@ function renderAll() {
       const daysLeftVal = daysLeft(S.payday);
       const allBillsDue2 = getBillsDue().reduce((s,b) => s+b.amt, 0);
       const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - getActiveDebtsDueBeforePayday() - getDynamicBuffer()) / daysLeftVal) : 0;
-      overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today' +
+      overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today <span style="font-size:10px;color:var(--text3)">(discretionary only)</span>' +
         (daysLeftVal > 1 ? ' &middot; <span style="color:var(--amber)">Adjusted: ' + fmtC(adjustedDay) + '/day for ' + daysLeftVal + ' days</span>' : '') + '</div>';
     } else {
       overspendEl.innerHTML = '';
@@ -2944,6 +2944,8 @@ function markBillPaidMonth() {
   S.paidBills[key] = true;
   save(); closeModal('bill-modal', true); renderAll();
   if(navigator.vibrate) navigator.vibrate(50);
+  // Immediately remove any notification for this bill — don't wait for heartbeat
+  try { NOTIFY.refresh(); } catch(e) {}
 }
 
 // Undo paid bill — removes paidBills key; only accessible inside the modal to prevent accidental triggers
@@ -4897,6 +4899,8 @@ markDebtPaid = function() {
   const expectedChange = debt ? -debt.amt : 0;
   auditedMutation('MARK_DEBT_PAID_' + (debt?.name || 'unknown') + '_$' + (debt?.amt || 0), expectedChange, () => _origMarkDebtPaid());
   if (typeof SNAPSHOTS !== 'undefined') SNAPSHOTS.autoSnapshot('debt_cleared');
+  // Immediately remove debt notification — don't wait for heartbeat
+  try { NOTIFY.refresh(); } catch(e) {}
 };
 
 const _origUpdateBalance = updateBalanceFromSettings;
@@ -5170,6 +5174,11 @@ const HEALTH = {
     const billNames = (BILLS||[]).map(b => b.name);
     const dupBills = billNames.filter((n,i) => billNames.indexOf(n) !== i);
     if (dupBills.length > 0) warnings.push('Duplicate bill names: ' + dupBills.join(', '));
+    // Validate S.paidBills integrity — auto-heal if corrupted
+    if (!S.paidBills || typeof S.paidBills !== 'object' || Array.isArray(S.paidBills)) {
+      issues.push('S.paidBills invalid — auto-reset to {}');
+      S.paidBills = {};
+    }
     return { issues, warnings, healthy: issues.length === 0 };
   },
   render() {
@@ -5416,6 +5425,27 @@ const UX = {
       (r.issues.length===0&&r.suggestions.length===0?'<div style="color:var(--green);font-size:13px;padding:4px 0">✅ UX looking good this session</div>':'')+
       (r.topFeatures.length>0?'<div style="margin-top:8px;font-size:12px;color:var(--text3)">Most used: '+r.topFeatures.map(f=>esc(f[0])+' ('+f[1]+'×)').join(', ')+'</div>':'')+
       '<div style="margin-top:8px;font-size:11px;color:var(--text3)">Session: '+r.sessionMins+' mins · Missed taps: '+r.missedTapPct+'% · Slow renders: '+r.slowRenders+'</div>';
+  },
+  validateScreenData() {
+    const issues = [];
+    // Check bills tab: no paid bills showing as due without PAID badge
+    document.querySelectorAll('.bill-row').forEach(row => {
+      const nameEl = row.querySelector('.bill-name');
+      if (!nameEl) return;
+      const billName = nameEl.textContent?.replace(/\(same as debt.*?\)/,'').trim();
+      const bill = (typeof BILLS !== 'undefined' ? BILLS : []).find(b => b.name === billName);
+      if (bill && typeof isThisMonthlyBillPaid === 'function' && isThisMonthlyBillPaid(bill.name, bill.day)) {
+        const hasPaidBadge = !!nameEl.querySelector('[class*="paid"], span[style*="green"]') || nameEl.innerHTML.includes('PAID');
+        if (!hasPaidBadge) issues.push('Paid bill showing without PAID badge: ' + billName);
+      }
+    });
+    if (issues.length > 0) {
+      issues.forEach(msg => {
+        try { AUDITOR.log.unshift({action:'screen_data_error', note: msg, ok: false, time: new Date().toISOString(), type:'consistency'}); } catch(e) {}
+      });
+      if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('[UX.validateScreenData]', issues);
+    }
+    return issues;
   },
   init() {
     document.addEventListener('click', (e) => { this.trackTap(e.target, e.target.textContent?.trim()?.substring(0,30)); });
@@ -6211,6 +6241,11 @@ const HEARTBEAT = {
         }));
       }
     } catch(e) {}
+
+    // Every 5 ticks (10 min): validate screen data accuracy
+    if (this.tickCount % 5 === 0) {
+      try { if (typeof UX !== 'undefined') UX.validateScreenData(); } catch(e) {}
+    }
 
     // Every 30 ticks (60 min): refresh notifications
     if (this.tickCount % 30 === 0) {
