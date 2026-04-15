@@ -663,7 +663,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div id="import-msg" style="font-size:13px;margin-top:6px"></div>
       </div>
       <div class="card">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">🔒 All data is stored locally on this device. Nothing is sent to any server.</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">🔒 All data is stored locally on this device. Nothing is sent to any server.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6">📱 SLYGHT data is stored on this device only.<br>To sync between devices: export on one device, import on another.</div>
       </div>
       <div class="card">
         <div class="card-hdr"><div class="card-title" style="color:var(--red)">Danger Zone</div></div>
@@ -1068,7 +1069,7 @@ let S = {
 
 let BILLS = [
   {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:true},
-  {name:'Car Loan — Firstmac', amt:387.69, day:1, tag:'Loan', recurring:true, freq:'fortnightly'},
+  {name:'Car Loan — Firstmac', amt:780, day:16, tag:'Loan', recurring:true, freq:'monthly'},
   {name:'Health Insurance (qtrly avg)', amt:119.04, day:1, tag:'Fixed', recurring:true},
   {name:'Amazon Prime', amt:9.99, day:3, tag:'Subscription', recurring:true},
   {name:'Fuel', amt:110, day:5, tag:'Variable', recurring:true},
@@ -1076,14 +1077,10 @@ let BILLS = [
   {name:'Pet Insurance — Bowtie', amt:60.20, day:8, tag:'Fixed', recurring:true},
   {name:'Claude Plus', amt:34, day:9, tag:'Subscription', recurring:true},
   {name:'Netflix', amt:28.99, day:10, tag:'Streaming', recurring:true},
-  {name:'Afterpay instalment', amt:121.16, day:16, tag:'Debt repayment', recurring:false},
   {name:'Optus — Phone + Internet', amt:199, day:16, tag:'Fixed', recurring:true},
   {name:'YouTube Premium', amt:16.99, day:20, tag:'Streaming', recurring:true},
-  {name:'Parking — CBD Secure', amt:32.32, day:22, tag:'Fixed', recurring:true},
-  {name:'Pet Food', amt:45, day:25, tag:'Fixed', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
   {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
-  {name:'Food at Work', amt:200, day:28, tag:'Variable', recurring:true},
 ];
 
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
@@ -2024,24 +2021,33 @@ function renderAll() {
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
+  const hasData = S.bal > 0 || (S.txns && S.txns.length > 0);
   const _safeMaxDay = isNaN(maxDay) ? 0 : maxDay;
-  const dailyLabel = _safeMaxDay >= dailyBudget ? '\u2605 ' + fmtC(dailyBudget) : (_safeMaxDay > 0 ? fmtC(_safeMaxDay) : '$0');
   const dailyEl = $('m-daily');
-  if (dailyEl) {
-    dailyEl.textContent = dailyLabel;
-    if (maxDay >= dailyBudget) {
-      dailyEl.style.color = 'var(--green)';
-    } else if (maxDay < dailyBudget * 0.5) {
-      dailyEl.style.color = 'var(--red)';
-    } else {
-      dailyEl.style.color = 'var(--amber)';
-    }
-    dailyEl.className = 'met-v';
-  }
   const todaySpent = getTodaySpent();
   const todayEl = $('m-today-spent'), barEl = $('m-today-bar');
-  if (todayEl) { todayEl.textContent = fmt(todaySpent); todayEl.className = 'met-v ' + (todaySpent >= maxDay && maxDay > 0 ? 'bad' : todaySpent >= maxDay * 0.7 ? 'warn' : 'ok'); }
-  if (barEl) { const barPct = maxDay > 0 ? Math.min(100, Math.round((todaySpent/maxDay)*100)) : 0; barEl.style.width = barPct + '%'; barEl.style.background = barPct >= 100 ? 'var(--red)' : barPct >= 70 ? 'var(--amber)' : 'var(--green)'; }
+  if (!hasData) {
+    // No data yet — show onboarding prompt instead of $0
+    if (dailyEl) { dailyEl.textContent = 'Tap balance \u2191'; dailyEl.style.color = 'var(--text3)'; dailyEl.style.fontSize = '13px'; dailyEl.className = 'met-v'; }
+    if (todayEl) { todayEl.textContent = '\u2014'; todayEl.className = 'met-v'; }
+    if (barEl) barEl.style.width = '0%';
+  } else {
+    const dailyLabel = _safeMaxDay >= dailyBudget ? '\u2605 ' + fmtC(dailyBudget) : (_safeMaxDay > 0 ? fmtC(_safeMaxDay) : '$0');
+    if (dailyEl) {
+      dailyEl.textContent = dailyLabel;
+      dailyEl.style.fontSize = '';
+      if (maxDay >= dailyBudget) {
+        dailyEl.style.color = 'var(--green)';
+      } else if (maxDay < dailyBudget * 0.5) {
+        dailyEl.style.color = 'var(--red)';
+      } else {
+        dailyEl.style.color = 'var(--amber)';
+      }
+      dailyEl.className = 'met-v';
+    }
+    if (todayEl) { todayEl.textContent = fmt(todaySpent); todayEl.className = 'met-v ' + (todaySpent >= maxDay && maxDay > 0 ? 'bad' : todaySpent >= maxDay * 0.7 ? 'warn' : 'ok'); }
+    if (barEl) { const barPct = maxDay > 0 ? Math.min(100, Math.round((todaySpent/maxDay)*100)) : 0; barEl.style.width = barPct + '%'; barEl.style.background = barPct >= 100 ? 'var(--red)' : barPct >= 70 ? 'var(--amber)' : 'var(--green)'; }
+  }
   // Overspend rollover display
   const overspendEl = $('dash-overspend');
   if (overspendEl) {
@@ -4780,6 +4786,25 @@ if ('serviceWorker' in navigator) {
   localStorage.setItem('slyght_seeded_v15', '1');
 })();
 
+// Seed v16: remove ghost bills (Parking, Pet Food, Food at Work, Afterpay instalment), fix Car Loan to monthly/day16/780
+(function seedV16() {
+  if (localStorage.getItem('slyght_seeded_v16')) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (raw) {
+      const store = JSON.parse(raw);
+      if (Array.isArray(store.BILLS)) {
+        const GHOST_NAMES = new Set(['Parking \u2014 CBD Secure', 'Pet Food', 'Food at Work', 'Afterpay instalment']);
+        store.BILLS = store.BILLS.filter(b => !GHOST_NAMES.has(b.name));
+        const carLoan = store.BILLS.find(b => b.name && b.name.includes('Car Loan'));
+        if (carLoan) { carLoan.amt = 780; carLoan.day = 16; carLoan.freq = 'monthly'; }
+      }
+      localStorage.setItem('slyght_v5', JSON.stringify(store));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV16 error', e); }
+  localStorage.setItem('slyght_seeded_v16', '1');
+})();
+
 // Seed v12: patch apiKey into existing v11 installs
 (function seedV12() {
   if (localStorage.getItem('slyght_seeded_v12')) return;
@@ -5116,6 +5141,14 @@ const CONSISTENCY = {
     }
   ],
   run() {
+    // Splash guard: skip checks until the dashboard has rendered real data
+    const isAppReady = () => {
+      const dash = document.getElementById('pg-dash');
+      const bal = document.getElementById('h-bal') || document.querySelector('.hero-bal');
+      return dash && bal && typeof S !== 'undefined' && S && S.bal && S.bal > 0;
+    };
+    if (!isAppReady()) return [];
+
     const failures = [];
     this.checks.forEach(c => {
       try {
@@ -5126,6 +5159,30 @@ const CONSISTENCY = {
         if (SLYGHT_DEBUG) console.warn('Consistency check failed:', c.name, e);
       }
     });
+
+    // NaN diagnostic: log any functions returning NaN/null/undefined
+    try {
+      const nanCheck = () => {
+        const checks = {
+          'getLiveBal': getLiveBal(),
+          'getGenuineSurplus': getGenuineSurplus(),
+          'getMaxDay': getMaxDay(),
+          'getDailyBudget': getDailyBudget(),
+          'daysLeft': daysLeft(),
+          'getBucketTotal': getBucketTotal(),
+          'getDynamicBuffer': getDynamicBuffer()
+        };
+        return Object.entries(checks)
+          .filter(([k,v]) => isNaN(v) || v === null || v === undefined)
+          .map(([k,v]) => k + '=' + v);
+      };
+      const nanResults = nanCheck();
+      if (nanResults.length > 0) {
+        console.warn('🔍 NaN in critical calculations:', nanResults.join(', '));
+        try { AUDITOR.record('NAN_DETECTED', S.bal, S.bal, 0, 'NaN: ' + nanResults.join(' | ')); } catch(e) {}
+      }
+    } catch(e) { if (SLYGHT_DEBUG) console.warn('NaN check error:', e); }
+
     this.lastCheck = new Date();
     if (failures.length > 0) {
       console.warn('🔍 Consistency check failed:', failures.map(f => f.name));
