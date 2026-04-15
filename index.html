@@ -940,11 +940,55 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 </div>
 
 <script>
+const SLYGHT_DEBUG = false;
+const BUFFER_TIER_LOW = 500;
+const BUFFER_TIER_MED = 1000;
+const BUFFER_TIER_HIGH = 1500;
+const BUFFER_BILLS_THRESHOLD_MED = 1000;
+const BUFFER_BILLS_THRESHOLD_HIGH = 2000;
 const STORAGE_KEY = 'slyght_v5';
 const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12', 'slyght_seeded_v13', 'slyght_seeded_v14'];
 // SEC2: sanitize user-supplied strings before inserting into innerHTML
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
+function safeCurrency(val) {
+  const n = parseFloat(val);
+  return isNaN(n) ? 0 : parseFloat(n.toFixed(2));
+}
 const CHIP_COLORS = ['#00e87a','#4d9fff','#f5a623','#ff6b6b','#c084fc','#34d399'];
+
+const API_RATE = {
+  calls: [],
+  maxPerMinute: 10,
+  canCall() {
+    const now = Date.now();
+    this.calls = this.calls.filter(t => now - t < 60000);
+    if (this.calls.length >= this.maxPerMinute) { return false; }
+    this.calls.push(now);
+    return true;
+  }
+};
+
+// PIN Security — SHA-256 hashed storage
+async function hashPIN(pin) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + 'slyght_salt_v1');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function setPIN(pin) {
+  if (!pin) { S.pinHash = ''; delete S.pin; save(); return; }
+  S.pinHash = await hashPIN(pin);
+  delete S.pin;
+  save();
+}
+async function verifyPIN(input) {
+  // Migration: if old plaintext pin exists, hash it now
+  if (S.pin && !S.pinHash) { await setPIN(S.pin); }
+  if (!S.pinHash) return true; // no PIN set
+  const hashed = await hashPIN(input);
+  return hashed === S.pinHash;
+}
 
 let activeDebtIdx = -1;
 let activeBillIdx = -1;
@@ -954,19 +998,39 @@ let calMonth = new Date().getMonth();
 let ltDebtType = 'car';
 let selectedReason = '';
 
+/**
+ * SLYGHT Application State — persisted to localStorage as 'slyght_v5'
+ * @property {number} bal - Current bank account balance (AUD) — single source of truth, never computed from txns
+ * @property {Array} txns - Transaction history log — display/analysis only, never used in balance calculations
+ * @property {number} income - Monthly salary (AUD)
+ * @property {number} payday - Day of month salary arrives (1-28)
+ * @property {boolean} paydayReceived - True if salary received this pay cycle
+ * @property {number} carloan - Current car loan balance (AUD) — manually updated
+ * @property {number} cc - Current credit card balance (AUD)
+ * @property {Array} debts - Active debt tiles
+ * @property {Array} savingsBuckets - Savings goal buckets (money in external accounts)
+ * @property {string} debtStrategy - 'avalanche' (highest rate first) or 'snowball' (smallest balance first)
+ * @property {number} weekdayBudget - Daily spend cap Mon-Fri (AUD)
+ * @property {number} weekendBudget - Daily spend cap Sat-Sun (AUD)
+ * @property {string} pinHash - SHA-256 hash of user PIN (never store plaintext)
+ * @property {string} apiKey - Anthropic API key (also stored separately as slyght_api_key)
+ * @property {Object} paidBills - Map of paidKey to true for bills marked paid this month
+ */
 let S = {
   bal: 0,
   txns: [],
   bonuses: [],
   bid: 0,
   seg: '1m',
-  income: 7282,
+  income: 0,
   payday: 15,
-  carloan: 23989.70,
+  carloan: 0,
+  carLoanRate: 9.87,
   cc: 0,
-  carloanOriginal: 37400,
+  carloanOriginal: 0,
   ccLimit: 6000,
-  pin: '2103',
+  pin: '',
+  pinHash: '',
   monthlyHistory: [],
   income_log: [],
   iid: 0,
@@ -1035,7 +1099,11 @@ function save() {
   try {
     if (!S.txns) S.txns = []; // guard: never let txns become undefined
     localStorage.setItem(STORAGE_KEY, JSON.stringify({S, BILLS}));
-  } catch(e) {}
+  } catch(e) {
+    if (e.name === 'QuotaExceededError') {
+      try { showToast('⚠️ Storage full — export your data now'); } catch(_) {}
+    }
+  }
 }
 function load() {
   try {
@@ -1044,6 +1112,10 @@ function load() {
   } catch(e) {}
 }
 
+function daysInCurrentMonth() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+}
 // L1: clamp pd to actual days in month so day-31 in February doesn't wrap to March
 function daysLeft(payday) {
   const now = new Date(), today = now.getDate();
@@ -1130,12 +1202,12 @@ function getDynamicBuffer() {
     if (b.recurring === false) return false;
     const now2 = new Date(); const paidKey = now2.getFullYear()+'-'+(now2.getMonth()+1)+'-'+b.name+'-'+b.day; if (S.paidBills && S.paidBills[paidKey]) return false;
     const today = new Date().getDate();
-    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
     return diff >= 0 && diff <= 7;
   }).reduce((s,b) => s+b.amt, 0);
-  if (due7 > 2000) return 1500;
-  if (due7 > 1000) return 1000;
-  return 500;
+  if (due7 > BUFFER_BILLS_THRESHOLD_HIGH) return BUFFER_TIER_HIGH;
+  if (due7 > BUFFER_BILLS_THRESHOLD_MED) return BUFFER_TIER_MED;
+  return BUFFER_TIER_LOW;
 }
 // Only discretionary spend today — debt repayments/income/savings never count toward daily budget
 function getTodaySpent() {
@@ -1170,7 +1242,7 @@ function toggleExpandCard(bodyId, togId) {
   if (tog) tog.textContent = isOpen ? '▾' : '▴';
 }
 
-// FIX 4: Month phase context — drives conditional messaging throughout
+// Month phase context — drives conditional messaging throughout (PAYDAY / PRE_PAYDAY / MID_MONTH / END_OF_MONTH)
 function getMonthPhase() {
   const today = new Date().getDate();
   const payday = S.payday || 15;
@@ -1191,7 +1263,7 @@ function getMonthPhase() {
   return 'END_OF_MONTH';
 }
 
-// FIX 8: Soft refresh — recalculate and re-render, never shows onboarding
+// Soft refresh — recalculate and re-render without triggering onboarding flow
 function softRefresh() {
   renderAll();
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
@@ -1304,7 +1376,11 @@ function runRecon(newBal, prevExpected) {
     rb.innerHTML = 'Balance is <strong>' + fmtC(absDiff) + ' more</strong> than expected. Refund, pay, or transfer in?';
     reasons = ['Got paid','Refund received','Transfer in','Correcting previous error','Other'];
   }
-  rs.innerHTML = reasons.map(r => '<button onclick="selectReason(this,\'' + r.replace(/'/g,"\\'") + '\')" style="padding:9px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left">' + r + '</button>').join('');
+  rs.innerHTML = reasons.map(r => '<button data-reason="' + esc(r) + '" class="recon-reason-btn" style="padding:9px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;text-align:left">' + esc(r) + '</button>').join('');
+  rs.addEventListener('click', function(e) {
+    const btn = e.target.closest('.recon-reason-btn');
+    if (btn) selectReason(btn, btn.dataset.reason);
+  }, { once: true });
   $('recon-custom').value = '';
   const btn = $('recon-confirm-btn');
   btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
@@ -1345,18 +1421,20 @@ function pinKey(k) {
   updatePinDots();
   if (pinEntry.length === 4) {
     setTimeout(() => {
-      const correct = S.pin || '2103';
-      if (pinEntry === correct) {
-        $('pin-screen').style.display = 'none';
-        showMain();
-        pinEntry = '';
-        $('pin-err').textContent = '';
-      } else {
-        $('pin-dots').classList.add('shake');
-        document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
-        $('pin-err').textContent = 'Incorrect PIN. Try again.';
-        setTimeout(() => { pinEntry = ''; $('pin-dots').classList.remove('shake'); document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error')); updatePinDots(); }, 800);
-      }
+      const entered = pinEntry;
+      verifyPIN(entered).then(ok => {
+        if (ok) {
+          $('pin-screen').style.display = 'none';
+          showMain();
+          pinEntry = '';
+          $('pin-err').textContent = '';
+        } else {
+          $('pin-dots').classList.add('shake');
+          document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
+          $('pin-err').textContent = 'Incorrect PIN. Try again.';
+          setTimeout(() => { pinEntry = ''; $('pin-dots').classList.remove('shake'); document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error')); updatePinDots(); }, 800);
+        }
+      });
     }, 100);
   }
 }
@@ -1421,7 +1499,7 @@ function getBillsDue() {
   return bills.filter(b => {
     if (b.recurring === false) return false;
     if (isPaid(b)) return false;
-    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
     return diff > 0 && diff < daysLeft(payday);
   });
 }
@@ -1794,7 +1872,23 @@ function openCategoryDrillDown(cat) {
   document.body.appendChild(overlay);
 }
 
+// Render debounce scheduler — coalesces rapid successive renderAll calls into one 50ms-delayed render
+let _renderTimer = null;
+function scheduleRender() {
+  if (_renderTimer) clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => { renderAll(); _renderTimer = null; }, 50);
+}
+
+// Render cache — memoises expensive sub-render values within a single renderAll pass; cleared at start of each pass
+let _renderCache = {};
+function renderCache(key, fn) {
+  if (_renderCache[key] !== undefined) return _renderCache[key];
+  _renderCache[key] = fn();
+  return _renderCache[key];
+}
+
 function renderAll() {
+  _renderCache = {}; // Clear render cache at start of each render pass
   // L2: Month-end snapshot — write to S.monthlyHistory when month rolls over
   const nowForSnap = new Date();
   const snapKey = nowForSnap.getFullYear() + '-' + (nowForSnap.getMonth() + 1);
@@ -1850,7 +1944,7 @@ function renderAll() {
     }
   }
 
-  // Net worth (FIX 7)
+  // Net worth tile update
   const nwEl = $('nw-val');
   if (nwEl) { const nw = getNetWorth(); nwEl.textContent = (nw.net >= 0 ? '+' : '') + fmtC(nw.net); nwEl.className = 'nw-val ' + (nw.net >= 0 ? 'pos' : 'neg'); }
 
@@ -1868,7 +1962,7 @@ function renderAll() {
   $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
   $('pd-lbl').textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
 
-  // FIX 4: Timing context
+  // Timing context — phase used throughout renderAll for conditional messaging
   const phase = getMonthPhase();
 
   // Auto-reset paydayReceived when calendar month rolls over
@@ -1942,15 +2036,23 @@ function renderAll() {
   }
   const surplusLbl = $('m-surplus-lbl');
   if (surplusLbl) surplusLbl.textContent = 'After bills, debts due & buffer';
+  // UX 1: Max/Day $0 explanation
+  const _maxDayVal = getMaxDay();
+  if (surplusEl && _maxDayVal === 0) {
+    surplusEl.title = 'All funds allocated to bills, debts, and reserves this cycle';
+    if (surplusLbl) surplusLbl.innerHTML = 'Max/Day <span style="font-size:9px;color:var(--amber);cursor:pointer" onclick="showToast(\'Bills + debts + buffer are using all available funds this cycle\')">why?</span>';
+  } else if (surplusLbl && _maxDayVal !== 0) {
+    surplusLbl.textContent = 'After bills, debts due & buffer';
+  }
 
-  // FIX 7: $30 warning — only fire if a bill is due today/tomorrow OR it's payday
+  // $30 Opal/lunch buffer warning — only fire if a bill is due today/tomorrow OR it's payday (avoid noise mid-cycle)
   const remaining = dailyBudget - todaySpent;
   const billsDueVeryShortly = getExpandedBills().filter(b => b.recurring !== false && (b.day === today || b.day === today + 1));
   const velEl = $('dash-velocity');
   if (remaining <= 30 && remaining >= 0 && maxDay > 0 && (isPayday || billsDueVeryShortly.length > 0)) {
     if (velEl) velEl.innerHTML = '<span style="color:var(--amber)">⚠️ Keep $30 for Opal and lunch — only ' + fmt(remaining) + ' left today</span>';
   } else if (velEl && phase !== 'PRE_PAYDAY' && phase !== 'PAYDAY') {
-    // FIX 6: Spending velocity — suppress before payday and when paydayReceived within 5 days
+    // Spending velocity — suppress before payday and when paydayReceived within 5 days to avoid false alarms
     const daysSincePayday = S.paydayReceivedDate ? Math.floor((Date.now() - new Date(S.paydayReceivedDate).getTime()) / (1000*60*60*24)) : 999;
     const avgDaily = getAvgDailySpend();
     const projMonth = Math.round(avgDaily * 30);
@@ -1967,7 +2069,7 @@ function renderAll() {
     velEl.innerHTML = '';
   }
 
-  // No-spend streak (FIX 10)
+  // No-spend streak display
   const streakEl = $('dash-streak');
   if (streakEl) {
     const streak = getNoSpendStreak();
@@ -1994,7 +2096,7 @@ function renderAll() {
   renderLtTiles();
   renderWrxTracker();
   renderDashTxns();
-  renderBillsGrouped();
+  if (document.getElementById('pg-cal')?.classList.contains('active')) renderBillsGrouped();
   renderBonusList(bonusTotal, safe);
   renderCutSliders();
   renderTrend();
@@ -2002,7 +2104,7 @@ function renderAll() {
   renderSettingsBills();
   renderSavingsBuckets();
   renderSpendingCoach();
-  renderAnalysisTab();
+  if (document.getElementById('pg-spend')?.classList.contains('active')) renderAnalysisTab();
   updateExport();
   checkAfford();
   if ($('dt-car')) $('dt-car').textContent = fmtC(S.carloan);
@@ -2067,7 +2169,7 @@ function renderMonthlyPosition() {
   el.innerHTML = '<div class="card"><div class="card-title" style="margin-bottom:10px">Monthly Position</div><div style="font-size:13px;line-height:2"><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Income</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+' + fmtC(income) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Recurring bills</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(recurringBills) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Debts due this cycle</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(immDebts) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Living costs (est.)</span><span style="font-family:var(--mono);color:var(--amber)">\u2212' + fmtC(living) + '</span></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-weight:700">Genuine surplus</span><span style="font-family:var(--mono);font-weight:700;color:'+(surplus>0?'var(--green)':'var(--red)')+'">'+fmtC(surplus)+'</span></div></div></div>';
 }
 
-// FIX 5: Payday plan — deduplicated bills, 3-month avg living costs, all priority debts, directive tone
+// Payday plan — deduplicated bills, 3-month avg living costs, all priority debts, directive tone
 function renderPaydayPlan() {
   const el = $('payday-plan-body'); if (!el) return;
   const income = S.income || 7282;
@@ -2242,7 +2344,7 @@ function openNetWorthModal() {
   $('nw-modal').classList.add('open');
 }
 
-// FIX 9: Balance update from settings also triggers reconciliation modal
+// Balance edit — balance update from hero tile or settings both trigger the reconciliation modal
 function openHeroBalEdit() {
   $('h-bal').style.display = 'none';
   const ed = $('h-bal-edit');
@@ -2309,7 +2411,7 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (shouldShowAlert && safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
   else if (shouldShowAlert && safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
-  // FIX 10: Trajectory alert — validate phase before firing; suppress in PRE_PAYDAY/PAYDAY
+  // Trajectory alert — validate phase before firing; suppress in PRE_PAYDAY/PAYDAY to avoid duplicate warnings
   const avgDaily = getAvgDailySpend();
   const days = daysLeft(S.payday);
   const alertPhase = getMonthPhase();
@@ -2586,7 +2688,7 @@ function openDebtModal(idx) {
   $('modal-due').value = d.delayDate || '';
   $('modal-notes').value = d.notes || '';
   $('modal-priority').value = d.priority || (idx + 1);
-  // FIX 12: Payoff countdown
+  // Payoff countdown — estimate months to clear debt at current genuine surplus rate
   const surplus = getGenuineSurplus();
   const etaEl = $('modal-payoff-eta');
   if (etaEl) {
@@ -2741,7 +2843,7 @@ function openBillModal(idx) {
         '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--amber)">' + nextDueStr + '</div>' +
       '</div></div>';
   }
-  // FIX 3: show correct paid/undo button based on current paid state
+  // Show correct paid/undo button based on current paid state from S.paidBills map
   const _n = new Date();
   const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
   const _isPaid = S.paidBills && S.paidBills[_key];
@@ -2805,7 +2907,7 @@ function markBillPaidMonth() {
   if(navigator.vibrate) navigator.vibrate(50);
 }
 
-// FIX 3: undo paid — only accessible inside the modal
+// Undo paid bill — removes paidBills key; only accessible inside the modal to prevent accidental triggers
 function undoBillPaid() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
@@ -2986,17 +3088,18 @@ function calcLtLumpSavings() {
   const el = $('lt-lump-result'); if (!el) return;
   if (!extra || extra <= 0) { el.style.display = 'none'; return; }
   const bal = S.carloan || 0;
-  const monthlyRate = 0.0987 / 12;
-  const stdPayment = 775.38;
-  let origBal = bal, origMonths = 0, origInterest = 0;
-  while (origBal > 0.01 && origMonths < 360) {
-    const i = origBal * monthlyRate; origInterest += i; origBal -= (stdPayment - i); origMonths++;
+  const fortnightlyRate = (S.carLoanRate || 9.87) / 100 / 26;
+  const stdPayment = 387.69; // per fortnight
+  let origBal = bal, origForts = 0, origInterest = 0;
+  while (origBal > 0.01 && origForts < 1200) {
+    const i = origBal * fortnightlyRate; origInterest += i; origBal = origBal + i - stdPayment; origForts++;
   }
-  let newBal = bal - extra, newMonths = 0, newInterest = 0;
-  while (newBal > 0.01 && newMonths < 360) {
-    const i = newBal * monthlyRate; newInterest += i; newBal -= (stdPayment - i); newMonths++;
+  let newBal = bal - extra, newForts = 0, newInterest = 0;
+  while (newBal > 0.01 && newForts < 1200) {
+    const i = newBal * fortnightlyRate; newInterest += i; newBal = newBal + i - stdPayment; newForts++;
   }
-  const monthsSaved = origMonths - newMonths;
+  const fortsSaved = origForts - newForts;
+  const monthsSaved = Math.round(fortsSaved * 12 / 26);
   const interestSaved = origInterest - newInterest;
   el.style.display = 'block';
   el.innerHTML = '💰 Paying <strong>$'+extra.toFixed(0)+'</strong> lump sum saves <strong style="color:var(--green)">~$'+Math.round(interestSaved)+'</strong> in interest and clears the loan <strong>'+monthsSaved+' month'+(monthsSaved!==1?'s':'')+' earlier</strong>.';
@@ -3014,7 +3117,7 @@ function renderBillsGrouped() {
   const now = new Date();
   const grouped = {today:[], week:[], next:[], later:[]};
   getExpandedBills().filter(b => b.recurring !== false).forEach(b => {
-    const diff = b.day >= today ? b.day - today : 31 - today + b.day;
+    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
     if (diff === 0) grouped.today.push({...b, diff});
     else if (diff <= 7) grouped.week.push({...b, diff});
     else if (diff <= 14) grouped.next.push({...b, diff});
@@ -3062,7 +3165,7 @@ function renderBillsGrouped() {
 
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
-  // FIX 2: Replace Next Week + Later with one combined monthly summary table sorted by day (ascending)
+  // Combined monthly summary — replaced separate Next Week + Later sections with one table sorted by day (ascending)
   const upcoming = [...grouped.next, ...grouped.later].sort((a,b) => a.day - b.day);
   let monthlyHtml = '';
   if (upcoming.length) {
@@ -3196,7 +3299,7 @@ function renderCalWeekSummary() {
   const c = $('cal-week-content'); if (!c) return;
   const todayD = new Date().getDate();
   const endOfWeek = todayD + 7;
-  // FIX 1: de-duplicate fortnightly bills within same 7-day window (same name); exclude already-paid bills
+  // De-duplicate fortnightly bills within same 7-day window (same name); exclude already-paid bills
   const _wNow = new Date();
   const rawWeekBills = getExpandedBills().filter(b => {
     if (b.recurring === false) return false;
@@ -3493,8 +3596,8 @@ function renderSpendingCoach() {
   if (shouldShowAlert && liveBal - (avgDaily * days) < allBillsDue) {
     const nextBill = BILLS.filter(b => b.recurring !== false).sort((a,b) => {
       const today = new Date().getDate();
-      const da = a.day >= today ? a.day - today : 31 - today + a.day;
-      const db = b.day >= today ? b.day - today : 31 - today + b.day;
+      const da = a.day >= today ? a.day - today : daysInCurrentMonth() - today + a.day;
+      const db = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
       return da - db;
     })[0];
     const billName = nextBill ? nextBill.name : 'upcoming bills';
@@ -3811,7 +3914,7 @@ function saveSettings() {
       : '<strong>Avalanche:</strong> Pay highest interest rate first. Saves the most money long-term — mathematically optimal.';
   }
   const np = $('s-pin').value;
-  if (np.length === 4 && /^\d{4}$/.test(np)) S.pin = np;
+  if (np.length === 4 && /^\d{4}$/.test(np)) { setPIN(np); return; }
   save(); renderAll();
 }
 
@@ -3830,8 +3933,10 @@ function checkAfford() {
   const after = safe - amt;
   const nd = daysLeft(S.payday);
   // Max/Day after purchase: capped at getDailyBudget()
-  const rawNewMaxDay = nd > 0 ? (liveBal - amt - dueTotal - getDynamicBuffer()) / nd : 0;
-  const newMaxDay = Math.min(getDailyBudget(), rawNewMaxDay);
+  const rawNewMaxDay = nd > 0
+    ? (liveBal - amt - dueTotal - immDebtsAff - bucketTotalAff - getDynamicBuffer()) / nd
+    : 0;
+  const newMaxDay = Math.min(getDailyBudget(), Math.max(0, rawNewMaxDay));
   if (liveBal - amt < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No.</strong> You\'d overdraw. Only '+fmtC(liveBal)+' in the account.'; }
   else if (after < 0) { el.className = 'verdict bad'; el.innerHTML = '<strong>No &#x2014; a bill won\'t get paid.</strong> After '+what+' you\'d be '+fmtS(after)+' short before payday.'; }
   else if (newMaxDay < 15) { el.className = 'verdict bad'; el.innerHTML = '<strong>Don\'t do it.</strong> You\'d have only '+fmt(newMaxDay)+'/day for '+nd+' days — below safe threshold.'; }
@@ -3891,6 +3996,8 @@ function copyExport() {
   delete exportS.apiKey;
   delete exportS._prevState;
   delete exportS.chatHistory;
+  delete exportS.pin;
+  delete exportS.pinHash;
   const snapshotCount = SNAPSHOTS.load().length;
   const anomalies = AUDITOR.log.filter(e => !e.ok).length;
   const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
@@ -4230,6 +4337,22 @@ function scrollChatToBottom() {
 }
 
 async function sendChatMessage() {
+  if (!localStorage.getItem('slyght_ai_consent')) {
+    // Show consent in chat area
+    const msgs = document.getElementById('chat-messages');
+    if (msgs && !document.getElementById('ai-consent-banner')) {
+      const banner = document.createElement('div');
+      banner.id = 'ai-consent-banner';
+      banner.style.cssText = 'margin:16px;padding:16px;background:var(--bg3);border-radius:12px;border:1px solid var(--amber)';
+      banner.innerHTML = '<div style="font-size:13px;color:var(--amber);font-weight:600;margin-bottom:8px">ℹ️ AI Data Privacy</div>' +
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">SLYGHT AI sends your financial data (balance, debts, transactions, bills) to Anthropic\'s API. Anthropic\'s privacy policy applies.</div>' +
+        '<button onclick="localStorage.setItem(\'slyght_ai_consent\',\'1\');document.getElementById(\'ai-consent-banner\').remove();showToast(\'AI chat enabled\')" style="background:var(--green);color:#000;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;width:100%">I understand — enable AI chat</button>';
+      msgs.appendChild(banner);
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    return;
+  }
+  if (!API_RATE.canCall()) { showToast('Too many requests — wait a moment'); return; }
   const input = $('chat-input');
   const text = (input ? input.value : '').trim();
   if (!text || !S.apiKey || _chatRendering) return;
@@ -4523,7 +4646,7 @@ if ('serviceWorker' in navigator) {
       store.S = s;
       localStorage.setItem('slyght_v5', JSON.stringify(store));
     }
-  } catch(e) { console.warn('seedV14 error', e); }
+  } catch(e) { if (SLYGHT_DEBUG) console.warn('seedV14 error', e); }
   localStorage.setItem('slyght_seeded_v14', '1');
 })();
 
@@ -4999,7 +5122,7 @@ const APP_HEALTH = {
   checkCache() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {
-        if (regs.length === 0) console.warn('No service worker registered');
+        if (regs.length === 0) { if (SLYGHT_DEBUG) console.warn('No service worker registered'); }
       });
     }
   },
@@ -5024,14 +5147,14 @@ const APP_HEALTH = {
       const monthsDiff = (today.getFullYear() - receivedDate.getFullYear()) * 12 + (today.getMonth() - receivedDate.getMonth());
       if (monthsDiff >= 1) {
         S.paydayReceived = false; S.paydayReceivedDate = null; S.paydayPlanAutoExpanded = false;
-        save(); console.log('Monthly reset: paydayReceived cleared');
+        save(); if (SLYGHT_DEBUG) console.log('Monthly reset: paydayReceived cleared');
       }
     }
     const currentMonthKey = today.getFullYear() + '-' + (today.getMonth() + 1);
     const lastBillReset = localStorage.getItem('slyght_bills_reset_month');
     if (lastBillReset !== currentMonthKey) {
       S.paidBills = {}; localStorage.setItem('slyght_bills_reset_month', currentMonthKey);
-      save(); console.log('Monthly reset: paidBills cleared');
+      save(); if (SLYGHT_DEBUG) console.log('Monthly reset: paidBills cleared');
     }
   },
   showBanner(type, message) {
@@ -5154,7 +5277,7 @@ const UX = {
     });
     window.addEventListener('error', (e) => { this.session.errors.push({msg: e.message, ts: Date.now()}); });
     // UX report saving handled by HEARTBEAT
-    console.log('👁️ UX Monitor active');
+    if (SLYGHT_DEBUG) console.log('👁️ UX Monitor active');
   }
 };
 
@@ -5169,6 +5292,23 @@ renderAll = function() {
   if (typeof NOTIFY !== 'undefined') NOTIFY.refresh();
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
   if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
+  // UX 3: Empty state onboarding banner
+  if (!localStorage.getItem('slyght_onboarded') && (S.txns||[]).length === 0 && S.bal === 0) {
+    const existing = document.getElementById('onboard-banner');
+    if (!existing) {
+      const banner = document.createElement('div');
+      banner.id = 'onboard-banner';
+      banner.style.cssText = 'margin:12px 16px;padding:16px;background:var(--bg3);border-radius:12px;border:1px solid var(--green)';
+      banner.innerHTML = '<div style="font-size:14px;font-weight:600;color:var(--green);margin-bottom:8px">Welcome to SLYGHT \ud83d\udc4b</div>' +
+        '<div style="font-size:12px;color:var(--text2);line-height:1.6">3 steps to get started:<br>' +
+        '1. Tap your balance to enter your bank balance<br>' +
+        '2. Tap <b>+</b> to log your first transaction<br>' +
+        '3. Open Chat to ask AI about your finances</div>' +
+        '<button onclick="localStorage.setItem(\'slyght_onboarded\',\'1\');this.parentElement.remove()" style="margin-top:10px;background:none;border:1px solid var(--text3);color:var(--text3);border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer">Got it</button>';
+      const dashEl = document.getElementById('pg-dash');
+      if (dashEl) dashEl.insertBefore(banner, dashEl.firstChild);
+    }
+  }
 };
 
 // ─── FINANCIAL PERSONALITY ENGINE ────────────────────────────
@@ -5262,10 +5402,10 @@ const PREDICTOR = {
     const income = S.income||7282;
     const monthlyBills = BILLS.filter(b=>b.recurring!==false).reduce((s,b)=>s+b.amt,0);
     const avgSpend = getAvgDailySpend()*30;
-    const ccMin = Math.max(25, cc*0.02);
     const carPay = 387.69*2;
     const activeDebts = (S.debts||[]).filter(d=>!d.paid).reduce((s,d)=>s+d.amt,0);
     for (let m=1; m<=nMonths; m++) {
+      const ccMin = Math.max(25, cc*0.02);
       const dt = new Date(); dt.setMonth(dt.getMonth()+m); dt.setDate(S.payday||15);
       bal = bal + income - monthlyBills - avgSpend;
       cc = Math.max(0, cc - ccMin);
@@ -5474,7 +5614,7 @@ const SLYGHT_SCORE = {
     const prevScore = history.length>=1&&history[history.length-1].slyghtScore ? history[history.length-1].slyghtScore : null;
     const trend = prevScore!==null ? total-prevScore : null;
     el.innerHTML = '<div class="card" style="margin-bottom:12px"><div class="card-hdr">'+
-      '<div class="card-title">SLYGHT Score</div>'+
+      '<div class="card-title">SLYGHT Score <span style="font-size:11px;color:var(--text3);cursor:pointer" onclick="showSlyghtScoreInfo()" title="How is this calculated?">ℹ️</span></div>'+
       (trend!==null?'<div style="font-size:11px;font-family:var(--mono);font-weight:700;color:'+(trend>=0?'var(--green)':'var(--red)')+'">'+( trend>=0?'▲':'▼')+' '+Math.abs(trend)+' this month</div>':'')+
       '</div><div style="display:flex;align-items:center;gap:16px">'+
       '<div style="position:relative;width:90px;height:90px;flex-shrink:0">'+
@@ -5694,6 +5834,7 @@ function cancelScan() {
 }
 
 async function scanDocumentWithAI(base64, mediaType) {
+  if (!API_RATE.canCall()) { showToast('Too many requests — wait a moment'); return {documentType:'unknown',confidence:0,confidenceReason:'Rate limited',company:'',amount:0,description:'Too many requests — wait a moment and try again.'}; }
   const apiKey = localStorage.getItem('slyght_api_key');
   if (!apiKey) { showToast('Add your API key in Chat settings first'); return {documentType:'unknown',confidence:0,confidenceReason:'No API key',company:'',amount:0,description:'Add your API key in the Chat tab to use scanning.'}; }
   const systemPrompt = `You are a financial document scanner for an Australian personal finance app called SLYGHT. Extract ALL financial information from documents. Return ONLY valid JSON, no extra text.`;
@@ -5834,7 +5975,7 @@ const HEARTBEAT = {
     if (this.interval) clearInterval(this.interval);
     this.interval = setInterval(() => this.tick(), 120000);
     setTimeout(() => this.tick(), 5000);
-    console.log('💓 Heartbeat started — 2 min interval');
+    if (SLYGHT_DEBUG) console.log('💓 Heartbeat started — 2 min interval');
   },
 
   tick() {
@@ -5910,6 +6051,10 @@ function splashTap() {
   } else {
     $('ob-screen').style.display = 'block';
   }
+}
+function showSlyghtScoreInfo() {
+  const msg = 'SLYGHT Score (0\u20131000)\n\nDebt reduction (200pts) \u2014 How fast debts are shrinking\nSavings rate (200pts) \u2014 Saving vs income ratio\nSpending discipline (200pts) \u2014 Staying under daily budget\nEmergency fund (200pts) \u2014 Progress toward 90-day reserve\nNet worth trend (200pts) \u2014 Whether net worth is improving\n\n800+ Excellent  600\u2013799 Good  400\u2013599 Needs work  0\u2013399 Critical';
+  alert(msg);
 }
 </script>
 <!-- SCANNER MODAL -->

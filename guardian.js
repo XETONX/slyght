@@ -369,6 +369,46 @@ const checks = [
   { name: 'Scanner low confidence shows warning not silent fail',
     test: () => html.includes('confidence') && html.includes('verify') ? 'OK' : 'WARNING — low confidence handling unclear'
   }
+,
+  { name: 'PIN stored as hash not plaintext',
+    test: () => {
+      const hasPlaintext = html.includes("pin: '2103'") || html.includes("pin:'2103'");
+      const hasHash = html.includes('pinHash') && html.includes('hashPIN');
+      if (hasPlaintext) return 'CRITICAL — plaintext PIN in source defaults';
+      if (!hasHash) return 'WARNING — pinHash/hashPIN not found';
+      return 'OK';
+    }
+  },
+  { name: 'API rate limiter present',
+    test: () => html.includes('API_RATE') && html.includes('canCall') ? 'OK' : 'MISSING — no API rate limiting'
+  },
+  { name: 'AI consent check present',
+    test: () => html.includes('slyght_ai_consent') ? 'OK' : 'MISSING — no Anthropic data consent gate'
+  },
+  { name: 'CC minimum recalculated inside prediction loop',
+    test: () => {
+      const pred = html.match(/PREDICTOR[\s\S]*?project[\s\S]*?for[\s\S]*?ccMin[\s\S]*?}/);
+      if (!pred) return 'WARNING — could not locate predictor loop';
+      const loopMatch = html.match(/for\s*\(let m[\s\S]{0,200}ccMin\s*=/);
+      return loopMatch ? 'OK' : 'WARNING — ccMin may be calculated outside the loop';
+    }
+  },
+  { name: 'No hardcoded 31 in day arithmetic',
+    test: () => {
+      const lines = html.split('\n');
+      const violations = lines.filter((l,i) =>
+        (l.includes('31 - today') || l.includes('- 31 +')) &&
+        !l.trim().startsWith('//')
+      );
+      return violations.length === 0 ? 'OK' : 'WARNING — ' + violations.length + ' hardcoded 31 occurrences in day arithmetic';
+    }
+  },
+  { name: 'SLYGHT_DEBUG flag present',
+    test: () => html.includes('SLYGHT_DEBUG') ? 'OK' : 'WARNING — no SLYGHT_DEBUG flag'
+  },
+  { name: 'scheduleRender and renderCache present',
+    test: () => html.includes('scheduleRender') && html.includes('renderCache') ? 'OK' : 'WARNING — render optimisation helpers missing'
+  }
 ];
 
 const args = process.argv[2];
