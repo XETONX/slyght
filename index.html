@@ -661,6 +661,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
         <button class="action-btn" onclick="doImport()">Import &amp; Apply</button>
         <div id="import-msg" style="font-size:13px;margin-top:6px"></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:8px;padding:10px;background:var(--bg3);border-radius:8px">
+          📱 <strong style="color:var(--text2)">Syncing between devices?</strong><br>
+          SLYGHT stores data on this device only.<br>
+          To sync: Export on one device &rarr; Import on another.
+        </div>
       </div>
       <div class="card">
         <div style="font-size:11px;color:var(--text3);margin-bottom:4px">🔒 All data is stored locally on this device. Nothing is sent to any server.</div>
@@ -4805,6 +4810,107 @@ if ('serviceWorker' in navigator) {
   localStorage.setItem('slyght_seeded_v16', '1');
 })();
 
+// Seed v17: inject John's real financial state captured 15 Apr 2026
+// Only patches if existing data looks wrong (stale balance or too few txns)
+const REAL_STATE_V17 = {
+  S: {
+    bal: 1500.34,
+    txns: [
+      {id:0, amt:7282.33, note:"Salary \u2014 Manhattan Associates", cat:"Income", ts:1776121201000, income:true, _balAffected:true},
+      {id:1, amt:2500, note:"CC repayment \u2014 Virgin Money (pending)", cat:"Debt repayment", ts:1776121202000, income:false, _balAffected:true},
+      {id:2, amt:1170, note:"Car Loan Firstmac \u2014 regular + missed payment + fees", cat:"Debt repayment", ts:1776121203000, income:false, _balAffected:true},
+      {id:3, amt:250.84, note:"Afterpay \u2014 cleared", cat:"Debt repayment", ts:1776121204000, income:false, _balAffected:true},
+      {id:4, amt:141.76, note:"Claude Max subscription", cat:"Subscription", ts:1776121205000, income:false, _balAffected:true},
+      {id:5, amt:0.9, note:"China Holiday round-ups", cat:"Savings", ts:1776121206000, income:false, _balAffected:true},
+      {id:6, amt:100, note:"Yia yia gift", cat:"Income", ts:1776121207000, income:true, _balAffected:true},
+      {amt:780, note:"Car Loan \u2014 Firstmac \u2014 paid", cat:"Loan", ts:1776176102273, income:false, _balAffected:true},
+      {amt:550, note:"Owed to Michael \u2014 cleared", cat:"Debt repayment", ts:1776178940008, income:false, _balAffected:true},
+      {amt:51, note:"Car pink slip", cat:"Transport / Fuel", ts:1776214977602, income:false, _balAffected:true},
+      {amt:33.62, note:"Groceries", cat:"Food / Coffee", ts:1776216510674, income:false, _balAffected:true},
+      {amt:14.73, note:"Weed accessories", cat:"Shopping", ts:1776217013669, income:false, _balAffected:true},
+      {amt:552.54, note:"WRX Green Slip \u2014 cleared", cat:"Debt repayment", ts:1776243762236, income:false, _balAffected:true},
+      {amt:462, note:"WRX Rego \u2014 cleared", cat:"Debt repayment", ts:1776243907922, income:false, _balAffected:true},
+      {amt:140, note:"Parking Fine \u2014 cleared", cat:"Debt repayment", ts:1776244257389, income:false, _balAffected:true}
+    ],
+    income: 7282, payday: 15,
+    carloan: 23214.32, carLoanRate: 9.87, carloanOriginal: 37400,
+    cc: 0, ccLimit: 6000,
+    monthlyHistory: [], income_log: [], iid: 0,
+    debts: [
+      {id:0, name:"Afterpay", amt:250.84, paid:true, rate:0, priority:0, notes:"Cleared 14 Apr"},
+      {id:1, name:"Owed to Michael", amt:550, paid:true, rate:0, priority:1, delayDate:"2026-04-15", notes:"$300 borrowed + $50 goodwill + $200 additional borrowing"},
+      {id:2, name:"CC overdue", amt:187.35, paid:true, rate:19.99, priority:2, delayed:true, delayDate:"2026-05-06", notes:"Cleared \u2014 mum paid full CC balance 15 Apr"},
+      {id:3, name:"WRX Rego", amt:462, paid:true, rate:0, priority:1, notes:"LIST THE WRX THIS WEEK", delayDate:"2026-04-15"},
+      {id:4, name:"Pet Insurance", amt:120.47, paid:false, rate:0, priority:1, delayDate:"2026-04-22"},
+      {id:5, name:"Parking Fine", amt:140, paid:true, rate:0, priority:3, delayDate:"2026-04-16"},
+      {id:6, name:"WRX Green Slip", amt:552.54, rate:0, paid:true, delayed:false, delayDate:"2026-04-15", notes:"", priority:4},
+      {id:7, name:"Owed to Mum", amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, viaRent:true, notes:"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.", delayDate:"2027-01-15", originalAmt:4658.39}
+    ],
+    nextDebtId: 8,
+    savingsBuckets: [
+      {id:0, name:"China Holiday", goal:4000, saved:67.22, account:"Virgin Money"},
+      {id:1, name:"Rainy Day Fund", goal:2000, saved:0, account:"ING"},
+      {id:2, name:"Rego & Insurance", goal:1500, saved:0, account:"Westpac"},
+      {id:3, name:"Gifts & Celebrations", goal:500, saved:0, account:"Other"}
+    ],
+    nextBucketId: 4,
+    paidBills: {
+      "2026-4-Car Loan \u2014 Firstmac-16": true,
+      "2026-4-Claude Plus-9": true,
+      "2026-4-Rent-15": true
+    },
+    paydayReceived: true, paydayReceivedDate: "2026-04-14",
+    weekdayBudget: 60, weekendBudget: 180,
+    lastOpenDate: "2026-04-15",
+    wrxValue: 21000, wrxStatus: "unlisted", wrxListedDate: null,
+    debtStrategy: "avalanche", apiAlertThreshold: 15,
+    _lastSnapMonth: "2026-4", paydayPlanItems: {},
+    reconLog: [
+      {date:"2026-04-14T14:16:26.880Z", bal:3313.99, reason:"Wasnt accounting for already transferring for car loan"},
+      {date:"2026-04-14T22:51:28.024Z", bal:2755.34, reason:"Not sure where the difference is, I think it's the anthropic transaction as it was intially charged as USD"},
+      {date:"2026-04-15T09:11:54.582Z", bal:1500.34, reason:"Bank fee"}
+    ],
+    notifications: [],
+    dismissedNotifications: ["urgent_Owed_to_Michael__550","warning_Optus___Phone___Inte","warning_Car_Loan___Firstmac_","urgent_Parking_Fine__140_du"],
+    _currentSlyghtScore: 491, _wrxSlider: 21000,
+    bonuses: [], bid: 0, seg: "1m"
+  },
+  BILLS: [
+    {name:"Rent", amt:3000, day:15, tag:"Fixed", recurring:true},
+    {name:"Car Loan \u2014 Firstmac", amt:780, day:16, tag:"Loan", recurring:true, freq:"monthly"},
+    {name:"Health Insurance (qtrly avg)", amt:119.04, day:1, tag:"Fixed", recurring:true},
+    {name:"Amazon Prime", amt:9.99, day:3, tag:"Subscription", recurring:true},
+    {name:"Fuel", amt:110, day:5, tag:"Variable", recurring:true},
+    {name:"Microsoft PC Game Pass", amt:19.45, day:7, tag:"Subscription", recurring:true},
+    {name:"Pet Insurance \u2014 Bowtie", amt:60.2, day:8, tag:"Fixed", recurring:true},
+    {name:"Claude Plus", amt:34, day:9, tag:"Subscription", recurring:true},
+    {name:"Netflix", amt:28.99, day:10, tag:"Streaming", recurring:true},
+    {name:"Afterpay instalment", amt:121.16, day:16, tag:"Debt repayment", recurring:false},
+    {name:"Optus \u2014 Phone + Internet", amt:199, day:16, tag:"Fixed", recurring:true},
+    {name:"YouTube Premium", amt:16.99, day:20, tag:"Streaming", recurring:true},
+    {name:"Adobe", amt:23.99, day:27, tag:"Subscription", recurring:true},
+    {name:"Spotify", amt:15.99, day:28, tag:"Streaming", recurring:true}
+  ]
+};
+(function seedV17() {
+  const flag = 'slyght_seeded_v17';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const existing = JSON.parse(localStorage.getItem('slyght_v5') || '{}');
+    const existingTxns = existing && existing.S && existing.S.txns ? existing.S.txns : [];
+    const existingBal = (existing && existing.S && existing.S.bal) || 0;
+    // Patch only if balance is stale or not enough transactions
+    const needsPatch = existingTxns.length < 5 || Math.abs(existingBal - 1500.34) > 100;
+    if (!needsPatch) { localStorage.setItem(flag, 'true'); return; }
+    // Preserve API key
+    const apiKey = localStorage.getItem('slyght_api_key') || (existing && existing.S && existing.S.apiKey) || '';
+    localStorage.setItem('slyght_v5', JSON.stringify({S: REAL_STATE_V17.S, BILLS: REAL_STATE_V17.BILLS}));
+    if (apiKey && apiKey !== 'SET') localStorage.setItem('slyght_api_key', apiKey);
+    if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.log('SLYGHT v17 state patch applied \u2014 real data loaded');
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV17 error', e); }
+  localStorage.setItem(flag, 'true');
+})();
+
 // Seed v12: patch apiKey into existing v11 installs
 (function seedV12() {
   if (localStorage.getItem('slyght_seeded_v12')) return;
@@ -5142,12 +5248,13 @@ const CONSISTENCY = {
   ],
   run() {
     // Splash guard: skip checks until the dashboard has rendered real data
-    const isAppReady = () => {
-      const dash = document.getElementById('pg-dash');
-      const bal = document.getElementById('h-bal') || document.querySelector('.hero-bal');
-      return dash && bal && typeof S !== 'undefined' && S && S.bal && S.bal > 0;
+    const appReady = () => {
+      if (!window.S || !window.S.bal || window.S.bal === 0) return false;
+      const splash = document.getElementById('splash-screen') || document.getElementById('splash') || document.querySelector('[id*="splash"]');
+      if (splash && getComputedStyle(splash).display !== 'none') return false;
+      return true;
     };
-    if (!isAppReady()) return [];
+    if (!appReady()) return [];
 
     const failures = [];
     this.checks.forEach(c => {
@@ -6331,7 +6438,30 @@ const HEARTBEAT = {
   }
 };
 
+function diagNaN() {
+  try {
+    const checks = {
+      getLiveBal: getLiveBal(),
+      getGenuineSurplus: getGenuineSurplus(),
+      getMaxDay: getMaxDay(),
+      getDailyBudget: getDailyBudget(),
+      daysLeft: daysLeft(),
+      getBucketTotal: getBucketTotal(),
+      getDynamicBuffer: getDynamicBuffer()
+    };
+    const nans = Object.entries(checks)
+      .filter(([k,v]) => isNaN(v) || v === null || v === undefined)
+      .map(([k,v]) => k + '=' + v);
+    if (nans.length > 0) {
+      console.warn('\uD83D\uDD0D diagNaN:', nans.join(', '));
+      try { AUDITOR.record('NaN_DETECTED', 0, 0, 0, 'NaN in: ' + nans.join(', ')); } catch(e) {}
+    }
+    return nans;
+  } catch(e) { return []; }
+}
+
 load();
+diagNaN();
 API_COSTS.load();
 RECONCILER.morningCheck();
 CONSISTENCY.start();
