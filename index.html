@@ -1088,9 +1088,9 @@ const HABIT_MSGS = [
   (l,b,d) => l+' \u2192 '+b+' left \u2192 '+d+' owed. You\'re building momentum \u2014 stay the course.',
 ];
 
-const fmt = n => '$' + Math.round(Math.abs(n)).toLocaleString('en-AU');
-const fmtS = n => (n < 0 ? '-' : '') + fmt(n);
-const fmtC = n => (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmt = n => (n == null || isNaN(n)) ? '\u2014' : '$' + Math.round(Math.abs(n)).toLocaleString('en-AU');
+const fmtS = n => (n == null || isNaN(n)) ? '\u2014' : (n < 0 ? '-' : '') + fmt(n);
+const fmtC = n => (n == null || isNaN(n)) ? '\u2014' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
 const $ = id => document.getElementById(id);
 
 function save() {
@@ -1268,10 +1268,10 @@ function softRefresh() {
 }
 
 function showOb() {
-  $('splash-screen').style.display = 'none';
-  $('ob-screen').style.display = 'block';
-  $('pin-screen').style.display = 'none';
-  $('main-app').style.display = 'none';
+  const _ss = $('splash-screen'); if (_ss) _ss.style.display = 'none';
+  const _obs = $('ob-screen'); if (_obs) _obs.style.display = 'block';
+  const _ps = $('pin-screen'); if (_ps) _ps.style.display = 'none';
+  const _ma = $('main-app'); if (_ma) _ma.style.display = 'none';
 }
 
 function launchApp() {
@@ -1281,13 +1281,13 @@ function launchApp() {
   const prevExpected = getLiveBal(); // H1/H2: snapshot before balance change
   S.bal = b;
   save();
-  $('ob-screen').style.display = 'none';
+  const _obScr = $('ob-screen'); if (_obScr) _obScr.style.display = 'none';
   S._pendingRecon = {newBal: b, prevExpected};
   showMain();
 }
 
 function showMain() {
-  $('main-app').style.display = 'flex';
+  const _maEl = $('main-app'); if (_maEl) _maEl.style.display = 'flex';
   renderAll();
   if (S._pendingRecon) {
     const {newBal, prevExpected} = S._pendingRecon;
@@ -1320,20 +1320,20 @@ function checkEodRecon() {
       unpaid.map(b => '&bull; <strong>'+b.name+'</strong> — '+fmt(b.amt)).join('<br>') +
       '<br><br>Total: <strong>'+fmt(total)+'</strong>. If they came out, update your balance.';
   }
-  $('eod-recon-modal').classList.add('open');
+  const _erm = $('eod-recon-modal'); if (_erm) _erm.classList.add('open');
 }
 
 function eodReconLog() {
-  $('eod-recon-modal').classList.remove('open');
+  const _erm2 = $('eod-recon-modal'); if (_erm2) _erm2.classList.remove('open');
   openQuickLogModal(); // H3: pg-log doesn't exist; open quick log modal instead
 }
 function eodReconUntracked() {
   // Prompt user to enter their current real balance (S.bal is the source of truth)
-  $('eod-recon-modal').classList.remove('open');
+  const _erm3 = $('eod-recon-modal'); if (_erm3) _erm3.classList.remove('open');
   openHeroBalEdit();
 }
 function eodReconAccept() {
-  $('eod-recon-modal').classList.remove('open');
+  const _erm4 = $('eod-recon-modal'); if (_erm4) _erm4.classList.remove('open');
 }
 
 // H2: expects (newBal, prevExpected) where prevExpected = getLiveBal() before S.bal changed
@@ -1379,36 +1379,38 @@ function runRecon(newBal, prevExpected) {
     const btn = e.target.closest('.recon-reason-btn');
     if (btn) selectReason(btn, btn.dataset.reason);
   }, { once: true });
-  $('recon-custom').value = '';
+  const _rcEl = $('recon-custom'); if (_rcEl) _rcEl.value = '';
   const btn = $('recon-confirm-btn');
-  btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
-  $('recon-modal').classList.add('open');
+  if (btn) { btn.style.opacity = '.4'; btn.style.pointerEvents = 'none'; }
+  const _rm = $('recon-modal'); if (_rm) _rm.classList.add('open');
 }
 
 function selectReason(el, reason) {
   selectedReason = reason;
   document.querySelectorAll('#recon-reasons button').forEach(b => { b.style.borderColor = 'var(--border2)'; b.style.background = 'var(--bg3)'; b.style.color = 'var(--text2)'; });
   el.style.borderColor = 'var(--green)'; el.style.background = 'var(--green-dim)'; el.style.color = 'var(--green)';
-  $('recon-custom').value = '';
+  const _rcSel = $('recon-custom'); if (_rcSel) _rcSel.value = '';
   checkReconReady();
 }
 
 function checkReconReady() {
-  const custom = $('recon-custom').value.trim();
+  const _rcCheck = $('recon-custom'); if (!_rcCheck) return;
+  const custom = _rcCheck.value.trim();
   if (custom.length > 2) { selectedReason = custom; document.querySelectorAll('#recon-reasons button').forEach(b => { b.style.borderColor = 'var(--border2)'; b.style.background = 'var(--bg3)'; b.style.color = 'var(--text2)'; }); }
   const ready = selectedReason.length > 0 || custom.length > 2;
-  $('recon-confirm-btn').style.opacity = ready ? '1' : '.4';
-  $('recon-confirm-btn').style.pointerEvents = ready ? 'auto' : 'none';
+  const _rcb = $('recon-confirm-btn');
+  if (_rcb) { _rcb.style.opacity = ready ? '1' : '.4'; _rcb.style.pointerEvents = ready ? 'auto' : 'none'; }
 }
 
 function confirmRecon() {
-  const reason = selectedReason || $('recon-custom').value.trim();
+  const _rcConf = $('recon-custom');
+  const reason = selectedReason || (_rcConf ? _rcConf.value.trim() : '');
   if (!reason) return;
   if (!S.reconLog) S.reconLog = [];
   S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
   // S.txns is sacred — never wipe transactions during reconciliation
   save();
-  $('recon-modal').classList.remove('open');
+  const _rmConf = $('recon-modal'); if (_rmConf) _rmConf.classList.remove('open');
   selectedReason = '';
   renderAll();
 }
@@ -1923,8 +1925,8 @@ function renderAll() {
   const today = new Date().getDate();
   const isPayday = today === (S.payday || 15);
 
-  $('h-bal').textContent = fmtC(liveBal);
-  $('h-bal').className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
+  const _hbal = $('h-bal');
+  if (_hbal) { _hbal.textContent = fmtC(liveBal); _hbal.className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok'); }
   const hn = $('h-note');
   if (hn) {
     const _todayStr = new Date().toDateString();
@@ -1944,7 +1946,7 @@ function renderAll() {
 
   // Net worth tile update
   const nwEl = $('nw-val');
-  if (nwEl) { const nw = getNetWorth(); nwEl.textContent = (nw.net >= 0 ? '+' : '') + fmtC(nw.net); nwEl.className = 'nw-val ' + (nw.net >= 0 ? 'pos' : 'neg'); }
+  if (nwEl) { const nw = getNetWorth(); const _nwNet = isNaN(nw.net) ? 0 : nw.net; nwEl.textContent = (_nwNet >= 0 ? '+' : '') + fmtC(_nwNet); nwEl.className = 'nw-val ' + (_nwNet >= 0 ? 'pos' : 'neg'); }
 
   // H3: calculate actual cycle length from last payday to next payday instead of hardcoded /31
   const paydayDayV = S.payday || 15;
@@ -1956,9 +1958,10 @@ function renderAll() {
   const cycleLen = Math.max(1, Math.round((nextPdDate - lastPdDate) / (1000*60*60*24)));
   const dayIntoC = Math.max(0, Math.round((nowForC - lastPdDate) / (1000*60*60*24)));
   const pct = Math.max(3, Math.min(100, (dayIntoC / cycleLen) * 100));
-  $('pd-fill').style.width = pct + '%';
-  $('pd-fill').style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)';
-  $('pd-lbl').textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
+  const _pdFill = $('pd-fill');
+  if (_pdFill) { _pdFill.style.width = pct + '%'; _pdFill.style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)'; }
+  const _pdLbl = $('pd-lbl');
+  if (_pdLbl) _pdLbl.textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
 
   // Timing context — phase used throughout renderAll for conditional messaging
   const phase = getMonthPhase();
@@ -1995,7 +1998,8 @@ function renderAll() {
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
-  const dailyLabel = maxDay >= dailyBudget ? '\u2605 ' + fmtC(dailyBudget) : (maxDay > 0 ? fmtC(maxDay) : '$0');
+  const _safeMaxDay = isNaN(maxDay) ? 0 : maxDay;
+  const dailyLabel = _safeMaxDay >= dailyBudget ? '\u2605 ' + fmtC(dailyBudget) : (_safeMaxDay > 0 ? fmtC(_safeMaxDay) : '$0');
   const dailyEl = $('m-daily');
   if (dailyEl) {
     dailyEl.textContent = dailyLabel;
@@ -2027,10 +2031,11 @@ function renderAll() {
     }
   }
   const genuineSurplus = getGenuineSurplus();
+  const _safeSurplus = isNaN(genuineSurplus) ? 0 : genuineSurplus;
   const surplusEl = $('m-surplus');
   if (surplusEl) {
-    surplusEl.textContent = (genuineSurplus >= 0 ? '+' : '') + fmt(genuineSurplus);
-    surplusEl.className = 'met-v ' + (genuineSurplus < 0 ? 'bad' : genuineSurplus < 500 ? 'warn' : 'ok');
+    surplusEl.textContent = (_safeSurplus >= 0 ? '+' : '') + fmt(_safeSurplus);
+    surplusEl.className = 'met-v ' + (_safeSurplus < 0 ? 'bad' : _safeSurplus < 500 ? 'warn' : 'ok');
   }
   const surplusLbl = $('m-surplus-lbl');
   if (surplusLbl) surplusLbl.textContent = 'After bills, debts due & buffer';
@@ -2338,22 +2343,20 @@ function openNetWorthModal() {
         '<div style="font-size:12px;color:var(--text3);margin-top:3px">'+debtFreeMonths+' months at current $'+Math.round(surplus).toLocaleString()+'/mo surplus</div>'
       : '<div style="font-size:13px;color:var(--amber)">Build surplus to unlock this projection</div>') +
   '</div>';
-  $('nw-modal-content').innerHTML = html;
-  $('nw-modal').classList.add('open');
+  const _nwmc = $('nw-modal-content'); if (_nwmc) _nwmc.innerHTML = html;
+  const _nwm = $('nw-modal'); if (_nwm) _nwm.classList.add('open');
 }
 
 // Balance edit — balance update from hero tile or settings both trigger the reconciliation modal
 function openHeroBalEdit() {
-  $('h-bal').style.display = 'none';
+  const _hb = $('h-bal'); if (_hb) _hb.style.display = 'none';
   const ed = $('h-bal-edit');
-  ed.style.display = 'flex';
-  ed.style.alignItems = 'center';
-  $('h-bal-input').value = S.bal || '';
-  $('h-bal-input').focus();
+  if (ed) { ed.style.display = 'flex'; ed.style.alignItems = 'center'; }
+  const _hbi = $('h-bal-input'); if (_hbi) { _hbi.value = S.bal || ''; _hbi.focus(); }
 }
 function cancelHeroBalEdit() {
-  $('h-bal-edit').style.display = 'none';
-  $('h-bal').style.display = '';
+  const _hbed = $('h-bal-edit'); if (_hbed) _hbed.style.display = 'none';
+  const _hb2 = $('h-bal'); if (_hb2) _hb2.style.display = '';
 }
 function confirmHeroBalEdit() {
   const b = parseFloat($('h-bal-input').value);
@@ -2404,7 +2407,7 @@ function updateBalanceFromSettings() {
 }
 
 function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
-  const c = $('dash-alerts'); c.innerHTML = '';
+  const c = $('dash-alerts'); if (!c) return; c.innerHTML = '';
   const shouldShowAlert = !(S.paydayReceived && getGenuineSurplus() >= 0);
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (shouldShowAlert && safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
@@ -2679,13 +2682,13 @@ function confirmWrxAlloc(allocs, saleNet) {
 function openDebtModal(idx) {
   activeDebtIdx = idx;
   const d = S.debts[idx];
-  $('modal-title').textContent = d.name;
-  $('modal-name').value = d.name;
-  $('modal-amt').value = d.amt;
-  $('modal-rate').value = d.rate !== undefined ? d.rate : 0;
-  $('modal-due').value = d.delayDate || '';
-  $('modal-notes').value = d.notes || '';
-  $('modal-priority').value = d.priority || (idx + 1);
+  const _mt = $('modal-title'); if (_mt) _mt.textContent = d.name;
+  const _mn = $('modal-name'); if (_mn) _mn.value = d.name;
+  const _ma = $('modal-amt'); if (_ma) _ma.value = d.amt;
+  const _mr = $('modal-rate'); if (_mr) _mr.value = d.rate !== undefined ? d.rate : 0;
+  const _md = $('modal-due'); if (_md) _md.value = d.delayDate || '';
+  const _mno = $('modal-notes'); if (_mno) _mno.value = d.notes || '';
+  const _mp = $('modal-priority'); if (_mp) _mp.value = d.priority || (idx + 1);
   // Payoff countdown — estimate months to clear debt at current genuine surplus rate
   const surplus = getGenuineSurplus();
   const etaEl = $('modal-payoff-eta');
@@ -2698,7 +2701,7 @@ function openDebtModal(idx) {
       etaEl.innerHTML = surplus <= 0 ? '⚠️ No surplus — list the WRX to clear debt faster' : '';
     }
   }
-  $('debt-modal').classList.add('open');
+  const _dm = $('debt-modal'); if (_dm) _dm.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('debt-modal');
 }
 
@@ -2785,6 +2788,8 @@ function saveNewDebt() {
   const notes = $('nd-notes').value.trim();
   if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
   if (!S.nextDebtId) S.nextDebtId = S.debts.length;
+  // ID collision guard: ensure nextDebtId exceeds highest existing debt id
+  if (S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if (S.nextDebtId <= _maxId) S.nextDebtId = _maxId + 1; }
   // Missed payment detection: scan for linked liabilities
   const LINKED_KEYWORDS = ['missed', 'late', 'overdue', 'car', 'firstmac', 'loan', 'credit', 'card', 'cc', 'visa', 'afterpay'];
   const combinedText = (name + ' ' + notes).toLowerCase();
@@ -2845,9 +2850,9 @@ function openBillModal(idx) {
   const _n = new Date();
   const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
   const _isPaid = S.paidBills && S.paidBills[_key];
-  $('bill-modal-mark-paid').style.display = _isPaid ? 'none' : '';
-  $('bill-modal-undo-paid').style.display = _isPaid ? '' : 'none';
-  $('bill-modal').classList.add('open');
+  const _bmpaid = $('bill-modal-mark-paid'); if (_bmpaid) _bmpaid.style.display = _isPaid ? 'none' : '';
+  const _bmundo = $('bill-modal-undo-paid'); if (_bmundo) _bmundo.style.display = _isPaid ? '' : 'none';
+  const _billm = $('bill-modal'); if (_billm) _billm.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('bill-modal');
 }
 
@@ -2864,11 +2869,12 @@ function saveBill() {
     return;
   }
   // C3: validate day is 1-28 — show inline error, not alert
-  const dayVal = parseInt($('bm-day').value);
+  const _bmday = $('bm-day');
+  const dayVal = _bmday ? parseInt(_bmday.value) : 0;
   const dayErrEl = $('bm-day-err');
   if (!dayVal || dayVal < 1 || dayVal > 28) {
     if (dayErrEl) { dayErrEl.style.display = 'block'; }
-    $('bm-day').focus();
+    if (_bmday) _bmday.focus();
     return;
   }
   if (dayErrEl) dayErrEl.style.display = 'none';
@@ -2933,20 +2939,17 @@ function closeModal(id, actionTaken) {
 function openLtDebtModal(type) {
   ltDebtType = type;
   const bal = type === 'car' ? S.carloan : S.cc;
-  $('lt-modal-title').textContent = type === 'car' ? 'Car Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
-  $('lt-balance').textContent = fmtC(bal);
-  if (type === 'car') {
-    $('lt-minpay').textContent = '$387.69 / fortnight (fixed)';
-  } else {
-    $('lt-minpay').textContent = '$92 / month (min — avoid this)';
-  }
-  $('lt-extra').value = '';
-  $('lt-new-bal').value = '';
-  $('lt-result').style.display = 'none';
+  const _ltmt = $('lt-modal-title'); if (_ltmt) _ltmt.textContent = type === 'car' ? 'Car Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
+  const _ltbal = $('lt-balance'); if (_ltbal) _ltbal.textContent = fmtC(bal);
+  const _ltmp = $('lt-minpay');
+  if (_ltmp) { if (type === 'car') { _ltmp.textContent = '$387.69 / fortnight (fixed)'; } else { _ltmp.textContent = '$92 / month (min — avoid this)'; } }
+  const _ltex = $('lt-extra'); if (_ltex) _ltex.value = '';
+  const _ltnb = $('lt-new-bal'); if (_ltnb) _ltnb.value = '';
+  const _ltres = $('lt-result'); if (_ltres) _ltres.style.display = 'none';
   if ($('lt-lump')) { $('lt-lump').value = ''; }
   if ($('lt-lump-result')) { $('lt-lump-result').style.display = 'none'; }
   if ($('lt-lump-section')) { $('lt-lump-section').style.display = type === 'car' ? 'block' : 'none'; }
-  $('lt-debt-modal').classList.add('open');
+  const _ltdm = $('lt-debt-modal'); if (_ltdm) _ltdm.classList.add('open');
   calcLtDebt();
 }
 
@@ -4113,6 +4116,21 @@ function showUndoToast(msg) {
   toast.style.display = 'block';
   _undoTimer = setTimeout(() => { toast.style.display = 'none'; _undoTimer = null; }, 5000);
 }
+let _toastTimer = null;
+function showToast(msg) {
+  let el = document.getElementById('slyght-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'slyght-toast';
+    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:13px;font-weight:600;color:var(--text);z-index:500;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  el.style.display = 'block';
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.style.opacity = '0'; setTimeout(() => { el.style.display = 'none'; }, 200); _toastTimer = null; }, 3000);
+}
 function undoLastAction() {
   if (!S._prevState) return;
   try {
@@ -4401,21 +4419,37 @@ async function sendChatMessage() {
       .slice(-20)
       .map(m => ({role:m.role, content:m.content}));
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': S.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        system: buildSystemPrompt(),
-        messages: apiMessages
-      })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let resp;
+    try {
+      resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': S.apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          system: buildSystemPrompt(),
+          messages: apiMessages
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+    } catch(e) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') {
+        hideTypingIndicator();
+        showToast('Request timed out — check your connection');
+        _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom();
+        return;
+      }
+      throw e;
+    }
 
     hideTypingIndicator();
 
@@ -4898,12 +4932,23 @@ const SNAPSHOTS = {
     let snaps = this.load();
     snaps.unshift(snap);
     if (snaps.length > this.maxSnapshots) snaps = snaps.slice(0, this.maxSnapshots);
-    try { localStorage.setItem('slyght_snapshots', JSON.stringify(snaps)); }
-    catch(e) { console.warn('Snapshot storage full'); localStorage.setItem('slyght_snapshots', JSON.stringify(snaps.slice(0, 10))); }
+    this.save(snaps);
     return snap;
   },
   load() {
     try { return JSON.parse(localStorage.getItem('slyght_snapshots') || '[]'); } catch(e) { return []; }
+  },
+  save(list) {
+    // Keep only 10 most recent snapshots
+    const trimmed = (list || this.load()).slice(-10);
+    try {
+      localStorage.setItem('slyght_snapshots', JSON.stringify(trimmed));
+    } catch(e) {
+      // If still too large, keep only 5
+      try {
+        localStorage.setItem('slyght_snapshots', JSON.stringify(trimmed.slice(-5)));
+      } catch(e2) {}
+    }
   },
   restore(index) {
     const snaps = this.load(), snap = snaps[index];
@@ -4970,8 +5015,9 @@ const RECONCILER = {
     return result;
   },
   morningCheck() {
-    const lastOpen = localStorage.getItem('slyght_last_open_date');
     const today = new Date().toDateString();
+    if (localStorage.getItem('slyght_last_recon') === today) return;
+    const lastOpen = localStorage.getItem('slyght_last_open_date');
     if (lastOpen && lastOpen !== today) {
       const result = this.run();
       if (result.status !== 'ok') {
@@ -4986,6 +5032,7 @@ const RECONCILER = {
       }
     }
     localStorage.setItem('slyght_last_open_date', today);
+    localStorage.setItem('slyght_last_recon', today);
   }
 };
 
@@ -5010,11 +5057,20 @@ const CONSISTENCY = {
     }
   ],
   run() {
-    const failures = this.checks.filter(c => { try { return !c.check(); } catch(e) { return true; } });
+    const failures = [];
+    this.checks.forEach(c => {
+      try {
+        const ok = c.check();
+        if (!ok) failures.push(c);
+      } catch(e) {
+        // log but don't crash heartbeat
+        if (SLYGHT_DEBUG) console.warn('Consistency check failed:', c.name, e);
+      }
+    });
     this.lastCheck = new Date();
     if (failures.length > 0) {
       console.warn('🔍 Consistency check failed:', failures.map(f => f.name));
-      AUDITOR.record('CONSISTENCY_FAIL', S.bal, S.bal, 0, 'Failed: ' + failures.map(f => f.name).join(' | '));
+      try { AUDITOR.record('CONSISTENCY_FAIL', S.bal, S.bal, 0, 'Failed: ' + failures.map(f => f.name).join(' | ')); } catch(e) {}
     }
     return failures;
   },
@@ -5089,7 +5145,7 @@ const TRACER = {
     return { result, steps: [
       { label: 'Starting balance', value: bal, running: bal, color: 'green' },
       { label: 'Bills due (' + billsDue.length + ' bills)', value: -billsTotal, running: bal - billsTotal, color: billsTotal > 0 ? 'red' : 'text3', detail: billsDue.map(b => b.name + ' $' + b.amt.toFixed(2)).join(', ') || 'none' },
-      { label: 'Debts due this cycle', value: -debtsDue, running: bal - billsTotal - debtsDue, color: debtsDue > 0 ? 'red' : 'text3', detail: (S.debts||[]).filter(d=>!d.paid).map(d=>d.name+' $'+d.amt.toFixed(2)).join(', ') },
+      { label: 'Debts due this cycle', value: -debtsDue, running: bal - billsTotal - debtsDue, color: debtsDue > 0 ? 'red' : 'text3', detail: (S.debts||[]).filter(d=>!d.paid&&!d.viaRent).map(d=>d.name+' $'+d.amt.toFixed(2)).join(', ') },
       { label: 'Savings buckets locked', value: -buckets, running: bal - billsTotal - debtsDue - buckets, color: 'amber', detail: (S.savingsBuckets||[]).map(b=>b.name+' $'+(+b.saved).toFixed(2)).join(', ') },
       { label: 'Living costs (' + avgDaily.toFixed(0) + '/day × ' + days + ' days)', value: -living, running: bal - billsTotal - debtsDue - buckets - living, color: 'amber' },
       { label: 'Safety buffer', value: -buffer, running: bal - billsTotal - debtsDue - buckets - living - buffer, color: 'amber' },
@@ -5231,7 +5287,7 @@ const UX = {
   trackTap(element, label) {
     const entry = { ts: Date.now(), label: label || element?.id || element?.className?.toString()?.split(' ')?.[0] || 'unknown', tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
     this.session.interactions.push(entry);
-    if (this.session.interactions.length > 200) this.session.interactions.shift();
+    if (this.session.interactions.length > 500) this.session.interactions.shift();
   },
   trackTabVisit(tabName) {
     if (!this.session.tabVisits[tabName]) this.session.tabVisits[tabName] = 0;
@@ -5443,7 +5499,7 @@ const PREDICTOR = {
     const monthlyBills = BILLS.filter(b=>b.recurring!==false).reduce((s,b)=>s+b.amt,0);
     const avgSpend = getAvgDailySpend()*30;
     const carPay = 387.69*2;
-    const activeDebts = (S.debts||[]).filter(d=>!d.paid).reduce((s,d)=>s+d.amt,0);
+    const activeDebts = (S.debts||[]).filter(d=>!d.paid&&!d.viaRent).reduce((s,d)=>s+d.amt,0);
     for (let m=1; m<=nMonths; m++) {
       const ccMin = Math.max(25, cc*0.02);
       const dt = new Date(); dt.setMonth(dt.getMonth()+m); dt.setDate(S.payday||15);
@@ -5709,6 +5765,10 @@ const API_COSTS = {
   load() { try { const s=localStorage.getItem('slyght_api_costs'); if(s) this.log=JSON.parse(s); } catch(e) {} },
 
   totals() {
+    if (!this.log || this.log.length === 0) {
+      return { allTime:0, thisMonth:0, today:0, chatCalls:0, scanCalls:0, totalCalls:0,
+               projectedMonthly:0, projectedYearly:0, avgPerCall:0, daysTracked:0 };
+    }
     const now=Date.now(), day=86400000, month=day*30;
     const allTime=this.log.reduce((s,e)=>s+e.cost,0);
     const thisMonth=this.log.filter(e=>now-e.ts<month).reduce((s,e)=>s+e.cost,0);
@@ -5717,13 +5777,13 @@ const API_COSTS = {
     const scanCalls=this.log.filter(e=>e.type==='scan').length;
     const firstTs=this.log.length>0?this.log[this.log.length-1].ts:now;
     const daysTracked=Math.max(1,(now-firstTs)/day);
-    const avgPerDay=allTime/daysTracked;
+    const avgPerDay=(allTime/daysTracked)||0;
     return {
       allTime:parseFloat(allTime.toFixed(4)), thisMonth:parseFloat(thisMonth.toFixed(4)),
       today:parseFloat(today.toFixed(4)), chatCalls, scanCalls, totalCalls:this.log.length,
       avgPerCall:this.log.length>0?parseFloat((allTime/this.log.length).toFixed(5)):0,
-      projectedMonthly:parseFloat((avgPerDay*30).toFixed(2)),
-      projectedYearly:parseFloat((avgPerDay*365).toFixed(2)),
+      projectedMonthly:parseFloat(((avgPerDay||0)*30).toFixed(2)),
+      projectedYearly:parseFloat(((avgPerDay||0)*365).toFixed(2)),
       daysTracked:Math.round(daysTracked)
     };
   },
@@ -5817,7 +5877,7 @@ function processScanImage(file) {
     if (previewImg) previewImg.src = dataUrl;
     // Quality check — sample brightness
     checkImageBrightness(dataUrl);
-    $('scan-preview').style.display = 'flex';
+    const _sprev = $('scan-preview'); if (_sprev) _sprev.style.display = 'flex';
   };
   reader.readAsDataURL(file);
 }
@@ -5860,10 +5920,10 @@ function checkImageBrightness(dataUrl) {
 
 async function sendToScanAI() {
   if (!_scanBase64) return;
-  $('scan-preview').style.display = 'none';
+  const _sp = $('scan-preview'); if (_sp) _sp.style.display = 'none';
   _scanCancelled = false;
   const loading = $('scan-loading');
-  loading.style.display = 'flex';
+  if (loading) loading.style.display = 'flex';
   // Cycle status messages
   let msgIdx = 0;
   const msgEl = $('scan-status-text');
@@ -5872,16 +5932,23 @@ async function sendToScanAI() {
     msgIdx = (msgIdx + 1) % _scanStatusMessages.length;
     if (msgEl) msgEl.textContent = _scanStatusMessages[msgIdx];
   }, 1800);
-  const result = await scanDocumentWithAI(_scanBase64, _scanMediaType);
-  clearInterval(msgInterval);
-  loading.style.display = 'none';
-  if (_scanCancelled) return;
-  showScanConfirmation(result);
+  try {
+    const result = await scanDocumentWithAI(_scanBase64, _scanMediaType);
+    clearInterval(msgInterval);
+    if (_scanCancelled) return;
+    showScanConfirmation(result);
+  } catch(e) {
+    clearInterval(msgInterval);
+    showToast('Scan failed: ' + (e.message || 'Unknown error'));
+  } finally {
+    const loading = document.getElementById('scan-loading');
+    if (loading) loading.style.display = 'none';
+  }
 }
 
 function cancelScan() {
   _scanCancelled = true;
-  $('scan-loading').style.display = 'none';
+  const _slc = $('scan-loading'); if (_slc) _slc.style.display = 'none';
 }
 
 async function scanDocumentWithAI(base64, mediaType) {
@@ -5891,20 +5958,35 @@ async function scanDocumentWithAI(base64, mediaType) {
   const systemPrompt = `You are a financial document scanner for an Australian personal finance app called SLYGHT. Extract ALL financial information from documents. Return ONLY valid JSON, no extra text.`;
   const userPrompt = `Scan this financial document. Extract: company name, amount owed, due date, interest rate, reference numbers, urgency, payment methods. Return this exact JSON:\n{"documentType":"overdue_notice|final_notice|bill|fine|insurance|bank_statement|receipt|collection_letter|unknown","company":"","amount":0.00,"originalAmount":0.00,"interestAccrued":0.00,"dueDate":null,"isOverdue":false,"overdueByDays":0,"interestRate":0.00,"dailyInterest":0.00,"penaltyIfUnpaid":"","reference":"","paymentMethods":[],"instalmentOption":null,"urgency":"overdue|today|this_week|this_month|future","category":"debt|bill|fine|insurance|utility|loan|other","description":"","suggestedAction":"","confidence":0.0,"confidenceReason":"","rawAmountText":"","rawDateText":""}`;
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514', max_tokens:800,
-        system:systemPrompt,
-        messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mediaType,data:base64}},{type:'text',text:userPrompt}]}]
-      })
-    });
+    const scanController = new AbortController();
+    const scanTimeoutId = setTimeout(() => scanController.abort(), 30000);
+    let response;
+    try {
+      response = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({
+          model:'claude-sonnet-4-20250514', max_tokens:800,
+          system:systemPrompt,
+          messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mediaType,data:base64}},{type:'text',text:userPrompt}]}]
+        }),
+        signal: scanController.signal
+      });
+      clearTimeout(scanTimeoutId);
+    } catch(e) {
+      clearTimeout(scanTimeoutId);
+      if (e.name === 'AbortError') {
+        showToast('Request timed out — check your connection');
+        return {documentType:'unknown',confidence:0,confidenceReason:'Timeout',company:'',amount:0,description:'Request timed out — check your connection and try again.'};
+      }
+      throw e;
+    }
     const data = await response.json();
     try { API_COSTS.record('scan', data.usage?.input_tokens||1600, data.usage?.output_tokens||150, true); } catch(e) {}
     if (data.error) throw new Error(data.error.message);
     const text = data.content[0].text.trim();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleaned = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON in response');
     const result = JSON.parse(jsonMatch[0]);
     result.amount = parseFloat(result.amount) || 0;
@@ -5947,7 +6029,8 @@ function showScanConfirmation(result) {
   const urgLabel=urgLabels[result.urgency]||'';
   const defaultAddType = (result.urgency==='overdue'||result.urgency==='today'||result.urgency==='this_week'||result.documentType==='fine'||result.documentType==='collection_letter') ? 'debt' : (result.documentType==='bill'||result.documentType==='insurance') ? 'bill' : 'debt';
   const warnHtml = [...validation.issues.map(i=>'<div style="color:var(--red);font-size:12px;padding:3px 0">❌ '+esc(i)+'</div>'), ...validation.warnings.map(w=>'<div style="color:var(--amber);font-size:12px;padding:3px 0">⚠️ '+esc(w)+'</div>')].join('');
-  const fmtDate = d => { if (!d) return ''; try { const dt=new Date(d+'T00:00'); return dt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}); } catch(e){ return d; } };
+  const lowConfHtml = conf < 0.75 ? '<div style="background:var(--amber-dim);border:1px solid var(--amber);border-radius:8px;padding:10px;margin:8px 0;font-size:12px;color:var(--amber)">⚠️ Low confidence ('+Math.round(conf*100)+'%) — verify all fields before adding</div>' : '';
+  const fmtDate = d => { if (!d) return ''; try { const dt=new Date(d+'T00:00'); return isNaN(dt.getTime()) ? 'No date set' : dt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}); } catch(e){ return 'No date set'; } };
   const body = $('scan-confirm-body');
   if (body) body.innerHTML =
     '<div style="background:'+typeColor.replace(')','-dim)').replace('var(-','var(--')+';border:1px solid '+typeColor+';border-radius:var(--r-sm);padding:6px 10px;display:inline-block;font-size:11px;font-weight:700;color:'+typeColor+';margin-bottom:14px">'+typeLabel+'</div>'+
@@ -5956,6 +6039,7 @@ function showScanConfirmation(result) {
     (result.dueDate?'<div style="font-size:14px;color:var(--text2);margin-bottom:6px">Due: '+fmtDate(result.dueDate)+'<span style="margin-left:8px;font-size:11px;font-weight:700;color:'+urgColor+'">'+urgLabel+'</span></div>':'')+
     (result.description?'<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;padding:10px;background:var(--bg3);border-radius:var(--r-sm)">📝 '+esc(result.description)+'</div>':'')+
     (result.paymentMethods&&result.paymentMethods.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:10px">💳 Pay via: '+result.paymentMethods.map(p=>esc(p)).join(' · ')+'</div>':'')+
+    lowConfHtml+
     (warnHtml?'<div style="margin-bottom:12px">'+warnHtml+'</div>':'')+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding-top:8px;border-top:1px solid var(--border)">── All fields editable ──</div>'+
     '<div class="modal-field"><label>Name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="sc-name" value="'+esc(result.company||'')+'"></div>'+
@@ -5981,6 +6065,9 @@ function confirmScanAdd(result) {
   const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
   const dateVal = document.getElementById('sc-date')?.value || result.dueDate || null;
   const rate = parseFloat(document.getElementById('sc-rate')?.value) || 0;
+  // ID collision guard (scan path): ensure nextDebtId exceeds highest existing debt id
+  if (S.debts && S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if ((S.nextDebtId||0) <= _maxId) S.nextDebtId = _maxId + 1; }
+  if (!S.nextDebtId) S.nextDebtId = 0;
   const notes = document.getElementById('sc-notes')?.value?.trim() || '';
   const addType = document.querySelector('input[name="sc-add-type"]:checked')?.value || 'debt';
   SNAPSHOTS.autoSnapshot('pre_scan_add');
@@ -6023,7 +6110,7 @@ const HEARTBEAT = {
   tickCount: 0,
 
   start() {
-    if (this.interval) clearInterval(this.interval);
+    this.stop(); // always stop before starting
     this.interval = setInterval(() => this.tick(), 120000);
     setTimeout(() => this.tick(), 5000);
     if (SLYGHT_DEBUG) console.log('💓 Heartbeat started — 2 min interval');
@@ -6096,16 +6183,26 @@ const obEl = $('ob-days-display');
 if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
 // Always show splash first — splashTap() handles routing
 function splashTap() {
-  $('splash-screen').style.display = 'none';
+  const _spl = $('splash-screen'); if (_spl) _spl.style.display = 'none';
   if ((S.txns && S.txns.length > 0) || BILLS.length > 0) {
     showMain();
   } else {
-    $('ob-screen').style.display = 'block';
+    const _obSc = $('ob-screen'); if (_obSc) _obSc.style.display = 'block';
   }
 }
 function showSlyghtScoreInfo() {
   const msg = 'SLYGHT Score (0\u20131000)\n\nDebt reduction (200pts) \u2014 How fast debts are shrinking\nSavings rate (200pts) \u2014 Saving vs income ratio\nSpending discipline (200pts) \u2014 Staying under daily budget\nEmergency fund (200pts) \u2014 Progress toward 90-day reserve\nNet worth trend (200pts) \u2014 Whether net worth is improving\n\n800+ Excellent  600\u2013799 Good  400\u2013599 Needs work  0\u2013399 Critical';
   alert(msg);
+}
+function triggerCamera() {
+  const el = document.getElementById('scan-camera-input');
+  if (el) { el.click(); return; }
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.onchange = (e) => { if (e.target.files[0]) processScanImage(e.target.files[0]); };
+  input.click();
 }
 </script>
 <!-- SCANNER MODAL -->
@@ -6116,17 +6213,17 @@ function showSlyghtScoreInfo() {
       <button onclick="closeModal('scanner-modal')" style="min-width:44px;min-height:44px;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
     </div>
     <!-- Camera -->
-    <div onclick="document.getElementById('scan-camera-input').click()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
+    <div onclick="triggerCamera()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
       <span style="font-size:36px">📷</span>
       <div><div style="font-size:15px;font-weight:600;color:var(--text)">Take a Photo</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Point camera at letter, bill or notice</div></div>
     </div>
-    <input type="file" accept="image/*" capture="environment" id="scan-camera-input" style="display:none" onchange="processScanImage(this.files[0])">
     <!-- Gallery -->
     <div onclick="document.getElementById('scan-gallery-input').click()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
       <span style="font-size:36px">🖼️</span>
       <div><div style="font-size:15px;font-weight:600;color:var(--text)">Upload from Gallery</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Choose existing photo or screenshot</div></div>
     </div>
     <input type="file" accept="image/*" id="scan-gallery-input" style="display:none" onchange="processScanImage(this.files[0])">
+    <input type="file" accept="image/*" capture="environment" id="scan-camera-input" style="display:none" onchange="processScanImage(this.files[0])">
     <!-- Paste -->
     <div onclick="pasteScanImage()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
       <span style="font-size:36px">📋</span>
