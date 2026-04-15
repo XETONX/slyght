@@ -968,24 +968,30 @@ const API_RATE = {
 
 // PIN Security — SHA-256 hashed storage
 async function hashPIN(pin) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pin + 'slyght_salt_v1');
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pin + 'slyght_salt_v1');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch(e) { console.error('hashPIN error:', e); return ''; }
 }
 async function setPIN(pin) {
-  if (!pin) { S.pinHash = ''; delete S.pin; save(); return; }
-  S.pinHash = await hashPIN(pin);
-  delete S.pin;
-  save();
+  try {
+    if (!pin) { S.pinHash = ''; delete S.pin; save(); return; }
+    S.pinHash = await hashPIN(pin);
+    delete S.pin;
+    save();
+  } catch(e) { console.error('setPIN error:', e); }
 }
 async function verifyPIN(input) {
-  // Migration: if old plaintext pin exists, hash it now
-  if (S.pin && !S.pinHash) { await setPIN(S.pin); }
-  if (!S.pinHash) return true; // no PIN set
-  const hashed = await hashPIN(input);
-  return hashed === S.pinHash;
+  try {
+    // Migration: if old plaintext pin exists, hash it now
+    if (S.pin && !S.pinHash) { await setPIN(S.pin); }
+    if (!S.pinHash) return true; // no PIN set
+    const hashed = await hashPIN(input);
+    return hashed === S.pinHash;
+  } catch(e) { console.error('verifyPIN error:', e); return false; }
 }
 
 let activeDebtIdx = -1;
@@ -1108,6 +1114,13 @@ function load() {
     const d = localStorage.getItem(STORAGE_KEY);
     if (d) { const p = JSON.parse(d); S = {...S, ...p.S}; if (p.BILLS) BILLS = p.BILLS; }
   } catch(e) {}
+  // Clean stale notifications for paid debts on load
+  if (S.notifications) {
+    S.notifications = S.notifications.filter(n => {
+      const matchedDebt = (S.debts||[]).find(d => n.msg && n.msg.includes(d.name));
+      return !matchedDebt || !matchedDebt.paid;
+    });
+  }
 }
 
 function daysInCurrentMonth() {
@@ -1424,22 +1437,22 @@ function pinKey(k) {
       const entered = pinEntry;
       verifyPIN(entered).then(ok => {
         if (ok) {
-          $('pin-screen').style.display = 'none';
+          const _psc = $('pin-screen'); if (_psc) _psc.style.display = 'none';
           showMain();
           pinEntry = '';
-          $('pin-err').textContent = '';
+          const _pe1 = $('pin-err'); if (_pe1) _pe1.textContent = '';
         } else {
-          $('pin-dots').classList.add('shake');
+          const _pd1 = $('pin-dots'); if (_pd1) _pd1.classList.add('shake');
           document.querySelectorAll('.pin-dot').forEach(d => d.classList.add('error'));
-          $('pin-err').textContent = 'Incorrect PIN. Try again.';
-          setTimeout(() => { pinEntry = ''; $('pin-dots').classList.remove('shake'); document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error')); updatePinDots(); }, 800);
+          const _pe2 = $('pin-err'); if (_pe2) _pe2.textContent = 'Incorrect PIN. Try again.';
+          setTimeout(() => { pinEntry = ''; const _pd2 = $('pin-dots'); if (_pd2) _pd2.classList.remove('shake'); document.querySelectorAll('.pin-dot').forEach(d => d.classList.remove('error')); updatePinDots(); }, 800);
         }
       });
     }, 100);
   }
 }
-function pinDel() { pinEntry = pinEntry.slice(0, -1); updatePinDots(); $('pin-err').textContent = ''; }
-function updatePinDots() { for (let i = 0; i < 4; i++) $('pd'+i).classList.toggle('filled', i < pinEntry.length); }
+function pinDel() { pinEntry = pinEntry.slice(0, -1); updatePinDots(); const _pe3 = $('pin-err'); if (_pe3) _pe3.textContent = ''; }
+function updatePinDots() { for (let i = 0; i < 4; i++) { const _pdi = $('pd'+i); if (_pdi) _pdi.classList.toggle('filled', i < pinEntry.length); } }
 
 function goPage(id) {
   document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
@@ -1832,7 +1845,7 @@ function renderAnalysisTab() {
 }
 
 function filterTxns() {
-  const q = ($('txn-search').value || '').toLowerCase().trim();
+  const _ts = $('txn-search'); const q = (_ts ? _ts.value : '').toLowerCase().trim();
   document.querySelectorAll('.txn-row').forEach(row => {
     const text = row.textContent.toLowerCase();
     row.style.display = (!q || text.includes(q)) ? '' : 'none';
@@ -2359,7 +2372,8 @@ function cancelHeroBalEdit() {
   const _hb2 = $('h-bal'); if (_hb2) _hb2.style.display = '';
 }
 function confirmHeroBalEdit() {
-  const b = parseFloat($('h-bal-input').value);
+  const _hbi2 = $('h-bal-input'); if (!_hbi2) return;
+  const b = parseFloat(_hbi2.value);
   if (isNaN(b) || b < 0) { alert('Balance must be a positive number'); return; }
   cancelHeroBalEdit();
   const prevExpected = getLiveBal();
@@ -2378,9 +2392,10 @@ function confirmHeroBalEdit() {
 }
 
 function updateBalanceFromSettings() {
-  const b = parseFloat($('s-bal').value);
+  const _sbal = $('s-bal'); if (!_sbal) return;
+  const b = parseFloat(_sbal.value);
   const msg = $('s-bal-msg');
-  if (isNaN(b)) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; return; }
+  if (isNaN(b)) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; } return; }
   const prevExpected = getLiveBal(); // H2: snapshot before S.bal changes
 
   // Detect payday via balance jump — compare new bank balance to current S.bal baseline
@@ -2397,10 +2412,12 @@ function updateBalanceFromSettings() {
   S.bal = b;
   save();
   renderAll();
-  msg.style.color = 'var(--green)';
-  msg.textContent = S.paydayReceived && jump >= income * 0.8
-    ? 'Looks like you got paid — payday plan activated'
-    : 'Balance updated to ' + fmtC(b);
+  if (msg) {
+    msg.style.color = 'var(--green)';
+    msg.textContent = S.paydayReceived && jump >= income * 0.8
+      ? 'Looks like you got paid — payday plan activated'
+      : 'Balance updated to ' + fmtC(b);
+  }
   setTimeout(() => { if ($('s-bal-msg')) $('s-bal-msg').textContent = ''; }, 3000);
   // Trigger reconciliation if difference is significant
   runRecon(b, prevExpected);
@@ -2429,9 +2446,9 @@ function renderDebtTiles() {
   const active = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
   const grid = $('debt-grid'), congrats = $('debt-congrats');
   const total = active.reduce((s,d) => s + d.amt, 0);
-  $('imm-total').textContent = active.length > 0 ? fmt(total) + ' total' : '';
-  if (!active.length) { grid.style.display = 'none'; congrats.style.display = 'block'; return; }
-  grid.style.display = 'grid'; congrats.style.display = 'none';
+  const _immtot = $('imm-total'); if (_immtot) _immtot.textContent = active.length > 0 ? fmt(total) + ' total' : '';
+  if (!active.length) { if (grid) grid.style.display = 'none'; if (congrats) congrats.style.display = 'block'; return; }
+  if (grid) grid.style.display = 'grid'; if (congrats) congrats.style.display = 'none';
   const surplus = getGenuineSurplus();
   grid.innerHTML = active.map((d, i) => {
     const col = d.delayed ? 'warn' : 'bad';
@@ -2650,7 +2667,7 @@ function openWrxAllocModal() {
   if (rem > 0) { allocs.push({name:'Car Loan (lump sum)',amt:Math.min(rem,(S.carloan||0)),id:'car',type:'car'}); rem=Math.max(0,rem-Math.min(rem,(S.carloan||0))); }
   if (rem > 0) allocs.push({name:'Remaining to Virgin Money',amt:rem,id:'cash',type:'cash'});
 
-  $('wrx-alloc-sub').textContent = fmtC(salePrice)+' sale · net '+fmtC(saleNet)+' after costs';
+  const _was = $('wrx-alloc-sub'); if (_was) _was.textContent = fmtC(salePrice)+' sale · net '+fmtC(saleNet)+' after costs';
   let html = '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">Recommended allocation:</div>';
   html += allocs.map((a,i)=>'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">'+
     '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">'+
@@ -2658,8 +2675,8 @@ function openWrxAllocModal() {
     '<span style="font-size:13px;font-weight:500;color:var(--text)">'+esc(a.name)+'</span></label>'+
     '<span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmtC(a.amt)+'</span></div>').join('');
   html += '<button onclick="confirmWrxAlloc('+JSON.stringify(allocs).replace(/"/g,"'")+','+saleNet+')" style="width:100%;padding:13px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;margin-top:14px;font-size:14px">Confirm Marked Payments →</button>';
-  $('wrx-alloc-body').innerHTML = html;
-  $('wrx-alloc-modal').classList.add('open');
+  const _wab = $('wrx-alloc-body'); if (_wab) _wab.innerHTML = html;
+  const _wam = $('wrx-alloc-modal'); if (_wam) _wam.classList.add('open');
 }
 
 function confirmWrxAlloc(allocs, saleNet) {
@@ -2708,12 +2725,12 @@ function openDebtModal(idx) {
 function saveDebt() {
   if (activeDebtIdx < 0) return;
   const d = S.debts[activeDebtIdx];
-  d.name = $('modal-name').value || d.name;
-  d.amt = parseFloat($('modal-amt').value) || d.amt;
-  d.rate = parseFloat($('modal-rate').value) || 0;
-  d.delayDate = $('modal-due').value || '';
-  d.notes = $('modal-notes').value || d.notes;
-  d.priority = parseInt($('modal-priority').value) || 99;
+  const _smn = $('modal-name'); if (_smn) d.name = _smn.value || d.name;
+  const _sma = $('modal-amt'); if (_sma) { const _v = parseFloat(_sma.value); if (!isNaN(_v)) d.amt = _v || d.amt; }
+  const _smr = $('modal-rate'); if (_smr) d.rate = parseFloat(_smr.value) || 0;
+  const _smd = $('modal-due'); if (_smd) d.delayDate = _smd.value || '';
+  const _smno = $('modal-notes'); if (_smno) d.notes = _smno.value || d.notes;
+  const _smp = $('modal-priority'); if (_smp) d.priority = parseInt(_smp.value) || 99;
   save(); closeModal('debt-modal', true); renderAll();
 }
 
@@ -2721,12 +2738,12 @@ function saveDebtDelay() {
   if (activeDebtIdx < 0) return;
   const d = S.debts[activeDebtIdx];
   d.delayed = true;
-  d.name = $('modal-name').value || d.name;
-  d.amt = parseFloat($('modal-amt').value) || d.amt;
-  d.rate = parseFloat($('modal-rate').value) || 0;
-  d.delayDate = $('modal-due').value || '';
-  d.notes = $('modal-notes').value || d.notes;
-  d.priority = parseInt($('modal-priority').value) || 99;
+  const _sdmn = $('modal-name'); if (_sdmn) d.name = _sdmn.value || d.name;
+  const _sdma = $('modal-amt'); if (_sdma) { const _v2 = parseFloat(_sdma.value); if (!isNaN(_v2)) d.amt = _v2 || d.amt; }
+  const _sdmr = $('modal-rate'); if (_sdmr) d.rate = parseFloat(_sdmr.value) || 0;
+  const _sdmd = $('modal-due'); if (_sdmd) d.delayDate = _sdmd.value || '';
+  const _sdmno = $('modal-notes'); if (_sdmno) d.notes = _sdmno.value || d.notes;
+  const _sdmp = $('modal-priority'); if (_sdmp) d.priority = parseInt(_sdmp.value) || 99;
   save(); closeModal('debt-modal', true); renderAll();
 }
 
@@ -2771,21 +2788,22 @@ function markDebtPaid() {
 }
 
 function openAddDebtModal() {
-  $('nd-name').value = '';
-  $('nd-amt').value = '';
-  $('nd-rate').value = '0';
-  $('nd-due').value = '';
-  $('nd-notes').value = '';
-  $('add-debt-modal').classList.add('open');
+  const _ndn = $('nd-name'); if (_ndn) _ndn.value = '';
+  const _nda = $('nd-amt'); if (_nda) _nda.value = '';
+  const _ndr = $('nd-rate'); if (_ndr) _ndr.value = '0';
+  const _ndd = $('nd-due'); if (_ndd) _ndd.value = '';
+  const _ndno = $('nd-notes'); if (_ndno) _ndno.value = '';
+  const _adm = $('add-debt-modal'); if (_adm) _adm.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('add-debt-modal');
 }
 
 function saveNewDebt() {
-  const name = $('nd-name').value.trim();
-  const amt = parseFloat($('nd-amt').value);
-  const rate = parseFloat($('nd-rate').value) || 0;
-  const due = $('nd-due').value || '';
-  const notes = $('nd-notes').value.trim();
+  const _ndn2 = $('nd-name'); if (!_ndn2) return;
+  const name = _ndn2.value.trim();
+  const _nda2 = $('nd-amt'); const amt = _nda2 ? parseFloat(_nda2.value) : NaN;
+  const _ndr2 = $('nd-rate'); const rate = _ndr2 ? (parseFloat(_ndr2.value) || 0) : 0;
+  const _ndd2 = $('nd-due'); const due = _ndd2 ? (_ndd2.value || '') : '';
+  const _ndno2 = $('nd-notes'); const notes = _ndno2 ? _ndno2.value.trim() : '';
   if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
   if (!S.nextDebtId) S.nextDebtId = S.debts.length;
   // ID collision guard: ensure nextDebtId exceeds highest existing debt id
@@ -2813,9 +2831,12 @@ function saveNewDebt() {
 function openBillModal(idx) {
   activeBillIdx = idx;
   const b = BILLS[idx];
-  $('bm-name').value = b.name; $('bm-amt').value = b.amt; $('bm-day').value = b.day;
-  $('bm-tag').value = b.tag; $('bm-recurring').checked = b.recurring !== false;
-  $('bm-freq').value = b.freq || 'monthly';
+  const _bmn = $('bm-name'); if (_bmn) _bmn.value = b.name;
+  const _bma = $('bm-amt'); if (_bma) _bma.value = b.amt;
+  const _bmd = $('bm-day'); if (_bmd) _bmd.value = b.day;
+  const _bmt2 = $('bm-tag'); if (_bmt2) _bmt2.value = b.tag;
+  const _bmrec = $('bm-recurring'); if (_bmrec) _bmrec.checked = b.recurring !== false;
+  const _bmf = $('bm-freq'); if (_bmf) _bmf.value = b.freq || 'monthly';
   // Show last paid and next due
   const extraInfo = $('bill-extra-info');
   if (extraInfo) {
@@ -2858,7 +2879,8 @@ function openBillModal(idx) {
 
 function saveBill() {
   if (activeBillIdx < 0) return;
-  const recurring = $('bm-recurring').checked;
+  const _bmrec2 = $('bm-recurring');
+  const recurring = _bmrec2 ? _bmrec2.checked : true;
   if (!recurring) {
     if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
       saveUndoState();
@@ -2879,11 +2901,11 @@ function saveBill() {
   }
   if (dayErrEl) dayErrEl.style.display = 'none';
   BILLS[activeBillIdx] = {
-    name: $('bm-name').value || BILLS[activeBillIdx].name,
-    amt: parseFloat($('bm-amt').value) || BILLS[activeBillIdx].amt,
+    name: ($('bm-name') ? $('bm-name').value : '') || BILLS[activeBillIdx].name,
+    amt: parseFloat($('bm-amt') ? $('bm-amt').value : '') || BILLS[activeBillIdx].amt,
     day: dayVal,
-    tag: $('bm-tag').value, recurring: true,
-    freq: $('bm-freq').value || 'monthly'
+    tag: $('bm-tag') ? $('bm-tag').value : (BILLS[activeBillIdx].tag || ''), recurring: true,
+    freq: ($('bm-freq') ? $('bm-freq').value : '') || 'monthly'
   };
   save(); closeModal('bill-modal', true); renderAll();
 }
@@ -2955,14 +2977,15 @@ function openLtDebtModal(type) {
 
 function calcLtDebt() {
   const bal = ltDebtType === 'car' ? S.carloan : S.cc;
-  if (bal <= 0) { $('lt-result').style.display = 'none'; return; }
+  const _ltr = $('lt-result');
+  if (bal <= 0) { if (_ltr) _ltr.style.display = 'none'; return; }
 
   if (ltDebtType === 'car') {
     // Car loan: fortnightly $387.69 fixed. Show 6/12/24 month projections
     const rate = 9.87;
     const mr = rate/100/26; // fortnightly rate
     const payment = 387.69;
-    const extra = parseFloat($('lt-extra').value) || 0;
+    const _ltex2 = $('lt-extra'); const extra = _ltex2 ? (parseFloat(_ltex2.value) || 0) : 0;
     const totalPayment = payment + extra;
 
     function projectBalance(months) {
@@ -3023,14 +3046,13 @@ function calcLtDebt() {
       html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.7">' +
         'FA8 tip: You have a genuine surplus of <strong>' + fmtC(surplus) + '</strong>. Putting <strong>' + fmtC(tipAmt) + '/fortnight</strong> extra here at 9.87% could save hundreds in interest — enter it below to see exactly how much.</div>';
     }
-    $('lt-result').innerHTML = html;
-    $('lt-result').style.display = 'block';
+    if (_ltr) { _ltr.innerHTML = html; _ltr.style.display = 'block'; }
 
   } else {
     // Credit card: show min vs recommended payoff scenarios
     const rate = 19.99;
     const mr = rate/100/12;
-    const extra = parseFloat($('lt-extra').value) || 0;
+    const _ltex3 = $('lt-extra'); const extra = _ltex3 ? (parseFloat(_ltex3.value) || 0) : 0;
 
     function calcCC(monthlyPay) {
       if (monthlyPay <= 0) return {months:9999, totalInt:9999};
@@ -3079,13 +3101,12 @@ function calcLtDebt() {
       html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;font-size:13px;color:var(--text2);line-height:1.7">';
       html += 'Paying $'+(minPay+extra).toFixed(0)+'/month clears it in <strong>'+(yx>0?yx+'y '+mx+'m':mx+'m')+'</strong> saving <strong>'+fmt(saved)+'</strong> vs minimum.</div>';
     }
-    $('lt-result').innerHTML = html;
-    $('lt-result').style.display = 'block';
+    if (_ltr) { _ltr.innerHTML = html; _ltr.style.display = 'block'; }
   }
 }
 
 function calcLtLumpSavings() {
-  const extra = parseFloat($('lt-lump').value) || 0;
+  const _ltlump = $('lt-lump'); const extra = _ltlump ? (parseFloat(_ltlump.value) || 0) : 0;
   const el = $('lt-lump-result'); if (!el) return;
   if (!extra || extra <= 0) { el.style.display = 'none'; return; }
   const bal = S.carloan || 0;
@@ -3107,7 +3128,7 @@ function calcLtLumpSavings() {
 }
 
 function saveLtDebt() {
-  const nb = parseFloat($('lt-new-bal').value);
+  const _ltnb2 = $('lt-new-bal'); const nb = _ltnb2 ? parseFloat(_ltnb2.value) : NaN;
   if (!isNaN(nb) && nb >= 0) { if (ltDebtType === 'car') S.carloan = nb; else S.cc = nb; save(); renderAll(); }
   closeModal('lt-debt-modal');
 }
@@ -3501,34 +3522,34 @@ function openBucketModal(i) {
   const b = S.savingsBuckets[i];
   const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
   const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
-  $('bkt-modal-title').textContent = b.name;
-  $('bkt-modal-sub').textContent = fmtC(b.saved) + ' saved of ' + fmtC(b.goal) + ' goal \u2014 ' + pct + '% complete';
-  $('bkt-modal-bar').style.width = pct + '%';
-  $('bkt-modal-bar').style.background = barCol;
-  $('bkt-name').value = b.name;
-  $('bkt-goal').value = b.goal;
-  $('bkt-saved').value = b.saved;
-  $('bkt-account').value = b.account || 'ING';
-  $('bkt-notes').value = b.notes || '';
-  $('bkt-add-funds').value = '';
-  $('bucket-modal').classList.add('open');
+  const _bmt = $('bkt-modal-title'); if (_bmt) _bmt.textContent = b.name;
+  const _bms = $('bkt-modal-sub'); if (_bms) _bms.textContent = fmtC(b.saved) + ' saved of ' + fmtC(b.goal) + ' goal \u2014 ' + pct + '% complete';
+  const _bmbar = $('bkt-modal-bar'); if (_bmbar) { _bmbar.style.width = pct + '%'; _bmbar.style.background = barCol; }
+  const _bkn = $('bkt-name'); if (_bkn) _bkn.value = b.name;
+  const _bkg = $('bkt-goal'); if (_bkg) _bkg.value = b.goal;
+  const _bksv = $('bkt-saved'); if (_bksv) _bksv.value = b.saved;
+  const _bkac = $('bkt-account'); if (_bkac) _bkac.value = b.account || 'ING';
+  const _bkno = $('bkt-notes'); if (_bkno) _bkno.value = b.notes || '';
+  const _bkaf = $('bkt-add-funds'); if (_bkaf) _bkaf.value = '';
+  const _buckm = $('bucket-modal'); if (_buckm) _buckm.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('bucket-modal');
 }
 
 function saveBucketModal() {
   if (activeBucketIdx < 0) return;
   const b = S.savingsBuckets[activeBucketIdx];
-  b.name = $('bkt-name').value.trim() || b.name;
-  b.goal = parseFloat($('bkt-goal').value) || b.goal;
-  b.saved = parseFloat($('bkt-saved').value) || 0;
-  b.account = $('bkt-account').value || b.account;
-  b.notes = $('bkt-notes').value.trim();
+  const _bkn2 = $('bkt-name'); if (_bkn2) b.name = _bkn2.value.trim() || b.name;
+  const _bkg2 = $('bkt-goal'); if (_bkg2) { const _gv = parseFloat(_bkg2.value); if (!isNaN(_gv) && _gv > 0) b.goal = _gv; }
+  const _bksv2 = $('bkt-saved'); if (_bksv2) b.saved = parseFloat(_bksv2.value) || 0;
+  const _bkac2 = $('bkt-account'); if (_bkac2) b.account = _bkac2.value || b.account;
+  const _bkno2 = $('bkt-notes'); if (_bkno2) b.notes = _bkno2.value.trim();
   save(); closeModal('bucket-modal', true); renderAll();
 }
 
 function addFundsBucketModal() {
   if (activeBucketIdx < 0) return;
-  const v = parseFloat($('bkt-add-funds').value);
+  const _bkaf2 = $('bkt-add-funds'); if (!_bkaf2) return;
+  const v = parseFloat(_bkaf2.value);
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
   S.savingsBuckets[activeBucketIdx].saved = (S.savingsBuckets[activeBucketIdx].saved||0) + v;
   save(); closeModal('bucket-modal', true); renderAll();
@@ -3554,15 +3575,18 @@ function addToBucket(i) {
 }
 
 function openAddBucketModal() {
-  $('nb-name').value = ''; $('nb-goal').value = ''; $('nb-account').value = '';
-  $('add-bucket-modal').classList.add('open');
+  const _nbn = $('nb-name'); if (_nbn) _nbn.value = '';
+  const _nbg = $('nb-goal'); if (_nbg) _nbg.value = '';
+  const _nba = $('nb-account'); if (_nba) _nba.value = '';
+  const _abm = $('add-bucket-modal'); if (_abm) _abm.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('add-bucket-modal');
 }
 
 function saveNewBucket() {
-  const name = $('nb-name').value.trim();
-  const goal = parseFloat($('nb-goal').value);
-  const account = $('nb-account').value.trim() || 'Other';
+  const _nbn2 = $('nb-name'); if (!_nbn2) return;
+  const name = _nbn2.value.trim();
+  const _nbg2 = $('nb-goal'); const goal = _nbg2 ? parseFloat(_nbg2.value) : NaN;
+  const _nba2 = $('nb-account'); const account = (_nba2 ? _nba2.value.trim() : '') || 'Other';
   if (!name || isNaN(goal) || goal <= 0) { alert('Enter a name and goal amount.'); return; }
   if (!S.savingsBuckets) S.savingsBuckets = [];
   if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
@@ -3636,11 +3660,9 @@ function renderCutSliders() {
 
   if (Object.keys(cats).length === 0) {
     c.innerHTML = '<div class="empty-state" style="padding:12px 0">No transactions logged yet. Log spending to see real category analysis and where to cut.</div>';
-    $('cut-saving').textContent = '$0';
-    $('cut-saving').style.color = 'var(--text3)';
-    $('cut-desc').textContent = 'log spending to activate real analysis';
-    $('cut-bar').style.width = '0%';
-    $('cut-bar').style.background = 'var(--bg5)';
+    const _csav0 = $('cut-saving'); if (_csav0) { _csav0.textContent = '$0'; _csav0.style.color = 'var(--text3)'; }
+    const _cdesc0 = $('cut-desc'); if (_cdesc0) _cdesc0.textContent = 'log spending to activate real analysis';
+    const _cbar0 = $('cut-bar'); if (_cbar0) { _cbar0.style.width = '0%'; _cbar0.style.background = 'var(--bg5)'; }
     return;
   }
 
@@ -3679,12 +3701,10 @@ function renderCutSliders() {
   c.innerHTML = rows;
 
   const totalSaved = totalPotential * mult;
-  $('cut-saving').textContent = fmt(Math.max(0, totalSaved));
-  $('cut-saving').style.color = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
-  $('cut-desc').textContent = 'potential savings over '+mult+' month'+(mult>1?'s':'')+' \u00B7 '+fmt(totalPotential)+'/month if cuts made';
+  const _csav = $('cut-saving'); if (_csav) { _csav.textContent = fmt(Math.max(0, totalSaved)); _csav.style.color = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)'; }
+  const _cdesc = $('cut-desc'); if (_cdesc) _cdesc.textContent = 'potential savings over '+mult+' month'+(mult>1?'s':'')+' \u00B7 '+fmt(totalPotential)+'/month if cuts made';
   const pct = Math.min(100, Math.max(0, (totalPotential / 500) * 100));
-  $('cut-bar').style.width = pct + '%';
-  $('cut-bar').style.background = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)';
+  const _cbar = $('cut-bar'); if (_cbar) { _cbar.style.width = pct + '%'; _cbar.style.background = totalSaved > 400 ? 'var(--green)' : totalSaved > 0 ? 'var(--amber)' : 'var(--red)'; }
 }
 
 function renderTrend() {
@@ -3727,8 +3747,8 @@ function openCatModal(cat) {
       const time = String(d.getDate()).padStart(2,'0') + '/' + (d.getMonth()+1);
       return '<div class="txn-row"><div class="txn-info"><div class="txn-name">' + (t.note||'—') + '</div><div class="txn-meta">' + time + '</div></div><div class="txn-amt">-' + fmt(t.amt) + '</div></div>';
     }).join('') : '<div class="empty-state">No transactions in this category.</div>');
-  $('cat-modal-title').textContent = cat;
-  $('cat-modal').classList.add('open');
+  const _cmt = $('cat-modal-title'); if (_cmt) _cmt.textContent = cat;
+  const _cm = $('cat-modal'); if (_cm) _cm.classList.add('open');
 }
 
 function renderDashTxns() {
@@ -3757,13 +3777,15 @@ function getHabitFlag(note, amt) {
 }
 
 function openQuickLogModal() {
-  $('ql-amt').value = ''; $('ql-note').value = ''; $('ql-cat').value = '';
+  const _qla2 = $('ql-amt'); if (_qla2) _qla2.value = '';
+  const _qln2 = $('ql-note'); if (_qln2) _qln2.value = '';
+  const _qlc = $('ql-cat'); if (_qlc) _qlc.value = '';
   if ($('ql-cat-hidden')) $('ql-cat-hidden').value = 'Food / Coffee';
-  $('ql-recurring').checked = false;
-  $('ql-recurring-fields').style.display = 'none';
+  const _qlrec = $('ql-recurring'); if (_qlrec) _qlrec.checked = false;
+  const _qlrf = $('ql-recurring-fields'); if (_qlrf) _qlrf.style.display = 'none';
   if ($('ql-day')) $('ql-day').value = '';
   const overlay = $('quick-log-modal');
-  overlay.classList.add('open');
+  if (overlay) overlay.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
   // UX 6: Render category chips
   const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Income / Refund \u2191','Other'];
@@ -3790,15 +3812,16 @@ function openQuickLogModal() {
     overlay._vvScroll = reposition;
     reposition();
   }
-  setTimeout(() => $('ql-amt').focus(), 150);
+  setTimeout(() => { const _qa = $('ql-amt'); if (_qa) _qa.focus(); }, 150);
 }
 
 function quickLogTxn() {
-  const amt = parseFloat($('ql-amt').value);
-  const note = $('ql-note').value.trim();
-  const cat = (document.getElementById('ql-cat-hidden')?.value) || $('ql-cat').value;
-  const recurring = $('ql-recurring').checked;
-  let day = parseInt($('ql-day').value) || new Date().getDate();
+  const _qla = $('ql-amt'); if (!_qla) return;
+  const amt = parseFloat(_qla.value);
+  const _qln = $('ql-note'); const note = _qln ? _qln.value.trim() : '';
+  const cat = (document.getElementById('ql-cat-hidden')?.value) || ($('ql-cat') ? $('ql-cat').value : '');
+  const _qlr = $('ql-recurring'); const recurring = _qlr ? _qlr.checked : false;
+  const _qld = $('ql-day'); let day = parseInt(_qld ? _qld.value : '') || new Date().getDate();
   // C3: clamp bill day to 1-28 when adding recurring
   if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
   day = Math.min(28, Math.max(1, day));
@@ -3910,8 +3933,10 @@ function validatePayday() {
 }
 
 function saveSettings() {
-  const incomeV = +$('s-income').value;
-  const paydayV = +$('s-payday').value;
+  const _sInc = $('s-income'); const _sPd = $('s-payday');
+  if (!_sInc || !_sPd) return;
+  const incomeV = +_sInc.value;
+  const paydayV = +_sPd.value;
   const incErr = $('s-income-err'), pdErr = $('s-payday-err');
   if (!incomeV || incomeV <= 0) { if (incErr) incErr.style.display = 'block'; return; }
   if (incErr) incErr.style.display = 'none';
@@ -3920,13 +3945,13 @@ function saveSettings() {
   S.income = incomeV;
   S.payday = paydayV;
   // L5: 0 is valid for loan balances (paid off) and vehicle value (no car)
-  const carV = +$('s-car').value;
-  const ccV = +$('s-cc').value;
+  const _scar = $('s-car'); const carV = _scar ? +_scar.value : NaN;
+  const _scc = $('s-cc'); const ccV = _scc ? +_scc.value : NaN;
   if (!isNaN(carV) && carV >= 0) S.carloan = carV;
   if (!isNaN(ccV) && ccV >= 0) S.cc = ccV;
-  S.weekdayBudget = +$('s-weekday-budget').value || 60;
-  S.weekendBudget = +$('s-weekend-budget').value || 180;
-  S.wrxValue = +$('s-wrx-value').value; // 0 valid (no vehicle)
+  const _swdb = $('s-weekday-budget'); S.weekdayBudget = _swdb ? (+_swdb.value || 60) : 60;
+  const _sweb = $('s-weekend-budget'); S.weekendBudget = _sweb ? (+_sweb.value || 180) : 180;
+  const _swrx = $('s-wrx-value'); S.wrxValue = _swrx ? +_swrx.value : 0; // 0 valid (no vehicle)
   if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
   if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
   if ($('s-debt-strategy')) S.debtStrategy = $('s-debt-strategy').value;
@@ -3937,14 +3962,14 @@ function saveSettings() {
       ? '<strong>Snowball:</strong> Pay smallest debt first. Builds momentum with quick wins — great for motivation.'
       : '<strong>Avalanche:</strong> Pay highest interest rate first. Saves the most money long-term — mathematically optimal.';
   }
-  const np = $('s-pin').value;
+  const _spin = $('s-pin'); const np = _spin ? _spin.value : '';
   if (np.length === 4 && /^\d{4}$/.test(np)) { setPIN(np); return; }
   save(); renderAll();
 }
 
 function checkAfford() {
-  const amt = parseFloat($('aff-amt').value) || 0;
-  const what = $('aff-what').value || 'this';
+  const _affamt = $('aff-amt'); const amt = _affamt ? (parseFloat(_affamt.value) || 0) : 0;
+  const _affwhat = $('aff-what'); const what = _affwhat ? (_affwhat.value || 'this') : 'this';
   const el = $('aff-verdict'), el2 = $('aff-cuts');
   if (!amt) { if (el) el.innerHTML = ''; if (el2) el2.innerHTML = ''; return; }
   const liveBal = getLiveBal();
@@ -4025,7 +4050,7 @@ function copyExport() {
   const snapshotCount = SNAPSHOTS.load().length;
   const anomalies = AUDITOR.log.filter(e => !e.ok).length;
   const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
-  const uxScore = JSON.parse(localStorage.getItem('slyght_ux_report') || '{}').score || null;
+  const uxScore = (() => { try { return JSON.parse(localStorage.getItem('slyght_ux_report') || '{}').score || null; } catch(e) { return null; } })();
   const activeDebts = S.debts.filter(d => !d.paid);
   const nw = getNetWorth();
   const monitoringSummary = {
@@ -4061,7 +4086,8 @@ function copyExport() {
 }
 
 function doImport() {
-  const raw = $('import-area').value.trim(), msg = $('import-msg');
+  const _impArea = $('import-area'); if (!_impArea) return;
+  const raw = _impArea.value.trim(), msg = $('import-msg');
   try {
     const p = JSON.parse(raw);
     if (p.S) {
@@ -4076,14 +4102,13 @@ function doImport() {
       const validBills = p.BILLS.filter(b => typeof b.name === 'string' && b.name.length > 0 && b.amt > 0 && b.day >= 1 && b.day <= 28);
       const skipped = p.BILLS.length - validBills.length;
       BILLS = validBills;
-      if (skipped > 0) { msg.style.color = 'var(--amber)'; msg.textContent += ' ⚠ ' + skipped + ' bill(s) skipped (invalid day/amount).'; }
+      if (skipped > 0 && msg) { msg.style.color = 'var(--amber)'; msg.textContent += ' ⚠ ' + skipped + ' bill(s) skipped (invalid day/amount).'; }
     }
     save(); renderAll();
     const preserved = S.txns.length;
-    msg.style.color = 'var(--green)';
-    msg.textContent = 'Data updated \u2014 ' + preserved + ' transaction' + (preserved !== 1 ? 's' : '') + ' preserved.';
-    $('import-area').value = '';
-  } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid export code — check the format and try again.'; }
+    if (msg) { msg.style.color = 'var(--green)'; msg.textContent = 'Data updated \u2014 ' + preserved + ' transaction' + (preserved !== 1 ? 's' : '') + ' preserved.'; }
+    _impArea.value = '';
+  } catch(e) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Invalid export code — check the format and try again.'; } }
 }
 
 // C4: clear all seed flags so onboarding shows after a reset
@@ -4562,7 +4587,7 @@ function chatInputResize(el) {
 
 // ── END CHAT ──────────────────────────────────────────────────────────────
 
-$('ob-bal').addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
+const _obbal = $('ob-bal'); if (_obbal) _obbal.addEventListener('keydown', e => { if (e.key === 'Enter') launchApp(); });
 
 // UX6: Offline indicator badge
 function updateOnlineStatus() {
@@ -4919,7 +4944,8 @@ AUDITOR.load();
 const SNAPSHOTS = {
   maxSnapshots: 30,
   take(reason) {
-    const snap = {
+    let snap;
+    try { snap = {
       ts: new Date().toISOString(), time: new Date().toLocaleTimeString('en-AU'),
       date: new Date().toLocaleDateString('en-AU'), reason: reason || 'auto',
       bal: S.bal, cc: S.cc, carloan: S.carloan,
@@ -4928,7 +4954,7 @@ const SNAPSHOTS = {
       savingsBuckets: JSON.parse(JSON.stringify(S.savingsBuckets)),
       bills: JSON.parse(JSON.stringify(BILLS)),
       surplus: getGenuineSurplus(), netWorth: getNetWorth(), paydayReceived: S.paydayReceived
-    };
+    }; } catch(e) { console.error('Snapshot error:', e); return null; }
     let snaps = this.load();
     snaps.unshift(snap);
     if (snaps.length > this.maxSnapshots) snaps = snaps.slice(0, this.maxSnapshots);
@@ -5837,7 +5863,7 @@ let _scanBase64 = null, _scanMediaType = null, _scanCancelled = false;
 const _scanStatusMessages = ['Reading document...','Extracting amounts...','Finding due dates...','Checking for interest rates...','Almost done...'];
 
 function openScannerModal() {
-  $('scanner-modal').classList.add('open');
+  const _scm = $('scanner-modal'); if (_scm) _scm.classList.add('open');
 }
 
 function pasteScanImage() {
@@ -6057,7 +6083,7 @@ function showScanConfirmation(result) {
       '<button onclick="confirmScanAdd('+JSON.stringify(result).replace(/</g,'\\u003c')+')" style="padding:15px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:14px">✅ Add to SLYGHT</button>'+
       '<button onclick="$(\'scan-confirm\').style.display=\'none\';" style="padding:15px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);cursor:pointer;font-size:14px">✕ Dismiss</button>'+
     '</div>';
-  $('scan-confirm').style.display = 'flex';
+  const _scconf = $('scan-confirm'); if (_scconf) _scconf.style.display = 'flex';
 }
 
 function confirmScanAdd(result) {
@@ -6082,7 +6108,7 @@ function confirmScanAdd(result) {
     };
     S.debts.push(newDebt);
     save(); renderAll();
-    $('scan-confirm').style.display = 'none';
+    const _scc2 = $('scan-confirm'); if (_scc2) _scc2.style.display = 'none';
     showToast('✅ ' + name + ' added as debt — factored into your surplus');
     SNAPSHOTS.autoSnapshot('debt_added_via_scan');
     if (dateVal) {
@@ -6099,7 +6125,7 @@ function confirmScanAdd(result) {
     };
     BILLS.push(newBill);
     save(); renderAll();
-    $('scan-confirm').style.display = 'none';
+    const _scc3 = $('scan-confirm'); if (_scc3) _scc3.style.display = 'none';
     showToast('✅ ' + name + ' added to bills');
   }
 }
