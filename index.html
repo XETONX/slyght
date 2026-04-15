@@ -5371,8 +5371,8 @@ const NOTIFY = {
     const bgs={urgent:'var(--red-dim)',warning:'var(--amber-dim)',info:'var(--green-dim)',weekly:'var(--blue-dim)'};
     body.innerHTML = notifs.map(n=>{
       const col=cols[n.type]||'var(--text2)',bg=bgs[n.type]||'var(--bg3)';
-      return '<div style="padding:11px 12px;background:'+bg+';border-radius:var(--r-sm);margin-bottom:8px;position:relative">'+
-        '<div style="font-size:13px;font-weight:500;color:'+col+';padding-right:28px;line-height:1.5">'+esc(n.msg)+'</div>'+
+      return '<div style="padding:11px 12px;background:'+bg+';border-radius:var(--r-sm);margin-bottom:8px;position:relative;max-width:100%;overflow:hidden">'+
+        '<div style="font-size:13px;font-weight:500;color:'+col+';padding-right:28px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(n.msg)+'</div>'+
         (n.act?'<button onclick="NOTIFY.dismiss(\''+n.id+'\')" style="font-size:11px;color:'+col+';background:none;border:1px solid '+col+';border-radius:4px;padding:3px 8px;margin-top:6px;cursor:pointer">'+esc(n.act)+' →</button>':'')+
         '<button onclick="NOTIFY.dismiss(\''+n.id+'\')" style="position:absolute;right:8px;top:8px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">×</button></div>';
     }).join('');
@@ -5943,8 +5943,8 @@ function splashTap() {
 </style>
 
 <!-- NOTIFICATION DRAWER -->
-<div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999"></div>
-<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-100%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 4px 24px rgba(0,0,0,0.4);transition:transform 0.25s ease">
+<div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:999"></div>
+<div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-100%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);transition:transform 0.25s ease">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1">
     <button onclick="NOTIFY.clearAll()" style="min-width:44px;min-height:44px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 10px;border-radius:6px;cursor:pointer">Clear all</button>
     <div style="font-size:14px;font-weight:700;color:var(--text)">Notifications</div>
