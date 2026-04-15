@@ -2,6 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 console.log('\n⚡ SLYGHT RUNTIME GUARDIAN\n');
+console.log('📌 To test with REAL data:');
+console.log('   1. Open https://xetonx.github.io/slyght in Chrome');
+console.log('   2. Press F12 → Console tab');
+console.log('   3. Run: node capture-state.js to get the capture code');
+console.log('   4. Paste code in Chrome console');
+console.log('   5. Save downloaded file as state-snapshot.json here');
+console.log('');
 
 // ─── LOAD STATE ─────────────────────────────────────────────
 let realState = null;
@@ -104,10 +111,10 @@ if (scriptMatch) {
 }
 
 // Set up test environment
-const S = JSON.parse(JSON.stringify(realState.S));
-const BILLS = JSON.parse(JSON.stringify(realState.BILLS));
+const TEST_S = JSON.parse(JSON.stringify(realState.S));
+const TEST_BILLS = JSON.parse(JSON.stringify(realState.BILLS));
 const paidBills = JSON.parse(JSON.stringify(realState.paidBills || {}));
-S.paidBills = paidBills;
+TEST_S.paidBills = paidBills;
 
 // Mock browser globals needed by functions
 const mockDoc = {
@@ -124,10 +131,10 @@ let funcs = {};
 try {
   // Build a safe execution context
   const ctx = {
-    S, BILLS, Date, Math, JSON, parseInt, parseFloat, isNaN, isFinite,
+    S: TEST_S, BILLS: TEST_BILLS, Date, Math, JSON, parseInt, parseFloat, isNaN, isFinite,
     console:{log:()=>{},warn:()=>{},error:()=>{}},
     document: mockDoc,
-    window: {S, BILLS},
+    window: {S: TEST_S, BILLS: TEST_BILLS},
     localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},
     navigator:{onLine:true},
     setTimeout:()=>0, clearTimeout:()=>{},
@@ -154,12 +161,11 @@ try {
     .replace(/\bconsole\.(log|warn|error|info)\b/g, 'void')
     .replace(/\bdocument\b/g, 'mockDoc')
     .replace(/\bwindow\b/g, 'ctx')
-    .replace(/\b(const|let)\s+(S)\s*=/g, '_$2_ignored =')   // prevent S redeclaration
-    .replace(/\b(const|let)\s+(BILLS)\s*=/g, '_$2_ignored ='); // prevent BILLS redeclaration
+    .replace(/\b(const|let)\s+S\b/g, 'var S')
+    .replace(/\b(const|let)\s+BILLS\b/g, 'var BILLS');
 
   const fn = new Function(
     ...Object.keys(ctx), 'mockDoc',
-    'var _S_ignored, _BILLS_ignored;\n' +
     runnable + '\nreturn {' + funcNames.map(n => n + ':typeof ' + n + '!=="undefined"?' + n + ':null').join(',') + '};'
   );
 
@@ -209,26 +215,26 @@ function test(name, fn) {
 // ─── SECTION 1: BALANCE ──────────────────────────────────────
 startSection('SECTION 1 — BALANCE INTEGRITY');
 
-test('getLiveBal() equals S.bal', () => {
-  const result = call('getLiveBal', S.bal);
-  return {pass: Math.abs(result - S.bal) < 0.01, detail: 'got $' + result + ' expected $' + S.bal};
+test('getLiveBal() equals TEST_S.bal', () => {
+  const result = call('getLiveBal', TEST_S.bal);
+  return {pass: Math.abs(result - TEST_S.bal) < 0.01, detail: 'got $' + result + ' expected $' + TEST_S.bal};
 });
 
-test('S.bal is valid positive number', () => ({
-  pass: typeof S.bal === 'number' && !isNaN(S.bal) && isFinite(S.bal),
-  detail: 'S.bal = ' + S.bal
+test('TEST_S.bal is valid positive number', () => ({
+  pass: typeof TEST_S.bal === 'number' && !isNaN(TEST_S.bal) && isFinite(TEST_S.bal),
+  detail: 'TEST_S.bal = ' + TEST_S.bal
 }));
 
-test('S.bal matches expected value ($1,500.34)', () => ({
-  pass: Math.abs(S.bal - 1500.34) < 1,
-  detail: 'S.bal = $' + S.bal + ' expected ~$1,500.34'
+test('TEST_S.bal matches expected value ($1,500.34)', () => ({
+  pass: Math.abs(TEST_S.bal - 1500.34) < 1,
+  detail: 'TEST_S.bal = $' + TEST_S.bal + ' expected ~$1,500.34'
 }));
 
 // ─── SECTION 2: DEBT STATE ───────────────────────────────────
 startSection('SECTION 2 — DEBT STATE VERIFICATION');
 
 test('Pet Insurance is only active unpaid non-viaRent debt', () => {
-  const active = S.debts.filter(d => !d.paid && !d.viaRent);
+  const active = TEST_S.debts.filter(d => !d.paid && !d.viaRent);
   const names = active.map(d=>d.name);
   return {
     pass: names.length === 1 && names[0] === 'Pet Insurance',
@@ -239,19 +245,19 @@ test('Pet Insurance is only active unpaid non-viaRent debt', () => {
 test('All other debts marked paid', () => {
   const shouldBePaid = ['Afterpay','Owed to Michael','CC overdue','WRX Rego','Parking Fine','WRX Green Slip'];
   const notPaid = shouldBePaid.filter(n => {
-    const d = S.debts.find(x=>x.name===n);
+    const d = TEST_S.debts.find(x=>x.name===n);
     return d && !d.paid;
   });
   return {pass: notPaid.length === 0, detail: 'Not paid: ' + notPaid.join(', ')};
 });
 
 test('Owed to Mum has viaRent:true', () => {
-  const mum = S.debts.find(d=>d.name==='Owed to Mum');
+  const mum = TEST_S.debts.find(d=>d.name==='Owed to Mum');
   return {pass: mum && mum.viaRent === true, detail: mum ? JSON.stringify({paid:mum.paid,viaRent:mum.viaRent}) : 'not found'};
 });
 
 test('No duplicate debt IDs', () => {
-  const ids = S.debts.map(d=>d.id);
+  const ids = TEST_S.debts.map(d=>d.id);
   const dupes = ids.filter((id,i)=>ids.indexOf(id)!==i);
   return {pass: dupes.length === 0, detail: 'Duplicates: ' + dupes.join(', ')};
 });
@@ -311,9 +317,9 @@ test('getGenuineSurplus() >= 0 (never negative)', () => {
   return {pass: result !== null && result >= 0, detail: 'surplus=$' + result};
 });
 
-test('getGenuineSurplus() <= S.bal', () => {
+test('getGenuineSurplus() <= TEST_S.bal', () => {
   const result = call('getGenuineSurplus', 0);
-  return {pass: result !== null && result <= S.bal, detail: 'surplus=$' + result + ' bal=$' + S.bal};
+  return {pass: result !== null && result <= TEST_S.bal, detail: 'surplus=$' + result + ' bal=$' + TEST_S.bal};
 });
 
 test('getGenuineSurplus() = $0 (fully committed this month)', () => {
@@ -347,7 +353,7 @@ startSection('SECTION 5 — SPENDING CALCULATIONS');
 
 test('getAvgDailySpend() excludes debt repayments', () => {
   const avg = call('getAvgDailySpend', 60);
-  const debtTotal = S.txns.filter(t=>t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
+  const debtTotal = TEST_S.txns.filter(t=>t.cat==='Debt repayment').reduce((s,t)=>s+t.amt,0);
   return {
     pass: avg < debtTotal,
     detail: 'avg=$' + avg.toFixed(2) + '/day debtRepayments=$' + debtTotal.toFixed(2) + ' (avg should be much less)'
@@ -356,7 +362,7 @@ test('getAvgDailySpend() excludes debt repayments', () => {
 
 test('getAvgDailySpend() excludes income', () => {
   const avg = call('getAvgDailySpend', 60);
-  const incomeTotal = S.txns.filter(t=>t.income).reduce((s,t)=>s+t.amt,0);
+  const incomeTotal = TEST_S.txns.filter(t=>t.income).reduce((s,t)=>s+t.amt,0);
   return {
     pass: avg < incomeTotal,
     detail: 'avg=$' + avg.toFixed(2) + '/day income=$' + incomeTotal.toFixed(2)
@@ -373,7 +379,7 @@ startSection('SECTION 6 — NET WORTH');
 
 test('getNetWorth() excludes viaRent debts', () => {
   const nw = call('getNetWorth', -3000);
-  const mumAmt = S.debts.find(d=>d.viaRent)?.amt || 4658.39;
+  const mumAmt = TEST_S.debts.find(d=>d.viaRent)?.amt || 4658.39;
   const nwIfIncluded = nw - mumAmt;
   return {
     pass: nw > nwIfIncluded,
@@ -383,10 +389,10 @@ test('getNetWorth() excludes viaRent debts', () => {
 
 test('getNetWorth() includes WRX asset ($21,000)', () => {
   const nw = call('getNetWorth', null);
-  if (nw === null) return {pass: true, detail: 'function not loaded — skipped (manual check: WRX $21k in S.wrxValue=' + S.wrxValue + ')'};
+  if (nw === null) return {pass: true, detail: 'function not loaded — skipped (manual check: WRX $21k in TEST_S.wrxValue=' + TEST_S.wrxValue + ')'};
   return {
-    pass: nw > S.bal,
-    detail: 'nw=$' + nw.toFixed(2) + ' bal=$' + S.bal + ' (WRX should push nw above bal)'
+    pass: nw > TEST_S.bal,
+    detail: 'nw=$' + nw.toFixed(2) + ' bal=$' + TEST_S.bal + ' (WRX should push nw above bal)'
   };
 });
 
@@ -402,17 +408,17 @@ test('getNetWorth() is negative (realistic given debts)', () => {
 startSection('SECTION 7 — DATA INTEGRITY');
 
 test('All transactions have valid positive amounts', () => {
-  const bad = S.txns.filter(t => !t.amt || isNaN(t.amt) || t.amt <= 0);
+  const bad = TEST_S.txns.filter(t => !t.amt || isNaN(t.amt) || t.amt <= 0);
   return {pass: bad.length === 0, detail: bad.length + ' invalid transactions'};
 });
 
 test('All bills have valid day (1-28)', () => {
-  const bad = BILLS.filter(b => !b.day || b.day < 1 || b.day > 28);
+  const bad = TEST_BILLS.filter(b => !b.day || b.day < 1 || b.day > 28);
   return {pass: bad.length === 0, detail: bad.length === 0 ? 'OK' : 'Bad days: ' + bad.map(b=>b.name+' day:'+b.day).join(', ')};
 });
 
 test('All savings buckets have valid saved amounts', () => {
-  const bad = S.savingsBuckets.filter(b => isNaN(b.saved) || b.saved < 0);
+  const bad = TEST_S.savingsBuckets.filter(b => isNaN(b.saved) || b.saved < 0);
   return {pass: bad.length === 0, detail: bad.length + ' invalid buckets'};
 });
 
@@ -421,19 +427,19 @@ test('getBucketTotal() = $67.22 (China Holiday only)', () => {
   return {pass: Math.abs(result - 67.22) < 0.01, detail: 'got $' + result + ' expected $67.22'};
 });
 
-test('S.income set correctly ($7,282)', () => ({
-  pass: Math.abs(S.income - 7282) < 1,
-  detail: 'S.income=$' + S.income
+test('TEST_S.income set correctly ($7,282)', () => ({
+  pass: Math.abs(TEST_S.income - 7282) < 1,
+  detail: 'TEST_S.income=$' + TEST_S.income
 }));
 
-test('S.cc = $0 (cleared by mum)', () => ({
-  pass: S.cc === 0,
-  detail: 'S.cc=$' + S.cc + ' (should be 0 — mum paid it off)'
+test('TEST_S.cc = $0 (cleared by mum)', () => ({
+  pass: TEST_S.cc === 0,
+  detail: 'TEST_S.cc=$' + TEST_S.cc + ' (should be 0 — mum paid it off)'
 }));
 
 test('paydayReceived = true (paid on 14 Apr)', () => ({
-  pass: S.paydayReceived === true,
-  detail: 'paydayReceived=' + S.paydayReceived
+  pass: TEST_S.paydayReceived === true,
+  detail: 'paydayReceived=' + TEST_S.paydayReceived
 }));
 
 // ─── SECTION 8: MOCK GO-LIVE SCENARIOS ──────────────────────
@@ -441,7 +447,7 @@ startSection('SECTION 8 — MOCK GO-LIVE SCENARIOS');
 
 test('SCENARIO: Mark Pet Insurance paid → debtsDue decreases', () => {
   const before = call('getActiveDebtsDueBeforePayday', 120.47);
-  const pet = S.debts.find(d=>d.name==='Pet Insurance');
+  const pet = TEST_S.debts.find(d=>d.name==='Pet Insurance');
   if (!pet) return {pass: false, detail: 'Pet Insurance debt not found'};
   pet.paid = true;
   const after = call('getActiveDebtsDueBeforePayday', 0);
@@ -453,10 +459,10 @@ test('SCENARIO: Mark Pet Insurance paid → debtsDue decreases', () => {
 });
 
 test('SCENARIO: Log $50 expense → balance decreases', () => {
-  const before = S.bal;
-  S.bal -= 50;
-  const after = S.bal;
-  S.bal = before;
+  const before = TEST_S.bal;
+  TEST_S.bal -= 50;
+  const after = TEST_S.bal;
+  TEST_S.bal = before;
   return {
     pass: after === before - 50,
     detail: 'before=$' + before + ' after=$' + after
@@ -464,11 +470,11 @@ test('SCENARIO: Log $50 expense → balance decreases', () => {
 });
 
 test('SCENARIO: paydayReceived=true → no income added to surplus', () => {
-  S.paydayReceived = true;
+  TEST_S.paydayReceived = true;
   const surplusWithPay = call('getGenuineSurplus', 0);
-  S.paydayReceived = false;
+  TEST_S.paydayReceived = false;
   const surplusWithout = call('getGenuineSurplus', 0);
-  S.paydayReceived = true; // restore
+  TEST_S.paydayReceived = true; // restore
   return {
     pass: surplusWithPay <= surplusWithout + 100,
     detail: 'surplusWithPay=$' + (surplusWithPay||0).toFixed(2) + ' surplusWithout=$' + (surplusWithout||0).toFixed(2)
@@ -476,7 +482,7 @@ test('SCENARIO: paydayReceived=true → no income added to surplus', () => {
 });
 
 test('SCENARIO: New month → paydayReceived should reset', () => {
-  const receivedDate = new Date(S.paydayReceivedDate || '2026-04-14');
+  const receivedDate = new Date(TEST_S.paydayReceivedDate || '2026-04-14');
   const today = new Date();
   const monthsDiff = (today.getFullYear() - receivedDate.getFullYear()) * 12 + (today.getMonth() - receivedDate.getMonth());
   const shouldReset = monthsDiff >= 1;
@@ -487,8 +493,8 @@ test('SCENARIO: New month → paydayReceived should reset', () => {
 });
 
 test('SCENARIO: WRX sale at $21k → clears all active debts', () => {
-  const activeDebt = S.debts.filter(d=>!d.paid&&!d.viaRent).reduce((s,d)=>s+d.amt,0);
-  const wrxNet = (S.wrxValue || 21000) * 0.92;
+  const activeDebt = TEST_S.debts.filter(d=>!d.paid&&!d.viaRent).reduce((s,d)=>s+d.amt,0);
+  const wrxNet = (TEST_S.wrxValue || 21000) * 0.92;
   return {
     pass: wrxNet > activeDebt,
     detail: 'WRX net=$' + wrxNet.toFixed(0) + ' activeDebt=$' + activeDebt.toFixed(2) + ' — WRX sale clears everything'
@@ -528,7 +534,7 @@ test('API costs tracking has entries', () => {
 console.log('\n' + '═'.repeat(60));
 console.log('\n📊 RUNTIME GUARDIAN FINAL REPORT\n');
 console.log('State: ' + realState.capturedAt);
-console.log('Balance: $' + S.bal);
+console.log('Balance: $' + TEST_S.bal);
 console.log('');
 
 const passed = results.filter(r=>r.pass).length;
@@ -550,7 +556,7 @@ console.log('Total: ' + passed + '/' + total + ' passed');
 const report = {
   timestamp: new Date().toISOString(),
   snapshotDate: realState.capturedAt,
-  balance: S.bal,
+  balance: TEST_S.bal,
   summary: {passed, failed, total},
   sections: sections.map(sec => ({
     name: sec,
