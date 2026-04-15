@@ -1,4 +1,12 @@
 {
+  "name": "slyght",
+  "version": "1.0.0",
+  "scripts": {
+    "guardian": "node guardian-all.js",
+    "runtime": "node guardian-runtime.js",
+    "capture": "node capture-state.js",
+    "test": "node guardian-all.js"
+  },
   "devDependencies": {
     "canvas": "^3.2.3"
   }

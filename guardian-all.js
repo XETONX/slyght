@@ -4,7 +4,8 @@ const fs = require('fs');
 const guardians = [
   { name: 'Core Guardian', file: 'guardian.js' },
   { name: 'Logic Guardian', file: 'guardian-logic.js' },
-  { name: 'UI Guardian', file: 'guardian-ui.js' }
+  { name: 'UI Guardian', file: 'guardian-ui.js' },
+  { name: 'Runtime Guardian', file: 'guardian-runtime.js' }
 ];
 
 console.log('\n🛡️  SLYGHT MASTER GUARDIAN SUITE\n');
