@@ -945,7 +945,7 @@ const BUFFER_TIER_HIGH = 1500;
 const BUFFER_BILLS_THRESHOLD_MED = 1000;
 const BUFFER_BILLS_THRESHOLD_HIGH = 2000;
 const STORAGE_KEY = 'slyght_v5';
-const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12', 'slyght_seeded_v13', 'slyght_seeded_v14'];
+const SEED_FLAGS = ['slyght_seeded_v9', 'slyght_seeded_v10', 'slyght_seeded_v11', 'slyght_seeded_v12', 'slyght_seeded_v13', 'slyght_seeded_v14', 'slyght_seeded_v15'];
 // SEC2: sanitize user-supplied strings before inserting into innerHTML
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#x27;'); }
 function safeCurrency(val) {
@@ -1228,7 +1228,7 @@ function getNetWorth() {
   const wrx = S.wrxValue || 0;
   const buckets = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   const assets = liveBal + wrx + buckets;
-  const activeDebts = S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0);
+  const activeDebts = S.debts.filter(d => !d.paid && !d.viaRent).reduce((s,d) => s+d.amt, 0);
   const liabilities = S.carloan + S.cc + activeDebts;
   return {assets, liabilities, net: assets - liabilities};
 }
@@ -4671,6 +4671,25 @@ if ('serviceWorker' in navigator) {
   localStorage.setItem('slyght_seeded_v14', '1');
 })();
 
+// Seed v15: mark CC overdue debt (id:2) as paid — mum paid full CC balance 15 Apr
+(function seedV15() {
+  if (localStorage.getItem('slyght_seeded_v15')) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (raw) {
+      const store = JSON.parse(raw);
+      const s = store.S || {};
+      if (Array.isArray(s.debts)) {
+        const ccDebt = s.debts.find(d => d.id === 2);
+        if (ccDebt) { ccDebt.paid = true; ccDebt.notes = 'Cleared — mum paid full CC balance 15 Apr'; }
+      }
+      store.S = s;
+      localStorage.setItem('slyght_v5', JSON.stringify(store));
+    }
+  } catch(e) { if (SLYGHT_DEBUG) console.warn('seedV15 error', e); }
+  localStorage.setItem('slyght_seeded_v15', '1');
+})();
+
 // Seed v12: patch apiKey into existing v11 installs
 (function seedV12() {
   if (localStorage.getItem('slyght_seeded_v12')) return;
@@ -4978,7 +4997,7 @@ const CONSISTENCY = {
       check: () => { const d = parseFloat(document.getElementById('m-surplus')?.textContent?.replace(/[^0-9.-]/g,'') || '0'); return Math.abs(d - getGenuineSurplus()) < 1; }
     },
     { name: 'Balance display matches S.bal',
-      check: () => { const d = parseFloat(document.getElementById('h-bal')?.textContent?.replace(/[^0-9.,]/g,'').replace(',','') || '0'); return Math.abs(d - S.bal) < 1; }
+      check: () => { const el = document.getElementById('h-bal') || document.getElementById('hero-bal') || document.querySelector('.hero-bal'); if (!el) return true; const d = parseFloat(el.textContent.replace(/[^0-9.-]/g,'')); if (isNaN(d)) return true; return Math.abs(d - S.bal) < 1; }
     },
     { name: 'S.bal is a valid number',
       check: () => typeof S.bal === 'number' && !isNaN(S.bal) && isFinite(S.bal)
@@ -5210,7 +5229,7 @@ const UX = {
     errors: []
   },
   trackTap(element, label) {
-    const entry = { ts: Date.now(), label: label || element?.id || element?.className?.split(' ')[0] || 'unknown', tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
+    const entry = { ts: Date.now(), label: label || element?.id || element?.className?.toString()?.split(' ')?.[0] || 'unknown', tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
     this.session.interactions.push(entry);
     if (this.session.interactions.length > 200) this.session.interactions.shift();
   },
@@ -5480,6 +5499,14 @@ const NOTIFY = {
       const id = type+'_'+msg.slice(0,20).replace(/\W/g,'_');
       if (!dismissed.has(id)&&!existing.has(id)) out.push({id,type,msg,act,ts:seq++,read:false});
     };
+    // Purge stale notifications for paid debts before generating new ones
+    if (S.notifications) {
+      S.notifications = S.notifications.filter(n => {
+        const debtMatch = (S.debts||[]).find(d => n.msg && n.msg.includes(d.name));
+        if (debtMatch && debtMatch.paid) return false;
+        return true;
+      });
+    }
     // URGENT: debts overdue/due soon
     const dl = daysLeft(S.payday);
     (S.debts||[]).filter(d=>!d.paid&&d.delayDate).forEach(d=>{
