@@ -324,6 +324,50 @@ const checks = [
       const autocompleteCount = (html.match(/autocomplete="off"|autocomplete="new-password"/g) || []).length;
       return autocompleteCount >= inputCount * 0.5 ? 'OK' : 'WARNING — many inputs missing autocomplete=off (' + autocompleteCount + '/' + inputCount + ')';
     }
+  },
+
+  // Scanner feature exists
+  { name: 'Scanner feature exists with processScanImage',
+    test: () => html.includes('processScanImage') && html.includes('scanDocumentWithAI') ? 'OK' : 'MISSING — scanner functions not found'
+  },
+
+  // Scanner validates confidence
+  { name: 'Scanner validates confidence before showing result',
+    test: () => html.includes('validateScanResult') && html.includes('confidence') ? 'OK' : 'MISSING — confidence validation not found'
+  },
+
+  // Scanned debts do not affect S.bal immediately
+  { name: 'Scanned debts do not affect S.bal immediately',
+    test: () => {
+      const confirmFn = html.match(/function confirmScanAdd[\s\S]*?^}/m);
+      if (!confirmFn) return 'WARNING — confirmScanAdd not found';
+      return !confirmFn[0].includes('S.bal') ? 'OK' : 'BROKEN — scan is modifying S.bal directly';
+    }
+  },
+
+  // API cost tracker exists
+  { name: 'API cost tracker exists and records calls',
+    test: () => html.includes('const API_COSTS') && html.includes('API_COSTS.record') ? 'OK' : 'MISSING — API_COSTS not found'
+  },
+
+  // API costs wired to chat
+  { name: 'API costs wired to chat calls',
+    test: () => html.includes("API_COSTS.record('chat") ? 'OK' : 'WARNING — chat API calls may not be tracked'
+  },
+
+  // API costs wired to scan
+  { name: 'API costs wired to scan calls',
+    test: () => html.includes("API_COSTS.record('scan") ? 'OK' : 'WARNING — scan API calls may not be tracked'
+  },
+
+  // Scanner compresses large images
+  { name: 'Scanner compresses large images before API call',
+    test: () => html.includes('compressImage') && html.includes('1048576') ? 'OK' : 'WARNING — no image compression found'
+  },
+
+  // Scanner low confidence shows warning
+  { name: 'Scanner low confidence shows warning not silent fail',
+    test: () => html.includes('confidence') && html.includes('verify') ? 'OK' : 'WARNING — low confidence handling unclear'
   }
 ];
 

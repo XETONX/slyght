@@ -203,6 +203,21 @@ const checks = [
       const closeBtnCount = (html.match(/modal-btn-cancel|modal-close|closeModal/g) || []).length;
       return closeBtnCount >= overlayCount ? 'OK' : 'WARNING — ' + overlayCount + ' modals but only ' + closeBtnCount + ' close mechanisms';
     }
+  },
+
+  // Scanner modal exists with three input options
+  { name: 'Scanner modal exists with three input options',
+    test: () => html.includes('scan-camera-input') && html.includes('scan-gallery-input') ? 'OK' : 'MISSING — scanner input elements not found'
+  },
+
+  // Scanner confirmation card shows editable fields
+  { name: 'Scanner confirmation card shows editable fields',
+    test: () => html.includes('sc-name') && html.includes('sc-amt') && html.includes('sc-date') ? 'OK' : 'MISSING — scanner confirmation fields not found'
+  },
+
+  // Scanner confidence badge exists
+  { name: 'Scanner confidence badge shown on result',
+    test: () => html.includes('scan-confidence-badge') && html.includes('confidence') ? 'OK' : 'MISSING — confidence badge not found'
   }
 ];
 

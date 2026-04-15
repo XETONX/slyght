@@ -184,6 +184,15 @@ const checks = [
       );
       return violations.length === 0 ? 'OK' : 'WARNING — seed may overwrite transactions';
     }
+  },
+
+  // Scanned debts excluded from S.bal calculation
+  { name: 'Scanned debts excluded from S.bal calculation',
+    test: () => {
+      const confirmFn = html.match(/function confirmScanAdd[\s\S]*?^}/m);
+      if (!confirmFn) return 'WARNING — confirmScanAdd not found';
+      return !confirmFn[0].includes('S.bal') ? 'OK' : 'BROKEN — confirmScanAdd modifies S.bal directly';
+    }
   }
 ];
 

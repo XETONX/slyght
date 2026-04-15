@@ -394,6 +394,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
+        <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </div>
         <div class="icon-btn" id="notif-btn" onclick="NOTIFY.toggleDrawer()" title="Notifications" style="position:relative">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 1 6 6v3l2 3H2l2-3V8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><path d="M8 17a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
           <div id="notif-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:9px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
@@ -639,6 +642,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
       </div>
       <div class="card">
+        <div class="card-hdr"><div class="card-title">AI Usage &amp; Costs</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:10px">All costs in USD · <a href="https://console.anthropic.com" target="_blank" style="color:var(--green)">Manage credits →</a></div>
+        <div id="api-costs-content"></div>
+      </div>
+      <div class="card">
         <div class="card-hdr"><div class="card-title">Activity Log</div></div>
         <div id="audit-log-content"></div>
         <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear log</button>
@@ -837,6 +845,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Log a Transaction</div>
     <div class="modal-sub">Quick-log a spend from your Virgin Money notification</div>
+    <button onclick="closeModal('quick-log-modal');openScannerModal();" style="width:100%;padding:14px;background:var(--bg3);border:2px dashed var(--green-border);border-radius:var(--r-sm);color:var(--green);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">
+      <span style="font-size:20px">📷</span> Scan a document — let AI fill this in
+    </button>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field"></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles" name="ql-note-field"></div>
     <div class="modal-field"><label>Category</label>
@@ -983,7 +994,8 @@ let S = {
   wrxValue: 21000,
   debtStrategy: 'avalanche',
   chatHistory: [],
-  apiKey: ''
+  apiKey: '',
+  apiAlertThreshold: 15
 };
 
 let BILLS = [
@@ -4266,6 +4278,7 @@ async function sendChatMessage() {
     let reply;
     if (resp.ok) {
       const data = await resp.json();
+      try { API_COSTS.record('chat', data.usage?.input_tokens||800, data.usage?.output_tokens||200, false); } catch(e) {}
       reply = (data.content && data.content[0] && data.content[0].text) || 'No response received.';
     } else if (resp.status === 401) {
       reply = 'API key invalid \u2014 tap the \uD83D\uDD11 icon in the top right to update it.';
@@ -5119,6 +5132,7 @@ renderAll = function() {
   if (typeof PREDICTOR !== 'undefined') PREDICTOR.renderCard();
   if (typeof NOTIFY !== 'undefined') NOTIFY.refresh();
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
+  if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
 };
 
 // ─── FINANCIAL PERSONALITY ENGINE ────────────────────────────
@@ -5444,6 +5458,337 @@ const SLYGHT_SCORE = {
   }
 };
 
+// ─── API COST TRACKER ─────────────────────────────────────────
+const API_COSTS = {
+  PRICING: { inputPer1k: 0.003, outputPer1k: 0.015, imageFlat: 0.048 },
+  log: [],
+
+  record(type, inputTokens, outputTokens, hasImage) {
+    const cost = (inputTokens/1000)*this.PRICING.inputPer1k +
+                 (outputTokens/1000)*this.PRICING.outputPer1k +
+                 (hasImage ? this.PRICING.imageFlat : 0);
+    const entry = {
+      ts: Date.now(), date: new Date().toLocaleDateString('en-AU'),
+      type, inputTokens, outputTokens, hasImage, cost: parseFloat(cost.toFixed(5))
+    };
+    this.log.unshift(entry);
+    if (this.log.length > 500) this.log.pop();
+    this.save();
+    this.checkAlerts();
+    return entry;
+  },
+
+  save() { try { localStorage.setItem('slyght_api_costs', JSON.stringify(this.log.slice(0,200))); } catch(e) {} },
+  load() { try { const s=localStorage.getItem('slyght_api_costs'); if(s) this.log=JSON.parse(s); } catch(e) {} },
+
+  totals() {
+    const now=Date.now(), day=86400000, month=day*30;
+    const allTime=this.log.reduce((s,e)=>s+e.cost,0);
+    const thisMonth=this.log.filter(e=>now-e.ts<month).reduce((s,e)=>s+e.cost,0);
+    const today=this.log.filter(e=>now-e.ts<day).reduce((s,e)=>s+e.cost,0);
+    const chatCalls=this.log.filter(e=>e.type==='chat').length;
+    const scanCalls=this.log.filter(e=>e.type==='scan').length;
+    const firstTs=this.log.length>0?this.log[this.log.length-1].ts:now;
+    const daysTracked=Math.max(1,(now-firstTs)/day);
+    const avgPerDay=allTime/daysTracked;
+    return {
+      allTime:parseFloat(allTime.toFixed(4)), thisMonth:parseFloat(thisMonth.toFixed(4)),
+      today:parseFloat(today.toFixed(4)), chatCalls, scanCalls, totalCalls:this.log.length,
+      avgPerCall:this.log.length>0?parseFloat((allTime/this.log.length).toFixed(5)):0,
+      projectedMonthly:parseFloat((avgPerDay*30).toFixed(2)),
+      projectedYearly:parseFloat((avgPerDay*365).toFixed(2)),
+      daysTracked:Math.round(daysTracked)
+    };
+  },
+
+  checkAlerts() {
+    const t=this.totals(), threshold=S.apiAlertThreshold||15, warnAt=threshold*0.75;
+    if (t.thisMonth>=threshold) {
+      try { NOTIFY.refresh(); } catch(e) {}
+    }
+  },
+
+  render() {
+    const el=document.getElementById('api-costs-content');
+    if (!el) return;
+    const t=this.totals(), alertThreshold=S.apiAlertThreshold||15;
+    const usagePct=Math.min(100,(t.thisMonth/alertThreshold)*100);
+    const barColor=usagePct>90?'var(--red)':usagePct>70?'var(--amber)':'var(--green)';
+    el.innerHTML=
+      '<div style="margin-bottom:12px">'+
+        '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'+
+          '<span style="color:var(--text2)">This month: $'+t.thisMonth.toFixed(3)+' USD</span>'+
+          '<span style="color:var(--text3)">Limit: $'+alertThreshold+'</span>'+
+        '</div>'+
+        '<div style="height:6px;background:var(--bg4);border-radius:3px"><div style="height:6px;border-radius:3px;background:'+barColor+';width:'+usagePct+'%"></div></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">'+
+        '<div style="background:var(--bg3);padding:10px;border-radius:8px;text-align:center"><div style="font-size:15px;font-weight:700;color:var(--text)">$'+t.today.toFixed(3)+'</div><div style="font-size:10px;color:var(--text3)">Today</div></div>'+
+        '<div style="background:var(--bg3);padding:10px;border-radius:8px;text-align:center"><div style="font-size:15px;font-weight:700;color:var(--text)">'+t.totalCalls+'</div><div style="font-size:10px;color:var(--text3)">Total calls</div></div>'+
+        '<div style="background:var(--bg3);padding:10px;border-radius:8px;text-align:center"><div style="font-size:15px;font-weight:700;color:var(--text)">$'+t.allTime.toFixed(2)+'</div><div style="font-size:10px;color:var(--text3)">All time</div></div>'+
+      '</div>'+
+      '<div style="font-size:12px;color:var(--text2);margin-bottom:8px">💬 '+t.chatCalls+' chat · 📷 '+t.scanCalls+' scans · avg $'+t.avgPerCall.toFixed(4)+'/call</div>'+
+      '<div style="background:var(--bg3);padding:10px;border-radius:8px;margin-bottom:12px;font-size:12px">'+
+        '<div style="color:var(--text2);margin-bottom:4px">📈 Projections based on '+t.daysTracked+' days of usage</div>'+
+        '<div style="color:var(--text)">Monthly: <strong>$'+t.projectedMonthly.toFixed(2)+' USD</strong></div>'+
+        '<div style="color:var(--text)">Yearly: <strong>$'+t.projectedYearly.toFixed(2)+' USD</strong></div>'+
+        '<div style="color:var(--text3);font-size:11px;margin-top:4px">~$'+(t.projectedYearly*1.55).toFixed(0)+' AUD/year at current rate</div>'+
+      '</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Monthly alert threshold (USD):</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">'+
+        '<input type="number" id="api-alert-input" value="'+alertThreshold+'" min="1" max="100" style="width:70px;padding:6px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-size:13px" autocomplete="off" data-lpignore="true">'+
+        '<button onclick="S.apiAlertThreshold=parseFloat(document.getElementById(\'api-alert-input\').value)||15;save();showToast(\'✅ Alert threshold saved\')" style="padding:6px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer">Save</button>'+
+        '<a href="https://console.anthropic.com" target="_blank" style="font-size:12px;color:var(--green);text-decoration:none">Top up →</a>'+
+      '</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:6px">Recent API calls:</div>'+
+      (this.log.slice(0,8).map(e=>'<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(e.type==='scan'?'📷':'💬')+' '+e.date+'</span><span style="color:var(--text3)">$'+e.cost.toFixed(4)+'</span></div>').join('')||'<div style="color:var(--text3);font-size:12px">No calls recorded yet</div>');
+  }
+};
+
+// ─── DOCUMENT SCANNER ─────────────────────────────────────────
+let _scanBase64 = null, _scanMediaType = null, _scanCancelled = false;
+const _scanStatusMessages = ['Reading document...','Extracting amounts...','Finding due dates...','Checking for interest rates...','Almost done...'];
+
+function openScannerModal() {
+  $('scanner-modal').classList.add('open');
+}
+
+function pasteScanImage() {
+  if (!navigator.clipboard || !navigator.clipboard.read) {
+    const dz = $('scan-drop-zone');
+    if (dz) { dz.style.display='block'; showToast('Clipboard API not supported — drop image instead'); }
+    return;
+  }
+  navigator.clipboard.read().then(items => {
+    for (const item of items) {
+      const imgType = item.types.find(t => t.startsWith('image/'));
+      if (imgType) {
+        item.getType(imgType).then(blob => {
+          processScanImage(new File([blob], 'paste.'+imgType.split('/')[1], {type: imgType}));
+        });
+        return;
+      }
+    }
+    showToast('No image found in clipboard');
+  }).catch(() => showToast('Could not read clipboard — try gallery instead'));
+}
+
+function processScanImage(file) {
+  if (!file || !file.type.startsWith('image/')) { showToast('Please select an image file'); return; }
+  closeModal('scanner-modal');
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    let base64 = dataUrl.split(',')[1];
+    const mediaType = file.type || 'image/jpeg';
+    if (file.size > 1048576) {
+      base64 = await compressImage(dataUrl, 0.7);
+    }
+    _scanBase64 = base64;
+    _scanMediaType = mediaType;
+    const previewImg = $('scan-preview-img');
+    if (previewImg) previewImg.src = dataUrl;
+    // Quality check — sample brightness
+    checkImageBrightness(dataUrl);
+    $('scan-preview').style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+}
+
+async function compressImage(dataUrl, quality) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const maxDim = 1200;
+      let w = img.width, h = img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = h * maxDim / w; w = maxDim; }
+        else { w = w * maxDim / h; h = maxDim; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+    };
+    img.src = dataUrl;
+  });
+}
+
+function checkImageBrightness(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 50; canvas.height = 50;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, 50, 50);
+    const data = ctx.getImageData(0, 0, 50, 50).data;
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) sum += (data[i] + data[i+1] + data[i+2]) / 3;
+    const avg = sum / (data.length / 4);
+    const warn = $('scan-quality-warn');
+    if (warn) warn.style.display = avg < 60 ? 'block' : 'none';
+  };
+  img.src = dataUrl;
+}
+
+async function sendToScanAI() {
+  if (!_scanBase64) return;
+  $('scan-preview').style.display = 'none';
+  _scanCancelled = false;
+  const loading = $('scan-loading');
+  loading.style.display = 'flex';
+  // Cycle status messages
+  let msgIdx = 0;
+  const msgEl = $('scan-status-text');
+  const msgInterval = setInterval(() => {
+    if (_scanCancelled) { clearInterval(msgInterval); return; }
+    msgIdx = (msgIdx + 1) % _scanStatusMessages.length;
+    if (msgEl) msgEl.textContent = _scanStatusMessages[msgIdx];
+  }, 1800);
+  const result = await scanDocumentWithAI(_scanBase64, _scanMediaType);
+  clearInterval(msgInterval);
+  loading.style.display = 'none';
+  if (_scanCancelled) return;
+  showScanConfirmation(result);
+}
+
+function cancelScan() {
+  _scanCancelled = true;
+  $('scan-loading').style.display = 'none';
+}
+
+async function scanDocumentWithAI(base64, mediaType) {
+  const apiKey = localStorage.getItem('slyght_api_key');
+  if (!apiKey) { showToast('Add your API key in Chat settings first'); return {documentType:'unknown',confidence:0,confidenceReason:'No API key',company:'',amount:0,description:'Add your API key in the Chat tab to use scanning.'}; }
+  const systemPrompt = `You are a financial document scanner for an Australian personal finance app called SLYGHT. Extract ALL financial information from documents. Return ONLY valid JSON, no extra text.`;
+  const userPrompt = `Scan this financial document. Extract: company name, amount owed, due date, interest rate, reference numbers, urgency, payment methods. Return this exact JSON:\n{"documentType":"overdue_notice|final_notice|bill|fine|insurance|bank_statement|receipt|collection_letter|unknown","company":"","amount":0.00,"originalAmount":0.00,"interestAccrued":0.00,"dueDate":null,"isOverdue":false,"overdueByDays":0,"interestRate":0.00,"dailyInterest":0.00,"penaltyIfUnpaid":"","reference":"","paymentMethods":[],"instalmentOption":null,"urgency":"overdue|today|this_week|this_month|future","category":"debt|bill|fine|insurance|utility|loan|other","description":"","suggestedAction":"","confidence":0.0,"confidenceReason":"","rawAmountText":"","rawDateText":""}`;
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'x-api-key':apiKey,'anthropic-version':'2023-06-01','content-type':'application/json','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514', max_tokens:800,
+        system:systemPrompt,
+        messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:mediaType,data:base64}},{type:'text',text:userPrompt}]}]
+      })
+    });
+    const data = await response.json();
+    try { API_COSTS.record('scan', data.usage?.input_tokens||1600, data.usage?.output_tokens||150, true); } catch(e) {}
+    if (data.error) throw new Error(data.error.message);
+    const text = data.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('No JSON in response');
+    const result = JSON.parse(jsonMatch[0]);
+    result.amount = parseFloat(result.amount) || 0;
+    result.interestRate = parseFloat(result.interestRate) || 0;
+    result.confidence = parseFloat(result.confidence) || 0;
+    if (!result.company && !result.amount) result.confidence = Math.min(result.confidence, 0.3);
+    return result;
+  } catch(e) {
+    console.error('Scan error:', e);
+    return {documentType:'unknown',confidence:0,confidenceReason:'Error: '+e.message,company:'',amount:0,description:'Could not read this document. Please try again with a clearer image.'};
+  }
+}
+
+function validateScanResult(result) {
+  const issues = [], warnings = [];
+  if (result.confidence < 0.5) issues.push('Low confidence ('+Math.round(result.confidence*100)+'%) — image may be unclear');
+  if (!result.company || result.company.length < 2) issues.push('Could not identify the company or sender');
+  if (!result.amount || result.amount <= 0) issues.push('Could not find a valid amount');
+  if (result.amount > 50000) warnings.push('Amount $'+result.amount+' is unusually large — please verify');
+  if (!result.dueDate) warnings.push('No due date found — you will need to set one manually');
+  if (result.confidence < 0.75 && result.confidence >= 0.5) warnings.push('Some details may be inaccurate — review carefully before confirming');
+  if (result.isOverdue) warnings.push('This document appears to be OVERDUE — action needed immediately');
+  return { issues, warnings, canProceed: issues.filter(i => !i.includes('confidence')).length === 0 || result.confidence >= 0.4 };
+}
+
+function showScanConfirmation(result) {
+  const validation = validateScanResult(result);
+  const conf = result.confidence || 0;
+  const confColor = conf>=0.9?'var(--green)':conf>=0.75?'var(--amber)':conf>=0.5?'var(--amber)':'var(--red)';
+  const confText = conf>=0.9?'High confidence':conf>=0.75?'Good — verify details':conf>=0.5?'Low — check carefully':'Poor scan — may be wrong';
+  const badge = $('scan-confidence-badge');
+  if (badge) { badge.textContent=confText; badge.style.background=confColor+(conf<0.9?'-dim':''); badge.style.color=confColor; badge.style.border='1px solid '+confColor; }
+  const typeColors={overdue_notice:'var(--red)',final_notice:'var(--red)',collection_letter:'var(--red)',fine:'var(--amber)',bill:'var(--blue)',invoice:'var(--blue)',insurance:'var(--green)',bank_statement:'var(--text3)',receipt:'var(--text3)',unknown:'var(--text3)'};
+  const typeLabels={overdue_notice:'⚠️ OVERDUE',final_notice:'🚨 FINAL NOTICE',collection_letter:'⚡ COLLECTION',fine:'🚗 FINE',bill:'📄 BILL',invoice:'📋 INVOICE',insurance:'🛡️ INSURANCE',bank_statement:'🏦 STATEMENT',receipt:'🧾 RECEIPT',unknown:'📄 DOCUMENT'};
+  const urgColors={overdue:'var(--red)',today:'var(--red)',this_week:'var(--amber)',this_month:'var(--amber)',future:'var(--text3)'};
+  const urgLabels={overdue:'OVERDUE',today:'DUE TODAY',this_week:'DUE THIS WEEK',this_month:'DUE THIS MONTH',future:'UPCOMING'};
+  const typeColor=typeColors[result.documentType]||'var(--text3)';
+  const typeLabel=typeLabels[result.documentType]||'📄 DOCUMENT';
+  const urgColor=urgColors[result.urgency]||'var(--text3)';
+  const urgLabel=urgLabels[result.urgency]||'';
+  const defaultAddType = (result.urgency==='overdue'||result.urgency==='today'||result.urgency==='this_week'||result.documentType==='fine'||result.documentType==='collection_letter') ? 'debt' : (result.documentType==='bill'||result.documentType==='insurance') ? 'bill' : 'debt';
+  const warnHtml = [...validation.issues.map(i=>'<div style="color:var(--red);font-size:12px;padding:3px 0">❌ '+esc(i)+'</div>'), ...validation.warnings.map(w=>'<div style="color:var(--amber);font-size:12px;padding:3px 0">⚠️ '+esc(w)+'</div>')].join('');
+  const fmtDate = d => { if (!d) return ''; try { const dt=new Date(d+'T00:00'); return dt.toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}); } catch(e){ return d; } };
+  const body = $('scan-confirm-body');
+  if (body) body.innerHTML =
+    '<div style="background:'+typeColor.replace(')','-dim)').replace('var(-','var(--')+';border:1px solid '+typeColor+';border-radius:var(--r-sm);padding:6px 10px;display:inline-block;font-size:11px;font-weight:700;color:'+typeColor+';margin-bottom:14px">'+typeLabel+'</div>'+
+    '<div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:6px">'+esc(result.company||'Unknown sender')+'</div>'+
+    '<div style="font-family:var(--mono);font-size:42px;font-weight:700;color:var(--red);line-height:1;margin-bottom:10px">$'+(result.amount||0).toFixed(2)+'</div>'+
+    (result.dueDate?'<div style="font-size:14px;color:var(--text2);margin-bottom:6px">Due: '+fmtDate(result.dueDate)+'<span style="margin-left:8px;font-size:11px;font-weight:700;color:'+urgColor+'">'+urgLabel+'</span></div>':'')+
+    (result.description?'<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px;padding:10px;background:var(--bg3);border-radius:var(--r-sm)">📝 '+esc(result.description)+'</div>':'')+
+    (result.paymentMethods&&result.paymentMethods.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:10px">💳 Pay via: '+result.paymentMethods.map(p=>esc(p)).join(' · ')+'</div>':'')+
+    (warnHtml?'<div style="margin-bottom:12px">'+warnHtml+'</div>':'')+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;padding-top:8px;border-top:1px solid var(--border)">── All fields editable ──</div>'+
+    '<div class="modal-field"><label>Name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="sc-name" value="'+esc(result.company||'')+'"></div>'+
+    '<div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="sc-amt" value="'+((result.amount||0).toFixed(2))+'" inputmode="decimal"></div>'+
+    '<div class="modal-field"><label>Due date</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="date" id="sc-date" value="'+(result.dueDate||'')+'"></div>'+
+    '<div class="modal-field"><label>Interest rate % (0 if none)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="sc-rate" value="'+((result.interestRate||0).toFixed(2))+'" inputmode="decimal"></div>'+
+    '<div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="sc-notes" value="'+(result.reference?'Ref: '+esc(result.reference)+'  ':'')+esc(result.suggestedAction||'')+'"></div>'+
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">How to add this:</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px">'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:var(--r-sm);cursor:pointer"><input type="radio" name="sc-add-type" value="debt" '+(defaultAddType==='debt'?'checked':'')+' style="accent-color:var(--green)"><span style="font-size:13px;color:var(--text)">Immediate Debt tile <span style="color:var(--text3);font-size:11px">(factors into surplus immediately)</span></span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:var(--r-sm);cursor:pointer"><input type="radio" name="sc-add-type" value="bill" '+(defaultAddType==='bill'?'checked':'')+' style="accent-color:var(--green)"><span style="font-size:13px;color:var(--text)">Upcoming Bill <span style="color:var(--text3);font-size:11px">(one-off, deducted at due date)</span></span></label>'+
+      '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:var(--r-sm);cursor:pointer"><input type="radio" name="sc-add-type" value="recurring" style="accent-color:var(--green)"><span style="font-size:13px;color:var(--text)">Recurring Bill <span style="color:var(--text3);font-size:11px">(monthly, added to bills list)</span></span></label>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="confirmScanAdd('+JSON.stringify(result).replace(/</g,'\\u003c')+')" style="padding:15px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:14px">✅ Add to SLYGHT</button>'+
+      '<button onclick="$(\'scan-confirm\').style.display=\'none\';" style="padding:15px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);cursor:pointer;font-size:14px">✕ Dismiss</button>'+
+    '</div>';
+  $('scan-confirm').style.display = 'flex';
+}
+
+function confirmScanAdd(result) {
+  const name = document.getElementById('sc-name')?.value?.trim() || result.company || 'Scanned document';
+  const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
+  const dateVal = document.getElementById('sc-date')?.value || result.dueDate || null;
+  const rate = parseFloat(document.getElementById('sc-rate')?.value) || 0;
+  const notes = document.getElementById('sc-notes')?.value?.trim() || '';
+  const addType = document.querySelector('input[name="sc-add-type"]:checked')?.value || 'debt';
+  SNAPSHOTS.autoSnapshot('pre_scan_add');
+  if (addType === 'debt') {
+    const urgency = result.urgency || 'future';
+    const priority = (urgency==='overdue'||urgency==='today') ? 1 : urgency==='this_week' ? 2 : 3;
+    const newDebt = {
+      id: S.nextDebtId++, name: name, amt: amt, rate: rate, priority: priority,
+      paid: false, delayed: false, delayDate: dateVal || null,
+      notes: notes, scanned: true, scanConfidence: result.confidence,
+      paymentMethod: (result.paymentMethods||[]).join(', '), reference: result.reference || ''
+    };
+    S.debts.push(newDebt);
+    save(); renderAll();
+    $('scan-confirm').style.display = 'none';
+    showToast('✅ ' + name + ' added as debt — factored into your surplus');
+    SNAPSHOTS.autoSnapshot('debt_added_via_scan');
+    if (dateVal) {
+      const daysUntil = Math.ceil((new Date(dateVal) - new Date()) / 86400000);
+      if (daysUntil <= 3) {
+        try { NOTIFY.refresh(); } catch(e) {}
+      }
+    }
+  } else {
+    const dueDay = dateVal ? new Date(dateVal + 'T00:00').getDate() : 15;
+    const newBill = {
+      name: name, amt: amt, day: dueDay, tag: result.category || 'Other',
+      recurring: addType === 'recurring', scanned: true
+    };
+    BILLS.push(newBill);
+    save(); renderAll();
+    $('scan-confirm').style.display = 'none';
+    showToast('✅ ' + name + ' added to bills');
+  }
+}
+
 // ─── HEARTBEAT ────────────────────────────────────────────────
 const HEARTBEAT = {
   interval: null,
@@ -5508,6 +5853,7 @@ const HEARTBEAT = {
 };
 
 load();
+API_COSTS.load();
 RECONCILER.morningCheck();
 CONSISTENCY.start();
 APP_HEALTH.init();
@@ -5530,6 +5876,72 @@ function splashTap() {
   }
 }
 </script>
+<!-- SCANNER MODAL -->
+<div class="modal-overlay" id="scanner-modal" onclick="handleOverlayClick(event,'scanner-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="border-radius:var(--r);padding-bottom:28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <div class="modal-title" style="margin-bottom:0">📷 Scan Financial Document</div>
+      <button onclick="closeModal('scanner-modal')" style="min-width:44px;min-height:44px;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
+    </div>
+    <!-- Camera -->
+    <div onclick="document.getElementById('scan-camera-input').click()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
+      <span style="font-size:36px">📷</span>
+      <div><div style="font-size:15px;font-weight:600;color:var(--text)">Take a Photo</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Point camera at letter, bill or notice</div></div>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="scan-camera-input" style="display:none" onchange="processScanImage(this.files[0])">
+    <!-- Gallery -->
+    <div onclick="document.getElementById('scan-gallery-input').click()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;margin-bottom:10px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
+      <span style="font-size:36px">🖼️</span>
+      <div><div style="font-size:15px;font-weight:600;color:var(--text)">Upload from Gallery</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Choose existing photo or screenshot</div></div>
+    </div>
+    <input type="file" accept="image/*" id="scan-gallery-input" style="display:none" onchange="processScanImage(this.files[0])">
+    <!-- Paste -->
+    <div onclick="pasteScanImage()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:18px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:background .15s" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background='var(--bg3)'">
+      <span style="font-size:36px">📋</span>
+      <div><div style="font-size:15px;font-weight:600;color:var(--text)">Paste Screenshot</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Copy a screenshot then tap here to paste</div></div>
+    </div>
+    <div id="scan-drop-zone" style="display:none;margin-top:10px;border:2px dashed var(--border2);border-radius:var(--r-sm);padding:20px;text-align:center;font-size:13px;color:var(--text3)">Drop image here</div>
+  </div>
+</div>
+
+<!-- SCANNER LOADING OVERLAY -->
+<div id="scan-loading" style="display:none;position:fixed;inset:0;background:rgba(10,10,10,0.92);z-index:600;flex-direction:column;align-items:center;justify-content:center">
+  <div style="font-size:56px;margin-bottom:24px;position:relative">
+    <span id="scan-doc-icon">📄</span>
+    <div id="scan-line" style="position:absolute;left:0;right:0;height:2px;background:var(--green);top:10%;box-shadow:0 0 8px var(--green);animation:scanLine 1.6s ease-in-out infinite"></div>
+  </div>
+  <div id="scan-status-text" style="font-family:var(--mono);font-size:14px;color:var(--green);margin-bottom:32px;text-align:center">Reading document...</div>
+  <button onclick="cancelScan()" style="padding:10px 24px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Cancel</button>
+</div>
+
+<!-- SCANNER PREVIEW -->
+<div id="scan-preview" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:601;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border)">
+    <button onclick="$('scan-preview').style.display='none';openScannerModal();" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">←</button>
+    <div style="font-size:16px;font-weight:600;color:var(--text)">Preview</div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:20px">
+    <img id="scan-preview-img" style="width:100%;border-radius:var(--r-sm);margin-bottom:16px;max-height:50vh;object-fit:contain;background:var(--bg3)" src="" alt="Document preview">
+    <div id="scan-quality-warn" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:10px 12px;font-size:12px;color:var(--amber);margin-bottom:12px">⚠️ Image appears dark — results may be inaccurate. Try in better lighting.</div>
+    <button onclick="sendToScanAI()" style="width:100%;padding:15px;background:var(--green);color:#000;font-size:15px;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;margin-bottom:10px">Looks good — scan this</button>
+    <button onclick="$('scan-preview').style.display='none';openScannerModal();" style="width:100%;padding:14px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:14px;cursor:pointer">Retake / Choose different</button>
+  </div>
+</div>
+
+<!-- SCANNER CONFIRMATION CARD -->
+<div id="scan-confirm" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:602;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+    <button onclick="$('scan-confirm').style.display='none';" style="background:none;border:none;color:var(--text2);font-size:22px;cursor:pointer">←</button>
+    <div style="font-size:16px;font-weight:600;color:var(--text)">📷 Scan Result</div>
+    <div id="scan-confidence-badge" style="margin-left:auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;font-family:var(--mono)"></div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:16px 20px 32px" id="scan-confirm-body"></div>
+</div>
+
+<style>
+@keyframes scanLine{0%{top:5%}50%{top:88%}100%{top:5%}}
+</style>
+
 <!-- NOTIFICATION DRAWER -->
 <div id="notif-overlay" onclick="NOTIFY.toggleDrawer()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999"></div>
 <div id="notif-drawer" style="display:none;position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-100%);width:100%;max-width:480px;z-index:1000;background:var(--bg2);border-bottom-left-radius:16px;border-bottom-right-radius:16px;max-height:70vh;overflow-y:auto;box-shadow:0 4px 24px rgba(0,0,0,0.4);transition:transform 0.25s ease">
