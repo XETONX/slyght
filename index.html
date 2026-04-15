@@ -600,8 +600,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div class="settings-title">Debt Strategy</div>
           <div class="settings-row"><span class="settings-lbl">Repayment order</span>
             <select class="settings-input" id="s-debt-strategy" onchange="saveSettings()">
-              <option value="avalanche">Avalanche (highest rate first)</option>
-              <option value="snowball">Snowball (smallest balance first)</option>
+              <option value="avalanche">Avalanche — saves the most money (highest rate first)</option>
+              <option value="snowball">Snowball — faster psychological wins (smallest balance first)</option>
             </select>
           </div>
           <div id="strategy-explain" style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5;padding:8px;background:var(--bg3);border-radius:var(--r-sm)"></div>
@@ -851,15 +851,13 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field"></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles" name="ql-note-field"></div>
     <div class="modal-field"><label>Category</label>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-        <button type="button" onclick="setQlCat('Food / Coffee')" class="cat-chip">☕ Food</button>
-        <button type="button" onclick="setQlCat('Transport / Fuel')" class="cat-chip">🚗 Transport</button>
-        <button type="button" onclick="setQlCat('Shopping')" class="cat-chip">🛍 Shopping</button>
-        <button type="button" onclick="setQlCat('Entertainment')" class="cat-chip">🎮 Fun</button>
-        <button type="button" onclick="setQlCat('Health')" class="cat-chip">💊 Health</button>
-        <button type="button" onclick="setQlCat('Other')" class="cat-chip">📦 Other</button>
+      <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;margin-bottom:8px">
+        <div id="cat-chips" style="display:inline-flex;gap:6px;padding:0 2px">
+          <!-- chips rendered by JS in openQuickLogModal -->
+        </div>
       </div>
-      <select class="modal-input" id="ql-cat">
+      <input type="hidden" id="ql-cat-hidden" value="Food / Coffee">
+      <select class="modal-input" id="ql-cat" style="display:none">
         <option value="">Category...</option>
         <option>Food / Coffee</option><option>Entertainment</option><option>Transport / Fuel</option>
         <option>Shopping</option><option>Health</option><option>Subscriptions</option><option>Other</option>
@@ -3757,12 +3755,22 @@ function getHabitFlag(note, amt) {
 
 function openQuickLogModal() {
   $('ql-amt').value = ''; $('ql-note').value = ''; $('ql-cat').value = '';
+  if ($('ql-cat-hidden')) $('ql-cat-hidden').value = 'Food / Coffee';
   $('ql-recurring').checked = false;
   $('ql-recurring-fields').style.display = 'none';
   if ($('ql-day')) $('ql-day').value = '';
   const overlay = $('quick-log-modal');
   overlay.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
+  // UX 6: Render category chips
+  const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Income / Refund \u2191','Other'];
+  const lastCat = localStorage.getItem('slyght_last_cat') || 'Food / Coffee';
+  const chipsEl = document.getElementById('cat-chips');
+  if (chipsEl) {
+    chipsEl.innerHTML = QUICK_CATS.map(c =>
+      '<button type="button" onclick="selectCat(this,\''+c.replace(/'/g,"\\'")+'\')" style="flex-shrink:0;padding:8px 12px;border-radius:20px;border:1px solid '+(c===lastCat?'var(--green)':'var(--bg5)')+';background:'+(c===lastCat?'var(--green)':'var(--bg5)')+';color:'+(c===lastCat?'#000':'var(--text2)')+';font-size:12px;cursor:pointer;white-space:nowrap;min-height:36px" data-cat="'+c+'">'+c+'</button>'
+    ).join('');
+  }
   // M7: remove any existing listeners before adding new ones to prevent accumulation
   if (window.visualViewport) {
     if (overlay._vvResize) {
@@ -3785,7 +3793,7 @@ function openQuickLogModal() {
 function quickLogTxn() {
   const amt = parseFloat($('ql-amt').value);
   const note = $('ql-note').value.trim();
-  const cat = $('ql-cat').value;
+  const cat = (document.getElementById('ql-cat-hidden')?.value) || $('ql-cat').value;
   const recurring = $('ql-recurring').checked;
   let day = parseInt($('ql-day').value) || new Date().getDate();
   // C3: clamp bill day to 1-28 when adding recurring
@@ -3795,7 +3803,7 @@ function quickLogTxn() {
   saveUndoState(); // L3: undo support
   if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
   // Income: add to balance
-  if (cat === 'Income') {
+  if (cat === 'Income' || cat === 'Income / Refund \u2191') {
     S.bal += amt;
     S.txns.push({amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true});
     closeModal('quick-log-modal');
@@ -3851,6 +3859,19 @@ function setQlCat(cat) {
   const sel = $('ql-cat'); if (!sel) return;
   sel.value = cat;
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('active', c.textContent.includes(cat.split('/')[0].trim())));
+}
+// UX 6: selectCat for new chip scroller
+function selectCat(btn, cat) {
+  document.querySelectorAll('#cat-chips button').forEach(b => {
+    b.style.background = 'var(--bg5)'; b.style.borderColor = 'var(--bg5)'; b.style.color = 'var(--text2)';
+  });
+  btn.style.background = 'var(--green)'; btn.style.borderColor = 'var(--green)'; btn.style.color = '#000';
+  const hidden = document.getElementById('ql-cat-hidden');
+  if (hidden) hidden.value = cat;
+  // Keep legacy ql-cat select in sync for audit wrapper compatibility
+  const sel = document.getElementById('ql-cat');
+  if (sel) sel.value = cat;
+  localStorage.setItem('slyght_last_cat', cat);
 }
 
 function rmTxn(i) {
@@ -5542,6 +5563,9 @@ const NOTIFY = {
     const body=document.getElementById('notif-drawer-body');
     if (!body) return;
     const notifs=(S.notifications||[]).filter(n=>!n.dismissed).slice(-20).reverse();
+    // UX 5: Sort by type priority — urgent first, then warning, info, weekly
+    const typePriority = {urgent:0, warning:1, info:2, weekly:3};
+    notifs.sort((a,b) => (typePriority[a.type]||2) - (typePriority[b.type]||2));
     if (!notifs.length){body.innerHTML='<div style="text-align:center;padding:32px 0;color:var(--text3);font-size:14px">No notifications — all caught up ✓</div>';return;}
     const cols={urgent:'var(--red)',warning:'var(--amber)',info:'var(--green)',weekly:'var(--blue)'};
     const bgs={urgent:'var(--red-dim)',warning:'var(--amber-dim)',info:'var(--green-dim)',weekly:'var(--blue-dim)'};
