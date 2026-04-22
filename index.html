@@ -1728,31 +1728,66 @@ function deleteEditedTransaction() {
   showToast('Transaction deleted');
 }
 
+function getMinDailySpend() {
+  const thirtyDaysAgo = Date.now() - 30 * 86400000;
+  const NON_DISC = ['Debt repayment', 'Savings', 'Loan', 'Income'];
+  const recentTxns = (S.txns || []).filter(t =>
+    t.ts >= thirtyDaysAgo && !t.income && !t._isCorrection && !NON_DISC.includes(t.cat)
+  );
+  if (recentTxns.length > 0) {
+    const totalSpend = recentTxns.reduce((s, t) => s + t.amt, 0);
+    const avgDaily = totalSpend / 30;
+    // 60% of actual average — cutting back but realistic
+    const historicalMin = parseFloat((avgDaily * 0.6).toFixed(2));
+    return Math.max(20, Math.min(40, historicalMin));
+  }
+  return 25; // fallback
+}
+
 function getSurvivalForecast() {
   const bal = getLiveBal();
   const days = Math.max(1, daysLeft());
   const dailyMax = getDynamicDailyBudget();
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  // Get all upcoming unpaid bills before payday
+  // Advance paydayDate to next month if payday has already passed this cycle
+  const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
+  if (paydayDate <= today) paydayDate.setMonth(paydayDate.getMonth() + 1);
+
+  // Get all upcoming unpaid bills before payday (skip bills covered by a debt)
   const upcomingBills = getExpandedBills()
     .filter(b => {
       if (isThisMonthlyBillPaid(b.name, b.day)) return false;
-      const billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
-      const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
-      return billDate > today && billDate <= paydayDate;
+      // Build the bill's next occurrence date
+      let billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
+      if (billDate <= today) billDate.setMonth(billDate.getMonth() + 1);
+      if (billDate > paydayDate) return false;
+      // Skip if covered by a health-matching debt on the same date
+      const billDateStr = billDate.toISOString().split('T')[0];
+      const healthKW = ['health', 'insurance', 'teacher', 'medibank', 'bupa', 'nib'];
+      const covered = (S.debts || []).some(d => {
+        if (d.paid || d.viaRent || !d.delayDate) return false;
+        if (d.delayDate.split('T')[0] !== billDateStr) return false;
+        const dn = (d.name || '').toLowerCase(), bn = (b.name || '').toLowerCase();
+        return healthKW.some(k => dn.includes(k)) && healthKW.some(k => bn.includes(k));
+      });
+      return !covered;
     })
-    .sort((a,b) => a.day - b.day);
+    .sort((a, b) => a.day - b.day);
 
   const upcomingBillsTotal = upcomingBills.reduce((s,b) => s+b.amt, 0);
 
-  // Upcoming unpaid debts
-  const upcomingDebts = S.debts
-    .filter(d => !d.paid && !d.viaRent && d.delayDate)
+  // Upcoming unpaid debts — use same paydayDate (already advanced if needed)
+  const upcomingDebts = (S.debts || [])
     .filter(d => {
-      const due = new Date(d.delayDate + 'T00:00');
-      const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
-      return due > today && due <= paydayDate;
+      if (d.paid) return false;
+      if (d.viaRent) return false;
+      if (!d.delayDate) return false;
+      try {
+        const due = new Date(d.delayDate.includes('T') ? d.delayDate : d.delayDate + 'T00:00');
+        return due >= today && due <= paydayDate;
+      } catch(e) { return false; }
     })
     .sort((a,b) => new Date(a.delayDate) - new Date(b.delayDate));
 
@@ -1760,7 +1795,7 @@ function getSurvivalForecast() {
 
   // Minimum needed to survive to payday
   // = bills + debts + (days × minimum daily spend $15 for food/transport)
-  const minDailyNeeded = 15; // absolute minimum per day
+  const minDailyNeeded = getMinDailySpend();
   const minLivingCosts = days * minDailyNeeded;
   const totalNeeded = upcomingBillsTotal + upcomingDebtsTotal + minLivingCosts;
 
@@ -1785,7 +1820,7 @@ function getSurvivalForecast() {
       if (b.day === checkDate.getDate()) tempBal -= b.amt;
     });
     upcomingDebts.forEach(d => {
-      const due = new Date(d.delayDate + 'T00:00');
+      const due = new Date(d.delayDate.includes('T') ? d.delayDate : d.delayDate + 'T00:00');
       if (due.toDateString() === checkDate.toDateString()) tempBal -= d.amt;
     });
 
@@ -1816,6 +1851,7 @@ function getSurvivalForecast() {
     upcomingBillsTotal: parseFloat(upcomingBillsTotal.toFixed(2)),
     upcomingDebts,
     upcomingDebtsTotal: parseFloat(upcomingDebtsTotal.toFixed(2)),
+    minDailyNeeded: parseFloat(minDailyNeeded.toFixed(2)),
     minLivingCosts: parseFloat(minLivingCosts.toFixed(2)),
     totalNeeded: parseFloat(totalNeeded.toFixed(2)),
     survivalShortfall,
@@ -1904,7 +1940,7 @@ function renderSurvivalForecast() {
   }
 
   html += '<div style="display:flex;justify-content:space-between;font-size:13px">' +
-    '<span style="color:var(--text2)">Min living costs (' + f.days + 'd × $15)</span>' +
+    '<span style="color:var(--text2)">Min living costs (' + f.days + 'd × $' + f.minDailyNeeded + '/day from history)</span>' +
     '<span style="color:var(--red)">-$' + f.minLivingCosts.toFixed(2) + '</span>' +
   '</div>';
 
