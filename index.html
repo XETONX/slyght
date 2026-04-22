@@ -648,6 +648,16 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
       </div>
       <div class="card">
+        <div class="settings-section">
+          <div class="settings-title">Smart Notifications</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">
+            Daily reminders tailored to your schedule and real balance.<br>
+            Morning · Breakfast · Lunch · Snack · Home time · Groceries
+          </div>
+          <div id="push-settings"></div>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-hdr"><div class="card-title">AI Usage &amp; Costs</div></div>
         <div style="font-size:12px;color:var(--text3);margin-bottom:10px">All costs in USD · <a href="https://console.anthropic.com" target="_blank" style="color:var(--green)">Manage credits →</a></div>
         <div id="api-costs-content"></div>
@@ -4235,6 +4245,7 @@ function quickLogTxn() {
   save(); renderAll();
   onBalanceChange();
   autoMatchBillsToTxns(false);
+  if (typeof PUSH !== 'undefined') PUSH.syncState();
   // Receipt toast
   const toastMsg = '-$' + amt.toFixed(2) + ' · ' + (cat || 'Other') + ' · ' + (note || '—') + (roundUp > 0 && roundUpOn ? ' · +🏦$' + roundUp.toFixed(2) + ' round-up' : '');
   showUndoToast(toastMsg);
@@ -5032,6 +5043,24 @@ if ('serviceWorker' in navigator) {
     }).catch(() => {});
   });
 }
+
+// Handle notification action URL params on app open
+(function handlePushActionParams() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  if (!action) return;
+  if (action === 'log') {
+    setTimeout(() => { if (typeof openQuickLogModal === 'function') openQuickLogModal(); }, 1000);
+  } else if (action === 'no-spend') {
+    setTimeout(() => {
+      showToast('✅ No spend recorded');
+      if (typeof PUSH !== 'undefined') PUSH.syncState();
+    }, 500);
+  } else if (action === 'grocery-done') {
+    localStorage.setItem('slyght_grocery_dismissed', new Date().toDateString());
+    setTimeout(() => showToast('✅ Groceries sorted — have a great week!'), 500);
+  }
+})();
 
 // Seed v13: real state 14 Apr 2026. S.bal=3345.99 (getLiveBal() = S.bal, pure identity)
 (function seedV13() {
@@ -6018,6 +6047,7 @@ renderAll = function() {
   if (typeof NOTIFY !== 'undefined') NOTIFY.refresh();
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
   if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
+  if (typeof PUSH !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) PUSH.renderSubscribeButton();
   // UX 3: Empty state onboarding banner
   if (!localStorage.getItem('slyght_onboarded') && (S.txns||[]).length === 0 && S.bal === 0) {
     const existing = document.getElementById('onboard-banner');
@@ -6300,6 +6330,155 @@ function closeNotifications() {
   const overlay = document.getElementById('notif-overlay');
   if (d) { d.style.transform = 'translateY(-100%)'; setTimeout(() => { d.style.display = 'none'; }, 260); }
   if (overlay) overlay.style.display = 'none';
+}
+
+// ─── PUSH NOTIFICATIONS ────────────────────────────────────────
+const PUSH = {
+  workerUrl: 'https://slyght-worker.johndounas.workers.dev',
+  vapidPublicKey: 'PLACEHOLDER_VAPID_KEY', // replace after: npx web-push generate-vapid-keys
+  subscription: null,
+
+  async init() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      this.subscription = await reg.pushManager.getSubscription();
+      this.renderSubscribeButton();
+      if (this.subscription) await this.syncState();
+    } catch (e) {
+      if (window.SLYGHT_DEBUG) console.log('PUSH.init error:', e);
+    }
+  },
+
+  async subscribe() {
+    try {
+      if (this.vapidPublicKey === 'PLACEHOLDER_VAPID_KEY') {
+        showToast('Notifications not configured yet — contact support');
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: this._urlBase64ToUint8Array(this.vapidPublicKey),
+      });
+      this.subscription = sub;
+
+      const resp = await fetch(this.workerUrl + '/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sub),
+      });
+      if (!resp.ok) throw new Error('Worker subscribe failed: ' + resp.status);
+
+      await this.syncState();
+      showToast('✅ Notifications enabled — SLYGHT will remind you throughout the day');
+      this.renderSubscribeButton();
+    } catch (e) {
+      showToast('Could not enable notifications: ' + e.message);
+      if (window.SLYGHT_DEBUG) console.log('PUSH.subscribe error:', e);
+    }
+  },
+
+  async syncState() {
+    if (!this.subscription) return;
+    try {
+      const today = new Date().toDateString();
+      const todayTxns = (S.txns || []).filter(t => {
+        return new Date(t.ts).toDateString() === today && !t.income && !t._isCorrection;
+      });
+      const morningTxns = todayTxns.filter(t => { const h = new Date(t.ts).getHours(); return h >= 7 && h < 11; });
+      const lunchTxns   = todayTxns.filter(t => { const h = new Date(t.ts).getHours(); return h >= 11 && h < 15; });
+      const lunchSpend  = lunchTxns.reduce((s, t) => s + t.amt, 0);
+      const todaySpent  = todayTxns.reduce((s, t) => s + t.amt, 0);
+
+      const state = {
+        bal:             S.bal,
+        maxDay:          typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60,
+        daysLeft:        typeof daysLeft === 'function' ? daysLeft() : 0,
+        survivalMode:    typeof getSurvivalMode === 'function' ? getSurvivalMode() : 'normal',
+        todaySpent,
+        lunchLogged:     lunchTxns.length > 0,
+        breakfastLogged: morningTxns.length > 0,
+        lunchSpend,
+        groceryDismissed: localStorage.getItem('slyght_grocery_dismissed') === new Date().toDateString(),
+      };
+
+      await fetch(this.workerUrl + '/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state),
+      });
+    } catch (e) {
+      if (window.SLYGHT_DEBUG) console.log('PUSH.syncState failed:', e);
+    }
+  },
+
+  renderSubscribeButton() {
+    const el = document.getElementById('push-settings');
+    if (!el) return;
+    if (this.subscription) {
+      el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px">' +
+          '<span style="color:var(--green);font-size:18px">🔔</span>' +
+          '<div style="flex:1"><div style="color:var(--text);font-size:13px;font-weight:600">Notifications active</div>' +
+          '<div style="color:var(--text3);font-size:11px">Morning · Lunch · Home time · Groceries</div></div>' +
+          '<button onclick="PUSH.unsubscribe()" style="padding:6px 10px;background:transparent;' +
+          'border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;cursor:pointer">Turn off</button>' +
+        '</div>';
+    } else {
+      el.innerHTML =
+        '<button onclick="PUSH.subscribe()" style="width:100%;padding:14px;background:var(--green);' +
+        'border:none;border-radius:12px;color:#000;font-weight:700;font-size:15px;cursor:pointer">' +
+          '🔔 Enable Smart Notifications' +
+        '</button>' +
+        '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
+          'Morning alerts · Lunch check · Grocery reminders · Home time nudges' +
+        '</div>';
+    }
+  },
+
+  async unsubscribe() {
+    if (this.subscription) {
+      await this.subscription.unsubscribe().catch(() => {});
+      this.subscription = null;
+      this.renderSubscribeButton();
+      showToast('Notifications disabled');
+    }
+  },
+
+  _urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = atob(base64);
+    const out = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i);
+    return out;
+  },
+};
+
+// Service worker → app message handler
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    const msg = event.data;
+    if (!msg) return;
+    if (msg.type === 'NO_SPEND') {
+      // Log a zero-amount no-spend event (does not affect balance)
+      S.txns.push({ amt: 0, note: 'No spend — ' + (msg.tag || 'check-in'), cat: 'Other',
+        ts: msg.ts || Date.now(), income: false, _noSpend: true, _balAffected: false });
+      save();
+      showToast('✅ No spend logged — streak continues!');
+      renderAll();
+      PUSH.syncState();
+    }
+    if (msg.type === 'OPEN_LOG') {
+      openQuickLogModal();
+    }
+    if (msg.type === 'GROCERY_DONE') {
+      localStorage.setItem('slyght_grocery_dismissed', new Date().toDateString());
+      showToast('✅ Groceries sorted — have a great week!');
+      PUSH.syncState();
+    }
+  });
 }
 
 // ─── SLYGHT SCORE ─────────────────────────────────────────────
@@ -6865,6 +7044,7 @@ SNAPSHOTS.autoSnapshot('app_open');
 NOTIFY.refresh();
 HEARTBEAT.start();
 if (typeof UX !== 'undefined') UX.init();
+if (typeof PUSH !== 'undefined') PUSH.init();
 // API key in separate storage — never wiped by reset or seed
 const savedApiKey = localStorage.getItem('slyght_api_key');
 if (savedApiKey) S.apiKey = savedApiKey;

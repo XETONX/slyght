@@ -1,0 +1,31 @@
+name = "slyght-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[[kv_namespaces]]
+binding = "SLYGHT_DATA"
+id = "PLACEHOLDER_KV_ID"
+# preview_id = "PLACEHOLDER_KV_PREVIEW_ID"  # optional: for wrangler dev
+
+[triggers]
+crons = [
+  "0 23 * * *",    # 9:00am Sydney AEST (UTC+10) — morning alert
+  "0 0 * * *",     # 10:00am Sydney AEST — breakfast check (office days)
+  "30 2 * * *",    # 12:30pm Sydney AEST — lunch check
+  "0 4 * * *",     # 2:00pm Sydney AEST — afternoon snack nudge
+  "30 8 * * *",    # 6:30pm Sydney AEST — home time / grocery reminder
+  "0 5 * * 0",     # 3:00pm Sunday AEST — grocery reminder
+  "0 10 * * 0"     # 8:00pm Sunday AEST — grocery reminder (evening)
+]
+
+# NOTE: During AEDT (daylight saving, ~Oct–Apr), Sydney is UTC+11.
+# Crons above target AEST (UTC+10). To handle AEDT, duplicate each
+# cron shifted one hour (e.g. "0 22 * * *" for 9am AEDT) and let the
+# worker's handleSchedule() deduplicate using Sydney local time check.
+
+[vars]
+WORKER_ENV = "production"
+
+# Secrets — set via: npx wrangler secret put <NAME>
+# VAPID_PRIVATE_KEY  — 32-byte raw EC private key, URL-safe base64 (43 chars)
+# VAPID_PUBLIC_KEY   — 65-byte uncompressed EC point, URL-safe base64 (87 chars)
