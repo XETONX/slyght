@@ -1723,6 +1723,274 @@ function deleteEditedTransaction() {
   showToast('Transaction deleted');
 }
 
+function getSurvivalForecast() {
+  const bal = getLiveBal();
+  const days = Math.max(1, daysLeft());
+  const dailyMax = getDynamicDailyBudget();
+  const today = new Date();
+
+  // Get all upcoming unpaid bills before payday
+  const upcomingBills = getExpandedBills()
+    .filter(b => {
+      if (isThisMonthlyBillPaid(b.name, b.day)) return false;
+      const billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
+      const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
+      return billDate > today && billDate <= paydayDate;
+    })
+    .sort((a,b) => a.day - b.day);
+
+  const upcomingBillsTotal = upcomingBills.reduce((s,b) => s+b.amt, 0);
+
+  // Upcoming unpaid debts
+  const upcomingDebts = S.debts
+    .filter(d => !d.paid && !d.viaRent && d.delayDate)
+    .filter(d => {
+      const due = new Date(d.delayDate + 'T00:00');
+      const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
+      return due > today && due <= paydayDate;
+    })
+    .sort((a,b) => new Date(a.delayDate) - new Date(b.delayDate));
+
+  const upcomingDebtsTotal = upcomingDebts.reduce((s,d) => s+d.amt, 0);
+
+  // Minimum needed to survive to payday
+  // = bills + debts + (days × minimum daily spend $15 for food/transport)
+  const minDailyNeeded = 15; // absolute minimum per day
+  const minLivingCosts = days * minDailyNeeded;
+  const totalNeeded = upcomingBillsTotal + upcomingDebtsTotal + minLivingCosts;
+
+  // Comfortable amount (using actual max/day)
+  const comfortableNeeded = upcomingBillsTotal + upcomingDebtsTotal + (days * dailyMax);
+
+  // How much short are we?
+  const survivalShortfall = Math.max(0, parseFloat((totalNeeded - bal).toFixed(2)));
+  const comfortableShortfall = Math.max(0, parseFloat((comfortableNeeded - bal).toFixed(2)));
+
+  // When does money run out?
+  let runOutDate = null;
+  let runOutDays = null;
+  let tempBal = bal;
+
+  for (let i = 0; i < days; i++) {
+    const checkDate = new Date(today);
+    checkDate.setDate(today.getDate() + i);
+
+    // Deduct bills due on this day
+    upcomingBills.forEach(b => {
+      if (b.day === checkDate.getDate()) tempBal -= b.amt;
+    });
+    upcomingDebts.forEach(d => {
+      const due = new Date(d.delayDate + 'T00:00');
+      if (due.toDateString() === checkDate.toDateString()) tempBal -= d.amt;
+    });
+
+    // Deduct minimum daily spend
+    tempBal -= minDailyNeeded;
+
+    if (tempBal < 0 && !runOutDate) {
+      runOutDate = checkDate;
+      runOutDays = i + 1;
+    }
+  }
+
+  // Recommended borrow amount — round up to nearest $50
+  const recommendBorrow = survivalShortfall > 0
+    ? Math.ceil(survivalShortfall / 50) * 50
+    : 0;
+
+  // What daily budget if they borrow recommended amount
+  const balWithBorrow = bal + recommendBorrow;
+  const dailyWithBorrow = Math.max(0,
+    (balWithBorrow - upcomingBillsTotal - upcomingDebtsTotal) / days
+  );
+
+  return {
+    bal,
+    days,
+    upcomingBills,
+    upcomingBillsTotal: parseFloat(upcomingBillsTotal.toFixed(2)),
+    upcomingDebts,
+    upcomingDebtsTotal: parseFloat(upcomingDebtsTotal.toFixed(2)),
+    minLivingCosts: parseFloat(minLivingCosts.toFixed(2)),
+    totalNeeded: parseFloat(totalNeeded.toFixed(2)),
+    survivalShortfall,
+    comfortableShortfall: parseFloat(comfortableShortfall.toFixed(2)),
+    runOutDate,
+    runOutDays,
+    willSurvive: survivalShortfall === 0,
+    recommendBorrow,
+    dailyWithBorrow: parseFloat(dailyWithBorrow.toFixed(2)),
+    dailyMax: parseFloat(dailyMax.toFixed(2))
+  };
+}
+
+function renderSurvivalForecast() {
+  const el = document.getElementById('survival-forecast');
+  if (!el) return;
+
+  const f = getSurvivalForecast();
+
+  // Header color based on situation
+  const headerColor = f.willSurvive ? 'var(--green)' : 'var(--red)';
+  const headerBg = f.willSurvive ? 'rgba(0,200,100,0.1)' : 'rgba(255,50,50,0.1)';
+
+  let html = '';
+
+  // Main status card
+  html += '<div style="background:' + headerBg + ';border:1px solid ' + headerColor +
+    ';border-radius:12px;padding:16px;margin-bottom:12px">';
+
+  if (!f.willSurvive) {
+    const runOutStr = f.runOutDate
+      ? f.runOutDate.toLocaleDateString('en-AU', {weekday:'short', day:'numeric', month:'short'})
+      : 'soon';
+    html += '<div style="font-size:16px;font-weight:700;color:var(--red);margin-bottom:4px">' +
+      '🚨 Projected to run out ' + (f.runOutDays === 1 ? 'today' : 'in ' + f.runOutDays + ' days') +
+      ' (' + runOutStr + ')' +
+    '</div>';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">' +
+      'At minimum spending ($15/day) your balance runs out before payday on the ' + S.payday + 'th.' +
+    '</div>';
+  } else {
+    html += '<div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">' +
+      '✅ You can make it to payday' +
+    '</div>';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">' +
+      'At minimum spending you have enough to reach the ' + S.payday + 'th. Stay disciplined.' +
+    '</div>';
+  }
+
+  // Breakdown table
+  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:6px">BREAKDOWN TO PAYDAY</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:4px;margin-bottom:12px">';
+
+  html += '<div style="display:flex;justify-content:space-between;font-size:13px">' +
+    '<span style="color:var(--text2)">Current balance</span>' +
+    '<span style="color:var(--green)">+$' + f.bal.toFixed(2) + '</span>' +
+  '</div>';
+
+  if (f.upcomingBillsTotal > 0) {
+    html += '<div style="display:flex;justify-content:space-between;font-size:13px">' +
+      '<span style="color:var(--text2)">Unpaid bills (' + f.upcomingBills.length + ')</span>' +
+      '<span style="color:var(--red)">-$' + f.upcomingBillsTotal.toFixed(2) + '</span>' +
+    '</div>';
+    // List each bill
+    f.upcomingBills.forEach(b => {
+      html += '<div style="display:flex;justify-content:space-between;font-size:11px;padding-left:12px">' +
+        '<span style="color:var(--text3)">' + esc(b.name) + ' (due ' + b.day + 'th)</span>' +
+        '<span style="color:var(--text3)">-$' + b.amt.toFixed(2) + '</span>' +
+      '</div>';
+    });
+  }
+
+  if (f.upcomingDebtsTotal > 0) {
+    html += '<div style="display:flex;justify-content:space-between;font-size:13px">' +
+      '<span style="color:var(--text2)">Upcoming debts (' + f.upcomingDebts.length + ')</span>' +
+      '<span style="color:var(--red)">-$' + f.upcomingDebtsTotal.toFixed(2) + '</span>' +
+    '</div>';
+    f.upcomingDebts.forEach(d => {
+      const due = new Date(d.delayDate + 'T00:00');
+      html += '<div style="display:flex;justify-content:space-between;font-size:11px;padding-left:12px">' +
+        '<span style="color:var(--text3)">' + esc(d.name) + ' (due ' +
+          due.toLocaleDateString('en-AU',{day:'numeric',month:'short'}) + ')</span>' +
+        '<span style="color:var(--text3)">-$' + d.amt.toFixed(2) + '</span>' +
+      '</div>';
+    });
+  }
+
+  html += '<div style="display:flex;justify-content:space-between;font-size:13px">' +
+    '<span style="color:var(--text2)">Min living costs (' + f.days + 'd × $15)</span>' +
+    '<span style="color:var(--red)">-$' + f.minLivingCosts.toFixed(2) + '</span>' +
+  '</div>';
+
+  const remaining = f.bal - f.upcomingBillsTotal - f.upcomingDebtsTotal - f.minLivingCosts;
+  html += '<div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;' +
+    'display:flex;justify-content:space-between;font-size:14px;font-weight:700">' +
+    '<span style="color:var(--text)">Remaining at payday</span>' +
+    '<span style="color:' + (remaining >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
+      (remaining >= 0 ? '+' : '') + '$' + remaining.toFixed(2) +
+    '</span>' +
+  '</div>';
+
+  html += '</div>';
+  html += '</div>';
+
+  // Borrow recommendation
+  if (!f.willSurvive && f.recommendBorrow > 0) {
+    html += '<div style="background:var(--bg3);border-radius:12px;padding:16px;margin-bottom:12px">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px">' +
+      '💡 If you need to borrow' +
+    '</div>';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:8px">' +
+      'Minimum to borrow to survive: ' +
+      '<strong style="color:var(--text)">$' + f.survivalShortfall.toFixed(2) + '</strong>' +
+    '</div>';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:8px">' +
+      'Recommended amount (rounded): ' +
+      '<strong style="color:var(--amber)">$' + f.recommendBorrow + '</strong>' +
+    '</div>';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">' +
+      'With $' + f.recommendBorrow + ' borrowed your daily budget becomes: ' +
+      '<strong style="color:var(--green)">$' + f.dailyWithBorrow.toFixed(2) + '/day</strong>' +
+    '</div>';
+
+    // Warning about borrowing
+    html += '<div style="font-size:11px;color:var(--text3);padding:8px;' +
+      'background:rgba(255,150,0,0.1);border-radius:8px">' +
+      '⚠️ Borrowing delays the problem. Every dollar borrowed needs to be repaid from next pay. ' +
+      'Consider what you can cut instead — no takeaway, no subscriptions, no discretionary.' +
+    '</div>';
+    html += '</div>';
+
+    // What to cut instead
+    html += '<div style="background:var(--bg3);border-radius:12px;padding:16px;margin-bottom:12px">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:8px">' +
+      '✂️ What to cut instead of borrowing' +
+    '</div>';
+
+    const cuts = [];
+    // Check recent spending for cuttable items
+    const recentDiscretionary = S.txns
+      .filter(t => {
+        const d = new Date(t.ts);
+        const weekAgo = new Date(Date.now() - 7*86400000);
+        const NON_DISC = ['Debt repayment','Savings','Loan','Income','Bills'];
+        return d >= weekAgo && !t.income && !NON_DISC.includes(t.cat);
+      });
+
+    const foodSpend = recentDiscretionary
+      .filter(t => t.cat === 'Food / Coffee')
+      .reduce((s,t) => s+t.amt, 0);
+
+    if (foodSpend > 50) {
+      cuts.push('Meal prep instead of buying lunch — saves ~$' +
+        Math.round(foodSpend * 0.6) + ' this week');
+    }
+    cuts.push('Zero discretionary until payday — saves $' +
+      (f.days * f.dailyMax).toFixed(0));
+    cuts.push('Cook at home every night — saves $15-30/day vs eating out');
+    if (f.survivalShortfall < 100) {
+      cuts.push('You\'re only $' + f.survivalShortfall.toFixed(2) +
+        ' short — one careful week and you make it without borrowing');
+    }
+
+    cuts.forEach(cut => {
+      html += '<div style="font-size:13px;color:var(--text2);padding:6px 0;' +
+        'border-bottom:1px solid var(--border)">' +
+        '• ' + esc(cut) +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Payday countdown
+  html += '<div style="text-align:center;padding:12px;color:var(--text3);font-size:12px">' +
+    '🗓️ Payday ' + f.days + ' days away · ' + S.payday + 'th of the month' +
+  '</div>';
+
+  el.innerHTML = html;
+}
+
 function renderAnalysisTab() {
   const c = $('analysis-content'); if (!c) return;
 
@@ -1742,10 +2010,11 @@ function renderAnalysisTab() {
         '</div>';
     } catch(e) {}
   }
-  let html = '';
+  let html = '<div id="survival-forecast" style="margin-bottom:16px"></div>';
 
   if (!S.txns || !S.txns.length) {
     c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>' + htmlScore;
+    renderSurvivalForecast();
     return;
   }
 
@@ -2091,6 +2360,7 @@ function renderAnalysisTab() {
   }
 
   c.innerHTML = html;
+  renderSurvivalForecast();
 }
 
 function filterTxns() {
@@ -2386,7 +2656,7 @@ function renderAll() {
   renderSettingsBills();
   renderSavingsBuckets();
   renderSpendingCoach();
-  if (document.getElementById('pg-spend')?.classList.contains('active')) renderAnalysisTab();
+  if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); }
   updateExport();
   checkAfford();
   if ($('dt-car')) $('dt-car').textContent = fmtC(S.carloan);

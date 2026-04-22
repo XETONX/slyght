@@ -555,6 +555,17 @@ const checks = [
       const placeholders = (html.match(/PLACEHOLDER[A-Z_]*/g) || []);
       return placeholders.length === 0 ? 'OK' : 'WARNING — placeholders found: ' + [...new Set(placeholders)].join(', ');
     }
+  },
+  { name: 'Survival forecast exists in analysis tab',
+    test: () => html.includes('getSurvivalForecast') &&
+                html.includes('survival-forecast') ? 'OK' : 'MISSING'
+  },
+  { name: 'Survival forecast calculates run-out date',
+    test: () => html.includes('runOutDate') && html.includes('runOutDays') ? 'OK' : 'MISSING'
+  },
+  { name: 'Borrow recommendation rounds to nearest $50',
+    test: () => html.includes('Math.ceil') && html.includes('/ 50') &&
+                html.includes('* 50') ? 'OK' : 'MISSING'
   }
 ];
 
