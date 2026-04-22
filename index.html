@@ -6979,6 +6979,8 @@ const LOCATION = {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     if (typeof LOCATION !== 'undefined') LOCATION.check();
+    PUSH.init().catch(() => {});
+    PUSH.syncState().catch(() => {});
   }
 });
 
@@ -6996,28 +6998,50 @@ const PUSH = {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
       const reg = await navigator.serviceWorker.ready;
+
+      // Browser PushManager is source of truth
       let sub = await reg.pushManager.getSubscription();
+
       if (sub) {
+        // Active subscription — refresh all stored state
         this.subscription = sub;
-        // Re-send to worker on every app open in case worker KV lost it
-        fetch(this.workerUrl + '/subscribe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sub)
-        }).catch(() => {});
-        await this.syncState();
-      } else {
-        // Browser subscription gone — check if we had one
-        const cached = localStorage.getItem('slyght_push_sub');
-        if (cached) {
-          // Subscription expired — clear stale cache
-          localStorage.removeItem('slyght_push_sub');
-          localStorage.removeItem('slyght_notif_enabled');
+        localStorage.setItem('slyght_notif_enabled', 'true');
+        localStorage.setItem('slyght_push_endpoint', sub.endpoint);
+        localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
+        // Re-register with worker silently (KV may have expired)
+        this._sendSubToWorker(sub).catch(() => {});
+        this.syncState().catch(() => {});
+
+      } else if (localStorage.getItem('slyght_notif_enabled') === 'true') {
+        // Was enabled — try to re-subscribe silently (no permission prompt needed if already granted)
+        try {
+          const appServerKey = this._urlBase64ToUint8Array(this.vapidPublicKey);
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey,
+          });
+          this.subscription = sub;
+          localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
+          localStorage.setItem('slyght_push_endpoint', sub.endpoint);
+          await this._sendSubToWorker(sub);
+          await this.syncState();
+          console.log('[PUSH] Subscription restored silently');
+        } catch(e) {
+          console.log('[PUSH] Silent re-subscribe failed:', e.name, e.message);
+          if (e.name === 'NotAllowedError') {
+            // Permission was revoked — clear flags
+            localStorage.removeItem('slyght_notif_enabled');
+            localStorage.removeItem('slyght_push_sub');
+            localStorage.removeItem('slyght_push_endpoint');
+          }
+          // Otherwise leave slyght_notif_enabled=true so button shows "Restoring..."
         }
       }
+
       this.renderSubscribeButton();
-    } catch (e) {
-      if (window.SLYGHT_DEBUG) console.log('PUSH.init error:', e);
+    } catch(e) {
+      console.error('[PUSH] init error:', e);
+      this.renderSubscribeButton();
     }
   },
 
@@ -7112,6 +7136,7 @@ const PUSH = {
       this.subscription = sub;
       localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
       localStorage.setItem('slyght_notif_enabled', 'true');
+      localStorage.setItem('slyght_push_endpoint', sub.endpoint);
       await this._sendSubToWorker(sub);
       await this.syncState();
       this.renderSubscribeButton();
@@ -7185,41 +7210,48 @@ const PUSH = {
   renderSubscribeButton() {
     const el = document.getElementById('push-settings');
     if (!el) return;
+
     if (this.subscription) {
+      // Active — show controls + quiet mode + test button
       el.innerHTML =
-        '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:8px">' +
-          '<span style="color:var(--green);font-size:18px">🔔</span>' +
-          '<div style="flex:1"><div style="color:var(--text);font-size:13px;font-weight:600">Notifications active</div>' +
-          '<div style="color:var(--text3);font-size:11px">Morning · Lunch · Home time · Groceries</div></div>' +
-          '<button onclick="PUSH.unsubscribe()" style="padding:6px 10px;background:transparent;' +
-          'border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;cursor:pointer">Turn off</button>' +
-        '</div>' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;' +
-        'padding:12px;background:var(--bg3);border-radius:10px;margin-top:8px">' +
-          '<div>' +
-            '<div style="color:var(--text);font-size:14px">Quiet mode</div>' +
-            '<div style="color:var(--text3);font-size:11px">Morning alert only — suppress daytime nudges</div>' +
+        '<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:8px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between">' +
+            '<div>' +
+              '<div style="color:var(--green);font-size:13px;font-weight:600">🔔 Notifications active</div>' +
+              '<div style="color:var(--text3);font-size:11px">Stays active between sessions automatically</div>' +
+            '</div>' +
+            '<button onclick="PUSH.unsubscribe()" style="padding:6px 12px;background:transparent;' +
+            'border:1px solid var(--border2);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer">' +
+              'Turn off' +
+            '</button>' +
           '</div>' +
-          '<button onclick="PUSH.toggleQuietMode()" style="padding:6px 14px;border-radius:20px;' +
-          'border:1px solid var(--border2);background:' + (this.quietMode ? 'var(--amber)' : 'var(--bg2)') + ';' +
-          'color:var(--text);font-size:13px;cursor:pointer">' +
-            (this.quietMode ? '🔕 On' : '🔔 Off') +
-          '</button>' +
-        '</div>' +
-        '<div style="margin-top:8px">' +
-          '<button onclick="PUSH.sendTest()" style="width:100%;padding:10px;background:transparent;' +
-          'border:1px solid var(--border2);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">' +
+            '<div>' +
+              '<div style="color:var(--text);font-size:13px">Quiet mode</div>' +
+              '<div style="color:var(--text3);font-size:11px">Morning alert only</div>' +
+            '</div>' +
+            '<button onclick="PUSH.toggleQuietMode()" style="padding:6px 14px;border-radius:20px;' +
+            'border:1px solid var(--border2);background:' + (this.quietMode ? 'var(--amber)' : 'var(--bg2)') + ';' +
+            'color:var(--text);font-size:13px;cursor:pointer">' +
+              (this.quietMode ? '🔕 On' : '🔔 Off') +
+            '</button>' +
+          '</div>' +
+          '<button onclick="PUSH.sendTest()" style="width:100%;margin-top:10px;padding:8px;' +
+          'background:var(--bg2);border:1px solid var(--border2);border-radius:8px;' +
+          'color:var(--text2);font-size:12px;cursor:pointer">' +
             '📳 Send test notification' +
           '</button>' +
         '</div>';
     } else if (localStorage.getItem('slyght_notif_enabled') === 'true') {
+      // Was enabled — currently restoring (silent re-subscribe in progress or needs tap)
       el.innerHTML =
-        '<button onclick="PUSH.subscribe()" style="width:100%;padding:14px;background:var(--amber-dim);' +
-        'border:1px solid var(--amber-border);border-radius:12px;color:var(--amber);font-weight:700;font-size:15px;cursor:pointer">' +
-          '🔔 Tap to re-enable notifications' +
-        '</button>' +
-        '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
-          'Your subscription expired — tap to re-subscribe' +
+        '<div style="background:var(--bg3);border-radius:10px;padding:12px;margin-bottom:8px">' +
+          '<div style="color:var(--amber);font-size:13px;font-weight:600">🔄 Restoring notifications...</div>' +
+          '<div style="color:var(--text3);font-size:11px;margin-top:4px">Tap below if this persists:</div>' +
+          '<button onclick="PUSH.subscribe()" style="width:100%;margin-top:8px;padding:10px;' +
+          'background:var(--amber);border:none;border-radius:8px;color:#000;font-weight:700;font-size:13px;cursor:pointer">' +
+            '🔔 Re-enable notifications' +
+          '</button>' +
         '</div>';
     } else {
       el.innerHTML =
@@ -7228,7 +7260,7 @@ const PUSH = {
           '🔔 Enable Smart Notifications' +
         '</button>' +
         '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
-          'Morning alerts · Lunch check · Grocery reminders · Home time nudges' +
+          'Stays enabled between sessions · Turn off anytime in settings' +
         '</div>';
     }
   },
@@ -7292,14 +7324,24 @@ const PUSH = {
   },
 
   async unsubscribe() {
-    if (this.subscription) {
-      await this.subscription.unsubscribe().catch(() => {});
-      this.subscription = null;
-      localStorage.removeItem('slyght_push_sub');
-      localStorage.removeItem('slyght_notif_enabled');
-      this.renderSubscribeButton();
-      showToast('Notifications disabled');
+    try {
+      if (this.subscription) {
+        await this.subscription.unsubscribe();
+      }
+    } catch(e) {
+      console.warn('[PUSH] unsubscribe error:', e);
     }
+    this.subscription = null;
+    localStorage.removeItem('slyght_notif_enabled');
+    localStorage.removeItem('slyght_push_sub');
+    localStorage.removeItem('slyght_push_endpoint');
+    try {
+      await fetch(this.workerUrl + '/unsubscribe', { method: 'POST' });
+    } catch(e) {
+      console.warn('[PUSH] worker unsubscribe error:', e);
+    }
+    this.renderSubscribeButton();
+    showToast('Notifications turned off');
   },
 
   _urlBase64ToUint8Array(base64String) {
