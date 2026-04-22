@@ -394,7 +394,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
-        <div id="score-hdr-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:2px 6px;display:none">◆</div>
         <div id="weather-hdr" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:2px 6px"></div>
         <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
@@ -526,10 +525,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
       </div>
       <div id="cal-day-detail" style="display:none" class="card"><div id="cal-day-detail-content"></div></div>
-      <div class="card" id="cal-week-summary">
-        <div class="card-hdr"><div class="card-title">This Week — Balance Breakdown</div></div>
-        <div id="cal-week-content"></div>
-      </div>
+      <div id="cal-week-content"></div>
       <div id="bills-grouped"></div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Expected Extra Income</div></div>
@@ -1319,10 +1315,19 @@ function getActiveDebtsDueBeforePayday() {
     nextPayday.setMonth(nextPayday.getMonth() + 1);
   }
   return (S.debts || [])
-    .filter(d => !d.paid && !d.viaRent && (
-      (d.delayDate && new Date(d.delayDate + 'T00:00') <= nextPayday) ||
-      (!d.delayDate && (d.priority || 99) <= 3)
-    ))
+    .filter(d => {
+      if (d.paid) return false;
+      if (d.viaRent) return false;
+      if (d.delayDate) {
+        try {
+          // Handle both "2026-05-01" and "2026-05-01T00:00" formats
+          const due = new Date(d.delayDate.includes('T') ? d.delayDate : d.delayDate + 'T00:00');
+          return due > now && due <= nextPayday;
+        } catch(e) { return false; }
+      }
+      // No delayDate — include if high priority
+      return (d.priority || 99) <= 3;
+    })
     .reduce((s, d) => s + (d.amt || 0), 0);
 }
 
@@ -3821,18 +3826,57 @@ document.addEventListener('click', function(e) {
 function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
 function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
 
+function getCalendarDayItems(day, month, year) {
+  const items = [];
+  const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  const healthKeywords = ['health', 'insurance', 'teacher', 'medibank', 'bupa', 'nib'];
+
+  // Add unpaid debts due on this day
+  (S.debts || [])
+    .filter(d => !d.paid && !d.viaRent && d.delayDate)
+    .forEach(d => {
+      const dueStr = d.delayDate.split('T')[0];
+      if (dueStr === dateStr) {
+        items.push({ type: 'debt', name: d.name, amt: d.amt, urgent: true, color: 'var(--red)', debt: d });
+      }
+    });
+
+  // Add unpaid bills, suppressing any covered by a debt on the same day
+  getExpandedBills().forEach(b => {
+    if (b.recurring === false || b.day !== day) return;
+    if (isThisMonthlyBillPaid(b.name, b.day)) return;
+    // Only show bills in the current calendar month
+    if (month !== new Date().getMonth() || year !== new Date().getFullYear()) {
+      // For future months just check by day
+    }
+
+    const covered = (S.debts || []).some(d => {
+      if (d.paid || d.viaRent || !d.delayDate) return false;
+      if (d.delayDate.split('T')[0] !== dateStr) return false;
+      const debtName = (d.name || '').toLowerCase();
+      const billName = (b.name || '').toLowerCase();
+      const debtHasHealth = healthKeywords.some(k => debtName.includes(k));
+      const billHasHealth = healthKeywords.some(k => billName.includes(k));
+      if (debtHasHealth && billHasHealth) return true;
+      const debtFirst = debtName.split(' ')[0];
+      const billFirst = billName.split(' ')[0];
+      if (debtFirst.length > 3 && debtFirst === billFirst) return true;
+      return false;
+    });
+
+    if (!covered) {
+      items.push({ type: 'bill', name: b.name, amt: b.amt, color: 'var(--amber)', bill: b });
+    }
+  });
+
+  return items;
+}
+
 function renderCalendar() {
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const lbl = $('cal-month-label'); if (lbl) lbl.textContent = months[calMonth] + ' ' + calYear;
   const grid = $('cal-grid'); if (!grid) return;
   const today = new Date(), payday = S.payday || 15;
-  const billMap = {};
-  getExpandedBills().filter(b => {
-    if (b.recurring === false) return false;
-    const _calNow = new Date();
-    const key = _calNow.getFullYear()+'-'+(_calNow.getMonth()+1)+'-'+b.name+'-'+b.day;
-    return !(S.paidBills && S.paidBills[key]);
-  }).forEach(b => { if (!billMap[b.day]) billMap[b.day] = []; billMap[b.day].push(b); });
   const firstDay = new Date(calYear, calMonth, 1);
   let startDow = firstDay.getDay() - 1; if (startDow < 0) startDow = 6;
   const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
@@ -3846,24 +3890,25 @@ function renderCalendar() {
     else { d = i - startDow + 1; }
     const isToday = isThis && calYear === today.getFullYear() && calMonth === today.getMonth() && d === today.getDate();
     const isPayday = isThis && d === payday;
-    const bills = isThis ? (billMap[d] || []) : [];
-    const billTotal = bills.reduce((s,b) => s+b.amt, 0);
+    const items = isThis ? getCalendarDayItems(d, calMonth, calYear) : [];
+    const hasDebt = items.some(it => it.type === 'debt');
+    const billCount = items.filter(it => it.type === 'bill').length;
+    const itemTotal = items.reduce((s, it) => s + (it.amt || 0), 0);
     let cls = 'cal-day';
     if (!isThis) cls += ' other-month';
-    // H7: apply both payday and bill classes so rent on payday day is visible
-    if (isPayday && bills.length > 1) cls += ' payday has-multi';
-    else if (isPayday && bills.length === 1) cls += ' payday has-bill';
+    if (isPayday && items.length > 1) cls += ' payday has-multi';
+    else if (isPayday && items.length === 1) cls += ' payday has-bill';
     else if (isPayday) cls += ' payday';
-    else if (bills.length > 1) cls += ' has-multi';
-    else if (bills.length === 1) cls += ' has-bill';
+    else if (hasDebt) cls += ' has-bill'; // debt uses same has-bill styling
+    else if (billCount > 1) cls += ' has-multi';
+    else if (billCount === 1) cls += ' has-bill';
     if (isToday) cls += ' today';
-    // H7: amber dot when payday has bills (both signals combined)
-    const dotColor = isPayday && bills.length ? 'var(--amber)' : isPayday ? 'var(--green)' : bills.length > 1 ? 'var(--amber)' : bills.length === 1 ? 'var(--red)' : 'transparent';
-    const amtStr = billTotal > 0 ? '$' + Math.round(billTotal) : '';
+    const dotColor = isPayday && items.length ? 'var(--amber)' : isPayday ? 'var(--green)' : hasDebt ? 'var(--red)' : billCount > 1 ? 'var(--amber)' : billCount === 1 ? 'var(--red)' : 'transparent';
+    const amtStr = itemTotal > 0 ? '$' + Math.round(itemTotal) : '';
     const clickFn = isThis ? 'calDayClick(' + d + ')' : '';
     html += '<div class="'+cls+'" onclick="'+clickFn+'">' +
       '<div class="cal-day-num">'+d+'</div>' +
-      (bills.length || isPayday ? '<div class="cal-day-dot" style="background:'+dotColor+'"></div>' : '') +
+      (items.length || isPayday ? '<div class="cal-day-dot" style="background:'+dotColor+'"></div>' : '') +
       (amtStr ? '<div class="cal-day-amt">'+amtStr+'</div>' : '') +
       '</div>';
   }
@@ -3872,19 +3917,17 @@ function renderCalendar() {
 }
 
 function calDayClick(day) {
-  const bills = getExpandedBills().filter(b => b.recurring !== false && b.day === day);
+  const items = getCalendarDayItems(day, calMonth, calYear);
   const isPayday = day === S.payday;
   const detail = $('cal-day-detail'), content = $('cal-day-detail-content');
   if (!detail || !content) return;
-  if (!bills.length && !isPayday) {
-    // UX5: show positive message for empty days
-    const months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const months2 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  if (!items.length && !isPayday) {
     content.innerHTML = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:10px;color:var(--text)">'+day+' '+months2[calMonth]+'</div><div style="font-size:13px;color:var(--green)">Nothing due \u2014 enjoy the day \u2713</div><button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
     detail.style.display = 'block';
     return;
   }
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  let html = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)">' + day + ' ' + months[calMonth] + '</div>';
+  let html = '<div style="font-family:var(--mono);font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)">' + day + ' ' + months2[calMonth] + '</div>';
   if (isPayday) {
     if (S.paydayReceived) {
       html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x2713;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday received &#x2014; $'+Math.round(S.income).toLocaleString()+' banked</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
@@ -3892,18 +3935,28 @@ function calDayClick(day) {
       html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#x1F4B0;</span><div><div style="font-size:13px;font-weight:600;color:var(--green)">Payday &#x2014; $'+Math.round(S.income).toLocaleString()+' incoming</div><div style="font-size:11px;color:var(--text3)">Virgin Money Go &#x2014; Manhattan Associates</div></div></div>';
     }
   }
-  if (bills.length) {
-    html += bills.map(b => {
-      const bPaid = isThisMonthlyBillPaid(b.name, b.day);
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)'+(bPaid?';opacity:0.55':'')+'"><div><div style="font-size:14px;color:'+(bPaid?'var(--text3)':'var(--text)')+';font-weight:500;'+(bPaid?'text-decoration:line-through':'')+'">' +
-        b.name+(bPaid?'<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:6px">PAID</span>':'')+'</div>' +
-        '<div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' · Recurring':'')+'</div></div>' +
-        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(bPaid?'var(--green)':'var(--red)')+'">$'+b.amt.toFixed(2)+'</div></div>';
-    }).join('');
-    const total = bills.filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
-    if (total > 0) html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL DUE</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
-    else html += '<div style="padding:8px 0;font-size:13px;color:var(--green)">All bills on this day are paid ✓</div>';
-  }
+  // Render debts first (red, urgent)
+  const debts = items.filter(it => it.type === 'debt');
+  const bills = items.filter(it => it.type === 'bill');
+  debts.forEach(it => {
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">' +
+      '<div><div style="font-size:14px;color:var(--red);font-weight:600">' + esc(it.name) +
+      '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px">DEBT</span></div>' +
+      '<div style="font-size:11px;color:var(--text3)">Covers overdue + current month</div></div>' +
+      '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$' + it.amt.toFixed(2) + '</div></div>';
+  });
+  // Render uncovered bills
+  bills.forEach(it => {
+    const b = it.bill;
+    const bPaid = isThisMonthlyBillPaid(b.name, b.day);
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)'+(bPaid?';opacity:0.55':'')+'"><div><div style="font-size:14px;color:'+(bPaid?'var(--text3)':'var(--text)')+';font-weight:500;'+(bPaid?'text-decoration:line-through':'')+'">' +
+      esc(b.name)+(bPaid?'<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:6px">PAID</span>':'')+'</div>' +
+      '<div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' · Recurring':'')+'</div></div>' +
+      '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(bPaid?'var(--green)':'var(--red)')+'">$'+b.amt.toFixed(2)+'</div></div>';
+  });
+  const total = items.filter(it => it.type === 'debt' || !isThisMonthlyBillPaid((it.bill||{}).name, (it.bill||{}).day)).reduce((s, it) => s + (it.amt || 0), 0);
+  if (total > 0) html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL DUE</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
+  else if (items.length) html += '<div style="padding:8px 0;font-size:13px;color:var(--green)">All bills on this day are paid ✓</div>';
   html += '<button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';
   content.innerHTML = html;
   detail.style.display = 'block';
@@ -3943,95 +3996,9 @@ function getThisWeekProjection() {
 
 function renderCalWeekSummary() {
   const c = $('cal-week-content'); if (!c) return;
-  const todayD = new Date().getDate();
-  const endOfWeek = todayD + 7;
-  // De-duplicate fortnightly bills within same 7-day window (same name); exclude already-paid bills
-  const _wNow = new Date();
-  const rawWeekBills = getExpandedBills().filter(b => {
-    if (b.recurring === false) return false;
-    if (b.day < todayD || b.day > endOfWeek) return false;
-    return !isThisMonthlyBillPaid(b.name, b.day);
-  });
-  const seenNames = new Set();
-  const weekBills = rawWeekBills.filter(b => { if (seenNames.has(b.name)) return false; seenNames.add(b.name); return true; });
-  const weekTotal = weekBills.reduce((s,b) => s+b.amt, 0);
-  const liveBal = getLiveBal();
-  const days = daysLeft(S.payday);
 
-  // If payday falls within the next 7 days AND not yet received, include income in Now balance
-  const paydayInWeek = !S.paydayReceived && S.payday >= todayD && S.payday <= endOfWeek;
-  const effectiveBal = paydayInWeek ? liveBal + (S.income || 0) : liveBal;
-  // M6: use actual remaining days in 7-day window (capped at days until payday)
-  const remainingWindowDays = Math.min(7, daysLeft(S.payday));
-  const activeDebtsDue = getActiveDebtsDueBeforePayday();
-  // FIX 10: use getThisWeekProjection() for consistent projected balance
-  const _weekProj = getThisWeekProjection();
-  const projectedWeekBal = liveBal - _weekProj.projectedRemaining;
-  const afterBills = projectedWeekBal;
-  // Max/Day for week summary: uses effectiveBal so payday income is reflected when within 7 days
-  const weekMaxDay = (() => {
-    const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
-    const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
-    const spendable = effectiveBal - allBillsDue - bucketTotal - getDynamicBuffer();
-    if (days <= 0 || spendable <= 0) return 0;
-    return Math.min(getDailyBudget(), spendable / days);
-  })();
-  const dontSpend = Math.max(0, Math.floor(weekMaxDay));
-
-  // If afterBills negative but payday incoming covers it, show amber not red
-  const coveredByPayday = afterBills < 0 && paydayInWeek;
-  const sc = afterBills < 0 && !coveredByPayday ? 'var(--red)' : afterBills < 200 ? 'var(--amber)' : 'var(--green)';
-  const sdim = afterBills < 0 && !coveredByPayday ? 'var(--red-dim)' : afterBills < 200 ? 'var(--amber-dim)' : 'var(--green-dim)';
-  const sbord = afterBills < 0 && !coveredByPayday ? 'var(--red-border)' : afterBills < 200 ? 'var(--amber-border)' : 'var(--green-border)';
-
-  // Payday banner in week summary — suppressed entirely when paydayReceived
-  const daysToPayday = daysLeft(S.payday);
+  // Dynamic Week Projection only
   let html = '';
-  if (!S.paydayReceived && daysToPayday <= 7) {
-    const pdLabel = daysToPayday === 0 ? 'Today is payday' : 'Payday in ' + daysToPayday + (daysToPayday === 1 ? ' day' : ' days');
-    html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:14px;display:flex;align-items:center;gap:8px">' +
-      '<span style="font-size:18px">&#x1F4B0;</span>' +
-      '<div><div style="font-size:13px;font-weight:600;color:var(--green)">'+pdLabel+' \u2014 $'+Math.round(S.income||0).toLocaleString('en-AU')+' incoming</div>' +
-      '<div style="font-size:11px;color:var(--text3)">Virgin Money Go \u2014 Manhattan Associates</div></div></div>';
-  }
-
-  // Balance flow — Now label + note changes when payday is this week
-  const nowLabel = paydayInWeek ? 'Now + Pay' : 'Now';
-  const nowNote = paydayInWeek
-    ? '<div style="font-size:10px;color:var(--green);margin-top:3px;font-family:var(--mono)">incl. '+fmt(S.income||0)+' pay</div>'
-    : '';
-  const projLabel = S.paydayReceived
-    ? 'Projected end of week balance'
-    : 'Projected Virgin Money<br>after this week\'s bills';
-  const projNote = S.paydayReceived
-    ? '<div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">bills + ' + fmtC(getDailyBudget()) + '/day \u00D7 ' + remainingWindowDays + '</div>'
-    : '<div style="font-size:10px;margin-top:3px;visibility:hidden">x</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr auto 1fr;align-items:start;gap:4px;margin-bottom:14px;padding:14px;background:var(--bg3);border-radius:var(--r-sm)">';
-  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px">'+nowLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">'+fmtC(effectiveBal)+'</div>'+nowNote+'</div>';
-  html += '<div style="font-size:18px;color:var(--text3);text-align:center;padding-top:18px">&#x2192;</div>';
-  html += '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;margin-bottom:4px;line-height:1.4">'+projLabel+'</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+sc+'">'+fmtC(afterBills)+'</div>'+projNote+'</div>';
-  html += '</div>';
-  // Max/day row below the grid
-  const maxDayLabel = weekMaxDay >= getDailyBudget() ? fmtC(getDailyBudget()) + ' \u2605' : (dontSpend > 0 ? fmt(dontSpend) : '$0');
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 10px"><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Max/day this week</span><span style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+sc+'">'+maxDayLabel+'</span></div>';
-
-  if (!weekBills.length) {
-    html += '<div style="font-size:13px;color:var(--text3);padding:8px 2px">No bills due in the next 7 days &#x2714;</div>';
-  } else {
-    html += weekBills.map(b => '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+b.name+' <span style="color:var(--text3);font-size:11px">day '+b.day+'</span></span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">'+fmt(b.amt)+'</span></div>').join('');
-    html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">This week total</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">'+fmt(weekTotal)+'</span></div>';
-  }
-
-  const msg = coveredByPayday
-    ? 'This is covered by your ' + fmt(S.income||0) + ' payday on the ' + S.payday + 'th \u2014 you are not actually in deficit.'
-    : afterBills < 0
-    ? '&#x26A0;&#xFE0F; Bills will exceed your balance. Do not spend anything until payday.'
-    : afterBills < 200
-    ? 'Very tight after bills. Maximum '+fmt(dontSpend)+'/day until payday.'
-    : 'Stay under '+fmt(dontSpend)+'/day and you\'ll clear all bills comfortably.';
-  html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
-
-  // Fix 5A: dynamic week projection card
   const proj = getThisWeekProjection();
   const paceOver = proj.spentSoFar - proj.dailyRate * proj.daysSoFarInWeek;
   const paceColor = paceOver > 0 ? 'var(--amber)' : 'var(--green)';
@@ -6853,7 +6820,8 @@ const WEATHER = {
 
   getSummary() {
     if (!this.current) return '';
-    return this.current.temp + '°C · ' + this.current.description;
+    const desc = (this.current.description || '').replace(/\b\w/g, c => c.toUpperCase());
+    return this.current.temp + '°C · ' + desc;
   },
 
   getRunningCondition() {
@@ -7139,12 +7107,36 @@ const PUSH = {
 
   async sendTest() {
     try {
-      const res = await fetch(this.workerUrl + '/test', { method: 'POST' });
+      showToast('Sending test notification...');
+
+      if (!this.subscription) {
+        const reg = await navigator.serviceWorker.ready;
+        this.subscription = await reg.pushManager.getSubscription();
+      }
+
+      if (!this.subscription) {
+        showToast('No subscription found — enable notifications first');
+        return;
+      }
+
+      const subJson = this.subscription.toJSON
+        ? this.subscription.toJSON()
+        : JSON.parse(JSON.stringify(this.subscription));
+
+      const res = await fetch(this.workerUrl + '/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscription: subJson }),
+      });
+
       const data = await res.json();
-      if (data.ok) showToast('📳 Test notification sent — check your device');
-      else showToast('⚠️ Test failed: ' + (data.error || 'unknown error'));
+      if (data.ok) {
+        showToast('✅ Test sent — notification arriving shortly');
+      } else {
+        showToast('❌ Test failed: ' + (data.error || 'unknown'));
+      }
     } catch (e) {
-      showToast('⚠️ Test failed: ' + e.message);
+      showToast('❌ Error: ' + e.message);
     }
   },
 
@@ -7253,9 +7245,7 @@ const SLYGHT_SCORE = {
     if (el) el.innerHTML = ''; // clear dashboard card
     const {total,c} = this.calculate();
     const {t,c:col} = this.label(total);
-    // Update subtle header badge
-    const badge = document.getElementById('score-hdr-badge');
-    if (badge) { badge.textContent = '◆ ' + total; badge.style.color = 'var(--text3)'; badge.style.display = 'block'; }
+    // Header badge removed — score lives in Analysis tab only
     // Save score to history on next month snapshot
     if (!S._currentSlyghtScore) S._currentSlyghtScore = total;
   }
