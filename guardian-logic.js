@@ -149,14 +149,19 @@ const checks = [
   { name: 'checkAfford consistent with getMaxDay',
     test: () => {
       const afford = html.match(/function checkAfford[\s\S]*?\nfunction /);
+      // getMaxDay may delegate to getDynamicDailyBudget which contains the formula
       const maxday = html.match(/function getMaxDay[\s\S]*?\nfunction /);
-      if (!afford || !maxday) return 'MISSING';
-      const bothHaveDebts = afford[0].includes('getActiveDebtsDueBeforePayday') &&
-                            maxday[0].includes('getActiveDebtsDueBeforePayday');
-      // Both use inline savingsBuckets reduce (not a shared getBucketTotal helper)
+      const dynDaily = html.match(/function getDynamicDailyBudget[\s\S]*?\nfunction /);
+      if (!afford || (!maxday && !dynDaily)) return 'MISSING';
+      const affordHasDebts = afford[0].includes('getActiveDebtsDueBeforePayday');
+      // Accept either direct debt deduction or delegation via getDynamicDailyBudget/getDynamicBuffer
+      const maxdayHasDebts = (maxday && maxday[0].includes('getActiveDebtsDueBeforePayday')) ||
+                             (maxday && maxday[0].includes('getDynamicDailyBudget')) ||
+                             (dynDaily && dynDaily[0].includes('getActiveDebtsDueBeforePayday'));
       const affordHasBuckets = afford[0].includes('savingsBuckets') || afford[0].includes('getBucketTotal');
-      const maxdayHasBuckets = maxday[0].includes('savingsBuckets') || maxday[0].includes('getBucketTotal');
-      if (!bothHaveDebts) return 'BROKEN — checkAfford missing debt deduction vs getMaxDay';
+      const maxdayHasBuckets = (maxday && (maxday[0].includes('savingsBuckets') || maxday[0].includes('getBucketTotal') || maxday[0].includes('getDynamicDailyBudget'))) ||
+                              (dynDaily && (dynDaily[0].includes('savingsBuckets') || dynDaily[0].includes('getBucketTotal')));
+      if (!affordHasDebts || !maxdayHasDebts) return 'BROKEN — checkAfford missing debt deduction vs getMaxDay';
       if (!affordHasBuckets || !maxdayHasBuckets) return 'BROKEN — checkAfford missing bucket deduction vs getMaxDay';
       return 'OK';
     }

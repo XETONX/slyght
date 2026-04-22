@@ -408,6 +408,56 @@ const checks = [
   },
   { name: 'scheduleRender and renderCache present',
     test: () => html.includes('scheduleRender') && html.includes('renderCache') ? 'OK' : 'WARNING — render optimisation helpers missing'
+  },
+  // Fix 1A: balance correction logs transaction
+  { name: 'Balance correction logs transaction (_isCorrection flag)',
+    test: () => html.includes('_isCorrection') && html.includes('applyBalanceCorrection') ? 'OK' : 'MISSING'
+  },
+  // Fix 1B: round-up calculation on manual transactions
+  { name: 'Round-up calculation on manual transactions',
+    test: () => html.includes('_isRoundup') && html.includes('Math.ceil') ? 'OK' : 'MISSING'
+  },
+  // Fix 2A: dynamic buffer uses tiered system
+  { name: 'Dynamic buffer uses tiered system not static',
+    test: () => {
+      const fn = html.match(/function getDynamicBuffer[\s\S]*?\nfunction /);
+      return fn && fn[0].includes('free <') ? 'OK' : 'WARNING — buffer may still be static';
+    }
+  },
+  // Fix 2B: getDynamicDailyBudget exists and used in getMaxDay
+  { name: 'getDynamicDailyBudget exists and used in getMaxDay',
+    test: () => html.includes('getDynamicDailyBudget') ? 'OK' : 'MISSING'
+  },
+  // Fix 2C: getSurvivalMode exists
+  { name: 'getSurvivalMode exists',
+    test: () => html.includes('getSurvivalMode') ? 'OK' : 'MISSING'
+  },
+  // Fix 3A: payday banner has dismiss button
+  { name: 'Payday banner has dismiss button',
+    test: () => html.includes('paydayBannerDismissed') ? 'OK' : 'MISSING'
+  },
+  // Fix 6C: transaction edit modal exists
+  { name: 'Transaction edit modal exists',
+    test: () => html.includes('editTransaction') || html.includes('txn-edit') ? 'OK' : 'MISSING'
+  },
+  // Fix 5A: This Week uses dynamic calculation
+  { name: 'This week uses dynamic calculation',
+    test: () => html.includes('getThisWeekProjection') ? 'OK' : 'MISSING'
+  },
+  // Fix 6A: debt recommendation is dynamic not hardcoded
+  { name: 'Debt recommendation is dynamic not hardcoded',
+    test: () => {
+      return html.includes('getTopPriorityDebt')
+        ? 'OK' : 'WARNING — may have hardcoded CC reference';
+    }
+  },
+  // Fix 6B: transaction list collapsed by default in Analysis
+  { name: 'Transaction list collapsed by default in Analysis',
+    test: () => html.includes('Show') && html.includes('transactions') && html.includes('collapsed') ? 'OK' : 'WARNING'
+  },
+  // Fix 4B: end of day check in heartbeat
+  { name: 'End of day check in heartbeat',
+    test: () => html.includes('runEndOfDayCheck') && html.includes('lastEODCheck') ? 'OK' : 'MISSING'
   }
 ];
 

@@ -425,6 +425,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div class="pd-lbl" id="pd-lbl">— days to payday</div>
       </div>
       <div id="dash-payday-banner"></div>
+      <div id="dash-survival-banner"></div>
       <div id="dash-alerts"></div>
       <div id="dash-velocity" class="info-line"></div>
       <div id="dash-streak" class="info-line"></div>
@@ -854,7 +855,8 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <button onclick="closeModal('quick-log-modal');openScannerModal();" style="width:100%;padding:14px;background:var(--bg3);border:2px dashed var(--green-border);border-radius:var(--r-sm);color:var(--green);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">
       <span style="font-size:20px">📷</span> Scan a document — let AI fill this in
     </button>
-    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field"></div>
+    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field" oninput="updateRoundUpPreview()"></div>
+    <div id="ql-roundup-preview" style="display:none;margin:-8px 0 10px;padding:8px 12px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);font-size:13px;color:var(--green);display:flex;align-items:center;justify-content:space-between"><span id="ql-roundup-label">🏦 Round-up: +$0.00 → China Holiday</span><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ql-roundup-toggle" checked style="accent-color:var(--green)"><span style="font-size:12px">On</span></label></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles" name="ql-note-field"></div>
     <div class="modal-field"><label>Category</label>
       <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;margin-bottom:8px">
@@ -880,6 +882,29 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('quick-log-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- TXN EDIT MODAL (Fix 6C) -->
+<div class="modal-overlay" id="txn-edit-modal" onclick="handleOverlayClick(event,'txn-edit-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Edit Transaction</div>
+    <input type="hidden" id="txn-edit-idx">
+    <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="txn-edit-amt" inputmode="decimal" placeholder="0.00"></div>
+    <div class="modal-field"><label>Description</label><input class="modal-input" type="text" id="txn-edit-note" placeholder="Description"></div>
+    <div class="modal-field"><label>Category</label>
+      <select class="modal-input" id="txn-edit-cat">
+        <option>Food / Coffee</option><option>Entertainment</option><option>Transport / Fuel</option>
+        <option>Shopping</option><option>Health</option><option>Subscriptions</option>
+        <option>Debt repayment</option><option>Savings</option><option>Income</option><option>Other</option>
+      </select>
+    </div>
+    <div class="modal-field"><label>Date</label><input class="modal-input" type="date" id="txn-edit-date"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-save" onclick="saveEditedTransaction()">Save</button>
+      <button class="modal-btn modal-btn-delete" onclick="deleteEditedTransaction()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Delete</button>
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('txn-edit-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -1062,6 +1087,8 @@ let S = {
   paidBills: {'2026-4-Rent-15': true},
   paydayReceived: false,
   paydayReceivedDate: null,
+  paydayBannerDismissed: false,
+  roundUpsEnabled: true,
   weekdayBudget: 60,
   weekendBudget: 180,
   lastOpenDate: null,
@@ -1166,15 +1193,40 @@ function getDailyBudget() {
   const dow = new Date().getDay(); // 0=Sun, 6=Sat
   return (dow === 0 || dow === 6) ? (S.weekendBudget || 180) : (S.weekdayBudget || 60);
 }
+// Fix 2B: dynamic daily budget — scales with balance, caps at user prefs when comfortable
+function getDynamicDailyBudget() {
+  const bal = getLiveBal();
+  const days = Math.max(1, daysLeft());
+  const committed = getBillsDue().reduce((s,b) => s+b.amt, 0) + getActiveDebtsDueBeforePayday() + getBucketTotal();
+  const free = Math.max(0, bal - committed - getDynamicBuffer());
+  const rawDaily = free / days;
+  if (bal > 2000 && free > committed) {
+    const isWeekend = [0,6].includes(new Date().getDay());
+    return Math.min(isWeekend ? (S.weekendBudget||180) : (S.weekdayBudget||60), rawDaily);
+  }
+  if (bal < 500) return Math.min(rawDaily, 30);
+  if (bal < 1000) {
+    const isWeekend = [0,6].includes(new Date().getDay());
+    return Math.min(rawDaily, isWeekend ? 80 : 40);
+  }
+  if (bal < 2000) {
+    const isWeekend = [0,6].includes(new Date().getDay());
+    return Math.min(rawDaily, isWeekend ? 120 : (S.weekdayBudget||60));
+  }
+  return rawDaily;
+}
+// Fix 2C: detect survival mode for dashboard tone
+function getSurvivalMode() {
+  const bal = getLiveBal();
+  const dailyMax = getDynamicDailyBudget();
+  if (bal < 300) return 'critical';
+  if (bal < 600) return 'survival';
+  if (dailyMax < 20) return 'tight';
+  return 'normal';
+}
 function getMaxDay() {
-  const liveBal = getLiveBal();
-  const days = daysLeft(S.payday);
-  const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
-  const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
-  const immDebtsMax = getActiveDebtsDueBeforePayday();
-  const spendable = liveBal - allBillsDue - immDebtsMax - bucketTotal - getDynamicBuffer();
-  if (days <= 0 || spendable <= 0) return 0;
-  return Math.min(getDailyBudget(), Math.max(0, spendable / days));
+  if (daysLeft(S.payday) <= 0) return 0;
+  return Math.max(0, getDynamicDailyBudget());
 }
 
 // Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
@@ -1186,6 +1238,51 @@ function getGenuineSurplus() {
   const livingReserve = getAvgDailySpend() * days;
   const immDebts = getActiveDebtsDueBeforePayday();
   return Math.max(0, liveBal - allBillsDue - immDebts - bucketTotal - livingReserve - getDynamicBuffer());
+}
+// Fix 2D: single recalculation trigger after every S.bal mutation
+function onBalanceChange() {
+  try { renderDashboardMetrics(); } catch(e) {}
+  try { renderSurvivalBanner(); } catch(e) {}
+  try { checkDayBudgetAlert(); } catch(e) {}
+}
+function renderDashboardMetrics() {
+  // Re-render just the three metric tiles and overspend row
+  const maxDay = getMaxDay();
+  const todaySpent = getTodaySpent();
+  const dailyBudget = getDynamicDailyBudget();
+  const genuineSurplus = getGenuineSurplus();
+  const _safeSurplus = isNaN(genuineSurplus) ? 0 : genuineSurplus;
+  const _safeMaxDay = isNaN(maxDay) ? 0 : maxDay;
+  const dailyEl = $('m-daily');
+  if (dailyEl) { dailyEl.textContent = fmtC(Math.min(_safeMaxDay, dailyBudget)); }
+  const todayEl = $('m-today-spent');
+  if (todayEl) { todayEl.textContent = fmt(todaySpent); }
+  const surplusEl = $('m-surplus');
+  if (surplusEl) { surplusEl.textContent = (_safeSurplus >= 0 ? '+' : '') + fmt(_safeSurplus); }
+}
+function renderSurvivalBanner() {
+  const el = $('dash-survival-banner'); if (!el) return;
+  const mode = getSurvivalMode();
+  const bal = getLiveBal();
+  const days = Math.max(1, daysLeft());
+  const dailyMax = getDynamicDailyBudget();
+  if (mode === 'critical') {
+    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
+  } else if (mode === 'survival') {
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending to $80. No discretionary.</div>';
+  } else if (mode === 'tight') {
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Tight this week — stay under ' + fmtC(dailyMax) + '/day</div>';
+  } else {
+    el.innerHTML = '';
+  }
+}
+function checkDayBudgetAlert() {
+  const todaySpent = getTodayDiscretionarySpend();
+  const budget = getDynamicDailyBudget();
+  if (todaySpent > budget) {
+    const over = todaySpent - budget;
+    try { NOTIFY.add({ type:'warning', title:'Over daily budget', message:'You\'re $'+over.toFixed(2)+' over your $'+budget.toFixed(2)+' limit today.', ts:Date.now(), id:'day-alert-'+new Date().toDateString() }); } catch(e) {}
+  }
 }
 function getActiveDebtsDueBeforePayday() {
   const now = new Date();
@@ -1209,18 +1306,21 @@ function getTxnSpent() {
 }
 // S.bal IS the live balance — single source of truth. No arithmetic.
 function getLiveBal() { return S.bal; }
-// FA2: dynamic buffer — $500 default, rises with upcoming bills
+// FA2: dynamic buffer — tiered by free money available, not static
 function getDynamicBuffer() {
-  const due7 = getExpandedBills().filter(b => {
-    if (b.recurring === false) return false;
-    const now2 = new Date(); const paidKey = now2.getFullYear()+'-'+(now2.getMonth()+1)+'-'+b.name+'-'+b.day; if (S.paidBills && S.paidBills[paidKey]) return false;
-    const today = new Date().getDate();
-    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
-    return diff >= 0 && diff <= 7;
-  }).reduce((s,b) => s+b.amt, 0);
-  if (due7 > BUFFER_BILLS_THRESHOLD_HIGH) return BUFFER_TIER_HIGH;
-  if (due7 > BUFFER_BILLS_THRESHOLD_MED) return BUFFER_TIER_MED;
-  return BUFFER_TIER_LOW;
+  const bal = getLiveBal();
+  const billsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
+  const debtsDue = getActiveDebtsDueBeforePayday();
+  const committed = billsDue + debtsDue;
+  const free = bal - committed;
+  // Survival mode — very little free money
+  if (free < 200) return 0;
+  if (free < 500) return 50;
+  if (free < 1000) return 100;
+  if (bal < 500) return 0;
+  if (bal < 1000) return 100;
+  if (bal < 2000) return 300;
+  return 500; // only apply full buffer when genuinely comfortable
 }
 // Only discretionary spend today — debt repayments/income/savings never count toward daily budget
 function getTodaySpent() {
@@ -1427,11 +1527,19 @@ function confirmRecon() {
   const reason = selectedReason || (_rcConf ? _rcConf.value.trim() : '');
   if (!reason) return;
   if (!S.reconLog) S.reconLog = [];
-  S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
-  // S.txns is sacred — never wipe transactions during reconciliation
-  save();
   const _rmConf = $('recon-modal'); if (_rmConf) _rmConf.classList.remove('open');
   selectedReason = '';
+  // Fix 1A: if this recon came from hero balance edit, create a correction transaction
+  if (_pendingBalCorrection) {
+    const {newBal} = _pendingBalCorrection;
+    _pendingBalCorrection = null;
+    S.reconLog.push({date: new Date().toISOString(), bal: newBal, reason});
+    applyBalanceCorrection(newBal, reason);
+    return;
+  }
+  // S.txns is sacred — never wipe transactions during reconciliation
+  S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
+  save();
   renderAll();
 }
 
@@ -1532,23 +1640,96 @@ function getBillsDue() {
   });
 }
 
+// Fix 6A: dynamic debt recommendation
+function getTopPriorityDebt() {
+  const active = (S.debts||[])
+    .filter(d => !d.paid && !d.viaRent)
+    .sort((a,b) => {
+      if (S.debtStrategy === 'avalanche') return (b.rate||0) - (a.rate||0);
+      return a.amt - b.amt;
+    });
+  return active[0] || null;
+}
+
+// Fix 6C: edit an existing transaction
+function editTransaction(idx) {
+  const txn = S.txns[idx]; if (!txn) return;
+  const modal = $('txn-edit-modal'); if (!modal) return;
+  $('txn-edit-idx').value = idx;
+  $('txn-edit-amt').value = txn.amt;
+  $('txn-edit-note').value = txn.note || '';
+  $('txn-edit-cat').value = txn.cat || 'Other';
+  const d = new Date(txn.ts);
+  $('txn-edit-date').value = d.toISOString().slice(0,10);
+  modal.classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('txn-edit-modal');
+}
+function saveEditedTransaction() {
+  const idx = parseInt($('txn-edit-idx')?.value);
+  if (isNaN(idx) || !S.txns[idx]) return;
+  const txn = S.txns[idx];
+  const oldAmt = txn.amt;
+  const newAmt = parseFloat($('txn-edit-amt')?.value);
+  const diff = newAmt - oldAmt;
+  if (Math.abs(diff) > 0.01) {
+    if (txn.income) { S.bal = parseFloat((S.bal - diff).toFixed(2)); }
+    else { S.bal = parseFloat((S.bal + diff).toFixed(2)); }
+    AUDITOR.record('TXN_EDIT', S.bal + (txn.income ? diff : -diff), S.bal, txn.income ? -diff : diff,
+      'Edited: ' + txn.note + ' from $' + oldAmt + ' to $' + newAmt);
+  }
+  txn.amt = isNaN(newAmt) ? oldAmt : newAmt;
+  txn.note = $('txn-edit-note')?.value || txn.note;
+  txn.cat = $('txn-edit-cat')?.value || txn.cat;
+  const dateVal = $('txn-edit-date')?.value;
+  if (dateVal) txn.ts = new Date(dateVal).getTime() || txn.ts;
+  save(); closeModal('txn-edit-modal'); renderAll(); onBalanceChange();
+  showToast('Transaction updated');
+}
+function deleteEditedTransaction() {
+  const idx = parseInt($('txn-edit-idx')?.value);
+  if (isNaN(idx) || !S.txns[idx]) return;
+  if (!confirm('Delete this transaction? Balance will be adjusted.')) return;
+  const txn = S.txns[idx];
+  if (!txn.income) S.bal = parseFloat((S.bal + txn.amt).toFixed(2));
+  else S.bal = parseFloat((S.bal - txn.amt).toFixed(2));
+  S.txns.splice(idx, 1);
+  save(); closeModal('txn-edit-modal'); renderAll(); onBalanceChange();
+  showToast('Transaction deleted');
+}
+
 function renderAnalysisTab() {
   const c = $('analysis-content'); if (!c) return;
+
+  // Fix 6D: SLYGHT Score always first in Analysis tab
+  let html = '';
+  if (typeof SLYGHT_SCORE !== 'undefined') {
+    try {
+      const {total: scoreTotal, c: scoreC} = SLYGHT_SCORE.calculate();
+      const {t: scoreLbl, c: scoreCol} = SLYGHT_SCORE.label(scoreTotal);
+      const imp = SLYGHT_SCORE.improvement(scoreC);
+      const ring = Math.min(100, Math.round(scoreTotal/10));
+      html += '<div class="card" style="margin-bottom:12px"><div class="card-hdr"><div class="card-title">SLYGHT Score</div><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:'+scoreCol+'">'+scoreTotal+'</div></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0">' +
+        Object.entries(scoreC).map(([k,v])=>'<div style="background:var(--bg3);border-radius:var(--r-sm);padding:8px 10px"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;text-transform:uppercase;font-weight:600">'+v.l+'</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">'+v.s+'<span style="font-size:10px;color:var(--text3)">/200</span></div></div>').join('') +
+        '</div>' +
+        (imp ? '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:10px;font-size:13px;color:var(--green)">💡 ' + imp + '</div>' : '') +
+        '</div>';
+    } catch(e) {}
+  }
+
   if (!S.txns || !S.txns.length) {
-    c.innerHTML = '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
+    c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
     return;
   }
 
   const cats = {};
-  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
-  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).reduce((s,t) => s+t.amt, 0);
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).reduce((s,t) => s+t.amt, 0);
   const income = S.income || 7282;
   const days = daysLeft(S.payday);
   const liveBal = getLiveBal();
   const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
   const avgDaily = getAvgDailySpend();
-
-  let html = '';
 
   // --- Trajectory warning ---
   const shouldShowAlert = !(S.paydayReceived && getGenuineSurplus() >= 0);
@@ -1680,8 +1861,22 @@ function renderAnalysisTab() {
       '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Essential</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)">'+fmt(essTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+essPct+'% of spend</div></div>' +
       '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Discretionary</div><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:'+(discTotal > 500 ? 'var(--red)' : 'var(--amber)')+'">'+fmt(discTotal)+'</div><div style="font-size:11px;color:var(--text3);margin-top:2px">'+(100-essPct)+'% of spend</div></div>' +
       '</div>' +
-      // FA4: Opportunity cost coaching if discretionary > $150
-      (discTotal > 150 ? '<div style="background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:10px;font-size:13px;line-height:1.6;color:var(--amber)"><strong>Opportunity cost:</strong> ' + fmt(discTotal) + ' discretionary this cycle. Redirected to Credit Card (' + (S.cc > 0 ? '19.99%' : 'debt') + '), that\'s <strong>' + fmt(Math.round(discTotal * 0.1999 / 12)) + ' saved in annual interest</strong> per month you cut it.</div>' : '') +
+      // Fix 6A: dynamic debt recommendation (not hardcoded credit card)
+      (discTotal > 150 ? (() => {
+        const topDebt = getTopPriorityDebt();
+        let rec;
+        if (topDebt) {
+          const minViable = topDebt.amt * 0.1;
+          if (S.bal > minViable * 2) {
+            rec = 'Consider redirecting discretionary savings toward: <strong>' + topDebt.name + ' (' + fmtC(topDebt.amt) + (topDebt.rate > 0 ? ' at ' + topDebt.rate + '% p.a.' : '') + ')</strong>';
+          } else {
+            rec = 'Focus on staying within daily budget before targeting <strong>' + topDebt.name + '</strong>';
+          }
+        } else {
+          rec = 'All immediate debts cleared — consider building your Rainy Day Fund';
+        }
+        return '<div style="background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:10px;font-size:13px;line-height:1.6;color:var(--amber)"><strong>Opportunity cost:</strong> ' + fmt(discTotal) + ' discretionary this cycle. ' + rec + '.</div>';
+      })() : '') +
       '</div>';
   }
 
@@ -1723,26 +1918,35 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // H6: All transactions list with delete buttons
+  // Fix 6B+6C: All transactions — collapsed by default, tappable to edit
   const allTxns = (S.txns || []).slice().reverse();
   if (allTxns.length) {
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">All Transactions</div><div style="font-size:11px;color:var(--text3)">tap \uD83D\uDDD1 to delete</div></div>';
-    html += '<div style="margin-bottom:10px;position:relative"><input id="txn-search" type="text" placeholder="Search transactions..." style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px 10px 36px;font-size:14px;color:var(--text);outline:none;box-sizing:border-box" oninput="filterTxns()" autocomplete="off"><span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px">&#x1F50D;</span></div>';
-    html += allTxns.map((t, revIdx) => {
-      const realIdx = S.txns.length - 1 - revIdx;
-      const d = new Date(t.ts);
-      const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
-      const isIncome = t.income;
-      const amtCol = isIncome ? 'var(--green)' : 'var(--red)';
-      const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
-      return '<div class="txn-row">' +
-        '<div class="txn-info"><div class="txn-name">'+esc(t.note||'\u2014')+'</div><div class="txn-meta">'+esc(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
-        '<div style="display:flex;align-items:center;gap:8px">' +
-        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
-        '<button onclick="rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:15px;cursor:pointer;padding:2px 6px;line-height:1;flex-shrink:0" title="Delete transaction">\uD83D\uDDD1</button>' +
-        '<button onclick="event.stopPropagation();rmTxn('+realIdx+')" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;padding:4px;opacity:.5;white-space:nowrap" title="Remove">\xD7</button>' +
-        '</div></div>';
-    }).join('');
+    const txnCollapseKey = 'slyght_txn_list_collapsed';
+    const isCollapsed = sessionStorage.getItem(txnCollapseKey) !== 'open';
+    html += '<div class="card" id="txn-list-card">';
+    html += '<div class="card-hdr" onclick="(function(){var s=sessionStorage.getItem(\''+txnCollapseKey+'\');var next=s===\'open\'?\'closed\':\'open\';sessionStorage.setItem(\''+txnCollapseKey+'\',next);renderAnalysisTab();})()" style="cursor:pointer;margin-bottom:0">' +
+      '<div class="card-title">All Transactions</div>' +
+      '<div style="font-size:13px;color:var(--text3)">' + (isCollapsed ? 'Show ' + allTxns.length + ' transactions ▼' : 'Hide ▲') + '</div>' +
+      '</div>';
+    if (!isCollapsed) {
+      html += '<div id="txn-list-body" style="margin-top:10px">';
+      html += '<div style="margin-bottom:10px;position:relative"><input id="txn-search" type="text" placeholder="Search transactions..." style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px 10px 36px;font-size:14px;color:var(--text);outline:none;box-sizing:border-box" oninput="filterTxns()" autocomplete="off"><span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px">&#x1F50D;</span></div>';
+      html += allTxns.map((t, revIdx) => {
+        const realIdx = S.txns.length - 1 - revIdx;
+        const d = new Date(t.ts);
+        const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
+        const isIncome = t.income;
+        const amtCol = isIncome ? 'var(--green)' : 'var(--red)';
+        const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
+        const corrBadge = t._isCorrection ? '<span style="font-size:10px;margin-left:4px">🔧</span>' : '';
+        const ruBadge = t._isRoundup ? '<span style="font-size:10px;margin-left:4px">🏦</span>' : '';
+        return '<div class="txn-row" onclick="editTransaction('+realIdx+')" style="cursor:pointer">' +
+          '<div class="txn-info"><div class="txn-name">'+esc(t.note||'\u2014')+corrBadge+ruBadge+'</div><div class="txn-meta">'+esc(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
+          '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
+          '</div>';
+      }).join('');
+      html += '</div>';
+    }
     html += '</div>';
   }
 
@@ -1998,18 +2202,25 @@ function renderAll() {
   if (S.paydayReceived && S.paydayReceivedDate) {
     const rec = new Date(S.paydayReceivedDate), now2 = new Date();
     if (rec.getMonth() !== now2.getMonth() || rec.getFullYear() !== now2.getFullYear()) {
-      S.paydayReceived = false; S.paydayReceivedDate = null; save();
+      S.paydayReceived = false; S.paydayReceivedDate = null; S.paydayBannerDismissed = false; save();
     }
   }
 
   // Payday banner — paydayReceived suppresses all countdown messaging
   const bannerEl = $('dash-payday-banner');
   if (bannerEl) {
-    if (S.paydayReceived) {
+    // Fix 3A: auto-dismiss after 3 days, or if explicitly dismissed
+    const daysSincePayday = S.paydayReceivedDate
+      ? Math.floor((Date.now() - new Date(S.paydayReceivedDate).getTime()) / 86400000)
+      : 999;
+    const bannerExpired = daysSincePayday > 3;
+    if (S.paydayReceived && !S.paydayBannerDismissed && !bannerExpired) {
       const recDateStr = S.paydayReceivedDate
         ? new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric', month:'short'})
         : '';
-      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">✓ <strong>Payday received' + (recDateStr ? ' ' + recDateStr : '') + '.</strong> Plan your allocation below.</div>';
+      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span>✓ <strong>Payday received' + (recDateStr ? ' ' + recDateStr : '') + '.</strong> Plan your allocation below.</span><button onclick="S.paydayBannerDismissed=true;save();renderAll()" style="background:none;border:1px solid var(--green-border);color:var(--green);border-radius:var(--r-sm);padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap">Got it ✕</button></div>';
+    } else if (S.paydayReceived && (S.paydayBannerDismissed || bannerExpired)) {
+      bannerEl.innerHTML = '';
     } else if (phase === 'PAYDAY') {
       bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>';
       const ppBody = $('payday-plan-body'), ppTog = $('payday-plan-tog');
@@ -2023,6 +2234,8 @@ function renderAll() {
       bannerEl.innerHTML = '';
     }
   }
+  // Fix 2C: survival mode banner
+  renderSurvivalBanner();
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
@@ -2384,20 +2597,55 @@ function openNetWorthModal() {
   const _nwm = $('nw-modal'); if (_nwm) _nwm.classList.add('open');
 }
 
+// Fix 1A: balance correction creates a real transaction logged to history
+let _pendingBalCorrection = null; // {newBal, prevExpected} set by confirmHeroBalEdit, consumed by confirmRecon
+
+function applyBalanceCorrection(newBal, reason) {
+  const diff = parseFloat((newBal - S.bal).toFixed(2));
+  if (Math.abs(diff) < 0.01) return; // no change
+  const txn = {
+    amt: Math.abs(diff),
+    note: reason || 'Balance correction',
+    cat: diff > 0 ? 'Income' : 'Adjustment',
+    ts: Date.now(),
+    income: diff > 0,
+    _balAffected: true,
+    _isCorrection: true
+  };
+  S.txns.push(txn);
+  S.bal = parseFloat(newBal.toFixed(2));
+  AUDITOR.record(
+    diff > 0 ? 'BALANCE_CORRECTION_UP' : 'BALANCE_CORRECTION_DOWN',
+    S.bal - diff, S.bal, diff,
+    'Correction: ' + reason + ' | diff: $' + diff
+  );
+  save();
+  renderAll();
+  onBalanceChange();
+  showToast('Balance updated — logged as transaction');
+}
+
 // Balance edit — balance update from hero tile or settings both trigger the reconciliation modal
 function openHeroBalEdit() {
   const _hb = $('h-bal'); if (_hb) _hb.style.display = 'none';
   const ed = $('h-bal-edit');
   if (ed) { ed.style.display = 'flex'; ed.style.alignItems = 'center'; }
-  const _hbi = $('h-bal-input'); if (_hbi) { _hbi.value = S.bal || ''; _hbi.focus(); }
+  const _hbi = $('h-bal-input');
+  if (_hbi) {
+    _hbi.value = parseFloat(S.bal.toFixed(2)) || '';
+    _hbi.focus();
+    // Fix 1C: strip beyond 2 decimals on input
+    _hbi.oninput = function() { if (this.value && this.value.includes('.') && this.value.split('.')[1]?.length > 2) { this.value = parseFloat(parseFloat(this.value).toFixed(2)) || ''; } };
+  }
 }
 function cancelHeroBalEdit() {
+  _pendingBalCorrection = null;
   const _hbed = $('h-bal-edit'); if (_hbed) _hbed.style.display = 'none';
   const _hb2 = $('h-bal'); if (_hb2) _hb2.style.display = '';
 }
 function confirmHeroBalEdit() {
   const _hbi2 = $('h-bal-input'); if (!_hbi2) return;
-  const b = parseFloat(_hbi2.value);
+  const b = parseFloat(parseFloat(_hbi2.value).toFixed(2));
   if (isNaN(b) || b < 0) { alert('Balance must be a positive number'); return; }
   cancelHeroBalEdit();
   const prevExpected = getLiveBal();
@@ -2410,8 +2658,8 @@ function confirmHeroBalEdit() {
     S.paydayReceived = true;
     S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
   }
-  S.bal = b;
-  save(); renderAll();
+  // Store pending correction — applied after user selects reason in recon modal
+  _pendingBalCorrection = {newBal: b, prevExpected};
   runRecon(b, prevExpected);
 }
 
@@ -2785,7 +3033,7 @@ function markDebtPaid() {
   S.bal -= d.amt;
   S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false, _balAffected: true});
   S.debts[idx].paid = true;
-  save(); closeModal('debt-modal', true); renderAll();
+  save(); closeModal('debt-modal', true); renderAll(); onBalanceChange();
   showUndoToast('Debt marked paid');
   // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill paid
   if (d.name.toLowerCase().includes('afterpay')) {
@@ -3356,6 +3604,37 @@ function calDayClick(day) {
   detail.style.display = 'block';
 }
 
+// Fix 5A: dynamic week projection using actual spend + dynamic daily rate
+function getThisWeekProjection() {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysLeftInWeek = 7 - dayOfWeek;
+  const daysSoFarInWeek = dayOfWeek;
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - daysSoFarInWeek);
+  weekStart.setHours(0,0,0,0);
+  const spentSoFar = (S.txns||[])
+    .filter(t => { const d = new Date(t.ts); return d >= weekStart && !t.income && !['Debt repayment','Savings','Loan'].includes(t.cat) && !t._isCorrection; })
+    .reduce((s,t) => s+t.amt, 0);
+  const billsDueThisWeek = getExpandedBills()
+    .filter(b => {
+      if (isThisMonthlyBillPaid(b.name, b.day)) return false;
+      const billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
+      return billDate > today && billDate <= new Date(today.getTime() + daysLeftInWeek * 86400000);
+    })
+    .reduce((s,b) => s+b.amt, 0);
+  const dailyRate = getDynamicDailyBudget();
+  const projectedRemaining = (dailyRate * daysLeftInWeek) + billsDueThisWeek;
+  return {
+    spentSoFar: parseFloat(spentSoFar.toFixed(2)),
+    billsDueThisWeek: parseFloat(billsDueThisWeek.toFixed(2)),
+    projectedRemaining: parseFloat(projectedRemaining.toFixed(2)),
+    projectedTotal: parseFloat((spentSoFar + projectedRemaining).toFixed(2)),
+    daysLeftInWeek, daysSoFarInWeek,
+    dailyRate: parseFloat(dailyRate.toFixed(2))
+  };
+}
+
 function renderCalWeekSummary() {
   const c = $('cal-week-content'); if (!c) return;
   const todayD = new Date().getDate();
@@ -3446,6 +3725,22 @@ function renderCalWeekSummary() {
     ? 'Very tight after bills. Maximum '+fmt(dontSpend)+'/day until payday.'
     : 'Stay under '+fmt(dontSpend)+'/day and you\'ll clear all bills comfortably.';
   html += '<div style="background:'+sdim+';border:1px solid '+sbord+';border-radius:var(--r-sm);padding:12px;margin-top:12px;font-size:13px;line-height:1.6;color:'+sc+'">'+msg+'</div>';
+
+  // Fix 5A: dynamic week projection card
+  const proj = getThisWeekProjection();
+  const paceOver = proj.spentSoFar - proj.dailyRate * proj.daysSoFarInWeek;
+  const paceColor = paceOver > 0 ? 'var(--amber)' : 'var(--green)';
+  const paceMsg = paceOver > 0
+    ? 'Running ' + fmtC(paceOver) + ' over pace — slow down'
+    : 'Running ' + fmtC(Math.abs(paceOver)) + ' under pace — good week';
+  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:12px;line-height:1.8;color:var(--text2)">' +
+    '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Dynamic Week Projection</div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Spent so far:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + ' (' + proj.daysSoFarInWeek + ' days)</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Bills remaining:</span><span style="font-family:var(--mono);font-weight:700;color:var(--red)">' + fmtC(proj.billsDueThisWeek) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Projected daily:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days = ' + fmtC(proj.projectedRemaining) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Week total projection:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedTotal) + '</span></div>' +
+    '<div style="color:' + paceColor + ';font-weight:600;margin-top:4px">' + paceMsg + '</div>' +
+    '</div>';
 
   // Genuine surplus: only fires when balance covers all bills + living costs + $500 buffer
   const surplus = getGenuineSurplus();
@@ -3854,6 +4149,24 @@ function openQuickLogModal() {
   setTimeout(() => { const _qa = $('ql-amt'); if (_qa) _qa.focus(); }, 150);
 }
 
+// Fix 1B: show round-up preview below amount field
+function updateRoundUpPreview() {
+  const amt = parseFloat($('ql-amt')?.value || 0);
+  const cat = $('ql-cat-hidden')?.value || '';
+  const preview = $('ql-roundup-preview');
+  if (!preview) return;
+  if (!amt || amt <= 0 || cat === 'Income' || cat === 'Income / Refund ↑' || !S.roundUpsEnabled) {
+    preview.style.display = 'none'; return;
+  }
+  const roundUp = parseFloat((Math.ceil(amt) - amt).toFixed(2));
+  if (roundUp > 0 && roundUp < 1) {
+    $('ql-roundup-label').textContent = '🏦 Round-up: +$' + roundUp.toFixed(2) + ' → China Holiday';
+    preview.style.display = 'flex';
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
 function quickLogTxn() {
   const _qla = $('ql-amt'); if (!_qla) return;
   const amt = parseFloat(_qla.value);
@@ -3887,13 +4200,24 @@ function quickLogTxn() {
     const msg = HABIT_MSGS[Math.floor(Math.random()*HABIT_MSGS.length)](flag, bal, debt);
     setTimeout(() => alert('HABIT CHECK\n\n' + msg), 100);
   }
+  // Fix 1B: round-up micro-transaction — only on manual expense entries with cents
+  const roundUp = parseFloat((Math.ceil(amt) - amt).toFixed(2));
+  const ruToggle = $('ql-roundup-toggle');
+  const roundUpOn = ruToggle ? ruToggle.checked : false;
+  if (roundUp > 0 && roundUp < 1 && roundUpOn && S.roundUpsEnabled !== false) {
+    S.bal = parseFloat((S.bal - roundUp).toFixed(2));
+    S.txns.push({amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', ts: Date.now(), income: false, _isRoundup: true, _balAffected: true});
+    const chinaHol = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('china'));
+    if (chinaHol) chinaHol.saved = parseFloat(((chinaHol.saved||0) + roundUp).toFixed(2));
+  }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
   closeModal('quick-log-modal');
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
   save(); renderAll();
+  onBalanceChange();
   autoMatchBillsToTxns(false);
   // Receipt toast
-  const toastMsg = '-$' + amt.toFixed(2) + ' · ' + (cat || 'Other') + ' · ' + (note || '—');
+  const toastMsg = '-$' + amt.toFixed(2) + ' · ' + (cat || 'Other') + ' · ' + (note || '—') + (roundUp > 0 && roundUpOn ? ' · +🏦$' + roundUp.toFixed(2) + ' round-up' : '');
   showUndoToast(toastMsg);
 }
 
@@ -4089,36 +4413,41 @@ function copyExport() {
   const snapshotCount = SNAPSHOTS.load().length;
   const anomalies = AUDITOR.log.filter(e => !e.ok).length;
   const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
-  const uxScore = (() => { try { return JSON.parse(localStorage.getItem('slyght_ux_report') || '{}').score || null; } catch(e) { return null; } })();
   const activeDebts = S.debts.filter(d => !d.paid);
   const nw = getNetWorth();
-  const monitoringSummary = {
-    exportedAt: new Date().toISOString(),
-    totalTransactions: S.txns.length,
-    activeDebts: activeDebts.map(d => ({name: d.name, amt: d.amt})),
-    currentBalance: S.bal,
-    genuineSurplus: getGenuineSurplus(),
-    netWorth: nw,
-    slyghtScore: slyghtScore,
-    uxScore: uxScore,
+  // Fix 7A: comprehensive export with all monitoring data
+  const fullExport = {
+    S: exportS,
+    BILLS: BILLS,
+    exported: new Date().toISOString(),
     auditLog: {
-      totalEntries: AUDITOR.log.length,
-      anomalies: anomalies,
-      errors: AUDITOR.log.filter(e => !e.ok).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
-      consistencyFailures: AUDITOR.log.filter(e => e.type === 'consistency' || (e.action && e.action.includes('consistency'))).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
-      jsErrors: AUDITOR.log.filter(e => e.type === 'js_error' || (e.action && e.action.includes('js_error'))).map(e => ({action: e.action, time: e.time, detail: e.detail || e.note || null})),
-      exportedAt: new Date().toISOString()
+      entries: AUDITOR.log.slice(0,100),
+      totalCount: AUDITOR.log.length,
+      anomalies: AUDITOR.log.filter(e => !e.ok),
+      jsErrors: AUDITOR.log.filter(e => e.action === 'JS_ERROR'),
+      consistencyFails: AUDITOR.log.filter(e => e.action === 'CONSISTENCY_FAIL')
     },
-    snapshotCount: snapshotCount,
-    heartbeatTicks: typeof HEARTBEAT !== 'undefined' ? HEARTBEAT.tickCount : 0
+    uxReport: (() => { try { return {...JSON.parse(localStorage.getItem('slyght_ux_report')||'{}'), sessionStats: typeof UX !== 'undefined' ? UX.report() : null}; } catch(e) { return {}; } })(),
+    snapshots: { count: snapshotCount, latest: SNAPSHOTS.load().slice(0,3) },
+    apiCosts: typeof API_COSTS !== 'undefined' ? API_COSTS.totals() : null,
+    guardianLastRun: localStorage.getItem('slyght_guardian_last') || null,
+    summary: {
+      balance: S.bal,
+      activeDebts: activeDebts.map(d => ({name:d.name, amt:d.amt})),
+      paidThisMonth: Object.keys(S.paidBills||{}),
+      survivalMode: getSurvivalMode(),
+      slyghtScore: slyghtScore?.total || S._currentSlyghtScore,
+      totalTransactions: S.txns.length,
+      paydayIn: daysLeft() + ' days'
+    }
   };
   const summary = '📊 Export Summary:\n' +
     'Balance: $' + S.bal.toFixed(2) + ' · Transactions: ' + S.txns.length + ' · Active debts: ' + activeDebts.length + '\n' +
-    'SLYGHT Score: ' + (slyghtScore !== null ? slyghtScore : 'N/A') + ' · UX Score: ' + (uxScore !== null ? uxScore : 'N/A') + '\n' +
+    'SLYGHT Score: ' + (slyghtScore?.total ?? 'N/A') + ' · Survival mode: ' + getSurvivalMode() + '\n' +
     'Audit entries: ' + AUDITOR.log.length + ' · Anomalies: ' + anomalies + ' · Snapshots: ' + snapshotCount + '\n\n' +
-    'API key, chat history and raw audit data not included for security.\n\nCopy export data to clipboard?';
+    'API key, chat history and PIN not included.\n\nCopy export data to clipboard?';
   if (confirm(summary)) {
-    const d = JSON.stringify({S: exportS, BILLS, monitoringSummary, exported: new Date().toISOString()});
+    const d = JSON.stringify(fullExport);
     navigator.clipboard.writeText(d).then(() => {
       const btn = document.querySelector('[onclick="copyExport()"]');
       if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy Export Code', 2000); }
@@ -6370,6 +6699,20 @@ function confirmScanAdd(result) {
   }
 }
 
+// Fix 4B: end-of-day budget check
+function runEndOfDayCheck() {
+  const today = new Date().toDateString();
+  const todaySpent = getTodayDiscretionarySpend();
+  const budget = getDynamicDailyBudget();
+  const over = todaySpent - budget;
+  if (over > 0) {
+    try { NOTIFY.add({ type:'warning', title:'Daily budget exceeded', message:'You spent $' + todaySpent.toFixed(2) + ' today — $' + over.toFixed(2) + ' over your $' + budget.toFixed(2) + ' limit.', ts:Date.now(), id:'eod-' + today }); } catch(e) {}
+  } else if (todaySpent > 0) {
+    try { NOTIFY.add({ type:'info', title:'Day complete ✅', message:'Spent $' + todaySpent.toFixed(2) + ' today — $' + Math.abs(over).toFixed(2) + ' under budget. Good work.', ts:Date.now(), id:'eod-' + today }); } catch(e) {}
+  }
+  try { SNAPSHOTS.autoSnapshot('end-of-day'); } catch(e) {}
+}
+
 // ─── HEARTBEAT ────────────────────────────────────────────────
 const HEARTBEAT = {
   interval: null,
@@ -6382,8 +6725,19 @@ const HEARTBEAT = {
     if (SLYGHT_DEBUG) console.log('💓 Heartbeat started — 2 min interval');
   },
 
+  lastEODCheck: null,
+
   tick() {
     this.tickCount++;
+
+    // Fix 4B: end-of-day check — runs once per calendar day at midnight crossover
+    try {
+      const today = new Date().toDateString();
+      if (this.lastEODCheck !== today) {
+        this.lastEODCheck = today;
+        runEndOfDayCheck();
+      }
+    } catch(e) {}
 
     // Every tick (2 min): consistency check
     try {
