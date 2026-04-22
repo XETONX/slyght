@@ -6706,10 +6706,7 @@ const PUSH = {
 
   async subscribe() {
     try {
-      if (this.vapidPublicKey === 'BL6NmGc-KoJncmQ4-6MS_FV5Rk2yPLXLH5scEjTuUOAWiI4xLuHWZ54Er9sSe-WtgRy10hChSJ9Acr9MW42AFCA') {
-        showToast('Notifications not configured yet — contact support');
-        return;
-      }
+
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
