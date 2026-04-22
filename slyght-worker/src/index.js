@@ -102,6 +102,31 @@ export default {
       });
     }
 
+    // POST /test — send a test push notification immediately
+    if (path === '/test' && request.method === 'POST') {
+      try {
+        const sub = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
+        if (!sub) {
+          return new Response(JSON.stringify({ error: 'No subscription stored' }), {
+            status: 404, headers: corsHeaders,
+          });
+        }
+        await sendPush(sub, {
+          title: '🧪 SLYGHT Test',
+          body: 'Notifications are working! Sent at ' + new Date().toLocaleTimeString('en-AU', { timeZone: 'Australia/Sydney' }) + ' AEST',
+          tag: 'slyght-test',
+          icon: '/icon-192.png',
+        }, env);
+        return new Response(JSON.stringify({ ok: true, message: 'Test notification sent' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500, headers: corsHeaders,
+        });
+      }
+    }
+
     return new Response('SLYGHT Worker OK', { headers: corsHeaders });
   },
 
