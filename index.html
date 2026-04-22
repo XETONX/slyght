@@ -7101,105 +7101,124 @@ const PUSH = {
   },
 
   async subscribe() {
+    // Immediate feedback so user knows something happened
+    showToast('Checking notification support...');
+
+    // Check 1 — basic support
+    if (!('Notification' in window)) {
+      showToast('Notifications not supported on this device');
+      return;
+    }
+
+    // Check 2 — service worker support
+    if (!('serviceWorker' in navigator)) {
+      showToast('Service worker not supported');
+      return;
+    }
+
+    // Check 3 — PushManager support
+    if (!('PushManager' in window)) {
+      showToast('Push notifications not supported on this browser');
+      return;
+    }
+
+    // Check 4 — current permission state
+    console.log('[PUSH] Current permission:', Notification.permission);
+    showToast('Permission state: ' + Notification.permission);
+
+    if (Notification.permission === 'denied') {
+      showToast('Notifications blocked — go to Android Settings → Apps → Chrome → Notifications to re-enable');
+      return;
+    }
+
+    // Check 5 — are we in standalone PWA mode?
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                         window.navigator.standalone === true;
+    console.log('[PUSH] Standalone PWA mode:', isStandalone);
+
     try {
-      // Step 1 — check browser support
-      if (!('serviceWorker' in navigator)) {
-        showToast('Service worker not supported on this browser');
-        return;
-      }
-      if (!('PushManager' in window)) {
-        showToast('Push notifications not supported on this browser');
-        return;
-      }
+      showToast('Requesting permission...');
 
-      showToast('Setting up notifications...');
-
-      // Step 2 — get service worker registration
-      let reg;
+      // In standalone mode on Android, requestPermission may need to be called differently
+      let permission;
       try {
-        reg = await navigator.serviceWorker.ready;
-        console.log('[PUSH] SW ready:', reg.scope);
+        permission = await Notification.requestPermission();
       } catch(e) {
-        showToast('Service worker not ready: ' + e.message);
-        console.error('[PUSH] SW ready error:', e);
+        // Fallback for older API
+        permission = await new Promise(resolve => {
+          Notification.requestPermission(resolve);
+        });
+      }
+
+      console.log('[PUSH] Permission result:', permission);
+      showToast('Permission: ' + permission);
+
+      if (permission !== 'granted') {
+        showToast('Permission not granted — tap Allow when Chrome asks');
         return;
       }
 
-      // Step 3 — check existing subscription
+      showToast('Getting service worker...');
+      const reg = await navigator.serviceWorker.ready;
+      console.log('[PUSH] SW ready:', reg.scope);
+
+      // Check existing subscription
       const existing = await reg.pushManager.getSubscription();
       if (existing) {
-        console.log('[PUSH] Already subscribed:', existing.endpoint.substring(0, 60));
+        console.log('[PUSH] Already subscribed:', existing.endpoint.substring(0, 50));
         this.subscription = existing;
         localStorage.setItem('slyght_notif_enabled', 'true');
+        localStorage.setItem('slyght_push_sub', JSON.stringify(existing.toJSON()));
+        localStorage.setItem('slyght_push_endpoint', existing.endpoint);
         await this._sendSubToWorker(existing);
         await this.syncState();
         this.renderSubscribeButton();
-        showToast('✅ Notifications already active');
+        showToast('✅ Notifications already active — synced to worker');
         return;
       }
 
-      // Step 4 — request notification permission explicitly
-      console.log('[PUSH] Requesting notification permission...');
-      const permission = await Notification.requestPermission();
-      console.log('[PUSH] Permission result:', permission);
+      showToast('Creating subscription...');
 
-      if (permission !== 'granted') {
-        showToast('Notifications blocked — enable in site settings then reload');
-        return;
-      }
-
-      // Step 5 — convert VAPID key
+      // Convert VAPID key
       let appServerKey;
       try {
         appServerKey = this._urlBase64ToUint8Array(this.vapidPublicKey);
-        console.log('[PUSH] VAPID key converted, length:', appServerKey.length);
+        console.log('[PUSH] VAPID key length:', appServerKey.length);
       } catch(e) {
         showToast('VAPID key error: ' + e.message);
-        console.error('[PUSH] VAPID conversion error:', e);
+        console.error('[PUSH] VAPID error:', e);
         return;
       }
 
-      // Step 6 — subscribe to push
-      console.log('[PUSH] Subscribing to push manager...');
+      // Subscribe
       let sub;
       try {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: appServerKey,
         });
-        console.log('[PUSH] Subscribed:', sub.endpoint.substring(0, 60));
+        console.log('[PUSH] New subscription:', sub.endpoint.substring(0, 60));
       } catch(e) {
-        console.error('[PUSH] pushManager.subscribe error:', e.name, e.message);
-        if (e.name === 'NotAllowedError') {
-          showToast('Notifications permission denied');
-        } else if (e.name === 'InvalidStateError') {
-          const recheck = await reg.pushManager.getSubscription();
-          if (recheck) {
-            this.subscription = recheck;
-            this.renderSubscribeButton();
-            showToast('✅ Already subscribed');
-          } else {
-            showToast('Subscribe failed — try reloading the page');
-          }
-        } else {
-          showToast('Subscribe failed: ' + e.message);
-        }
+        console.error('[PUSH] Subscribe error:', e.name, e.message);
+        showToast('Subscribe failed: ' + e.name + ' — ' + e.message);
         return;
       }
 
-      // Step 7 — persist and send to worker
       this.subscription = sub;
-      localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
       localStorage.setItem('slyght_notif_enabled', 'true');
+      localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
       localStorage.setItem('slyght_push_endpoint', sub.endpoint);
-      await this._sendSubToWorker(sub);
+
+      const sent = await this._sendSubToWorker(sub);
+      console.log('[PUSH] Sent to worker:', sent);
+
       await this.syncState();
       this.renderSubscribeButton();
-      showToast('✅ Notifications enabled! First alert at 9am tomorrow.');
+      showToast('✅ Notifications enabled! Morning alert at 9am.');
 
     } catch(e) {
-      console.error('[PUSH] subscribe unexpected error:', e);
-      showToast('Unexpected error: ' + e.message);
+      console.error('[PUSH] Unexpected subscribe error:', e);
+      showToast('Error: ' + e.name + ' — ' + e.message);
     }
   },
 
@@ -7310,8 +7329,9 @@ const PUSH = {
         '</div>';
     } else {
       el.innerHTML =
-        '<button onclick="PUSH.subscribe()" style="width:100%;padding:14px;background:var(--green);' +
-        'border:none;border-radius:12px;color:#000;font-weight:700;font-size:15px;cursor:pointer">' +
+        '<button onclick="PUSH.subscribe()" style="width:100%;padding:16px;background:var(--green);' +
+        'border:none;border-radius:12px;color:#000;font-weight:700;font-size:16px;' +
+        'min-height:52px;-webkit-tap-highlight-color:transparent;cursor:pointer">' +
           '🔔 Enable Smart Notifications' +
         '</button>' +
         '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
