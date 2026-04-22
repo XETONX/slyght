@@ -5347,7 +5347,19 @@ if ('serviceWorker' in navigator) {
 
 // Seed v13: real state 14 Apr 2026. S.bal=3345.99 (getLiveBal() = S.bal, pure identity)
 (function seedV13() {
-  if (localStorage.getItem('slyght_seeded_v13')) return;
+  const flag = 'slyght_seeded_v13';
+  if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
+  const existing = localStorage.getItem('slyght_v5');
+  if (existing) {
+    try {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) {
+        localStorage.setItem(flag, 'true');
+        return;
+      }
+    } catch(e) {}
+  }
   // S.bal = 3345.99 is the real Virgin Money balance — single source of truth.
   // Transactions are HISTORY LOG ONLY — no _balAffected flag, never recalculated into balance.
   const t = Date.parse('2026-04-14T09:00:00');
@@ -5408,14 +5420,23 @@ if ('serviceWorker' in navigator) {
     ]
   };
   localStorage.setItem('slyght_v5', JSON.stringify(seed));
-  localStorage.setItem('slyght_seeded_v13', '1');
+  localStorage.setItem(flag, '1');
   localStorage.setItem('slyght_seeded_v11', '1'); // v11 compat flag
   localStorage.setItem('slyght_seeded_v12', '1'); // v12 compat flag
 })();
 
 // Seed v14: patch cc=0, mum debt, rent recurring, wrxValue=21000
 (function seedV14() {
-  if (localStorage.getItem('slyght_seeded_v14')) return;
+  const flag = 'slyght_seeded_v14';
+  if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
+  try {
+    const existing = localStorage.getItem('slyght_v5');
+    if (existing) {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) { localStorage.setItem(flag, 'true'); return; }
+    }
+  } catch(e) {}
   try {
     const raw = localStorage.getItem('slyght_v5');
     if (raw) {
@@ -5446,12 +5467,21 @@ if ('serviceWorker' in navigator) {
       localStorage.setItem('slyght_v5', JSON.stringify(store));
     }
   } catch(e) { if (SLYGHT_DEBUG) console.warn('seedV14 error', e); }
-  localStorage.setItem('slyght_seeded_v14', '1');
+  localStorage.setItem(flag, '1');
 })();
 
 // Seed v15: mark CC overdue debt (id:2) as paid — mum paid full CC balance 15 Apr
 (function seedV15() {
-  if (localStorage.getItem('slyght_seeded_v15')) return;
+  const flag = 'slyght_seeded_v15';
+  if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
+  try {
+    const existing = localStorage.getItem('slyght_v5');
+    if (existing) {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) { localStorage.setItem(flag, 'true'); return; }
+    }
+  } catch(e) {}
   try {
     const raw = localStorage.getItem('slyght_v5');
     if (raw) {
@@ -5465,12 +5495,21 @@ if ('serviceWorker' in navigator) {
       localStorage.setItem('slyght_v5', JSON.stringify(store));
     }
   } catch(e) { if (SLYGHT_DEBUG) console.warn('seedV15 error', e); }
-  localStorage.setItem('slyght_seeded_v15', '1');
+  localStorage.setItem(flag, '1');
 })();
 
 // Seed v16: remove ghost bills (Parking, Pet Food, Food at Work, Afterpay instalment), fix Car Loan to monthly/day16/780
 (function seedV16() {
-  if (localStorage.getItem('slyght_seeded_v16')) return;
+  const flag = 'slyght_seeded_v16';
+  if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
+  try {
+    const existing = localStorage.getItem('slyght_v5');
+    if (existing) {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) { localStorage.setItem(flag, 'true'); return; }
+    }
+  } catch(e) {}
   try {
     const raw = localStorage.getItem('slyght_v5');
     if (raw) {
@@ -5484,7 +5523,7 @@ if ('serviceWorker' in navigator) {
       localStorage.setItem('slyght_v5', JSON.stringify(store));
     }
   } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV16 error', e); }
-  localStorage.setItem('slyght_seeded_v16', '1');
+  localStorage.setItem(flag, '1');
 })();
 
 // Seed v17: inject John's real financial state captured 15 Apr 2026
@@ -5572,15 +5611,22 @@ const REAL_STATE_V17 = {
 (function seedV17() {
   const flag = 'slyght_seeded_v17';
   if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
   try {
-    const existing = JSON.parse(localStorage.getItem('slyght_v5') || '{}');
-    const existingTxns = existing && existing.S && existing.S.txns ? existing.S.txns : [];
-    const existingBal = (existing && existing.S && existing.S.bal) || 0;
-    // Patch only if balance is stale or not enough transactions
-    const needsPatch = existingTxns.length < 5 || Math.abs(existingBal - 1500.34) > 100;
-    if (!needsPatch) { localStorage.setItem(flag, 'true'); return; }
+    const existing = localStorage.getItem('slyght_v5');
+    if (existing) {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) {
+        localStorage.setItem(flag, 'true');
+        return;
+      }
+    }
+  } catch(e) {}
+  try {
     // Preserve API key
-    const apiKey = localStorage.getItem('slyght_api_key') || (existing && existing.S && existing.S.apiKey) || '';
+    const raw = localStorage.getItem('slyght_v5');
+    const cur = raw ? JSON.parse(raw) : {};
+    const apiKey = localStorage.getItem('slyght_api_key') || (cur && cur.S && cur.S.apiKey) || '';
     localStorage.setItem('slyght_v5', JSON.stringify({S: REAL_STATE_V17.S, BILLS: REAL_STATE_V17.BILLS}));
     if (apiKey && apiKey !== 'SET') localStorage.setItem('slyght_api_key', apiKey);
     if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.log('SLYGHT v17 state patch applied \u2014 real data loaded');
@@ -5590,7 +5636,16 @@ const REAL_STATE_V17 = {
 
 // Seed v12: patch apiKey into existing v11 installs
 (function seedV12() {
-  if (localStorage.getItem('slyght_seeded_v12')) return;
+  const flag = 'slyght_seeded_v12';
+  if (localStorage.getItem(flag)) return;
+  // CRITICAL: never overwrite if real transactions exist
+  try {
+    const existing = localStorage.getItem('slyght_v5');
+    if (existing) {
+      const data = JSON.parse(existing);
+      if (data?.S?.txns?.length > 10) { localStorage.setItem(flag, 'true'); return; }
+    }
+  } catch(e) {}
   try {
     const raw = localStorage.getItem('slyght_v5');
     if (raw) {
@@ -5602,7 +5657,7 @@ const REAL_STATE_V17 = {
       }
     }
   } catch(e) {}
-  localStorage.setItem('slyght_seeded_v12', '1');
+  localStorage.setItem(flag, '1');
 })();
 
 // Shared helper used by multiple systems
