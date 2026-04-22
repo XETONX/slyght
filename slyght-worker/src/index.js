@@ -105,18 +105,21 @@ export default {
     // POST /test — send a test push notification immediately
     if (path === '/test' && request.method === 'POST') {
       try {
-        const sub = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
+        const body = await request.json().catch(() => ({}));
+        // Accept subscription from request body, or fall back to KV
+        const sub = body.subscription ||
+          JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
         if (!sub) {
-          return new Response(JSON.stringify({ error: 'No subscription stored' }), {
-            status: 404, headers: corsHeaders,
+          return new Response(JSON.stringify({ error: 'No subscription found' }), {
+            status: 400, headers: corsHeaders,
           });
         }
-        await sendPush(sub, {
-          title: '🧪 SLYGHT Test',
-          body: 'Notifications are working! Sent at ' + new Date().toLocaleTimeString('en-AU', { timeZone: 'Australia/Sydney' }) + ' AEST',
-          tag: 'slyght-test',
-          icon: '/icon-192.png',
-        }, env);
+        await sendPush(sub, env, {
+          title: '✅ SLYGHT notifications working!',
+          body: 'Smart notifications are live. Morning alert fires at 9am Sydney time.',
+          tag: 'test-' + Date.now(),
+          actions: [{ action: 'open', title: '📊 Open SLYGHT' }],
+        });
         return new Response(JSON.stringify({ ok: true, message: 'Test notification sent' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
