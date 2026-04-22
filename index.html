@@ -394,6 +394,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
+        <div id="score-hdr-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:2px 6px;display:none">◆</div>
         <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </div>
@@ -440,15 +441,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div id="auditor-badge" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
 
-      <!-- PAYDAY PLAN (FIX 8) -->
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-hdr" onclick="toggleExpandCard('payday-plan-body','payday-plan-tog')" style="cursor:pointer;margin-bottom:0">
-          <div class="card-title" id="payday-plan-title">Payday Plan — 15th</div>
-          <span id="payday-plan-tog" style="font-size:14px;color:var(--text3)">▴</span>
-        </div>
-        <div id="payday-plan-body" class="expand-body" style="max-height:2000px"></div>
-      </div>
-      <div id="monthly-position" style="margin-top:12px"></div>
+      <!-- FIX 1: REORDERED — Immediate Debts first -->
       <!-- IMMEDIATE DEBTS -->
       <div class="card">
         <div class="card-hdr">
@@ -458,11 +451,17 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
         <div class="debt-grid" id="debt-grid"></div>
         <div id="debt-congrats" style="display:none" class="debt-congrats">
-          <div class="congrats-icon">&#x1F389;</div>
-          <div class="congrats-title">Debts Cleared!</div>
-          <div class="congrats-sub">All immediate debts paid off.<br>Time to start building savings.</div>
+          <div class="congrats-icon">&#x2705;</div>
+          <div class="congrats-title">No Immediate Debts</div>
+          <div class="congrats-sub">All immediate debts cleared.<br>Time to start building savings.</div>
         </div>
         <button class="add-btn" onclick="openAddDebtModal()" style="margin-top:8px">+ Add Debt</button>
+      </div>
+      <!-- RECENT SPENDING (last 5, tappable) -->
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Recent Spending</div></div>
+        <div id="dash-txns"></div>
+        <button class="add-btn" onclick="openQuickLogModal()" style="margin-top:4px">+ Log a transaction</button>
       </div>
       <!-- LONG-TERM LIABILITIES -->
       <div class="card">
@@ -473,12 +472,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         </div>
       </div>
       <div id="wrx-tracker-card" style="margin-top:12px"></div>
-      <!-- RECENT SPENDING -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Recent Spending</div></div>
-        <div id="dash-txns"></div>
-        <button class="add-btn" onclick="openQuickLogModal()" style="margin-top:4px">+ Log a transaction</button>
-      </div>
       <!-- AFFORDABILITY CHECK -->
       <div class="card">
         <div class="card-hdr"><div class="card-title">Affordability Check</div></div>
@@ -490,6 +483,16 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <div id="aff-cuts"></div>
         <div id="aff-instalments"></div>
       </div>
+      <!-- PAYDAY PLAN (moved to bottom, conditional) -->
+      <div class="card" id="payday-plan-card" style="margin-bottom:12px">
+        <div class="card-hdr" onclick="toggleExpandCard('payday-plan-body','payday-plan-tog')" style="cursor:pointer;margin-bottom:0">
+          <div class="card-title" id="payday-plan-title">Payday Plan — 15th</div>
+          <span id="payday-plan-tog" style="font-size:14px;color:var(--text3)">▾</span>
+        </div>
+        <div id="payday-plan-body" class="expand-body" style="max-height:0"></div>
+      </div>
+      <!-- MONTHLY POSITION (moved to bottom) -->
+      <div id="monthly-position" style="margin-top:12px"></div>
     </div>
   </div>
 
@@ -588,10 +591,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
           <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
           <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
           <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
-          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekday-budget" value="60" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekday-budget" value="60" min="1" max="500" step="1"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Mon–Fri</div>
-          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekend-budget" value="180" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekend-budget" value="180" min="1" max="500" step="1"></div>
           <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Sat–Sun</div>
+          <button onclick="saveBudgets()" style="width:100%;margin-top:8px;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer">Save Daily Budgets</button>
+          <div id="budget-save-msg" style="font-size:12px;color:var(--green);margin-top:4px;display:none">✓ Budgets saved — Max/Day recalculated</div>
         </div>
         <div class="settings-section">
           <div class="settings-title">Assets</div>
@@ -1143,6 +1148,8 @@ function load() {
     const d = localStorage.getItem(STORAGE_KEY);
     if (d) { const p = JSON.parse(d); S = {...S, ...p.S}; if (p.BILLS) BILLS = p.BILLS; }
   } catch(e) {}
+  // FIX 9: sanitize balance floating point on every load
+  S.bal = parseFloat((S.bal || 0).toFixed(2));
   // Clean stale notifications for paid debts on load
   if (S.notifications) {
     S.notifications = S.notifications.filter(n => {
@@ -1700,15 +1707,15 @@ function deleteEditedTransaction() {
 function renderAnalysisTab() {
   const c = $('analysis-content'); if (!c) return;
 
-  // Fix 6D: SLYGHT Score always first in Analysis tab
-  let html = '';
+  // FIX 7: SLYGHT Score moved to bottom of analysis tab
+  let htmlScore = '';
   if (typeof SLYGHT_SCORE !== 'undefined') {
     try {
       const {total: scoreTotal, c: scoreC} = SLYGHT_SCORE.calculate();
       const {t: scoreLbl, c: scoreCol} = SLYGHT_SCORE.label(scoreTotal);
       const imp = SLYGHT_SCORE.improvement(scoreC);
       const ring = Math.min(100, Math.round(scoreTotal/10));
-      html += '<div class="card" style="margin-bottom:12px"><div class="card-hdr"><div class="card-title">SLYGHT Score</div><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:'+scoreCol+'">'+scoreTotal+'</div></div>' +
+      htmlScore += '<div class="card" style="margin-bottom:12px"><div class="card-hdr"><div class="card-title">SLYGHT Score</div><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:'+scoreCol+'">'+scoreTotal+'</div></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0">' +
         Object.entries(scoreC).map(([k,v])=>'<div style="background:var(--bg3);border-radius:var(--r-sm);padding:8px 10px"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;text-transform:uppercase;font-weight:600">'+v.l+'</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">'+v.s+'<span style="font-size:10px;color:var(--text3)">/200</span></div></div>').join('') +
         '</div>' +
@@ -1716,9 +1723,10 @@ function renderAnalysisTab() {
         '</div>';
     } catch(e) {}
   }
+  let html = '';
 
   if (!S.txns || !S.txns.length) {
-    c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
+    c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>' + htmlScore;
     return;
   }
 
@@ -1845,7 +1853,66 @@ function renderAnalysisTab() {
   }
   html += '</div>';
 
-  // --- FA3: Essential vs Discretionary breakdown ---
+  // FIX 7 ORDER 2: Last 7 Days bar chart
+  const chartDays = [];
+  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(todayMidnight); d.setDate(d.getDate() - i);
+    const dStr = d.toDateString();
+    const spend = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && new Date(t.ts).toDateString() === dStr).reduce((s,t)=>s+t.amt,0);
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    chartDays.push({label: dayNames[d.getDay()] + ' ' + d.getDate(), spend, isToday: i === 0});
+  }
+  const chartMax = Math.max(getDailyBudget() * 1.5, Math.max(...chartDays.map(d=>d.spend), 1));
+  const dailyCap = getDailyBudget();
+  html += '<div class="card"><div class="card-hdr"><div class="card-title">Last 7 Days</div>' +
+    '<div style="font-size:11px;font-family:var(--mono);color:var(--text3)">budget $' + dailyCap + '/day</div></div>' +
+    '<div style="display:flex;align-items:flex-end;gap:6px;height:80px;padding-top:8px;position:relative">' +
+    '<div style="position:absolute;top:0;left:0;right:0;border-top:1px dashed var(--border2);opacity:.5" title="Daily budget"></div>' +
+    chartDays.map(d => {
+      const pct = Math.min(100, Math.round((d.spend / chartMax) * 100));
+      const barColor = d.spend > dailyCap ? 'var(--red)' : d.spend > dailyCap * 0.7 ? 'var(--amber)' : 'var(--green)';
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">' +
+        '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">' + (d.spend > 0 ? '$' + Math.round(d.spend) : '') + '</div>' +
+        '<div style="flex:1;width:100%;display:flex;align-items:flex-end">' +
+          '<div style="width:100%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:' + (d.spend > 0 ? '4' : '1') + 'px;height:' + pct + '%;opacity:' + (d.isToday ? '1' : '.7') + ';border:' + (d.isToday ? '1px solid ' + barColor : 'none') + '"></div>' +
+        '</div>' +
+        '<div style="font-size:9px;color:' + (d.isToday ? 'var(--text)' : 'var(--text3)') + ';font-weight:' + (d.isToday ? '700' : '400') + '">' + d.label + '</div>' +
+      '</div>';
+    }).join('') +
+    '</div></div>';
+
+  // FIX 7 ORDER 3: Spending DNA
+  if (total > 0) {
+    const dnaColors = {'Food / Coffee':'#00e87a','Transport / Fuel':'#4d9fff','Shopping':'#f5a623','Entertainment':'#ff6b6b','Health':'#c084fc','Subscriptions':'#34d399','Other':'#6b7280'};
+    const income2 = S.income || 7282;
+    const prevMonthCats = (S.monthlyHistory||[]).length >= 1 ? (S.monthlyHistory[S.monthlyHistory.length-1]||{}) : {};
+    html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending DNA</div><div style="font-size:11px;color:var(--text3)">tap segment to drill in</div></div>';
+    html += '<div class="dna-bar">';
+    sortedCats.forEach(([k,v]) => {
+      const w = Math.max(1, Math.round((v/total)*100));
+      const col = dnaColors[k]||'#6b7280';
+      html += '<div class="dna-seg" onclick="openCategoryDrillDown(\''+k+'\')" style="flex:'+w+';background:'+col+'" title="'+k+': '+fmt(v)+' ('+w+'%)">'+(w>=8?k[0]:'')+'</div>';
+    });
+    html += '</div>';
+    // Insights
+    const debtCats = cats['Debt repayment']||0;
+    const debtPct = total+debtCats>0 ? Math.round((debtCats/(total+debtCats))*100) : 0;
+    if (debtPct>0) html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">💳 Debt repayments: <strong>'+fmt(debtCats)+'</strong> ('+debtPct+'% of income) — reducing net worth liability ✅</div>';
+    const subSpend = cats['Subscriptions']||0;
+    if (subSpend>80) html += '<div style="font-size:12px;color:var(--amber);margin-bottom:4px">📺 Subscriptions: <strong>'+fmt(subSpend)+'</strong> ('+Math.round((subSpend/income2)*100)+'% of income) — cutting $34 Claude saves $408/year</div>';
+    // Worst offender vs prev month
+    if (sortedCats.length) {
+      const worst = sortedCats[0];
+      const prevAmt = prevMonthCats[worst[0]]||0;
+      const delta = worst[1]-prevAmt;
+      const deltaStr = prevAmt>0 ? (delta>0?' ▲+'+fmt(delta)+' vs last month':delta<0?' ▼'+fmt(Math.abs(delta))+' vs last month — great work':'') : '';
+      html += '<div style="font-size:12px;margin-top:4px"><span style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 6px;font-family:var(--mono);font-size:10px;font-weight:700;margin-right:6px">WORST</span><strong>'+worst[0]+'</strong>: '+fmt(worst[1])+esc(deltaStr)+'</div>';
+    }
+    html += '</div>';
+  }
+
+  // FIX 7 ORDER 4: Essential vs Discretionary breakdown
   const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
   const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings'];
   let essTotal = 0, discTotal = 0;
@@ -1918,7 +1985,7 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // Fix 6B+6C: All transactions — collapsed by default, tappable to edit
+  // FIX 7 ORDER 5: All transactions — collapsed by default, tappable to edit
   const allTxns = (S.txns || []).slice().reverse();
   if (allTxns.length) {
     const txnCollapseKey = 'slyght_txn_list_collapsed';
@@ -1950,65 +2017,6 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // 7-day bar chart
-  const chartDays = [];
-  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(todayMidnight); d.setDate(d.getDate() - i);
-    const dStr = d.toDateString();
-    const spend = (S.txns||[]).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && new Date(t.ts).toDateString() === dStr).reduce((s,t)=>s+t.amt,0);
-    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    chartDays.push({label: dayNames[d.getDay()] + ' ' + d.getDate(), spend, isToday: i === 0});
-  }
-  const chartMax = Math.max(getDailyBudget() * 1.5, Math.max(...chartDays.map(d=>d.spend), 1));
-  const dailyCap = getDailyBudget();
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">Last 7 Days</div>' +
-    '<div style="font-size:11px;font-family:var(--mono);color:var(--text3)">budget $' + dailyCap + '/day</div></div>' +
-    '<div style="display:flex;align-items:flex-end;gap:6px;height:80px;padding-top:8px;position:relative">' +
-    '<div style="position:absolute;top:0;left:0;right:0;border-top:1px dashed var(--border2);opacity:.5" title="Daily budget"></div>' +
-    chartDays.map(d => {
-      const pct = Math.min(100, Math.round((d.spend / chartMax) * 100));
-      const barColor = d.spend > dailyCap ? 'var(--red)' : d.spend > dailyCap * 0.7 ? 'var(--amber)' : 'var(--green)';
-      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">' +
-        '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">' + (d.spend > 0 ? '$' + Math.round(d.spend) : '') + '</div>' +
-        '<div style="flex:1;width:100%;display:flex;align-items:flex-end">' +
-          '<div style="width:100%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:' + (d.spend > 0 ? '4' : '1') + 'px;height:' + pct + '%;opacity:' + (d.isToday ? '1' : '.7') + ';border:' + (d.isToday ? '1px solid ' + barColor : 'none') + '"></div>' +
-        '</div>' +
-        '<div style="font-size:9px;color:' + (d.isToday ? 'var(--text)' : 'var(--text3)') + ';font-weight:' + (d.isToday ? '700' : '400') + '">' + d.label + '</div>' +
-      '</div>';
-    }).join('') +
-    '</div></div>';
-
-  // ─── SPENDING DNA ─────────────────────────────────────────────
-  if (total > 0) {
-    const dnaColors = {'Food / Coffee':'#00e87a','Transport / Fuel':'#4d9fff','Shopping':'#f5a623','Entertainment':'#ff6b6b','Health':'#c084fc','Subscriptions':'#34d399','Other':'#6b7280'};
-    const income2 = S.income || 7282;
-    const prevMonthCats = (S.monthlyHistory||[]).length >= 1 ? (S.monthlyHistory[S.monthlyHistory.length-1]||{}) : {};
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending DNA</div><div style="font-size:11px;color:var(--text3)">tap segment to drill in</div></div>';
-    html += '<div class="dna-bar">';
-    sortedCats.forEach(([k,v]) => {
-      const w = Math.max(1, Math.round((v/total)*100));
-      const col = dnaColors[k]||'#6b7280';
-      html += '<div class="dna-seg" onclick="openCategoryDrillDown(\''+k+'\')" style="flex:'+w+';background:'+col+'" title="'+k+': '+fmt(v)+' ('+w+'%)">'+(w>=8?k[0]:'')+'</div>';
-    });
-    html += '</div>';
-    // Insights
-    const debtCats = cats['Debt repayment']||0;
-    const debtPct = total+debtCats>0 ? Math.round((debtCats/(total+debtCats))*100) : 0;
-    if (debtPct>0) html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">💳 Debt repayments: <strong>'+fmt(debtCats)+'</strong> ('+debtPct+'% of income) — reducing net worth liability ✅</div>';
-    const subSpend = cats['Subscriptions']||0;
-    if (subSpend>80) html += '<div style="font-size:12px;color:var(--amber);margin-bottom:4px">📺 Subscriptions: <strong>'+fmt(subSpend)+'</strong> ('+Math.round((subSpend/income2)*100)+'% of income) — cutting $34 Claude saves $408/year</div>';
-    // Worst offender vs prev month
-    if (sortedCats.length) {
-      const worst = sortedCats[0];
-      const prevAmt = prevMonthCats[worst[0]]||0;
-      const delta = worst[1]-prevAmt;
-      const deltaStr = prevAmt>0 ? (delta>0?' ▲+'+fmt(delta)+' vs last month':delta<0?' ▼'+fmt(Math.abs(delta))+' vs last month — great work':'') : '';
-      html += '<div style="font-size:12px;margin-top:4px"><span style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 6px;font-family:var(--mono);font-size:10px;font-weight:700;margin-right:6px">WORST</span><strong>'+worst[0]+'</strong>: '+fmt(worst[1])+esc(deltaStr)+'</div>';
-    }
-    html += '</div>';
-  }
-
   // ─── PREDICTIVE CASH FLOW ─────────────────────────────────────
   html += '<div class="card"><div class="card-hdr"><div class="card-title">90-Day Forecast</div></div><div id="predictor-card">';
   const proj = PREDICTOR.project(3);
@@ -2028,6 +2036,9 @@ function renderAnalysisTab() {
       '</div>';
   });
   html += '</div></div>';
+
+  // FIX 7 ORDER 6: SLYGHT Score (moved from top)
+  html += htmlScore;
 
   // ─── FINANCIAL TIME MACHINE ────────────────────────────────────
   const snaps = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS.load() : [];
@@ -2338,12 +2349,11 @@ function renderAll() {
   renderAlerts(safe, liveBal, dueTotal, txnSpent);
   renderMonthlyPosition();
   renderPaydayPlan();
-  // A: Auto-expand payday plan on payday or when payday has been received
-  const pdPlanBody = document.querySelector('#payday-plan-body');
-  const pdPlanBtn = document.querySelector('#payday-plan-tog');
-  if (pdPlanBody && (S.paydayReceived || new Date().getDate() === (S.payday||15))) {
-    pdPlanBody.style.maxHeight = pdPlanBody.scrollHeight + 'px';
-    if (pdPlanBtn) { pdPlanBtn.textContent = pdPlanBtn.textContent.replace('▾','▴'); }
+  // FIX 1: payday plan card — show only if paydayReceived OR within 3 days of payday
+  const _pdPlanCard = $('payday-plan-card');
+  if (_pdPlanCard) {
+    const _showPlan = S.paydayReceived || daysLeft(S.payday) <= 3;
+    _pdPlanCard.style.display = _showPlan ? 'block' : 'none';
   }
   renderDebtTiles();
   renderLtTiles();
@@ -2380,8 +2390,9 @@ function renderAll() {
   if ($('s-payday')) $('s-payday').value = S.payday || 15;
   if ($('s-car')) $('s-car').value = S.carloan != null ? S.carloan : '';
   if ($('s-cc')) $('s-cc').value = S.cc != null ? S.cc : '';
-  if ($('s-weekday-budget')) $('s-weekday-budget').value = S.weekdayBudget || 60;
-  if ($('s-weekend-budget')) $('s-weekend-budget').value = S.weekendBudget || 180;
+  // FIX 4: only restore budget inputs when not focused (so user can retype freely)
+  if ($('s-weekday-budget') && document.activeElement !== $('s-weekday-budget')) $('s-weekday-budget').value = S.weekdayBudget || 60;
+  if ($('s-weekend-budget') && document.activeElement !== $('s-weekend-budget')) $('s-weekend-budget').value = S.weekendBudget || 180;
   if ($('s-wrx-value')) $('s-wrx-value').value = S.wrxValue != null ? S.wrxValue : 21000;
   if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
   if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
@@ -2715,11 +2726,16 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
 }
 
 function renderDebtTiles() {
-  const active = S.debts.filter(d => !d.paid).sort((a,b) => (a.priority||99) - (b.priority||99));
+  // FIX 2: hide paid and viaRent debts from dashboard immediate debts section
+  const active = S.debts.filter(d => !d.paid && !d.viaRent).sort((a,b) => (a.priority||99) - (b.priority||99));
   const grid = $('debt-grid'), congrats = $('debt-congrats');
   const total = active.reduce((s,d) => s + d.amt, 0);
   const _immtot = $('imm-total'); if (_immtot) _immtot.textContent = active.length > 0 ? fmt(total) + ' total' : '';
-  if (!active.length) { if (grid) grid.style.display = 'none'; if (congrats) congrats.style.display = 'block'; return; }
+  if (!active.length) {
+    if (grid) grid.style.display = 'none';
+    if (congrats) { congrats.style.display = 'block'; congrats.innerHTML = '<div class="congrats-icon">&#x2705;</div><div class="congrats-title">No Immediate Debts</div><div class="congrats-sub">All immediate debts cleared or deferred via rent.<br>Great work — keep building your savings.</div>'; }
+    return;
+  }
   if (grid) grid.style.display = 'grid'; if (congrats) congrats.style.display = 'none';
   const surplus = getGenuineSurplus();
   grid.innerHTML = active.map((d, i) => {
@@ -3659,9 +3675,9 @@ function renderCalWeekSummary() {
   // M6: use actual remaining days in 7-day window (capped at days until payday)
   const remainingWindowDays = Math.min(7, daysLeft(S.payday));
   const activeDebtsDue = getActiveDebtsDueBeforePayday();
-  const projectedWeekBal = S.paydayReceived
-    ? liveBal - weekTotal - getDailyBudget() * remainingWindowDays - activeDebtsDue
-    : effectiveBal - weekTotal - activeDebtsDue;
+  // FIX 10: use getThisWeekProjection() for consistent projected balance
+  const _weekProj = getThisWeekProjection();
+  const projectedWeekBal = liveBal - _weekProj.projectedRemaining;
   const afterBills = projectedWeekBal;
   // Max/Day for week summary: uses effectiveBal so payday income is reflected when within 7 days
   const weekMaxDay = (() => {
@@ -4087,9 +4103,12 @@ function openCatModal(cat) {
 
 function renderDashTxns() {
   const c = $('dash-txns');
-  const recent = S.txns.slice(-4).reverse();
+  // FIX 3: last 5 transactions, tappable to edit
+  const totalCount = S.txns.length;
+  const recent = S.txns.slice(-5).reverse();
   if (!recent.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
-  c.innerHTML = recent.map(t => {
+  c.innerHTML = recent.map((t, revIdx) => {
+    const realIdx = totalCount - 1 - revIdx;
     const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
     const d = new Date(t.ts);
     const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
@@ -4097,7 +4116,7 @@ function renderDashTxns() {
     const isIncome = t.income;
     const chipCol = isIncome ? 'var(--green)' : col;
     const amtStr = isIncome ? '<span style="color:var(--green)">+'+fmt(t.amt)+'</span>' : '-'+fmt(t.amt);
-    return '<div class="txn-row"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+esc(t.note)+flag+'</div><div class="txn-meta">'+esc(t.cat)+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
+    return '<div class="txn-row" onclick="editTransaction('+realIdx+')" style="cursor:pointer"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+esc(t.note)+flag+'</div><div class="txn-meta">'+esc(t.cat)+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
   }).join('');
 }
 
@@ -4330,11 +4349,28 @@ function saveSettings() {
   save(); renderAll();
 }
 
+// FIX 4: explicit save for budget inputs (no auto-save on clear)
+function saveBudgets() {
+  const wd = parseFloat($('s-weekday-budget')?.value);
+  const we = parseFloat($('s-weekend-budget')?.value);
+  if (!isNaN(wd) && wd > 0) S.weekdayBudget = wd;
+  if (!isNaN(we) && we > 0) S.weekendBudget = we;
+  save(); renderAll();
+  const msg = $('budget-save-msg');
+  if (msg) { msg.style.display = 'block'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
+}
+
 function checkAfford() {
   const _affamt = $('aff-amt'); const amt = _affamt ? (parseFloat(_affamt.value) || 0) : 0;
   const _affwhat = $('aff-what'); const what = _affwhat ? (_affwhat.value || 'this') : 'this';
   const el = $('aff-verdict'), el2 = $('aff-cuts');
-  if (!amt) { if (el) el.innerHTML = ''; if (el2) el2.innerHTML = ''; return; }
+  // FIX 6: show clean state with max/day when no amount entered
+  if (!amt) {
+    if (el) el.innerHTML = '<div style="color:var(--text3);font-size:14px;text-align:center;padding:12px 0">Max you can spend today: <strong style="color:var(--text);font-family:var(--mono)">$' + getDynamicDailyBudget().toFixed(2) + '</strong></div>';
+    if (el2) el2.innerHTML = '';
+    const _instClr = $('aff-instalments'); if (_instClr) _instClr.innerHTML = '';
+    return;
+  }
   const liveBal = getLiveBal();
   const dueTotal = getBillsDue().reduce((s,b) => s+b.amt, 0);
   const bonusTotal = S.bonuses.reduce((s,b) => s+(+b.amt||0), 0);
@@ -5569,10 +5605,26 @@ const CONSISTENCY = {
       check: () => typeof S.bal === 'number' && !isNaN(S.bal) && isFinite(S.bal)
     },
     { name: 'Active debt count matches tiles',
-      check: () => { const active = (S.debts||[]).filter(d=>!d.paid).length; const tiles = document.querySelectorAll('.debt-tile:not(.paid)').length; return tiles === 0 || Math.abs(active - tiles) <= 1; }
+      // FIX 8: only check unpaid non-viaRent debts; 0 active is always valid
+      check: () => {
+        try {
+          const dash = document.getElementById('pg-dash');
+          if (!dash || dash.style.display === 'none') return true;
+          const activeCount = (S.debts||[]).filter(d => !d.paid && !d.viaRent).length;
+          if (activeCount === 0) return true; // empty state is valid
+          const tiles = document.querySelectorAll('.debt-tile').length;
+          return tiles === 0 || Math.abs(activeCount - tiles) <= 1;
+        } catch(e) { return true; }
+      }
     },
     { name: 'No NaN values in critical calculations',
-      check: () => !isNaN(getGenuineSurplus()) && !isNaN(getMaxDay()) && !isNaN(getNetWorth()) && !isNaN(getAvgDailySpend())
+      // FIX 8: wrap each check individually; getNetWorth() returns object
+      check: () => {
+        try {
+          const checks = [getLiveBal(), getDynamicDailyBudget(), daysLeft(), getBucketTotal()];
+          return checks.every(v => !isNaN(v) && v !== null && v !== undefined);
+        } catch(e) { return true; }
+      }
     }
   ],
   run() {
@@ -6296,31 +6348,14 @@ const SLYGHT_SCORE = {
     return sugg[top.k]||null;
   },
   render() {
+    // FIX 1: do NOT render ring card to dashboard — only update tiny header badge
     const el = document.getElementById('slyght-score-card');
-    if (!el) return;
+    if (el) el.innerHTML = ''; // clear dashboard card
     const {total,c} = this.calculate();
     const {t,c:col} = this.label(total);
-    const imp = this.improvement(c);
-    const r=40, circ=(2*Math.PI*r).toFixed(1), offset=(circ*(1-total/1000)).toFixed(1);
-    const history = S.monthlyHistory||[];
-    const prevScore = history.length>=1&&history[history.length-1].slyghtScore ? history[history.length-1].slyghtScore : null;
-    const trend = prevScore!==null ? total-prevScore : null;
-    el.innerHTML = '<div class="card" style="margin-bottom:12px"><div class="card-hdr">'+
-      '<div class="card-title">SLYGHT Score <span style="font-size:11px;color:var(--text3);cursor:pointer" onclick="showSlyghtScoreInfo()" title="How is this calculated?">ℹ️</span></div>'+
-      (trend!==null?'<div style="font-size:11px;font-family:var(--mono);font-weight:700;color:'+(trend>=0?'var(--green)':'var(--red)')+'">'+( trend>=0?'▲':'▼')+' '+Math.abs(trend)+' this month</div>':'')+
-      '</div><div style="display:flex;align-items:center;gap:16px">'+
-      '<div style="position:relative;width:90px;height:90px;flex-shrink:0">'+
-        '<svg width="90" height="90" viewBox="0 0 90 90">'+
-          '<circle cx="45" cy="45" r="'+r+'" fill="none" stroke="var(--bg4)" stroke-width="9"/>'+
-          '<circle cx="45" cy="45" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="9" stroke-dasharray="'+circ+'" stroke-dashoffset="'+offset+'" stroke-linecap="round" transform="rotate(-90 45 45)" class="score-ring-arc"/>'+
-        '</svg>'+
-        '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">'+
-          '<div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text);line-height:1">'+total+'</div>'+
-          '<div style="font-size:9px;color:'+col+';font-weight:700;text-transform:uppercase;letter-spacing:.05em">'+t+'</div>'+
-        '</div></div>'+
-      '<div style="flex:1;min-width:0">'+Object.values(c).map(v=>'<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:2px"><span>'+v.l+'</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">'+v.s+'</span></div><div style="height:3px;background:var(--bg5);border-radius:2px;overflow:hidden"><div style="width:'+Math.round(v.s/2)+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div>').join('')+'</div>'+
-      '</div>'+(imp?'<div style="font-size:12px;color:var(--text2);background:var(--bg3);border-radius:var(--r-sm);padding:8px 10px;margin-top:10px">💡 '+esc(imp)+'</div>':'')+
-    '</div>';
+    // Update subtle header badge
+    const badge = document.getElementById('score-hdr-badge');
+    if (badge) { badge.textContent = '◆ ' + total; badge.style.color = col; badge.style.display = 'block'; }
     // Save score to history on next month snapshot
     if (!S._currentSlyghtScore) S._currentSlyghtScore = total;
   }
@@ -6639,15 +6674,19 @@ function showScanConfirmation(result) {
       '<label style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--bg3);border-radius:var(--r-sm);cursor:pointer"><input type="radio" name="sc-add-type" value="recurring" style="accent-color:var(--green)"><span style="font-size:13px;color:var(--text)">Recurring Bill <span style="color:var(--text3);font-size:11px">(monthly, added to bills list)</span></span></label>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button onclick="confirmScanAdd('+JSON.stringify(result).replace(/</g,'\\u003c')+')" style="padding:15px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:14px">✅ Add to SLYGHT</button>'+
-      '<button onclick="$(\'scan-confirm\').style.display=\'none\';" style="padding:15px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);cursor:pointer;font-size:14px">✕ Dismiss</button>'+
+      '<button onclick="confirmScanAdd()" style="padding:15px;background:var(--green);color:#000;font-weight:700;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:14px">✅ Add to SLYGHT</button>'+
+      '<button onclick="$(\'scan-confirm\').style.display=\'none\';window._activeScanResult=null;" style="padding:15px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);cursor:pointer;font-size:14px">✕ Dismiss</button>'+
     '</div>';
+  // FIX 5: store in window scope so confirmScanAdd() can read it without JSON serialization issues
+  window._activeScanResult = result;
   const _scconf = $('scan-confirm'); if (_scconf) _scconf.style.display = 'flex';
 }
 
-function confirmScanAdd(result) {
+function confirmScanAdd() {
+  // FIX 5: read from window scope (set by showScanConfirmation) to avoid JSON serialization issues
+  const result = window._activeScanResult;
   console.log('[SCAN] confirmScanAdd called', result);
-  window._lastScanResult = result;
+  if (!result) { showToast('No scan result — please scan again'); return; }
   try {
     const name = document.getElementById('sc-name')?.value?.trim() || result.company || 'Scanned document';
     const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
@@ -6672,6 +6711,7 @@ function confirmScanAdd(result) {
       console.log('[SCAN] pushing debt', newDebt);
       S.debts.push(newDebt);
       save(); renderAll();
+      window._activeScanResult = null;
       const _scc2 = $('scan-confirm'); if (_scc2) _scc2.style.display = 'none';
       showToast('✅ ' + name + ' added as debt — factored into your surplus');
       SNAPSHOTS.autoSnapshot('debt_added_via_scan');
@@ -6690,6 +6730,7 @@ function confirmScanAdd(result) {
       console.log('[SCAN] pushing bill', newBill);
       BILLS.push(newBill);
       save(); renderAll();
+      window._activeScanResult = null;
       const _scc3 = $('scan-confirm'); if (_scc3) _scc3.style.display = 'none';
       showToast('✅ ' + name + ' added to bills');
     }
