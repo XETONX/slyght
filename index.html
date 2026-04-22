@@ -395,6 +395,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
         <div id="score-hdr-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:2px 6px;display:none">◆</div>
+        <div id="weather-hdr" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:2px 6px"></div>
         <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </div>
@@ -419,6 +420,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
         <span style="font-size:12px;color:var(--text3);font-weight:500">Net Worth <span style="font-size:10px;color:var(--text3);opacity:.6">▸ tap</span></span>
         <span class="nw-val" id="nw-val">—</span>
       </div>
+      <div id="wfh-toggle" style="text-align:center;margin-top:8px"></div>
     </div>
     <div class="pad" style="padding-top:0">
       <div class="pd-row">
@@ -427,6 +429,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
       </div>
       <div id="dash-payday-banner"></div>
       <div id="dash-survival-banner"></div>
+      <div id="character-score"></div>
       <div id="dash-alerts"></div>
       <div id="dash-velocity" class="info-line"></div>
       <div id="dash-streak" class="info-line"></div>
@@ -4246,6 +4249,7 @@ function quickLogTxn() {
   onBalanceChange();
   autoMatchBillsToTxns(false);
   if (typeof PUSH !== 'undefined') PUSH.syncState();
+  if (typeof CHARACTER !== 'undefined') CHARACTER.analyseTransactions();
   // Receipt toast
   const toastMsg = '-$' + amt.toFixed(2) + ' · ' + (cat || 'Other') + ' · ' + (note || '—') + (roundUp > 0 && roundUpOn ? ' · +🏦$' + roundUp.toFixed(2) + ' round-up' : '');
   showUndoToast(toastMsg);
@@ -5424,6 +5428,7 @@ markDebtPaid = function() {
   const expectedChange = debt ? -debt.amt : 0;
   auditedMutation('MARK_DEBT_PAID_' + (debt?.name || 'unknown') + '_$' + (debt?.amt || 0), expectedChange, () => _origMarkDebtPaid());
   if (typeof SNAPSHOTS !== 'undefined') SNAPSHOTS.autoSnapshot('debt_cleared');
+  if (typeof CHARACTER !== 'undefined' && debt) CHARACTER.addEvent('DEBT_CLEARED', debt.name || 'Debt');
   // Immediately remove debt notification — don't wait for heartbeat
   try { NOTIFY.refresh(); } catch(e) {}
 };
@@ -6048,6 +6053,13 @@ renderAll = function() {
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
   if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
   if (typeof PUSH !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) PUSH.renderSubscribeButton();
+  if (typeof CHARACTER !== 'undefined') renderCharacterScore();
+  // Render WFH toggle in dashboard hero
+  const _wfhEl = document.getElementById('wfh-toggle');
+  if (_wfhEl && typeof LOCATION !== 'undefined') {
+    const _wfh = LOCATION.wfhToday;
+    _wfhEl.innerHTML = '<button onclick="LOCATION.setWFH(!LOCATION.wfhToday)" style="padding:6px 14px;border-radius:20px;font-size:12px;border:1px solid var(--border2);background:' + (_wfh ? 'var(--green)' : 'var(--bg3)') + ';color:' + (_wfh ? '#000' : 'var(--text3)') + ';cursor:pointer">' + (_wfh ? '🏠 WFH today' : '🏢 Office today') + '</button>';
+  }
   // UX 3: Empty state onboarding banner
   if (!localStorage.getItem('slyght_onboarded') && (S.txns||[]).length === 0 && S.bal === 0) {
     const existing = document.getElementById('onboard-banner');
@@ -6332,13 +6344,355 @@ function closeNotifications() {
   if (overlay) overlay.style.display = 'none';
 }
 
+// ─── CHARACTER SCORE ───────────────────────────────────────────
+const CHARACTER = {
+  POINTS: {
+    NO_SPEND_EVENING: 10,
+    UNDER_DAILY_BUDGET: 20,
+    MEAL_PREPPED: 25,
+    LOGGED_WORKOUT: 15,
+    NO_SPEND_DAY: 40,
+    UNDER_BUDGET_WEEK: 50,
+    DEBT_CLEARED: 100,
+    NO_BORROW_MONTH: 150,
+    UBER_EATS: -15,
+    OVER_DAILY_BUDGET: -20,
+    VAPE_PURCHASE: -10,
+    HAD_TO_BORROW: -100,
+    FIFA_PURCHASE: -30,
+  },
+  todayScore: 0,
+  weekScore: 0,
+  monthScore: 0,
+  history: [],
+
+  load() {
+    try {
+      const saved = localStorage.getItem('slyght_character');
+      if (saved) {
+        const data = JSON.parse(saved);
+        this.history    = data.history    || [];
+        this.todayScore = data.todayScore || 0;
+        this.weekScore  = data.weekScore  || 0;
+        this.monthScore = data.monthScore || 0;
+      }
+    } catch(e) {}
+  },
+
+  save() {
+    try {
+      localStorage.setItem('slyght_character', JSON.stringify({
+        history: this.history.slice(0, 90),
+        todayScore: this.todayScore,
+        weekScore:  this.weekScore,
+        monthScore: this.monthScore,
+        lastUpdated: new Date().toDateString()
+      }));
+    } catch(e) {}
+  },
+
+  addEvent(type, detail) {
+    const points = this.POINTS[type] || 0;
+    if (points === 0) return;
+    this.todayScore += points;
+    this.weekScore  += points;
+    this.monthScore += points;
+    const today = new Date().toDateString();
+    const entry = this.history.find(h => h.date === today);
+    if (entry) {
+      entry.score += points;
+      entry.events.push({ type, points, detail, ts: Date.now() });
+    } else {
+      this.history.unshift({ date: today, score: points, events: [{ type, points, detail, ts: Date.now() }] });
+    }
+    this.save();
+    if (points > 0) {
+      const msgs = {
+        NO_SPEND_EVENING:   '🌟 +' + points + ' pts — No evening spending. The habit is building.',
+        UNDER_DAILY_BUDGET: '✅ +' + points + ' pts — Under budget today.',
+        MEAL_PREPPED:       '🥗 +' + points + ' pts — Meal prep counts. $20 saved on lunch.',
+        NO_SPEND_DAY:       '🔥 +' + points + ' pts — Zero spend day. Legendary.',
+        DEBT_CLEARED:       '💪 +' + points + ' pts — Debt cleared. Net worth improving.',
+        NO_BORROW_MONTH:    '🏆 +' + points + ' pts — Made it to payday without borrowing!',
+        UNDER_BUDGET_WEEK:  '⭐ +' + points + ' pts — Under budget all week!',
+        LOGGED_WORKOUT:     '🏃 +' + points + ' pts — Workout logged.',
+      };
+      if (msgs[type]) showToast(msgs[type]);
+    }
+    renderCharacterScore();
+  },
+
+  analyseTransactions() {
+    try {
+      const today = new Date().toDateString();
+      const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === today && !t.income);
+      todayTxns.forEach(t => {
+        const note = (t.note || '').toLowerCase();
+        if (note.includes('uber eats') || note.includes('ubereats')) {
+          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'UBER_EATS' && e.ts >= t.ts - 60000));
+          if (!already) this.addEvent('UBER_EATS', 'UberEats: $' + t.amt);
+        }
+        if (note.includes('vape') || note.includes('vaping')) {
+          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'VAPE_PURCHASE' && e.ts >= t.ts - 60000));
+          if (!already) this.addEvent('VAPE_PURCHASE', 'Vape: $' + t.amt);
+        }
+        if (note.includes('fifa') || note.includes('ea sports') || note.includes('ea fc')) {
+          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'FIFA_PURCHASE' && e.ts >= t.ts - 60000));
+          if (!already) this.addEvent('FIFA_PURCHASE', 'FIFA: $' + t.amt);
+        }
+      });
+      const hour = new Date().getHours();
+      if (hour >= 21) {
+        const eveningTxns = todayTxns.filter(t => new Date(t.ts).getHours() >= 18);
+        if (eveningTxns.length === 0) {
+          const alreadyLogged = this.history.find(h => h.date === today && h.events.some(e => e.type === 'NO_SPEND_EVENING'));
+          if (!alreadyLogged) this.addEvent('NO_SPEND_EVENING', 'No evening spending');
+        }
+      }
+      if (hour >= 22) {
+        const spent = typeof getTodayDiscretionarySpend === 'function' ? getTodayDiscretionarySpend() : 0;
+        const budget = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60;
+        if (spent < budget) {
+          const alreadyLogged = this.history.find(h => h.date === today && h.events.some(e => e.type === 'UNDER_DAILY_BUDGET'));
+          if (!alreadyLogged) this.addEvent('UNDER_DAILY_BUDGET', 'Spent $' + spent.toFixed(2) + ' of $' + budget.toFixed(2));
+        }
+      }
+    } catch(e) {}
+  },
+
+  getLabel() {
+    if (this.todayScore >= 60)  return { text: 'Building the right habits 🔥', color: 'var(--green)' };
+    if (this.todayScore >= 30)  return { text: 'Solid day — keep going 💪',    color: 'var(--green)' };
+    if (this.todayScore >= 0)   return { text: 'Room to improve today',         color: 'var(--amber)' };
+    if (this.todayScore >= -30) return { text: 'Tough day — reset tomorrow',    color: 'var(--amber)' };
+    return { text: 'Setback day — tomorrow is fresh', color: 'var(--red)' };
+  },
+
+  logWorkout(type) {
+    this.addEvent('LOGGED_WORKOUT', type || 'Workout');
+    showToast('💪 Workout logged — City2Surf is ' + getDaysToCity2Surf() + ' days away');
+  }
+};
+
+function getDaysToCity2Surf() {
+  const race = new Date('2026-08-09');
+  return Math.max(0, Math.ceil((race - new Date()) / 86400000));
+}
+
+function renderCharacterScore() {
+  const el = document.getElementById('character-score');
+  if (!el) return;
+  if (typeof CHARACTER === 'undefined') return;
+  const label = CHARACTER.getLabel();
+  const daysToRace = getDaysToCity2Surf();
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;' +
+    'padding:12px 16px;background:var(--bg2);border-radius:12px;margin:8px 0">' +
+      '<div>' +
+        '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Today\'s character</div>' +
+        '<div style="font-size:14px;color:' + label.color + ';margin-top:2px">' + label.text + '</div>' +
+      '</div>' +
+      '<div style="text-align:right">' +
+        '<div style="font-size:22px;font-weight:700;color:' + (CHARACTER.todayScore >= 0 ? 'var(--green)' : 'var(--red)') + '">' +
+          (CHARACTER.todayScore >= 0 ? '+' : '') + CHARACTER.todayScore +
+        '</div>' +
+        '<div style="font-size:10px;color:var(--text3)">pts today</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;padding:0 4px;margin-bottom:8px">' +
+      '<button onclick="CHARACTER.logWorkout(\'Run\')" style="flex:1;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer">🏃 Log run</button>' +
+      '<button onclick="CHARACTER.logWorkout(\'Gym\')" style="flex:1;padding:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer">💪 Log gym</button>' +
+      '<div style="flex:1;padding:8px;background:var(--bg3);border-radius:8px;text-align:center;font-size:11px;color:var(--text3)">🏁 ' + daysToRace + 'd to City2Surf</div>' +
+    '</div>';
+}
+
+// ─── WEATHER ───────────────────────────────────────────────────
+// To activate: get free API key at openweathermap.org/api → replace OPENWEATHER_API_KEY below
+const WEATHER = {
+  apiKey: 'OPENWEATHER_API_KEY',
+  sydneyLat: -33.8688,
+  sydneyLng: 151.2093,
+  current: null,
+
+  async fetch() {
+    try {
+      if (this.apiKey === 'OPENWEATHER_API_KEY') return this.current; // not yet configured
+      const url = 'https://api.openweathermap.org/data/2.5/weather?' +
+        'lat=' + this.sydneyLat + '&lon=' + this.sydneyLng +
+        '&appid=' + this.apiKey + '&units=metric';
+      const res = await window.fetch(url);
+      if (!res.ok) return this.current;
+      const data = await res.json();
+      const cond = data.weather?.[0]?.main || 'Clear';
+      this.current = {
+        temp:         Math.round(data.main?.temp || 20),
+        feels:        Math.round(data.main?.feels_like || 20),
+        condition:    cond,
+        description:  data.weather?.[0]?.description || 'clear sky',
+        isRaining:    ['Rain','Drizzle','Thunderstorm'].includes(cond),
+        isHot:        (data.main?.temp || 20) > 28,
+        isCold:       (data.main?.temp || 20) < 15,
+        isPerfectRun: (data.main?.temp || 20) >= 14 && (data.main?.temp || 20) <= 22 &&
+                      !['Rain','Drizzle','Thunderstorm'].includes(cond),
+        wind:         Math.round(data.wind?.speed || 0),
+        ts:           Date.now(),
+      };
+      localStorage.setItem('slyght_weather', JSON.stringify(this.current));
+      return this.current;
+    } catch(e) {
+      const cached = localStorage.getItem('slyght_weather');
+      if (cached) this.current = JSON.parse(cached);
+      return this.current;
+    }
+  },
+
+  load() {
+    const cached = localStorage.getItem('slyght_weather');
+    if (cached) {
+      const w = JSON.parse(cached);
+      if (Date.now() - w.ts < 3600000) { this.current = w; return w; }
+    }
+    return null;
+  },
+
+  getSummary() {
+    if (!this.current) return '';
+    return this.current.temp + '°C · ' + this.current.description;
+  },
+
+  getRunningCondition() {
+    if (!this.current) return 'unknown';
+    if (this.current.isPerfectRun) return 'perfect';
+    if (this.current.isRaining) return 'rainy';
+    if (this.current.isHot) return 'hot';
+    return 'ok';
+  },
+};
+
+// ─── LOCATION SYSTEM ───────────────────────────────────────────
+const LOCATION = {
+  places: {
+    office:  { lat: -33.8668, lng: 151.2052, radius: 300, name: 'Office' },
+    home:    { lat: -34.0591, lng: 151.0822, radius: 500, name: 'Home' },
+    gf:      { lat: -33.8754, lng: 151.2139, radius: 400, name: "GF's place" },
+    woolies: { lat: -34.0342, lng: 151.0729, radius: 200, name: 'Woolworths Kirrawee' },
+  },
+
+  current: null,  // { lat, lng, place, ts }
+  wfhToday: false,
+
+  distance(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+              Math.sin(dLng/2)*Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  },
+
+  detectPlace(lat, lng) {
+    for (const [key, place] of Object.entries(this.places)) {
+      if (this.distance(lat, lng, place.lat, place.lng) <= place.radius) return key;
+    }
+    return 'unknown';
+  },
+
+  async check() {
+    if (!navigator.geolocation) return null;
+    // Restore WFH from storage
+    this.wfhToday = localStorage.getItem('slyght_wfh') === 'true';
+    return new Promise(resolve => {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const place = this.detectPlace(lat, lng);
+          this.current = { lat, lng, place, ts: Date.now() };
+
+          // Auto-detect WFH on office days during morning hours
+          const hour = new Date().getHours();
+          const isOfficeDay = [1, 4, 5].includes(new Date().getDay());
+          if (place === 'home' && hour >= 9 && hour <= 11 && isOfficeDay) this.wfhToday = true;
+          if (place === 'office') this.wfhToday = false;
+
+          localStorage.setItem('slyght_location', JSON.stringify(this.current));
+          localStorage.setItem('slyght_wfh', this.wfhToday ? 'true' : 'false');
+          this.handleLocationTriggers(place);
+          renderAll();
+          resolve(this.current);
+        },
+        err => {
+          if (window.SLYGHT_DEBUG) console.log('Location error:', err.message);
+          resolve(null);
+        },
+        { timeout: 10000, maximumAge: 300000 }
+      );
+    });
+  },
+
+  handleLocationTriggers(place) {
+    const now = new Date();
+    const hour = now.getHours();
+    const todayStr = now.toDateString();
+    if (localStorage.getItem('slyght_loc_trigger_' + place) === todayStr) return;
+
+    if (place === 'woolies') {
+      const bal = S.bal || 0;
+      showToast('🛒 Near Woolworths! Budget $80 for the weekly shop.');
+      if (typeof NOTIFY !== 'undefined') NOTIFY.add({
+        type: 'info',
+        title: '🛒 Woolworths Kirrawee',
+        message: "You're near Woolies. Balance: $" + bal.toFixed(2) +
+                 '. Budget $80 for groceries. Meal prep = no UberEats this week.',
+        ts: Date.now(), id: 'loc-woolies-' + todayStr,
+      });
+      localStorage.setItem('slyght_loc_trigger_woolies', todayStr);
+    }
+    if (place === 'gf' && hour >= 17) {
+      if (typeof NOTIFY !== 'undefined') NOTIFY.add({
+        type: 'info',
+        title: "🍳 At your gf's tonight",
+        message: "Cook together tonight. Healthy, cheap, and better than takeaway. You've got this.",
+        ts: Date.now(), id: 'loc-gf-' + todayStr,
+      });
+      localStorage.setItem('slyght_loc_trigger_gf', todayStr);
+    }
+    if (place === 'office') {
+      localStorage.setItem('slyght_at_office_' + todayStr, 'true');
+    }
+  },
+
+  setWFH(val) {
+    this.wfhToday = val;
+    localStorage.setItem('slyght_wfh', val ? 'true' : 'false');
+    renderAll();
+    showToast(val ? '🏠 WFH mode on — office notifications paused' : '🏢 Office mode on');
+  },
+
+  isAtGf()         { return this.current?.place === 'gf'; },
+  isAtOffice()     { return this.current?.place === 'office'; },
+  isNearWoolies()  { return this.current?.place === 'woolies'; },
+};
+
+// Check location on app visibility restore
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (typeof LOCATION !== 'undefined') LOCATION.check();
+  }
+});
+
 // ─── PUSH NOTIFICATIONS ────────────────────────────────────────
 const PUSH = {
   workerUrl: 'https://slyght-worker.johndounas.workers.dev',
-  vapidPublicKey: 'PLACEHOLDER_VAPID_KEY', // replace after: npx web-push generate-vapid-keys
+  vapidPublicKey: 'BL6NmGc-KoJncmQ4-6MS_FV5Rk2yPLXLH5scEjTuUOAWiI4xLuHWZ54Er9sSe-WtgRy10hChSJ9Acr9MW42AFCA',
   subscription: null,
+  quietMode: false,
+  dailyLimit: 4,
+  sentToday: 0,
 
   async init() {
+    this.quietMode = localStorage.getItem('slyght_quiet_mode') === 'true';
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
       const reg = await navigator.serviceWorker.ready;
@@ -6352,7 +6706,7 @@ const PUSH = {
 
   async subscribe() {
     try {
-      if (this.vapidPublicKey === 'PLACEHOLDER_VAPID_KEY') {
+      if (this.vapidPublicKey === 'BL6NmGc-KoJncmQ4-6MS_FV5Rk2yPLXLH5scEjTuUOAWiI4xLuHWZ54Er9sSe-WtgRy10hChSJ9Acr9MW42AFCA') {
         showToast('Notifications not configured yet — contact support');
         return;
       }
@@ -6401,6 +6755,13 @@ const PUSH = {
         breakfastLogged: morningTxns.length > 0,
         lunchSpend,
         groceryDismissed: localStorage.getItem('slyght_grocery_dismissed') === new Date().toDateString(),
+        weather:          (typeof WEATHER !== 'undefined' && WEATHER.current) ? WEATHER.current : {},
+        wfhToday:         typeof LOCATION !== 'undefined' ? LOCATION.wfhToday : false,
+        characterScore:   typeof CHARACTER !== 'undefined' ? CHARACTER.todayScore : 0,
+        recentSpending:   (S.txns || []).slice(-10).map(t => ({ note: t.note, cat: t.cat, amt: t.amt, ts: t.ts })),
+        daysToRace:       typeof getDaysToCity2Surf === 'function' ? getDaysToCity2Surf() : 0,
+        quietMode:        this.quietMode || false,
+        dailyLimit:       this.dailyLimit || 4,
       };
 
       await fetch(this.workerUrl + '/sync', {
@@ -6424,6 +6785,18 @@ const PUSH = {
           '<div style="color:var(--text3);font-size:11px">Morning · Lunch · Home time · Groceries</div></div>' +
           '<button onclick="PUSH.unsubscribe()" style="padding:6px 10px;background:transparent;' +
           'border:1px solid var(--border2);border-radius:6px;color:var(--text3);font-size:11px;cursor:pointer">Turn off</button>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;' +
+        'padding:12px;background:var(--bg3);border-radius:10px;margin-top:8px">' +
+          '<div>' +
+            '<div style="color:var(--text);font-size:14px">Quiet mode</div>' +
+            '<div style="color:var(--text3);font-size:11px">Morning alert only — suppress daytime nudges</div>' +
+          '</div>' +
+          '<button onclick="PUSH.toggleQuietMode()" style="padding:6px 14px;border-radius:20px;' +
+          'border:1px solid var(--border2);background:' + (this.quietMode ? 'var(--amber)' : 'var(--bg2)') + ';' +
+          'color:var(--text);font-size:13px;cursor:pointer">' +
+            (this.quietMode ? '🔕 On' : '🔔 Off') +
+          '</button>' +
         '</div>';
     } else {
       el.innerHTML =
@@ -6435,6 +6808,14 @@ const PUSH = {
           'Morning alerts · Lunch check · Grocery reminders · Home time nudges' +
         '</div>';
     }
+  },
+
+  toggleQuietMode() {
+    this.quietMode = !this.quietMode;
+    localStorage.setItem('slyght_quiet_mode', this.quietMode ? 'true' : 'false');
+    renderAll();
+    showToast(this.quietMode ? '🔕 Quiet mode on — morning alert only' : '🔔 All notifications on');
+    this.syncState();
   },
 
   async unsubscribe() {
@@ -6985,6 +7366,11 @@ const HEARTBEAT = {
       try { if (typeof UX !== 'undefined') UX.validateScreenData(); } catch(e) {}
     }
 
+    // Every 15 ticks (~30 min): character score analysis
+    if (this.tickCount % 15 === 0) {
+      try { if (typeof CHARACTER !== 'undefined') CHARACTER.analyseTransactions(); } catch(e) {}
+    }
+
     // Every 30 ticks (60 min): refresh notifications
     if (this.tickCount % 30 === 0) {
       try { NOTIFY.refresh(); } catch(e) {}
@@ -7044,7 +7430,15 @@ SNAPSHOTS.autoSnapshot('app_open');
 NOTIFY.refresh();
 HEARTBEAT.start();
 if (typeof UX !== 'undefined') UX.init();
+if (typeof CHARACTER !== 'undefined') { CHARACTER.load(); renderCharacterScore(); }
 if (typeof PUSH !== 'undefined') PUSH.init();
+if (typeof LOCATION !== 'undefined') LOCATION.check();
+if (typeof WEATHER !== 'undefined') {
+  WEATHER.load();
+  const _wHdr = document.getElementById('weather-hdr');
+  if (_wHdr && WEATHER.current) _wHdr.textContent = WEATHER.getSummary();
+  setTimeout(() => { WEATHER.fetch().then(() => { const el = document.getElementById('weather-hdr'); if (el && WEATHER.current) el.textContent = WEATHER.getSummary(); }); }, 3000);
+}
 // API key in separate storage — never wiped by reset or seed
 const savedApiKey = localStorage.getItem('slyght_api_key');
 if (savedApiKey) S.apiKey = savedApiKey;

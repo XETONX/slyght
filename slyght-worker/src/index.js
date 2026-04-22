@@ -16,21 +16,29 @@ export default {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // POST /sync — SLYGHT sends current financial state
+    // POST /sync — SLYGHT sends current financial + lifestyle state
     if (path === '/sync' && request.method === 'POST') {
       try {
         const body = await request.json();
         const state = {
-          bal:               parseFloat((body.bal || 0).toFixed(2)),
-          maxDay:            parseFloat((body.maxDay || 0).toFixed(2)),
-          daysLeft:          body.daysLeft || 0,
-          survivalMode:      body.survivalMode || 'normal',
-          todaySpent:        parseFloat((body.todaySpent || 0).toFixed(2)),
-          lunchSpend:        parseFloat((body.lunchSpend || 0).toFixed(2)),
-          lunchLogged:       body.lunchLogged || false,
-          breakfastLogged:   body.breakfastLogged || false,
-          groceryDismissed:  body.groceryDismissed || false,
-          lastSync:          new Date().toISOString(),
+          bal:              parseFloat((body.bal || 0).toFixed(2)),
+          maxDay:           parseFloat((body.maxDay || 0).toFixed(2)),
+          daysLeft:         body.daysLeft || 0,
+          survivalMode:     body.survivalMode || 'normal',
+          todaySpent:       parseFloat((body.todaySpent || 0).toFixed(2)),
+          lunchSpend:       parseFloat((body.lunchSpend || 0).toFixed(2)),
+          lunchLogged:      body.lunchLogged || false,
+          breakfastLogged:  body.breakfastLogged || false,
+          groceryDismissed: body.groceryDismissed || false,
+          // Section 4 additions
+          weather:          body.weather || {},
+          wfhToday:         body.wfhToday || false,
+          characterScore:   body.characterScore || 0,
+          recentSpending:   body.recentSpending || [],
+          daysToRace:       body.daysToRace || 0,
+          quietMode:        body.quietMode || false,
+          dailyLimit:       body.dailyLimit || 4,
+          lastSync:         new Date().toISOString(),
         };
         await env.SLYGHT_DATA.put('state', JSON.stringify(state));
         return new Response(JSON.stringify({ ok: true }), {
@@ -105,141 +113,248 @@ export default {
 
 // ─── SCHEDULE HANDLER ─────────────────────────────────────────────────────────
 
-async function handleSchedule(cron, env) {
-  const state    = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
-  const sub      = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
-  const dismissed = JSON.parse(await env.SLYGHT_DATA.get('dismissed') || '{}');
-  if (!sub) return;
-
+// Returns current hour, minute, and day name in Sydney time (handles AEST/AEDT automatically)
+function getSydneyTime() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney',
     weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: false,
   }).formatToParts(now);
+  return {
+    hour:   parseInt(parts.find(p => p.type === 'hour')?.value   || '0'),
+    minute: parseInt(parts.find(p => p.type === 'minute')?.value || '0'),
+    day:    parts.find(p => p.type === 'weekday')?.value || '',
+  };
+}
 
-  const dayName = parts.find(p => p.type === 'weekday')?.value;
+async function handleSchedule(cron, env) {
+  const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
+  const sub   = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
+  if (!sub) return;
+
+  // Use real Sydney time — DST handled automatically by Intl
+  const { hour: sydHour, minute: sydMin, day: dayName } = getSydneyTime();
+
   const isOfficeDay = ['Monday', 'Thursday', 'Friday'].includes(dayName);
-  const isGfDay    = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday'].includes(dayName);
-  const isSunday   = dayName === 'Sunday';
+  const isGfDay     = ['Thursday', 'Friday', 'Saturday', 'Sunday', 'Monday'].includes(dayName);
+  const isSunday    = dayName === 'Sunday';
+  const isWeekend   = ['Saturday', 'Sunday'].includes(dayName);
 
-  const bal         = state.bal || 0;
-  const maxDay      = state.maxDay || 0;
-  const survivalMode = state.survivalMode || 'normal';
-  const todaySpent  = state.todaySpent || 0;
-  const lunchSpend  = state.lunchSpend || 0;
+  const bal            = parseFloat((state.bal || 0).toFixed(2));
+  const maxDay         = parseFloat((state.maxDay || 20).toFixed(2));
+  const daysLeft       = state.daysLeft || 1;
+  const survivalMode   = state.survivalMode || 'normal';
+  const todaySpent     = parseFloat((state.todaySpent || 0).toFixed(2));
+  const lunchSpend     = parseFloat((state.lunchSpend || 0).toFixed(2));
+  const lunchLogged    = state.lunchLogged || false;
+  const breakfastLogged = state.breakfastLogged || false;
+  const wfhToday       = state.wfhToday || false;
+  const weather        = state.weather || {};
+  const isRaining      = weather.isRaining || false;
+  const isPerfectRun   = weather.isPerfectRun || false;
+  const temp           = weather.temp || 20;
+  const characterScore = state.characterScore || 0;
+  const recentSpending = state.recentSpending || [];
+  const daysToRace     = state.daysToRace || 0;
+  const quietMode      = state.quietMode || false;
 
-  // Stale state guard — if last sync > 48h ago, don't send aggressive nudges
-  const lastSync    = state.lastSync ? new Date(state.lastSync) : null;
-  const staleState  = !lastSync || (now - lastSync) > 48 * 60 * 60 * 1000;
+  // Check recent spending patterns
+  const recentHasVape     = recentSpending.some(t => (t.note || '').toLowerCase().includes('vape'));
+  const recentHasUberEats = recentSpending.some(t =>
+    (t.note || '').toLowerCase().includes('uber eats') ||
+    (t.note || '').toLowerCase().includes('ubereats'));
+  const recentHasFifa     = recentSpending.some(t =>
+    (t.note || '').toLowerCase().includes('fifa') ||
+    (t.note || '').toLowerCase().includes('ea fc'));
+  const parkedRecently    = recentSpending.some(t =>
+    (t.note || '').toLowerCase().includes('parking') ||
+    (t.cat  || '').toLowerCase().includes('transport'));
 
-  // ── 9:00am Sydney (UTC 22:00 prev day AEDT / 23:00 AEST) ──────────────────
-  if (cron === '0 23 * * *' || cron === '0 22 * * *') {
-    const title = survivalMode === 'critical'
-      ? '🚨 SLYGHT — Critical'
-      : survivalMode === 'survival'
-      ? '⚠️ SLYGHT — Tight'
-      : '💰 Good morning, John';
+  // ── 9am MORNING ALERT ─────────────────────────────────
+  if (sydHour === 9 && sydMin < 10) {
+    let title, body;
 
-    const body = survivalMode === 'critical'
-      ? `Balance: $${bal.toFixed(2)}. Do not spend today — payday in ${state.daysLeft} days.`
-      : survivalMode === 'survival'
-      ? `Balance: $${bal.toFixed(2)}. Max today: $${maxDay.toFixed(2)}. Stay disciplined.`
-      : `Balance: $${bal.toFixed(2)} · Up to $${maxDay.toFixed(2)} today${isGfDay ? ' — gf day 💕' : ''}.`;
+    if (survivalMode === 'critical') {
+      title = '🚨 Morning — Critical mode';
+      body  = 'Balance: $' + bal.toFixed(2) + '. Payday in ' + daysLeft + ' days. ' +
+              'Do not spend today unless absolutely necessary.';
+    } else if (survivalMode === 'survival') {
+      title = '⚠️ Morning — Tight week';
+      body  = 'Balance: $' + bal.toFixed(2) + '. Max today: $' + maxDay.toFixed(2) + '. ' +
+              'Every dollar saved is one less you need to borrow.';
+    } else {
+      title = '🌅 Good morning John';
+      body  = 'Balance: $' + bal.toFixed(2) + ' · Max today: $' + maxDay.toFixed(2) +
+              '\nPayday in ' + daysLeft + ' days. ';
+      if (isRaining) body += 'Raining today — smart move taking the train. ';
+      if (isOfficeDay && !wfhToday) {
+        body += 'Check the fridge before you leave — grab lunch if you prepped.';
+      } else if (wfhToday) {
+        body += 'WFH today — no commute cost. Make lunch at home.';
+      }
+    }
 
-    await sendPush(sub, env, { title, body, tag: 'morning', actions: [{ action: 'open', title: '📊 Open SLYGHT' }] });
-  }
-
-  // ── 10:00am Sydney — Breakfast check (office days only) ───────────────────
-  if ((cron === '0 0 * * *' || cron === '0 23 * * *') && isOfficeDay && !state.breakfastLogged) {
     await sendPush(sub, env, {
-      title: '☕ Breakfast logged?',
-      body: isGfDay
-        ? 'Morning! Did you grab coffee or breakfast? Log it to stay on track.'
-        : 'Did you grab coffee on the way in? Tap to log it.',
-      tag: 'breakfast',
-      actions: [{ action: 'no-spend', title: '✅ No spend' }, { action: 'log', title: '📝 Log it' }],
+      title, body,
+      tag: 'morning',
+      actions: [{ action: 'open', title: '📊 Check SLYGHT' }],
     });
   }
 
-  // ── 12:30pm Sydney (UTC 02:30) ────────────────────────────────────────────
-  if (cron === '30 2 * * *') {
-    const lunchBudget = isGfDay ? 25 : 15;
-    if (!state.lunchLogged) {
+  // ── 10am COFFEE/BREAKFAST CHECK ──────────────────────
+  if (sydHour === 10 && sydMin < 10 && isOfficeDay && !wfhToday && !quietMode) {
+    if (!breakfastLogged) {
+      let body = 'Grab your morning coffee — social connection matters. Keep it under $6. ';
+      body += survivalMode !== 'normal'
+        ? 'You\'re in survival mode — make it count.'
+        : 'Small habits, big results.';
       await sendPush(sub, env, {
-        title: '🍱 Lunch time',
-        body: `You have $${maxDay.toFixed(2)}/day. Try to keep lunch under $${lunchBudget}.`,
+        title: '☕ Morning coffee',
+        body,
+        tag: 'breakfast',
+        actions: [
+          { action: 'no-spend', title: '✅ Brought from home' },
+          { action: 'log',      title: '📝 Log coffee' },
+        ],
+      });
+    }
+  }
+
+  // ── 12:30pm LUNCH CHECK ──────────────────────────────
+  if ((sydHour === 12 && sydMin >= 30) || (sydHour === 13 && sydMin < 5)) {
+    if (!lunchLogged && !quietMode) {
+      let title = '🍱 Lunch time';
+      let body;
+      const lunchBudget = isGfDay && isWeekend ? 30 : 20;
+
+      if (survivalMode === 'critical') {
+        body = 'Balance: $' + bal.toFixed(2) + '. Skip buying lunch today. ' +
+               'Payday in ' + daysLeft + ' days. Every $20 matters right now.';
+      } else if (survivalMode === 'survival') {
+        body = 'Keep lunch under $15 today. You have $' + maxDay.toFixed(2) +
+               ' for the day. Average lunch is eating $20-25 of that.';
+      } else {
+        body = 'Aim for under $' + lunchBudget + ' today. ' +
+               'You\'ve spent $' + todaySpent.toFixed(2) + ' so far. ' +
+               '$' + Math.max(0, maxDay - todaySpent).toFixed(2) + ' remaining today.';
+      }
+
+      await sendPush(sub, env, {
+        title, body,
         tag: 'lunch',
-        actions: [{ action: 'no-spend', title: '🏠 Eating from home' }, { action: 'log', title: '📝 Log lunch' }],
+        actions: [
+          { action: 'no-spend', title: '🏠 Eating from home' },
+          { action: 'log',      title: '📝 Log lunch' },
+        ],
       });
-    } else {
+    }
+  }
+
+  // ── 2-3pm AFTERNOON / SUNDAY GROCERY ─────────────────
+  if ((sydHour === 14 || sydHour === 15) && sydMin < 15) {
+    if (isSunday) {
+      if (!state.groceryDismissed) {
+        await sendPush(sub, env, {
+          title: '🛒 Sunday afternoon',
+          body:  'Good time for the weekly shop at Woolworths Kirrawee. ' +
+                 'Budget $80. Meal prep tonight = no UberEats this week. ' +
+                 'That\'s $100-150 saved.' +
+                 (isGfDay ? ' Cook with your gf tonight — healthy and cheap.' : ''),
+          tag:   'grocery-sunday',
+          actions: [
+            { action: 'groceries-done', title: '✅ Getting groceries' },
+            { action: 'later',          title: '⏰ Remind me tonight' },
+          ],
+        });
+      }
+    } else if (!isWeekend && !quietMode) {
+      let body;
+      if (recentHasVape) {
+        body = 'You bought a vape recently. ' +
+               'City2Surf is coming — vaping and running don\'t mix. ' +
+               'Skip the afternoon snack too. Go for a short walk instead.';
+      } else if (todaySpent > maxDay * 0.7) {
+        body = 'You\'ve spent $' + todaySpent.toFixed(2) + ' today — ' +
+               'that\'s ' + Math.round(todaySpent / maxDay * 100) + '% of your daily limit. ' +
+               'Skip the afternoon snack. Water is free.';
+      } else {
+        body = 'Afternoon check. Keep snacks under $5 if you need something. ' +
+               'Going for a short walk is free and counts toward City2Surf training.';
+      }
       await sendPush(sub, env, {
-        title: '✅ Lunch logged',
-        body: `$${todaySpent.toFixed(2)} today · $${Math.max(0, maxDay - todaySpent).toFixed(2)} remaining.`,
-        tag: 'lunch-feedback',
+        title: '🥤 Afternoon',
+        body,
+        tag:   'snack',
+        actions: [
+          { action: 'no-spend', title: '✅ No snack' },
+          { action: 'log',      title: '📝 Log it' },
+        ],
       });
     }
   }
 
-  // ── 2:00pm Sydney (UTC 04:00) ─────────────────────────────────────────────
-  if (cron === '0 4 * * *') {
-    let body;
-    if (lunchSpend > 25) {
-      body = `You spent $${lunchSpend.toFixed(2)} at lunch. Skip the afternoon snack — water will do. 💪`;
-    } else if (todaySpent > maxDay * 0.8) {
-      body = "You're at 80% of today's budget. Skip the afternoon snack.";
-    } else if (survivalMode !== 'normal') {
-      body = `Tight week — skip the afternoon snack. $${maxDay.toFixed(2)} is your daily max.`;
-    } else {
-      body = 'Afternoon snack time? Keep it under $10.';
+  // ── 6:30-7pm HOME TIME / EVENING ─────────────────────
+  if ((sydHour === 18 && sydMin >= 30) || (sydHour === 19 && sydMin < 15)) {
+    if (isSunday) {
+      if (!state.groceryDismissed) {
+        await sendPush(sub, env, {
+          title: '🛒 Sunday evening',
+          body:  'Last chance for the weekly shop. Woolworths Kirrawee closes at 10pm. ' +
+                 'Groceries now = no UberEats trap this week.',
+          tag:   'grocery-sunday-night',
+          actions: [
+            { action: 'groceries-done', title: '✅ All sorted' },
+            { action: 'open',           title: '📊 Check budget' },
+          ],
+        });
+      }
+      return;
     }
-    await sendPush(sub, env, {
-      title: '🥤 Afternoon check',
-      body,
-      tag: 'snack',
-      actions: [{ action: 'no-spend', title: '✅ No snack' }, { action: 'log', title: '📝 Log it' }],
-    });
-  }
 
-  // ── 6:30pm Sydney (UTC 08:30) — Home time ────────────────────────────────
-  if (cron === '30 8 * * *' && isOfficeDay) {
-    const groceryMsg = isGfDay
-      ? "On the way to your gf's? Great time to grab groceries and meal prep for the week 💪"
-      : 'Heading home? Grab groceries now and meal prep this weekend = money saved all week.';
-    await sendPush(sub, env, {
-      title: '🏠 Heading home?',
-      body: groceryMsg,
-      tag: 'hometime',
-      actions: [
-        { action: 'groceries', title: '🛒 Getting groceries' },
-        { action: 'no-spend', title: '✅ Going straight home' },
-      ],
-    });
-  }
+    if (isOfficeDay && !wfhToday && !quietMode) {
+      let title = '🏠 Heading home?';
+      let body;
 
-  // ── Sunday 3pm (UTC 05:00 Sunday) ─────────────────────────────────────────
-  if (cron === '0 5 * * 0' && !state.groceryDismissed) {
-    await sendPush(sub, env, {
-      title: '🛒 Sunday groceries',
-      body: 'Good afternoon! Great time to do the weekly shop. Meal prep today = less spending this week.',
-      tag: 'grocery-sunday',
-      actions: [
-        { action: 'groceries-done', title: '✅ Groceries sorted' },
-        { action: 'later', title: '⏰ Remind me tonight' },
-      ],
-    });
-  }
+      if (isGfDay) {
+        if (isPerfectRun) {
+          body = temp + '°C and perfect running weather tonight. ' +
+                 'Go for a run before dinner. City2Surf is ' + daysToRace + ' days away. ' +
+                 'Then cook something healthy together. You\'ve got this.';
+        } else if (isRaining) {
+          body = 'Wet night — good excuse to cook indoors with your gf. ' +
+                 'Healthy, cheap, and exactly what you\'re both trying to do.';
+        } else {
+          body = 'On the way to your gf\'s? ' +
+                 'Cook together tonight. Healthy and cheap beats takeaway every time. ' +
+                 'You\'re both building better habits.';
+        }
+      } else {
+        if (isPerfectRun) {
+          body = temp + '°C — perfect for a run. City2Surf is ' + daysToRace + ' days away. ' +
+                 'Go for a run before dinner. Don\'t spend tonight.';
+        } else if (recentHasUberEats) {
+          body = 'You\'ve ordered UberEats recently. Tonight — cook at home. ' +
+                 'You have food. Balance: $' + bal.toFixed(2) + '.';
+        } else {
+          body = 'Home time. Balance: $' + bal.toFixed(2) + '. ' +
+                 'Max today: $' + maxDay.toFixed(2) + '. ' +
+                 'A good evening = no spending and something cooked at home.';
+        }
+      }
 
-  // ── Sunday 8pm (UTC 10:00 Sunday) ─────────────────────────────────────────
-  if (cron === '0 10 * * 0' && !state.groceryDismissed) {
-    await sendPush(sub, env, {
-      title: '🛒 Groceries sorted?',
-      body: 'Last chance before the week starts. Meal prep = money saved 💪',
-      tag: 'grocery-sunday-night',
-      actions: [
-        { action: 'groceries-done', title: '✅ All sorted' },
-        { action: 'open', title: '📊 Check budget' },
-      ],
-    });
+      if (parkedRecently || isGfDay) {
+        body += ' If you need groceries — Woolworths Kirrawee is on the way.';
+      }
+
+      await sendPush(sub, env, {
+        title, body,
+        tag:   'hometime',
+        actions: [
+          { action: 'no-spend', title: '✅ Going straight home' },
+          { action: 'log',      title: '📝 Log expense' },
+        ],
+      });
+    }
   }
 }
 
@@ -252,14 +367,14 @@ async function sendPush(subscription, env, payload) {
     if (!endpoint || !p256dh || !auth) return false;
 
     const bodyStr = JSON.stringify({
-      title:            payload.title,
-      body:             payload.body,
-      icon:             'https://xetonx.github.io/slyght/icon-192.png',
-      badge:            'https://xetonx.github.io/slyght/icon-192.png',
-      tag:              payload.tag || 'slyght',
+      title:              payload.title,
+      body:               payload.body,
+      icon:               'https://xetonx.github.io/slyght/icon-192.png',
+      badge:              'https://xetonx.github.io/slyght/icon-192.png',
+      tag:                payload.tag || 'slyght',
       requireInteraction: false,
-      actions:          payload.actions || [],
-      data:             { url: 'https://xetonx.github.io/slyght/', tag: payload.tag },
+      actions:            payload.actions || [],
+      data:               { url: 'https://xetonx.github.io/slyght/', tag: payload.tag },
     });
 
     // Encrypt payload using RFC 8291 aes128gcm
@@ -269,7 +384,7 @@ async function sendPush(subscription, env, payload) {
     const rs = new Uint8Array(4);
     new DataView(rs.buffer).setUint32(0, 4096, false);
     const header = concat(salt, rs, new Uint8Array([65]), serverPublicKeyRaw);
-    const body = concat(header, encryptedBody);
+    const body   = concat(header, encryptedBody);
 
     // Build VAPID JWT
     const jwt = await buildVapidJwt(endpoint, env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY);
@@ -329,7 +444,7 @@ async function buildVapidJwt(endpoint, vapidPrivateKeyB64, vapidPublicKeyB64) {
   return `${sigInput}.${bytesToB64url(new Uint8Array(sigBytes))}`;
 }
 
-// ─── RFC 8291 PAYLOAD ENCRYPTION ──────────────────────────────────────────────
+// ─── RFC 8291 PAYLOAD ENCRYPTION ─────────────────────────────────────────────
 
 async function encryptWebPush(plaintext, p256dhB64, authB64) {
   const enc = new TextEncoder();
@@ -370,8 +485,8 @@ async function encryptWebPush(plaintext, p256dhB64, authB64) {
   const nonce = await hkdf(prk, salt, enc.encode('Content-Encoding: nonce\x00'), 12);
 
   // AES-128-GCM encrypt — append 0x02 delimiter (last/only record)
-  const cekKey = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
-  const padded  = concat(enc.encode(plaintext), new Uint8Array([2]));
+  const cekKey   = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const padded   = concat(enc.encode(plaintext), new Uint8Array([2]));
   const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, cekKey, padded);
 
   return {
@@ -381,7 +496,7 @@ async function encryptWebPush(plaintext, p256dhB64, authB64) {
   };
 }
 
-// ─── HKDF HELPER ──────────────────────────────────────────────────────────────
+// ─── HKDF HELPER ─────────────────────────────────────────────────────────────
 
 async function hkdf(ikm, salt, info, length) {
   const ikmKey = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);

@@ -4,18 +4,16 @@ compatibility_date = "2024-09-23"
 
 [[kv_namespaces]]
 binding = "SLYGHT_DATA"
-id = "PLACEHOLDER_KV_ID"
+id = "a4ca2cafcf4743769d08ea5c0999f046"
 # preview_id = "PLACEHOLDER_KV_PREVIEW_ID"  # optional: for wrangler dev
 
 [triggers]
 crons = [
-  "0 23 * * *",    # 9:00am Sydney AEST (UTC+10) — morning alert
-  "0 0 * * *",     # 10:00am Sydney AEST — breakfast check (office days)
-  "30 2 * * *",    # 12:30pm Sydney AEST — lunch check
-  "0 4 * * *",     # 2:00pm Sydney AEST — afternoon snack nudge
-  "30 8 * * *",    # 6:30pm Sydney AEST — home time / grocery reminder
-  "0 5 * * 0",     # 3:00pm Sunday AEST — grocery reminder
-  "0 10 * * 0"     # 8:00pm Sunday AEST — grocery reminder (evening)
+  "0 22 * * *",
+  "59 22 * * *",
+  "30 1 * * *",
+  "0 3 * * *",
+  "30 7 * * *"
 ]
 
 # NOTE: During AEDT (daylight saving, ~Oct–Apr), Sydney is UTC+11.
