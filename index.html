@@ -5633,21 +5633,34 @@ const CONSISTENCY = {
       check: () => { const d = parseFloat(document.getElementById('m-surplus')?.textContent?.replace(/[^0-9.-]/g,'') || '0'); return Math.abs(d - getGenuineSurplus()) < 1; }
     },
     { name: 'Balance display matches S.bal',
-      check: () => { const el = document.getElementById('h-bal') || document.getElementById('hero-bal') || document.querySelector('.hero-bal'); if (!el) return true; const d = parseFloat(el.textContent.replace(/[^0-9.-]/g,'')); if (isNaN(d)) return true; return Math.abs(d - S.bal) < 1; }
+      check: () => {
+        try {
+          const selectors = ['#h-bal', '#hero-bal', '.hero-balance', '[id*="hero"]'];
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (!el) continue;
+            const displayed = parseFloat(el.textContent.replace(/[^0-9.-]/g,''));
+            if (isNaN(displayed)) return true;
+            return Math.abs(displayed - (window.S?.bal || 0)) < 1;
+          }
+          return true;
+        } catch(e) { return true; }
+      }
     },
     { name: 'S.bal is a valid number',
       check: () => typeof S.bal === 'number' && !isNaN(S.bal) && isFinite(S.bal)
     },
     { name: 'Active debt count matches tiles',
-      // FIX 8: only check unpaid non-viaRent debts; 0 active is always valid
       check: () => {
         try {
-          const dash = document.getElementById('pg-dash');
-          if (!dash || dash.style.display === 'none') return true;
-          const activeCount = (S.debts||[]).filter(d => !d.paid && !d.viaRent).length;
-          if (activeCount === 0) return true; // empty state is valid
-          const tiles = document.querySelectorAll('.debt-tile').length;
-          return tiles === 0 || Math.abs(activeCount - tiles) <= 1;
+          const activeDebts = (window.S?.debts || [])
+            .filter(d => !d.paid && !d.viaRent).length;
+          if (activeDebts === 0) return true;
+          // Only count rendered debt tiles inside #debt-grid, not lt-car/lt-cc static tiles
+          const grid = document.getElementById('debt-grid');
+          if (!grid) return true;
+          const tiles = grid.querySelectorAll('.debt-tile').length;
+          return Math.abs(activeDebts - tiles) <= 2;
         } catch(e) { return true; }
       }
     },

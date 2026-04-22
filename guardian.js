@@ -424,9 +424,14 @@ const checks = [
       return fn && fn[0].includes('free <') ? 'OK' : 'WARNING — buffer may still be static';
     }
   },
-  // Fix 2B: getDynamicDailyBudget exists and used in getMaxDay
+  // Fix 2B: getDynamicDailyBudget exists and called inside getMaxDay
   { name: 'getDynamicDailyBudget exists and used in getMaxDay',
-    test: () => html.includes('getDynamicDailyBudget') ? 'OK' : 'MISSING'
+    test: () => {
+      if (!html.includes('function getDynamicDailyBudget')) return 'MISSING — function not defined';
+      const getMaxDayFn = html.match(/function getMaxDay[\s\S]*?\nfunction /);
+      if (!getMaxDayFn) return 'WARNING — getMaxDay not found';
+      return getMaxDayFn[0].includes('getDynamicDailyBudget') ? 'OK' : 'BROKEN — getMaxDay not calling getDynamicDailyBudget';
+    }
   },
   // Fix 2C: getSurvivalMode exists
   { name: 'getSurvivalMode exists',
@@ -458,6 +463,98 @@ const checks = [
   // Fix 4B: end of day check in heartbeat
   { name: 'End of day check in heartbeat',
     test: () => html.includes('runEndOfDayCheck') && html.includes('lastEODCheck') ? 'OK' : 'MISSING'
+  },
+
+  // ── NEW SYSTEMS ──────────────────────────────────────────────────────────────
+
+  { name: 'LOCATION system exists with place detection',
+    test: () => html.includes('const LOCATION') &&
+                html.includes('detectPlace') &&
+                html.includes('handleLocationTriggers') ? 'OK' : 'MISSING'
+  },
+  { name: 'LOCATION has correct coordinates for office and home',
+    test: () => html.includes('-33.8668') && html.includes('-34.0591') ? 'OK' : 'MISSING — coordinates not found'
+  },
+  { name: 'WEATHER system exists with fetch and cache',
+    test: () => html.includes('const WEATHER') &&
+                html.includes('WEATHER.fetch') &&
+                html.includes('slyght_weather') ? 'OK' : 'MISSING'
+  },
+  { name: 'CHARACTER score system exists with points and analyseTransactions',
+    test: () => html.includes('const CHARACTER') &&
+                html.includes('analyseTransactions') &&
+                html.includes('NO_SPEND_EVENING') ? 'OK' : 'MISSING'
+  },
+  { name: 'City2Surf countdown function exists with correct date',
+    test: () => html.includes('getDaysToCity2Surf') &&
+                html.includes('2026-08-09') ? 'OK' : 'MISSING or wrong date'
+  },
+  { name: 'PUSH system exists with subscribe and syncState',
+    test: () => html.includes('const PUSH') &&
+                html.includes('PUSH.subscribe') &&
+                html.includes('syncState') ? 'OK' : 'MISSING'
+  },
+  { name: 'PUSH workerUrl is not placeholder',
+    test: () => {
+      const match = html.match(/workerUrl:\s*['"]([^'"]+)['"]/);
+      if (!match) return 'MISSING — workerUrl not found';
+      if (match[1].includes('PLACEHOLDER')) return 'BROKEN — still has placeholder URL';
+      return 'OK';
+    }
+  },
+  { name: 'VAPID public key is not placeholder',
+    test: () => {
+      const match = html.match(/vapidPublicKey:\s*['"]([^'"]+)['"]/);
+      if (!match) return 'MISSING';
+      if (match[1].includes('PLACEHOLDER')) return 'BROKEN — still has placeholder key';
+      return 'OK';
+    }
+  },
+  { name: 'getDynamicDailyBudget called in getMaxDay',
+    test: () => {
+      const fn = html.match(/function getMaxDay[\s\S]*?\nfunction /);
+      if (!fn) return 'WARNING — getMaxDay not found';
+      return fn[0].includes('getDynamicDailyBudget') ? 'OK' : 'BROKEN — getMaxDay not using dynamic budget';
+    }
+  },
+  { name: 'getSurvivalMode called in dashboard render',
+    test: () => {
+      const fn = html.match(/function render(?:Dashboard|All)[\s\S]*?\nfunction /);
+      if (!fn) return 'WARNING';
+      return fn[0].includes('getSurvivalMode') ? 'OK' : 'WARNING — survival mode may not render';
+    }
+  },
+  { name: 'applyBalanceCorrection creates _isCorrection transaction',
+    test: () => html.includes('applyBalanceCorrection') &&
+                html.includes('_isCorrection') ? 'OK' : 'MISSING'
+  },
+  { name: 'Round-up system creates _isRoundup transaction',
+    test: () => html.includes('_isRoundup') && html.includes('Math.ceil') ? 'OK' : 'MISSING'
+  },
+  { name: 'Transaction edit modal exists in HTML',
+    test: () => html.includes('txn-edit-modal') ? 'OK' : 'MISSING'
+  },
+  { name: 'Quiet mode persisted to localStorage',
+    test: () => html.includes('slyght_quiet_mode') &&
+                html.includes('quietMode') ? 'OK' : 'MISSING'
+  },
+  { name: 'WFH state persisted to localStorage',
+    test: () => html.includes('slyght_wfh') &&
+                html.includes('wfhToday') ? 'OK' : 'MISSING'
+  },
+  { name: 'PUSH.syncState sends weather and character data to worker',
+    test: () => {
+      const fn = html.match(/syncState[\s\S]*?await fetch/);
+      if (!fn) return 'WARNING — syncState not found';
+      return fn[0].includes('weather') && fn[0].includes('characterScore') ?
+        'OK' : 'WARNING — may not be sending full state to worker';
+    }
+  },
+  { name: 'No PLACEHOLDER values remain in production code',
+    test: () => {
+      const placeholders = (html.match(/PLACEHOLDER[A-Z_]*/g) || []);
+      return placeholders.length === 0 ? 'OK' : 'WARNING — placeholders found: ' + [...new Set(placeholders)].join(', ');
+    }
   }
 ];
 
