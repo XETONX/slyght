@@ -1224,7 +1224,13 @@ function getDynamicDailyBudget() {
     const isWeekend = [0,6].includes(new Date().getDay());
     return Math.min(isWeekend ? (S.weekendBudget||180) : (S.weekdayBudget||60), rawDaily);
   }
-  if (bal < 500) return Math.min(rawDaily, 30);
+  if (bal < 500) {
+    const committed = getActiveDebtsDueBeforePayday();
+    const available = Math.max(0, bal - committed);
+    const days = Math.max(1, daysLeft());
+    const rawSurvival = parseFloat((available / days).toFixed(2));
+    return Math.max(rawSurvival, 0.01); // never return exactly 0
+  }
   if (bal < 1000) {
     const isWeekend = [0,6].includes(new Date().getDay());
     return Math.min(rawDaily, isWeekend ? 80 : 40);
@@ -2340,7 +2346,7 @@ function renderAll() {
         (daysSincePayday > 5 && projMonth > budget)) {
       velEl.innerHTML = '<span style="color:var(--red)">📈 At this pace: ~' + fmt(projMonth) + '/mo — ' + fmt(projMonth - budget) + ' over budget</span>';
     } else {
-      velEl.innerHTML = '<span>📈 Projected: ~' + fmt(projMonth) + '/mo</span>';
+      velEl.innerHTML = '';
     }
   } else if (velEl && (phase === 'PRE_PAYDAY' || phase === 'PAYDAY')) {
     velEl.innerHTML = '';
@@ -3637,8 +3643,9 @@ function calDayClick(day) {
 function getThisWeekProjection() {
   const today = new Date();
   const dayOfWeek = today.getDay();
-  const daysLeftInWeek = 7 - dayOfWeek;
-  const daysSoFarInWeek = dayOfWeek;
+  // Monday-based week: Mon=0, Tue=1, ..., Sun=6
+  const daysSoFarInWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const daysLeftInWeek = 7 - daysSoFarInWeek;
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - daysSoFarInWeek);
   weekStart.setHours(0,0,0,0);
@@ -3673,8 +3680,7 @@ function renderCalWeekSummary() {
   const rawWeekBills = getExpandedBills().filter(b => {
     if (b.recurring === false) return false;
     if (b.day < todayD || b.day > endOfWeek) return false;
-    const key = _wNow.getFullYear()+'-'+(_wNow.getMonth()+1)+'-'+b.name+'-'+b.day;
-    return !(S.paidBills && S.paidBills[key]);
+    return !isThisMonthlyBillPaid(b.name, b.day);
   });
   const seenNames = new Set();
   const weekBills = rawWeekBills.filter(b => { if (seenNames.has(b.name)) return false; seenNames.add(b.name); return true; });
@@ -5635,13 +5641,21 @@ const CONSISTENCY = {
     { name: 'Balance display matches S.bal',
       check: () => {
         try {
-          const selectors = ['#h-bal', '#hero-bal', '.hero-balance', '[id*="hero"]'];
+          const selectors = ['#h-bal', '.hero-bal', '#hero-bal', '.hero-balance', '[id*="hero"]', '[data-bal]'];
           for (const sel of selectors) {
             const el = document.querySelector(sel);
             if (!el) continue;
             const displayed = parseFloat(el.textContent.replace(/[^0-9.-]/g,''));
-            if (isNaN(displayed)) return true;
+            if (isNaN(displayed)) continue;
             return Math.abs(displayed - (window.S?.bal || 0)) < 1;
+          }
+          // DOM scan fallback: look for any element showing the balance value
+          if (window.S?.bal) {
+            const approx = window.S.bal.toFixed(0);
+            const all = document.querySelectorAll('[class*="bal"],[id*="bal"]');
+            for (const el of all) {
+              if (el.textContent.includes(approx)) return true;
+            }
           }
           return true;
         } catch(e) { return true; }
@@ -6152,7 +6166,6 @@ const PERSONALITY = {
     let daysSinceImpulse = null;
     if (impulse.length) { const last=Math.max(...impulse.map(t=>t.ts)); const td=new Date();td.setHours(0,0,0,0); daysSinceImpulse=Math.floor((td-last)/(864e5)); }
     const out = [];
-    if (noSpend>=2) out.push({icon:'🔥',text:noSpend+'-day no-spend streak'});
     if (daysSinceImpulse!==null&&daysSinceImpulse>=3) out.push({icon:'🎯',text:daysSinceImpulse+' days since last impulse buy'});
     if (!impulse.length&&disc.length===0) out.push({icon:'⭐',text:'No impulse purchases this cycle'});
     return out;
@@ -6709,9 +6722,26 @@ const PUSH = {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
       const reg = await navigator.serviceWorker.ready;
-      this.subscription = await reg.pushManager.getSubscription();
+      let sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        this.subscription = sub;
+        // Re-send to worker on every app open in case worker KV lost it
+        fetch(this.workerUrl + '/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sub)
+        }).catch(() => {});
+        await this.syncState();
+      } else {
+        // Browser subscription gone — check if we had one
+        const cached = localStorage.getItem('slyght_push_sub');
+        if (cached) {
+          // Subscription expired — clear stale cache
+          localStorage.removeItem('slyght_push_sub');
+          localStorage.removeItem('slyght_notif_enabled');
+        }
+      }
       this.renderSubscribeButton();
-      if (this.subscription) await this.syncState();
     } catch (e) {
       if (window.SLYGHT_DEBUG) console.log('PUSH.init error:', e);
     }
@@ -6726,6 +6756,8 @@ const PUSH = {
         applicationServerKey: this._urlBase64ToUint8Array(this.vapidPublicKey),
       });
       this.subscription = sub;
+      localStorage.setItem('slyght_push_sub', JSON.stringify(sub.toJSON()));
+      localStorage.setItem('slyght_notif_enabled', 'true');
 
       const resp = await fetch(this.workerUrl + '/subscribe', {
         method: 'POST',
@@ -6757,7 +6789,7 @@ const PUSH = {
 
       const state = {
         bal:             S.bal,
-        maxDay:          typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60,
+        maxDay:          (() => { const raw = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60; return (!raw || isNaN(raw)) ? parseFloat((Math.max(0, S.bal) / Math.max(1, daysLeft())).toFixed(2)) : parseFloat(raw.toFixed(2)); })(),
         daysLeft:        typeof daysLeft === 'function' ? daysLeft() : 0,
         survivalMode:    typeof getSurvivalMode === 'function' ? getSurvivalMode() : 'normal',
         todaySpent,
@@ -6807,6 +6839,21 @@ const PUSH = {
           'color:var(--text);font-size:13px;cursor:pointer">' +
             (this.quietMode ? '🔕 On' : '🔔 Off') +
           '</button>' +
+        '</div>' +
+        '<div style="margin-top:8px">' +
+          '<button onclick="PUSH.sendTest()" style="width:100%;padding:10px;background:transparent;' +
+          'border:1px solid var(--border2);border-radius:8px;color:var(--text3);font-size:12px;cursor:pointer">' +
+            '📳 Send test notification' +
+          '</button>' +
+        '</div>';
+    } else if (localStorage.getItem('slyght_notif_enabled') === 'true') {
+      el.innerHTML =
+        '<button onclick="PUSH.subscribe()" style="width:100%;padding:14px;background:var(--amber-dim);' +
+        'border:1px solid var(--amber-border);border-radius:12px;color:var(--amber);font-weight:700;font-size:15px;cursor:pointer">' +
+          '🔔 Tap to re-enable notifications' +
+        '</button>' +
+        '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
+          'Your subscription expired — tap to re-subscribe' +
         '</div>';
     } else {
       el.innerHTML =
@@ -6817,6 +6864,17 @@ const PUSH = {
         '<div style="color:var(--text3);font-size:11px;text-align:center;margin-top:6px">' +
           'Morning alerts · Lunch check · Grocery reminders · Home time nudges' +
         '</div>';
+    }
+  },
+
+  async sendTest() {
+    try {
+      const res = await fetch(this.workerUrl + '/test', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) showToast('📳 Test notification sent — check your device');
+      else showToast('⚠️ Test failed: ' + (data.error || 'unknown error'));
+    } catch (e) {
+      showToast('⚠️ Test failed: ' + e.message);
     }
   },
 
@@ -6832,6 +6890,8 @@ const PUSH = {
     if (this.subscription) {
       await this.subscription.unsubscribe().catch(() => {});
       this.subscription = null;
+      localStorage.removeItem('slyght_push_sub');
+      localStorage.removeItem('slyght_notif_enabled');
       this.renderSubscribeButton();
       showToast('Notifications disabled');
     }
@@ -6925,7 +6985,7 @@ const SLYGHT_SCORE = {
     const {t,c:col} = this.label(total);
     // Update subtle header badge
     const badge = document.getElementById('score-hdr-badge');
-    if (badge) { badge.textContent = '◆ ' + total; badge.style.color = col; badge.style.display = 'block'; }
+    if (badge) { badge.textContent = '◆ ' + total; badge.style.color = 'var(--text3)'; badge.style.display = 'block'; }
     // Save score to history on next month snapshot
     if (!S._currentSlyghtScore) S._currentSlyghtScore = total;
   }
