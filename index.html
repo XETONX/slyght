@@ -421,24 +421,19 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span style="font-size:12px;color:var(--text3);font-weight:500">Net Worth <span style="font-size:10px;color:var(--text3);opacity:.6">▸ tap</span></span>
         <span class="nw-val" id="nw-val">—</span>
       </div>
-      <div id="wfh-toggle" style="text-align:center;margin-top:8px"></div>
     </div>
     <div class="pad" style="padding-top:0">
       <div class="pd-row">
         <div class="pd-track"><div class="pd-fill" id="pd-fill"></div></div>
         <div class="pd-lbl" id="pd-lbl">— days to payday</div>
       </div>
-      <div id="dash-payday-banner"></div>
       <div id="dash-survival-banner"></div>
       <div id="weekly-snapshot"></div>
       <div id="dash-alerts"></div>
-      <div id="dash-velocity" class="info-line"></div>
-      <div id="dash-streak" class="info-line"></div>
-      <div id="personality-badge" style="display:none;margin-bottom:8px"></div>
-      <div class="metrics">
-        <div class="met" onclick="TRACER.show('maxday')" style="cursor:pointer" title="Tap to see calculation"><div class="met-l">Safe/Day</div><div class="met-v" id="m-daily">$0</div><div class="met-s">max today</div></div>
-        <div class="met"><div class="met-l">Today</div><div class="met-v" id="m-today-spent">$0</div><div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div id="m-today-bar" style="height:3px;border-radius:2px;transition:width .4s"></div></div></div>
-        <div class="met" onclick="TRACER.show('surplus')" style="cursor:pointer" title="Tap to see calculation"><div class="met-l">Surplus</div><div class="met-v" id="m-surplus">$0</div><div class="met-s" id="m-surplus-lbl">after bills</div></div>
+      <div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0">
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">YOU CAN SPEND TODAY</div>
+        <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px" id="pace-display"></div>
       </div>
       <div id="dash-overspend"></div>
       <div id="slyght-score-card"></div>
@@ -575,6 +570,39 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   <div class="screen" id="pg-settings">
     <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
     <div class="pad">
+      <div style="margin-bottom:16px">
+        <button onclick="toggleSection('master-data')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>📊 My Financial Data</span><span id="master-data-arrow">▼</span></button>
+        <div id="master-data" style="display:none;padding:12px 0">
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">MONTHLY INCOME</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-income" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="7282"><button onclick="saveIncome()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">WRX VALUE ($)</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-wrx" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="21000"><button onclick="saveWrxValue()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="exportData()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📤 Export</button>
+            <button onclick="importData ? importData() : doImport()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📥 Import</button>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <button onclick="toggleSection('app-controls')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>⚙️ App Controls</span><span id="app-controls-arrow">▼</span></button>
+        <div id="app-controls" style="display:none;padding:12px 0">
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div><div style="color:var(--text);font-size:14px;font-weight:600">Round-ups</div><div style="color:var(--text3);font-size:11px">Add cents to China Holiday</div></div>
+              <button onclick="toggleRoundUps()" style="padding:8px 16px;border-radius:20px;border:1px solid var(--border2);font-size:13px;min-height:44px;background:var(--bg2);color:var(--text)" id="roundups-btn">On/Off</button>
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">ANTHROPIC API KEY</div>
+            <div style="display:flex;gap:8px"><input type="password" id="set-apikey" placeholder="sk-ant-..." style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px" autocomplete="off"><button onclick="saveApiKey()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Powers AI chat — get a key at console.anthropic.com</div>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <div class="settings-section">
           <div class="settings-title">Balance</div>
@@ -693,6 +721,13 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <button class="danger-btn" onclick="resetAll()">Reset All Data</button>
       </div>
     </div>
+  </div>
+
+  <!-- PERSISTENT STRIP -->
+  <div id="persistent-strip" style="position:fixed;bottom:62px;left:0;right:0;background:var(--bg);border-top:1px solid var(--border);padding:6px 16px;display:flex;justify-content:space-between;align-items:center;font-size:11px;z-index:90;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)">
+    <span id="strip-networth" style="color:var(--text3)">NW: —</span>
+    <span id="strip-maxday" style="color:var(--green);font-weight:700">— today</span>
+    <span id="strip-payday" style="color:var(--text3)">— to payday</span>
   </div>
 
   <!-- NAV -->
@@ -865,7 +900,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
 <!-- QUICK LOG MODAL -->
 <div class="modal-overlay" id="quick-log-modal" onclick="handleOverlayClick(event,'quick-log-modal')">
-  <div class="modal" onclick="event.stopPropagation()">
+  <div class="modal" onclick="event.stopPropagation()" style="border-radius:20px 20px 0 0;transform:translateZ(0);-webkit-transform:translateZ(0);position:relative;bottom:0;left:0;right:0;top:auto">
     <div class="modal-title">Log a Transaction</div>
     <div class="modal-sub">Quick-log a spend from your Virgin Money notification</div>
     <button onclick="closeModal('quick-log-modal');openScannerModal();" style="width:100%;padding:14px;background:var(--bg3);border:2px dashed var(--green-border);border-radius:var(--r-sm);color:var(--green);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">
@@ -1129,6 +1164,9 @@ let BILLS = [
   {name:'YouTube Premium', amt:16.99, day:20, tag:'Streaming', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
   {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
+  {name:'Car Rego — WRX', amt:462, day:15, tag:'Transport', recurring:true, freq:'yearly'},
+  {name:'NRMA KIA Insurance', amt:1023.06, day:2, tag:'Insurance', recurring:true, freq:'yearly'},
+  {name:'Teachers Health', amt:259.41, day:1, tag:'Health', recurring:true, freq:'quarterly'},
 ];
 
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
@@ -2351,9 +2389,11 @@ function renderAnalysisTab() {
         const amtStr = (isIncome ? '+' : '-') + fmt(t.amt);
         const corrBadge = t._isCorrection ? '<span style="font-size:10px;margin-left:4px">🔧</span>' : '';
         const ruBadge = t._isRoundup ? '<span style="font-size:10px;margin-left:4px">🏦</span>' : '';
-        return '<div class="txn-row" onclick="editTransaction('+realIdx+')" style="cursor:pointer">' +
-          '<div class="txn-info"><div class="txn-name">'+esc(t.note||'\u2014')+corrBadge+ruBadge+'</div><div class="txn-meta">'+esc(t.cat||'Other')+' \u00B7 '+time+'</div></div>' +
-          '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+amtCol+'">'+amtStr+'</div>' +
+        return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;min-height:56px;border-bottom:1px solid var(--border);cursor:pointer" onclick="editTransaction('+realIdx+')">' +
+          '<div style="display:flex">'+renderTxnAvatar(t.note, t.cat)+'</div>' +
+          '<div style="flex:1;min-width:0"><div style="color:var(--text);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(t.note||'—')+corrBadge+ruBadge+'</div>' +
+          '<div style="color:var(--text3);font-size:11px;margin-top:2px">'+esc(t.cat||'Other')+' · '+time+'</div></div>' +
+          '<div style="text-align:right;flex-shrink:0"><div style="color:'+amtCol+';font-size:14px;font-weight:600">'+amtStr+'</div></div>' +
           '</div>';
       }).join('');
       html += '</div>';
@@ -2548,7 +2588,7 @@ function renderAll() {
   const _pdFill = $('pd-fill');
   if (_pdFill) { _pdFill.style.width = pct + '%'; _pdFill.style.background = days < 4 ? 'var(--red)' : days < 8 ? 'var(--amber)' : 'var(--green)'; }
   const _pdLbl = $('pd-lbl');
-  if (_pdLbl) _pdLbl.textContent = S.paydayReceived ? '✓ Payday received' : isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
+  if (_pdLbl) _pdLbl.textContent = isPayday ? '💰 Payday!' : days + (days === 1 ? ' day' : ' days') + ' to payday';
 
   // Timing context — phase used throughout renderAll for conditional messaging
   const phase = getMonthPhase();
@@ -2561,34 +2601,6 @@ function renderAll() {
     }
   }
 
-  // Payday banner — paydayReceived suppresses all countdown messaging
-  const bannerEl = $('dash-payday-banner');
-  if (bannerEl) {
-    // Fix 3A: auto-dismiss after 3 days, or if explicitly dismissed
-    const daysSincePayday = S.paydayReceivedDate
-      ? Math.floor((Date.now() - new Date(S.paydayReceivedDate).getTime()) / 86400000)
-      : 999;
-    const bannerExpired = daysSincePayday > 3;
-    if (S.paydayReceived && !S.paydayBannerDismissed && !bannerExpired) {
-      const recDateStr = S.paydayReceivedDate
-        ? new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric', month:'short'})
-        : '';
-      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span>✓ <strong>Payday received' + (recDateStr ? ' ' + recDateStr : '') + '.</strong> Plan your allocation below.</span><button onclick="S.paydayBannerDismissed=true;save();renderAll()" style="background:none;border:1px solid var(--green-border);color:var(--green);border-radius:var(--r-sm);padding:4px 10px;font-size:12px;cursor:pointer;white-space:nowrap">Got it ✕</button></div>';
-    } else if (S.paydayReceived && (S.paydayBannerDismissed || bannerExpired)) {
-      bannerEl.innerHTML = '';
-    } else if (phase === 'PAYDAY') {
-      bannerEl.innerHTML = '<div class="alert ok fade-up" style="margin-bottom:8px">💰 <strong>Payday!</strong> Don\'t forget Opal + lunch ~$20 before your pay clears.</div>';
-      const ppBody = $('payday-plan-body'), ppTog = $('payday-plan-tog');
-      if (ppBody && (!ppBody.style.maxHeight || ppBody.style.maxHeight === '0px' || ppBody.style.maxHeight === '0')) {
-        ppBody.style.maxHeight = '800px';
-        if (ppTog) ppTog.textContent = '▴';
-      }
-    } else if (phase === 'PRE_PAYDAY') {
-      bannerEl.innerHTML = '<div class="alert warn fade-up" style="margin-bottom:8px">💰 <strong>Payday in ' + days + ' day' + (days === 1 ? '' : 's') + '.</strong> Hold tight — projection resets on the ' + (S.payday||15) + 'th.</div>';
-    } else {
-      bannerEl.innerHTML = '';
-    }
-  }
   // Fix 2C: survival mode banner
   renderSurvivalBanner();
 
@@ -2653,6 +2665,26 @@ function renderAll() {
     surplusLbl.textContent = 'After bills, debts due & buffer';
   }
 
+  // New single "YOU CAN SPEND TODAY" display
+  const _maxDayDisp = $('max-day-display');
+  const _paceDisp = $('pace-display');
+  if (_maxDayDisp) {
+    const _ddb = getDynamicDailyBudget();
+    _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
+    _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
+  }
+  if (_paceDisp) {
+    const _weekAgo2 = Date.now() - 7*86400000;
+    const _weekSpent = S.txns.filter(t => t.ts > _weekAgo2 && !t.income && !t._isCorrection && !t._isRoundup).reduce((s,t) => s+t.amt, 0);
+    const _weekAvg = _weekSpent / 7;
+    const _maxD2 = getDynamicDailyBudget();
+    const _diff = Math.abs(_weekAvg - _maxD2);
+    _paceDisp.textContent = _weekAvg <= _maxD2
+      ? 'Running $' + _diff.toFixed(2) + ' under pace this week ✅'
+      : 'Running $' + _diff.toFixed(2) + ' over pace this week ⚠️';
+    _paceDisp.style.color = _weekAvg <= _maxD2 ? 'var(--text3)' : 'var(--red)';
+  }
+
   // $30 Opal/lunch buffer warning — only fire if a bill is due today/tomorrow OR it's payday (avoid noise mid-cycle)
   const remaining = dailyBudget - todaySpent;
   const billsDueVeryShortly = getExpandedBills().filter(b => b.recurring !== false && (b.day === today || b.day === today + 1));
@@ -2675,19 +2707,6 @@ function renderAll() {
     }
   } else if (velEl && (phase === 'PRE_PAYDAY' || phase === 'PAYDAY')) {
     velEl.innerHTML = '';
-  }
-
-  // No-spend streak display
-  const streakEl = $('dash-streak');
-  if (streakEl) {
-    const streak = getNoSpendStreak();
-    if (streak === 0 && getTodaySpent() === 0 && S.txns.filter(t => !t.income).length === 0) {
-      streakEl.innerHTML = '';
-    } else if (streak >= 1) {
-      streakEl.innerHTML = '<span>🔥 ' + streak + '-day no-spend streak</span>';
-    } else {
-      streakEl.innerHTML = '';
-    }
   }
 
   renderAlerts(safe, liveBal, dueTotal, txnSpent);
@@ -3992,14 +4011,23 @@ function calDayClick(day) {
       '<div style="font-size:11px;color:var(--text3)">Covers overdue + current month</div></div>' +
       '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$' + it.amt.toFixed(2) + '</div></div>';
   });
-  // Render uncovered bills
+  // Render bills with Pay Now / Already Paid buttons
   bills.forEach(it => {
     const b = it.bill;
     const bPaid = isThisMonthlyBillPaid(b.name, b.day);
-    html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)'+(bPaid?';opacity:0.55':'')+'"><div><div style="font-size:14px;color:'+(bPaid?'var(--text3)':'var(--text)')+';font-weight:500;'+(bPaid?'text-decoration:line-through':'')+'">' +
-      esc(b.name)+(bPaid?'<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:6px">PAID</span>':'')+'</div>' +
-      '<div style="font-size:11px;color:var(--text3)">'+b.tag+(b.recurring?' · Recurring':'')+'</div></div>' +
-      '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(bPaid?'var(--green)':'var(--red)')+'">$'+b.amt.toFixed(2)+'</div></div>';
+    if (bPaid) {
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.6">' +
+        '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px">$'+b.amt.toFixed(2)+'</div></div>' +
+        '<div style="background:var(--green);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">PAID</div></div>';
+    } else {
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px">' +
+        '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
+        '<div style="color:var(--red);font-size:13px">$'+b.amt.toFixed(2)+' due '+b.day+'th</div></div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<button onclick="payBillNow(\''+b.name.replace(/'/g,"\\'")+'\',' +b.day+','+b.amt+')" style="padding:8px 14px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700;font-size:13px;min-height:44px">Pay now</button>' +
+        '<button onclick="markBillAlreadyPaid(\''+b.name.replace(/'/g,"\\'")+'\','+b.day+')" style="padding:8px 14px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;min-height:44px">Already paid</button>' +
+        '</div></div>';
+    }
   });
   const total = items.filter(it => it.type === 'debt' || !isThisMonthlyBillPaid((it.bill||{}).name, (it.bill||{}).day)).reduce((s, it) => s + (it.amt || 0), 0);
   if (total > 0) html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL DUE</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
@@ -4419,7 +4447,12 @@ function renderDashTxns() {
     const isIncome = t.income;
     const chipCol = isIncome ? 'var(--green)' : col;
     const amtStr = isIncome ? '<span style="color:var(--green)">+'+fmt(t.amt)+'</span>' : '-'+fmt(t.amt);
-    return '<div class="txn-row" onclick="editTransaction('+realIdx+')" style="cursor:pointer"><div class="txn-chip" style="background:'+chipCol+'22;color:'+chipCol+'">'+(isIncome?'↑':(t.cat||'?')[0].toUpperCase())+'</div><div class="txn-info"><div class="txn-name">'+esc(t.note)+flag+'</div><div class="txn-meta">'+esc(t.cat)+' &#x00B7; '+time+'</div></div><div class="txn-amt">'+amtStr+'</div></div>';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;min-height:56px;border-bottom:1px solid var(--border);cursor:pointer" onclick="editTransaction('+realIdx+')">' +
+      '<div style="display:flex">'+renderTxnAvatar(t.note, t.cat)+'</div>' +
+      '<div style="flex:1;min-width:0"><div style="color:var(--text);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(t.note||'—')+flag+'</div>' +
+      '<div style="color:var(--text3);font-size:11px;margin-top:2px">'+esc(t.cat)+' · '+time+'</div></div>' +
+      '<div style="text-align:right;flex-shrink:0"><div style="color:'+(isIncome?'var(--green)':'var(--red)')+';font-size:14px;font-weight:600">'+amtStr+'</div></div>' +
+      '</div>';
   }).join('');
 }
 
@@ -4681,6 +4714,44 @@ function saveBudgets() {
   onStateChange('budget-save');
   const msg = $('budget-save-msg');
   if (msg) { msg.style.display = 'block'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
+}
+
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  const arrow = document.getElementById(id + '-arrow');
+  if (!el) return;
+  const isOpen = el.style.display !== 'none';
+  el.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.textContent = isOpen ? '▼' : '▲';
+}
+
+function saveIncome() {
+  const v = parseFloat(document.getElementById('set-income')?.value);
+  if (!isNaN(v) && v > 0) { S.income = v; onStateChange('income_saved'); showToast('Income saved'); }
+}
+
+function saveWrxValue() {
+  const v = parseFloat(document.getElementById('set-wrx')?.value);
+  if (!isNaN(v) && v >= 0) { S.wrxValue = v; onStateChange('wrx_saved'); showToast('WRX value saved'); }
+}
+
+function saveApiKey() {
+  const v = document.getElementById('set-apikey')?.value?.trim();
+  if (v && v.startsWith('sk-ant')) {
+    localStorage.setItem('slyght_api_key', v);
+    S.apiKey = v;
+    showToast('✅ API key saved');
+  } else {
+    showToast('Invalid key — must start with sk-ant-');
+  }
+}
+
+function toggleRoundUps() {
+  S.roundUpsEnabled = !S.roundUpsEnabled;
+  onStateChange('roundups_toggled');
+  const btn = document.getElementById('roundups-btn');
+  if (btn) btn.textContent = S.roundUpsEnabled ? 'On' : 'Off';
+  showToast('Round-ups ' + (S.roundUpsEnabled ? 'on' : 'off'));
 }
 
 function checkAfford() {
@@ -5130,9 +5201,8 @@ function scrollChatToBottom() {
   if (msgs) setTimeout(() => { msgs.scrollTo({top: msgs.scrollHeight, behavior: 'smooth'}); }, 100);
 }
 
-async function sendChatMessage() {
+async function sendChatMessage(userMessage) {
   if (!localStorage.getItem('slyght_ai_consent')) {
-    // Show consent in chat area
     const msgs = document.getElementById('chat-messages');
     if (msgs && !document.getElementById('ai-consent-banner')) {
       const banner = document.createElement('div');
@@ -5147,12 +5217,15 @@ async function sendChatMessage() {
     return;
   }
   if (!API_RATE.canCall()) { showToast('Too many requests — wait a moment'); return; }
-  const input = $('chat-input');
-  const text = (input ? input.value : '').trim();
-  if (!text || !S.apiKey || _chatRendering) return;
 
-  input.value = '';
-  if (input) { input.style.height = ''; }
+  const input = $('chat-input');
+  const text = (userMessage !== undefined ? String(userMessage) : (input ? input.value : '')).trim();
+  if (!text || _chatRendering) return;
+
+  const apiKey = S.apiKey || S.anthropicKey || localStorage.getItem('slyght_api_key') || '';
+  if (!apiKey) { showToast('No API key — add one in Settings'); return; }
+
+  if (input) { input.value = ''; input.style.height = ''; }
 
   if (!S.chatHistory) S.chatHistory = [];
   S.chatHistory.push({role:'user', content:text, ts:Date.now()});
@@ -5168,6 +5241,72 @@ async function sendChatMessage() {
   const btn = $('chat-send-btn');
   if (btn) btn.disabled = true;
 
+  const today = new Date();
+  const todayTxns = S.txns.filter(t => new Date(t.ts).toDateString() === today.toDateString() && !t.income);
+  const todaySpent = todayTxns.reduce((s,t) => s+t.amt, 0);
+  const weekAgo = Date.now() - 7*86400000;
+  const weekTxns = S.txns.filter(t => t.ts > weekAgo && !t.income && !t._isCorrection);
+  const weekByCategory = {};
+  weekTxns.forEach(t => { weekByCategory[t.cat] = (weekByCategory[t.cat]||0)+t.amt; });
+
+  const upcomingBills = BILLS
+    .filter(b => !isThisMonthlyBillPaid(b.name, b.day))
+    .sort((a,b) => a.day - b.day)
+    .slice(0,5)
+    .map(b => b.name+' $'+b.amt+' on '+b.day+'th')
+    .join(', ');
+
+  const systemPrompt = `You are SLYGHT — John's personal finance brain.
+You control the app and understand his financial situation in real time.
+Be direct, specific, and honest. Never generic advice.
+
+LIVE STATE RIGHT NOW (${today.toLocaleString('en-AU')}):
+Balance: $${S.bal.toFixed(2)}
+Payday: in ${daysLeft()} days (${S.payday}th)
+Mode: ${getSurvivalMode()}
+Can spend today: $${getDynamicDailyBudget().toFixed(2)}
+Spent today: $${todaySpent.toFixed(2)} across ${todayTxns.length} transactions
+${todayTxns.length > 0 ? 'Today: '+todayTxns.map(t=>t.note+' $'+t.amt).join(', ') : 'Nothing logged today yet'}
+
+THIS WEEK BY CATEGORY:
+${Object.entries(weekByCategory).map(([k,v])=>k+': $'+v.toFixed(2)).join('\n')||'No spending this week'}
+
+UPCOMING BILLS: ${upcomingBills || 'None before payday'}
+
+ACTIVE DEBTS:
+${S.debts.filter(d=>!d.paid&&!d.viaRent).map(d=>d.name+' $'+d.amt+(d.delayDate?' due '+d.delayDate:'')).join('\n')||'None'}
+
+Owed to Mum: $${S.debts.find(d=>d.name==='Owed to Mum')?.amt?.toFixed(2)||'0'}
+Car loan: $${(S.carloan||0).toFixed(2)} at ${S.carLoanRate||9.87}% ($${((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)}/day interest)
+WRX: ${S.wrxStatus==='listed'?'Listed for sale':'NOT LISTED — $'+((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)+'/day wasted'}
+City2Surf: ${getDaysToCity2Surf()} days away (Aug 9 2026)
+
+JOHN'S PATTERNS:
+- Food is biggest spend ($900+/month)
+- Vaping costs $2,400/year — trying to quit
+- FIFA packs when balance looks okay
+- Living paycheck to paycheck despite $87k income
+- Goal: move out, save for holidays, build net worth
+- Net worth: -$2,467 (should be +$50,000 at his income level)
+
+YOU CAN TAKE THESE ACTIONS when the user describes them:
+- Log a transaction: respond with JSON action {"action":"log_txn","amt":X,"note":"...","cat":"..."}
+- Mark bill paid: respond with JSON action {"action":"mark_bill_paid","name":"...","day":X}
+- Update balance: respond with JSON action {"action":"update_balance","amt":X,"reason":"..."}
+- Record no-spend: respond with JSON action {"action":"no_spend"}
+
+Include the JSON action at the END of your response if an action is needed.
+Format: [ACTION:{"action":"..."}]
+
+RULES:
+- If balance < $200: very firm, no spending advice
+- Mention WRX daily interest if relevant
+- Call out FIFA/vaping/UberEats directly by name when detected
+- Always give a specific dollar number not ranges
+- Maximum 3 sentences for simple questions
+- For spending requests: answer yes/no then the impact
+- Never say "I understand" or "Great question"`;
+
   try {
     const apiMessages = (S.chatHistory||[])
       .filter(m => (m.role === 'user' || m.role === 'assistant') && !m._isError)
@@ -5182,14 +5321,14 @@ async function sendChatMessage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': S.apiKey,
+          'x-api-key': apiKey,
           'anthropic-version': '2023-06-01',
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 1024,
-          system: buildSystemPrompt(),
+          max_tokens: 400,
+          system: systemPrompt,
           messages: apiMessages
         }),
         signal: controller.signal
@@ -5214,20 +5353,29 @@ async function sendChatMessage() {
       try { API_COSTS.record('chat', data.usage?.input_tokens||800, data.usage?.output_tokens||200, false); } catch(e) {}
       reply = (data.content && data.content[0] && data.content[0].text) || 'No response received.';
     } else if (resp.status === 401) {
-      reply = 'API key invalid \u2014 tap the \uD83D\uDD11 icon in the top right to update it.';
+      reply = 'API key invalid — tap Settings to update it.';
       S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
       if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
       save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else if (resp.status === 429) {
-      reply = 'Too many messages \u2014 wait a moment and try again.';
+      reply = 'Too many messages — wait a moment and try again.';
       S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
       if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
       save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else {
-      reply = 'Couldn\'t reach SLYGHT AI \u2014 check your connection.';
+      reply = 'Couldn\'t reach SLYGHT AI — check your connection.';
       S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
       if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
       save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+    }
+
+    const actionMatch = reply.match(/\[ACTION:(.*?)\]/s);
+    if (actionMatch) {
+      try {
+        const action = JSON.parse(actionMatch[1]);
+        reply = reply.replace(/\[ACTION:.*?\]/s, '').trim();
+        executeChatAction(action);
+      } catch(e) {}
     }
 
     S.chatHistory.push({role:'assistant', content:reply, ts:Date.now()});
@@ -5236,7 +5384,7 @@ async function sendChatMessage() {
     save();
   } catch(e) {
     hideTypingIndicator();
-    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI \u2014 check your connection.', ts:Date.now(), _isError:true});
+    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI — check your connection.', ts:Date.now(), _isError:true});
     save();
   }
 
@@ -5244,6 +5392,60 @@ async function sendChatMessage() {
   if (btn) btn.disabled = false;
   renderChatMessages();
   scrollChatToBottom();
+}
+
+function executeChatAction(action) {
+  switch(action.action) {
+    case 'log_txn':
+      if (action.amt > 0) {
+        const roundUp = parseFloat((Math.ceil(action.amt) - action.amt).toFixed(2));
+        S.txns.push({
+          amt: parseFloat(action.amt.toFixed(2)),
+          note: action.note || 'Chat logged',
+          cat: action.cat || 'Other',
+          ts: Date.now(),
+          income: false,
+          _balAffected: true,
+          _chatLogged: true
+        });
+        S.bal = parseFloat((S.bal - action.amt).toFixed(2));
+        if (roundUp > 0 && roundUp < 1 && S.roundUpsEnabled) {
+          S.txns.push({
+            amt: roundUp,
+            note: 'Round-up → China Holiday',
+            cat: 'Savings',
+            ts: Date.now(),
+            income: false,
+            _isRoundup: true,
+            _balAffected: true
+          });
+          S.bal = parseFloat((S.bal - roundUp).toFixed(2));
+          const bucket = S.savingsBuckets?.find(b => b.name === 'China Holiday');
+          if (bucket) bucket.saved = parseFloat((bucket.saved + roundUp).toFixed(2));
+        }
+        onStateChange('chat_logged_txn');
+        showToast('✅ Logged: ' + action.note + ' $' + action.amt);
+      }
+      break;
+    case 'mark_bill_paid':
+      if (action.name && action.day) {
+        const today = new Date();
+        const key = today.getFullYear()+'-'+(today.getMonth()+1)+'-'+action.name+'-'+action.day;
+        S.paidBills[key] = true;
+        onStateChange('chat_bill_paid');
+        showToast('✅ ' + action.name + ' marked as paid');
+      }
+      break;
+    case 'update_balance':
+      if (action.amt !== undefined) {
+        applyBalanceCorrection(action.amt, action.reason || 'Chat update');
+      }
+      break;
+    case 'no_spend':
+      showToast('✅ No spend recorded');
+      onStateChange('chat_no_spend');
+      break;
+  }
 }
 
 function sendQuickPrompt(text) {
@@ -6455,6 +6657,7 @@ renderAll = function() {
   if (typeof PUSH !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) PUSH.renderSubscribeButton();
   renderWeeklySnapshot();
   renderGoalTracker();
+  updatePersistentStrip();
   // Render WFH toggle in dashboard hero
   const _wfhEl = document.getElementById('wfh-toggle');
   if (_wfhEl && typeof LOCATION !== 'undefined') {
@@ -6655,7 +6858,6 @@ const NOTIFY = {
     }
     // INFO: payday soon
     if (dl<=2&&!S.paydayReceived) add('info','Payday in '+dl+' day'+(dl!==1?'s':'')+' — allocation plan ready','View plan');
-    // INFO: no-spend streak
     const ns=getNoSpendStreak();
     if (ns>=3) add('info','You\'ve been under budget for '+ns+' days straight 🔥',null);
     // INFO: net worth up
@@ -8200,8 +8402,9 @@ function renderSpendingPivot() {
         row.txns.slice(0,10).forEach((t,idx) => {
           const dateStr = new Date(t.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
           const txnIdx = S.txns.indexOf(t);
-          html += '<div onclick="openEditTxnModal('+txnIdx+')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer;min-height:44px;border-bottom:'+(idx<row.txns.length-1?'1px solid var(--border)':'none')+'">';
-          html += '<div><div style="color:var(--text);font-size:13px">'+(t.note||'Transaction')+'</div><div style="color:var(--text3);font-size:11px">'+dateStr+'</div></div>';
+          html += '<div onclick="openEditTxnModal('+txnIdx+')" style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;min-height:44px;border-bottom:'+(idx<row.txns.length-1?'1px solid var(--border)':'none')+'">';
+          html += '<div style="display:flex">'+renderTxnAvatar(t.note, t.cat)+'</div>';
+          html += '<div style="flex:1;min-width:0"><div style="color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.note||'Transaction')+'</div><div style="color:var(--text3);font-size:11px">'+dateStr+'</div></div>';
           html += '<div style="color:var(--red);font-size:14px;font-weight:600">-$'+t.amt.toFixed(2)+'</div></div>';
         });
         if (row.txns.length > 10) html += '<div style="color:var(--text3);font-size:11px;text-align:center;padding:8px">+ '+(row.txns.length-10)+' more</div>';
@@ -8321,6 +8524,101 @@ function renderWeeklySnapshot() {
   html += '<div style="font-size:11px;color:var(--text3);margin-top:4px">🏁 City2Surf in '+getDaysToCity2Surf()+' days</div>';
   html += '</div>';
   el.innerHTML = html;
+}
+
+function payBillNow(billName, billDay, billAmt) {
+  S.txns.push({
+    amt: billAmt,
+    note: billName + ' — paid',
+    cat: 'Bills',
+    ts: Date.now(),
+    income: false,
+    _balAffected: true
+  });
+  S.bal = parseFloat((S.bal - billAmt).toFixed(2));
+  const today = new Date();
+  const key = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + billName + '-' + billDay;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  onStateChange('bill_paid_now');
+  showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
+  document.getElementById('cal-day-detail').style.display = 'none';
+}
+
+function markBillAlreadyPaid(billName, billDay) {
+  const today = new Date();
+  const key = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + billName + '-' + billDay;
+  if (!S.paidBills) S.paidBills = {};
+  S.paidBills[key] = true;
+  onStateChange('bill_already_paid');
+  showToast('✅ ' + billName + ' marked as paid');
+  document.getElementById('cal-day-detail').style.display = 'none';
+}
+
+function updatePersistentStrip() {
+  const nw = document.getElementById('strip-networth');
+  const md = document.getElementById('strip-maxday');
+  const pd = document.getElementById('strip-payday');
+  if (!nw || !md || !pd) return;
+  const netWorth = (S.wrxValue || 0) + 1000
+    - (S.carloan || 0) - (S.cc || 0)
+    - S.debts.filter(d => !d.paid && !d.viaRent).reduce((s,d) => s+d.amt, 0);
+  nw.textContent = 'NW: ' + (netWorth >= 0 ? '+' : '') + '$' + Math.abs(Math.round(netWorth)).toLocaleString();
+  nw.style.color = netWorth >= 0 ? 'var(--green)' : 'var(--red)';
+  md.textContent = '$' + getDynamicDailyBudget().toFixed(0) + ' today';
+  pd.textContent = daysLeft() + 'd to payday';
+}
+
+const BRAND_LOGOS = {
+  'netflix':'netflix.com','spotify':'spotify.com','uber eats':'ubereats.com',
+  'uber':'uber.com','woolworths':'woolworths.com.au','coles':'coles.com.au',
+  'aldi':'aldi.com.au','mcdonald':'mcdonalds.com','kfc':'kfc.com',
+  'subway':'subway.com','amazon':'amazon.com','apple':'apple.com',
+  'google':'google.com','microsoft':'microsoft.com','adobe':'adobe.com',
+  'optus':'optus.com.au','nrma':'nrma.com.au','firstmac':'firstmac.com.au',
+  'virgin':'virginmoney.com.au','ea fc':'ea.com','fifa':'ea.com',
+  'ea sports':'ea.com','playstation':'playstation.com','steam':'steampowered.com',
+  'youtube':'youtube.com','disney':'disneyplus.com','binge':'binge.com.au',
+  'stan':'stan.com.au','amazon prime':'amazon.com','claude':'anthropic.com',
+  'anthropic':'anthropic.com','batch':'batchespresso.com.au',
+  'opal':'transportnsw.info','tfnsw':'transportnsw.info'
+};
+
+function getBrandLogo(note) {
+  if (!note) return null;
+  const lower = note.toLowerCase();
+  for (const [keyword, domain] of Object.entries(BRAND_LOGOS)) {
+    if (lower.includes(keyword)) {
+      return 'https://logo.clearbit.com/' + domain;
+    }
+  }
+  return null;
+}
+
+function renderTxnAvatar(note, cat) {
+  const logo = getBrandLogo(note);
+  const catColors = {
+    'Food / Coffee':'#FF6B35','Transport / Fuel':'#4ECDC4',
+    'Shopping':'#9B59B6','Entertainment':'#E74C3C',
+    'Subscription':'#3498DB','Bills':'#E67E22',
+    'Streaming':'#E50914','Savings':'#27AE60',
+    'Income':'#2ECC71','Other':'#95A5A6',
+    'Debt repayment':'#E74C3C','Adjustment':'#BDC3C7'
+  };
+  const color = catColors[cat] || '#95A5A6';
+  const letter = (note || cat || '?')[0].toUpperCase();
+  if (logo) {
+    return '<img src="'+logo+'" ' +
+      'style="width:36px;height:36px;border-radius:10px;object-fit:contain;' +
+      'background:#fff;padding:2px;flex-shrink:0" ' +
+      'onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'" />' +
+      '<div style="display:none;width:36px;height:36px;border-radius:10px;' +
+      'background:'+color+';color:#fff;font-size:16px;font-weight:700;' +
+      'align-items:center;justify-content:center;flex-shrink:0">'+letter+'</div>';
+  }
+  return '<div style="width:36px;height:36px;border-radius:10px;' +
+    'background:'+color+';color:#fff;font-size:16px;font-weight:700;' +
+    'display:flex;align-items:center;justify-content:center;flex-shrink:0">'+letter+'</div>';
 }
 </script>
 <!-- SCANNER MODAL -->
