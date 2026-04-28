@@ -211,6 +211,7 @@ async function handleSchedule(cron, env) {
   const staleNote = hoursSinceSync > 2 ? ' (Open SLYGHT to refresh)' : '';
 
   // Use real Sydney time — DST handled automatically by Intl
+  const now = new Date();
   const { hour: sydHour, minute: sydMin, day: dayName } = getSydneyTime();
 
   const isOfficeDay = ['Monday', 'Thursday', 'Friday'].includes(dayName);
@@ -235,6 +236,9 @@ async function handleSchedule(cron, env) {
   const recentSpending = state.recentSpending || [];
   const daysToRace     = state.daysToRace || 0;
   const quietMode      = state.quietMode || false;
+
+  // Quiet mode: suppress everything except the 9am morning alert
+  if (quietMode && !(sydHour === 9 && sydMin < 10)) return;
 
   // Check recent spending patterns
   const recentHasVape     = recentSpending.some(t => (t.note || '').toLowerCase().includes('vape'));
@@ -275,13 +279,16 @@ async function handleSchedule(cron, env) {
 
     await sendPush(sub, env, {
       title, body,
-      tag: 'morning',
-      actions: [{ action: 'open', title: '📊 Check SLYGHT' }],
+      tag: 'morning-' + now.toDateString(),
+      actions: [
+        { action: 'open', title: '📊 Check SLYGHT' },
+        { action: wfhToday ? 'office' : 'wfh', title: wfhToday ? '🏢 Going to office' : '🏠 WFH today' },
+      ],
     });
   }
 
   // ── 10am COFFEE/BREAKFAST CHECK ──────────────────────
-  if (sydHour === 10 && sydMin < 10 && isOfficeDay && !wfhToday && !quietMode) {
+  if (sydHour === 10 && sydMin < 10 && isOfficeDay && !wfhToday) {
     if (!breakfastLogged) {
       let body = 'Grab your morning coffee — social connection matters. Keep it under $6. ';
       body += survivalMode !== 'normal'
@@ -290,7 +297,7 @@ async function handleSchedule(cron, env) {
       await sendPush(sub, env, {
         title: '☕ Morning coffee',
         body,
-        tag: 'breakfast',
+        tag: 'breakfast-' + now.toDateString(),
         actions: [
           { action: 'no-spend', title: '✅ Brought from home' },
           { action: 'log',      title: '📝 Log coffee' },
@@ -301,7 +308,7 @@ async function handleSchedule(cron, env) {
 
   // ── 12:30pm LUNCH CHECK ──────────────────────────────
   if ((sydHour === 12 && sydMin >= 30) || (sydHour === 13 && sydMin < 5)) {
-    if (!lunchLogged && !quietMode) {
+    if (!lunchLogged) {
       let title = '🍱 Lunch time';
       let body;
       const lunchBudget = isGfDay && isWeekend ? 30 : 20;
@@ -320,7 +327,7 @@ async function handleSchedule(cron, env) {
 
       await sendPush(sub, env, {
         title, body,
-        tag: 'lunch',
+        tag: 'lunch-' + now.toDateString(),
         actions: [
           { action: 'no-spend', title: '🏠 Eating from home' },
           { action: 'log',      title: '📝 Log lunch' },
@@ -339,14 +346,14 @@ async function handleSchedule(cron, env) {
                  'Budget $80. Meal prep tonight = no UberEats this week. ' +
                  'That\'s $100-150 saved.' +
                  (isGfDay ? ' Cook with your gf tonight — healthy and cheap.' : ''),
-          tag:   'grocery-sunday',
+          tag:   'grocery-sunday-' + now.toDateString(),
           actions: [
             { action: 'groceries-done', title: '✅ Getting groceries' },
             { action: 'later',          title: '⏰ Remind me tonight' },
           ],
         });
       }
-    } else if (!isWeekend && !quietMode) {
+    } else if (!isWeekend) {
       let body;
       if (recentHasVape) {
         body = 'You bought a vape recently. ' +
@@ -363,7 +370,7 @@ async function handleSchedule(cron, env) {
       await sendPush(sub, env, {
         title: '🥤 Afternoon',
         body,
-        tag:   'snack',
+        tag:   'snack-' + now.toDateString(),
         actions: [
           { action: 'no-spend', title: '✅ No snack' },
           { action: 'log',      title: '📝 Log it' },
@@ -380,7 +387,7 @@ async function handleSchedule(cron, env) {
           title: '🛒 Sunday evening',
           body:  'Last chance for the weekly shop. Woolworths Kirrawee closes at 10pm. ' +
                  'Groceries now = no UberEats trap this week.',
-          tag:   'grocery-sunday-night',
+          tag:   'grocery-sunday-night-' + now.toDateString(),
           actions: [
             { action: 'groceries-done', title: '✅ All sorted' },
             { action: 'open',           title: '📊 Check budget' },
@@ -390,7 +397,7 @@ async function handleSchedule(cron, env) {
       return;
     }
 
-    if (isOfficeDay && !wfhToday && !quietMode) {
+    if (isOfficeDay && !wfhToday) {
       let title = '🏠 Heading home?';
       let body;
 
@@ -427,7 +434,7 @@ async function handleSchedule(cron, env) {
 
       await sendPush(sub, env, {
         title, body,
-        tag:   'hometime',
+        tag:   'hometime-' + now.toDateString(),
         actions: [
           { action: 'no-spend', title: '✅ Going straight home' },
           { action: 'log',      title: '📝 Log expense' },
