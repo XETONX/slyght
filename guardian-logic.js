@@ -50,8 +50,10 @@ const checks = [
       mutations.forEach(fn => {
         const match = html.match(new RegExp('function ' + fn + '[\\s\\S]*?\\n}'));
         if (!match) { missing.push(fn + ' not found'); return; }
-        if (!match[0].includes('save()')) missing.push(fn + ' missing save()');
-        if (!match[0].includes('renderAll()')) missing.push(fn + ' missing renderAll()');
+        const hasSave = match[0].includes('save()') || match[0].includes('onStateChange(');
+        const hasRender = match[0].includes('renderAll()') || match[0].includes('onStateChange(');
+        if (!hasSave) missing.push(fn + ' missing save()');
+        if (!hasRender) missing.push(fn + ' missing renderAll()');
       });
       return missing.length === 0 ? 'OK' : 'BROKEN: ' + missing.join(', ');
     }

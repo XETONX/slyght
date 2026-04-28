@@ -89,14 +89,28 @@ export default {
     // GET /status — debug endpoint
     if (path === '/status' && request.method === 'GET') {
       const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
-      const sub = await env.SLYGHT_DATA.get('push_subscription');
-      const dismissed = JSON.parse(await env.SLYGHT_DATA.get('dismissed') || '{}');
+      const subRaw = await env.SLYGHT_DATA.get('push_subscription');
+      const sub = subRaw ? JSON.parse(subRaw) : null;
+      const logs = JSON.parse(await env.SLYGHT_DATA.get('push_logs') || '[]');
+
       return new Response(JSON.stringify({
         state,
         hasSubscription: !!sub,
-        dismissed,
+        subscriptionDebug: sub ? {
+          endpoint:    sub.endpoint ? sub.endpoint.substring(0, 80) : 'MISSING',
+          hasKeys:     !!sub.keys,
+          hasP256dh:   !!(sub.keys?.p256dh),
+          hasAuth:     !!(sub.keys?.auth),
+          p256dhLength: sub.keys?.p256dh?.length || 0,
+          authLength:   sub.keys?.auth?.length || 0,
+        } : null,
+        recentLogs: logs.slice(0, 3),
         time: new Date().toISOString(),
-        sydneyTime: new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney' }),
+        sydneyTime: new Intl.DateTimeFormat('en-AU', {
+          timeZone:  'Australia/Sydney',
+          dateStyle: 'short',
+          timeStyle: 'medium',
+        }).format(new Date()),
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -121,6 +135,34 @@ export default {
           actions: [{ action: 'open', title: '📊 Open SLYGHT' }],
         });
         return new Response(JSON.stringify({ ok: true, message: 'Test notification sent' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500, headers: corsHeaders,
+        });
+      }
+    }
+
+    // GET /logs — retrieve recent push attempt logs
+    if (path === '/logs' && request.method === 'GET') {
+      try {
+        const logs = JSON.parse(await env.SLYGHT_DATA.get('push_logs') || '[]');
+        return new Response(JSON.stringify(logs, null, 2), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch(e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          headers: corsHeaders,
+        });
+      }
+    }
+
+    // POST /unsubscribe — clear push subscription from KV
+    if (path === '/unsubscribe' && request.method === 'POST') {
+      try {
+        await env.SLYGHT_DATA.delete('push_subscription');
+        return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (e) {
@@ -159,6 +201,14 @@ async function handleSchedule(cron, env) {
   const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
   const sub   = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
   if (!sub) return;
+
+  // Staleness check — flag if app hasn't synced recently
+  const lastSync = state.lastSync ? new Date(state.lastSync) : null;
+  const hoursSinceSync = lastSync ? (Date.now() - lastSync.getTime()) / 3600000 : 999;
+  if (hoursSinceSync > 4) {
+    state.survivalMode = state.survivalMode || 'normal';
+  }
+  const staleNote = hoursSinceSync > 2 ? ' (Open SLYGHT to refresh)' : '';
 
   // Use real Sydney time — DST handled automatically by Intl
   const { hour: sydHour, minute: sydMin, day: dayName } = getSydneyTime();
@@ -220,6 +270,7 @@ async function handleSchedule(cron, env) {
       } else if (wfhToday) {
         body += 'WFH today — no commute cost. Make lunch at home.';
       }
+      body += staleNote;
     }
 
     await sendPush(sub, env, {
@@ -389,10 +440,60 @@ async function handleSchedule(cron, env) {
 // ─── WEB PUSH SENDER (RFC 8291 VAPID + aes128gcm) ────────────────────────────
 
 async function sendPush(subscription, env, payload) {
+  const logEntry = {
+    ts:           new Date().toISOString(),
+    endpoint:     subscription?.endpoint?.substring(0, 60) || 'NO ENDPOINT',
+    payloadTitle: payload?.title || 'unknown',
+    step:         'start',
+    error:        null,
+    status:       null,
+    ok:           false,
+  };
+
   try {
-    const endpoint = subscription.endpoint;
+    // Validate subscription
+    if (!subscription?.endpoint) {
+      logEntry.step  = 'FAIL: no endpoint';
+      logEntry.error = 'subscription.endpoint is missing';
+      await writeLog(env, logEntry);
+      return false;
+    }
     const { p256dh, auth } = subscription.keys || {};
-    if (!endpoint || !p256dh || !auth) return false;
+    if (!p256dh || !auth) {
+      logEntry.step  = 'FAIL: missing keys';
+      logEntry.error = 'p256dh=' + !!p256dh + ' auth=' + !!auth;
+      await writeLog(env, logEntry);
+      return false;
+    }
+
+    // Validate VAPID secrets
+    if (!env.VAPID_PRIVATE_KEY || !env.VAPID_PUBLIC_KEY) {
+      logEntry.step  = 'FAIL: missing VAPID keys';
+      logEntry.error = 'VAPID_PRIVATE_KEY=' + !!env.VAPID_PRIVATE_KEY +
+                       ' VAPID_PUBLIC_KEY=' + !!env.VAPID_PUBLIC_KEY;
+      await writeLog(env, logEntry);
+      return false;
+    }
+
+    // Build JWT
+    logEntry.step = 'building VAPID JWT';
+    await writeLog(env, logEntry);
+
+    let jwt;
+    try {
+      jwt = await buildVapidJwt(subscription.endpoint, env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY);
+      logEntry.step = 'JWT built successfully';
+      await writeLog(env, logEntry);
+    } catch(jwtErr) {
+      logEntry.step  = 'FAIL: JWT build error';
+      logEntry.error = jwtErr.message + ' | ' + (jwtErr.stack || '').substring(0, 200);
+      await writeLog(env, logEntry);
+      return false;
+    }
+
+    // Encrypt payload
+    logEntry.step = 'encrypting payload';
+    await writeLog(env, logEntry);
 
     const bodyStr = JSON.stringify({
       title:              payload.title,
@@ -405,19 +506,29 @@ async function sendPush(subscription, env, payload) {
       data:               { url: 'https://xetonx.github.io/slyght/', tag: payload.tag },
     });
 
-    // Encrypt payload using RFC 8291 aes128gcm
-    const { encryptedBody, salt, serverPublicKeyRaw } = await encryptWebPush(bodyStr, p256dh, auth);
+    let encryptedBody, salt, serverPublicKeyRaw;
+    try {
+      ({ encryptedBody, salt, serverPublicKeyRaw } = await encryptWebPush(bodyStr, p256dh, auth));
+      logEntry.step = 'payload encrypted';
+      await writeLog(env, logEntry);
+    } catch(encErr) {
+      logEntry.step  = 'FAIL: encryption error';
+      logEntry.error = encErr.message + ' | ' + (encErr.stack || '').substring(0, 200);
+      await writeLog(env, logEntry);
+      return false;
+    }
 
-    // Build aes128gcm content-encoding header: salt(16) || rs(4) || idlen(1) || keyid(65)
-    const rs = new Uint8Array(4);
+    // Build aes128gcm binary frame: salt(16) || rs(4) || idlen(1) || keyid(65) || ciphertext
+    const rs     = new Uint8Array(4);
     new DataView(rs.buffer).setUint32(0, 4096, false);
     const header = concat(salt, rs, new Uint8Array([65]), serverPublicKeyRaw);
     const body   = concat(header, encryptedBody);
 
-    // Build VAPID JWT
-    const jwt = await buildVapidJwt(endpoint, env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY);
+    // Send to push endpoint
+    logEntry.step = 'sending to FCM endpoint';
+    await writeLog(env, logEntry);
 
-    const response = await fetch(endpoint, {
+    const response = await fetch(subscription.endpoint, {
       method: 'POST',
       headers: {
         'Authorization':    `vapid t=${jwt},k=${env.VAPID_PUBLIC_KEY}`,
@@ -428,14 +539,35 @@ async function sendPush(subscription, env, payload) {
       body,
     });
 
-    if (!response.ok && response.status !== 201) {
-      const text = await response.text().catch(() => '');
-      console.error(`Push failed ${response.status}:`, text);
+    const responseText = await response.text();
+
+    logEntry.step         = 'FCM response received';
+    logEntry.status       = response.status;
+    logEntry.statusText   = response.statusText;
+    logEntry.responseBody = responseText.substring(0, 300);
+    logEntry.ok           = response.ok || response.status === 201;
+    await writeLog(env, logEntry);
+
+    if (!logEntry.ok) {
+      console.error('Push failed:', response.status, responseText);
     }
-    return response.ok || response.status === 201;
-  } catch (e) {
-    console.error('sendPush error:', e);
+    return logEntry.ok;
+
+  } catch(e) {
+    logEntry.step  = 'FAIL: unexpected error';
+    logEntry.error = e.message + ' | ' + (e.stack || '').substring(0, 300);
+    await writeLog(env, logEntry);
     return false;
+  }
+}
+
+async function writeLog(env, entry) {
+  try {
+    const logs = JSON.parse(await env.SLYGHT_DATA.get('push_logs') || '[]');
+    logs.unshift({ ...entry, ts: new Date().toISOString() });
+    await env.SLYGHT_DATA.put('push_logs', JSON.stringify(logs.slice(0, 20)));
+  } catch(e) {
+    console.error('writeLog failed:', e.message);
   }
 }
 
