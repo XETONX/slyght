@@ -430,7 +430,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </div>
       <div id="dash-payday-banner"></div>
       <div id="dash-survival-banner"></div>
-      <div id="character-score"></div>
+      <div id="weekly-snapshot"></div>
       <div id="dash-alerts"></div>
       <div id="dash-velocity" class="info-line"></div>
       <div id="dash-streak" class="info-line"></div>
@@ -2066,7 +2066,7 @@ function renderAnalysisTab() {
         '</div>';
     } catch(e) {}
   }
-  let html = htmlScore + '<div id="survival-forecast" style="margin-bottom:16px"></div>';
+  let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="goal-tracker" style="margin-bottom:16px"></div>' + htmlScore + '<div id="survival-forecast" style="margin-bottom:16px"></div>';
 
   if (!S.txns || !S.txns.length) {
     c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
@@ -2414,6 +2414,8 @@ function renderAnalysisTab() {
 
   c.innerHTML = html;
   renderSurvivalForecast();
+  renderSpendingPivot();
+  renderGoalTracker();
 }
 
 function filterTxns() {
@@ -2709,7 +2711,7 @@ function renderAll() {
   renderSettingsBills();
   renderSavingsBuckets();
   renderSpendingCoach();
-  if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); }
+  if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
   updateExport();
   checkAfford();
   if ($('dt-car')) $('dt-car').textContent = fmtC(S.carloan);
@@ -6451,7 +6453,8 @@ renderAll = function() {
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
   if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
   if (typeof PUSH !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) PUSH.renderSubscribeButton();
-  if (typeof CHARACTER !== 'undefined') renderCharacterScore();
+  renderWeeklySnapshot();
+  renderGoalTracker();
   // Render WFH toggle in dashboard hero
   const _wfhEl = document.getElementById('wfh-toggle');
   if (_wfhEl && typeof LOCATION !== 'undefined') {
@@ -6828,7 +6831,7 @@ const CHARACTER = {
       };
       if (msgs[type]) showToast(msgs[type]);
     }
-    renderCharacterScore();
+    renderWeeklySnapshot();
   },
 
   analyseTransactions() {
@@ -8090,7 +8093,7 @@ NOTIFY.refresh();
 })();
 HEARTBEAT.start();
 if (typeof UX !== 'undefined') UX.init();
-if (typeof CHARACTER !== 'undefined') { CHARACTER.load(); renderCharacterScore(); }
+if (typeof CHARACTER !== 'undefined') { CHARACTER.load(); } renderWeeklySnapshot();
 if (typeof PUSH !== 'undefined') PUSH.init();
 if (typeof LOCATION !== 'undefined') LOCATION.check();
 if (typeof WEATHER !== 'undefined') {
@@ -8126,6 +8129,198 @@ function triggerCamera() {
   input.capture = 'environment';
   input.onchange = (e) => { if (e.target.files[0]) processScanImage(e.target.files[0]); };
   input.click();
+}
+
+function buildSpendingPivot(period) {
+  const now = Date.now();
+  const cutoffs = {today:now-86400000, week:now-7*86400000, month:now-30*86400000, all:0};
+  const cutoff = cutoffs[period] || 0;
+  const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
+  const txns = S.txns.filter(t =>
+    t.ts >= cutoff && !t.income && !t._isCorrection && !t._isRoundup &&
+    !NON_DISC.includes(t.cat)
+  );
+  const cats = {};
+  txns.forEach(t => {
+    if (!cats[t.cat]) cats[t.cat] = {total:0,count:0,txns:[]};
+    cats[t.cat].total += t.amt;
+    cats[t.cat].count++;
+    cats[t.cat].txns.push(t);
+  });
+  const totalSpend = Object.values(cats).reduce((s,c) => s+c.total, 0);
+  const periodDays = period==='today'?1:period==='week'?7:period==='month'?30:
+    Math.max(1,Math.ceil((now - Math.min(...(txns.map(t=>t.ts).concat([now]))))/86400000));
+  return Object.entries(cats)
+    .sort((a,b) => b[1].total - a[1].total)
+    .map(([cat,data]) => ({
+      cat,
+      total: parseFloat(data.total.toFixed(2)),
+      count: data.count,
+      pct: parseFloat(totalSpend > 0 ? (data.total/totalSpend*100).toFixed(1) : '0'),
+      daily: parseFloat((data.total/periodDays).toFixed(2)),
+      txns: data.txns.sort((a,b) => b.ts - a.ts)
+    }));
+}
+
+function renderSpendingPivot() {
+  const el = document.getElementById('spending-pivot');
+  if (!el) return;
+  const period = el.dataset.period || 'week';
+  const expanded = el.dataset.expanded || '';
+  const data = buildSpendingPivot(period);
+  const totalSpend = data.reduce((s,c) => s+c.total, 0);
+  const icons = {'Food / Coffee':'🍱','Transport / Fuel':'🚌','Shopping':'🛍️',
+    'Entertainment':'🎮','Subscription':'📱','Bills':'📋','Streaming':'📺','Other':'💸'};
+
+  let html = '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">WHERE YOUR MONEY WENT</div>';
+
+  html += '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">';
+  [['today','Today'],['week','7 Days'],['month','30 Days'],['all','All time']].forEach(([k,l]) => {
+    const active = period === k;
+    html += '<button onclick="pivotSetPeriod(\''+k+'\')" style="padding:6px 14px;border-radius:20px;border:1px solid '+(active?'var(--green)':'var(--border2)')+';background:'+(active?'var(--green)':'var(--bg3)')+';color:'+(active?'#000':'var(--text2)')+';font-size:12px;font-weight:'+(active?'700':'400')+';min-height:36px">'+l+'</button>';
+  });
+  html += '</div>';
+
+  html += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--bg3);border-radius:10px"><span style="color:var(--text2);font-size:13px">Total discretionary</span><span style="color:var(--text);font-size:16px;font-weight:700">$'+totalSpend.toFixed(2)+'</span></div>';
+
+  if (data.length === 0) {
+    html += '<div style="color:var(--text3);text-align:center;padding:20px">No spending in this period</div>';
+  } else {
+    data.forEach(row => {
+      const isExpanded = expanded === row.cat;
+      html += '<div style="margin-bottom:8px;background:var(--bg3);border-radius:10px;overflow:hidden">';
+      html += '<div onclick="pivotToggle(\''+row.cat.replace(/'/g,"\\'")+'\')" style="padding:12px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:48px">';
+      html += '<span style="font-size:18px">'+(icons[row.cat]||'💳')+'</span>';
+      html += '<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--text);font-size:13px;font-weight:600">'+row.cat+'</span><span style="color:var(--text);font-size:14px;font-weight:700">$'+row.total.toFixed(2)+'</span></div>';
+      html += '<div style="background:var(--bg2);border-radius:4px;height:4px;margin-bottom:4px"><div style="background:var(--green);width:'+Math.min(100,row.pct)+'%;height:100%;border-radius:4px"></div></div>';
+      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:11px">'+row.count+' transactions · '+row.pct+'%</span><span style="color:var(--text3);font-size:11px">$'+row.daily+'/day</span></div></div>';
+      html += '<span style="color:var(--text3);font-size:14px">'+(isExpanded?'▲':'▼')+'</span></div>';
+      if (isExpanded) {
+        html += '<div style="border-top:1px solid var(--border);padding:8px 12px">';
+        row.txns.slice(0,10).forEach((t,idx) => {
+          const dateStr = new Date(t.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
+          const txnIdx = S.txns.indexOf(t);
+          html += '<div onclick="openEditTxnModal('+txnIdx+')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer;min-height:44px;border-bottom:'+(idx<row.txns.length-1?'1px solid var(--border)':'none')+'">';
+          html += '<div><div style="color:var(--text);font-size:13px">'+(t.note||'Transaction')+'</div><div style="color:var(--text3);font-size:11px">'+dateStr+'</div></div>';
+          html += '<div style="color:var(--red);font-size:14px;font-weight:600">-$'+t.amt.toFixed(2)+'</div></div>';
+        });
+        if (row.txns.length > 10) html += '<div style="color:var(--text3);font-size:11px;text-align:center;padding:8px">+ '+(row.txns.length-10)+' more</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+  }
+  el.innerHTML = html;
+}
+
+function pivotSetPeriod(period) {
+  const el = document.getElementById('spending-pivot');
+  if (el) { el.dataset.period = period; el.dataset.expanded = ''; renderSpendingPivot(); }
+}
+
+function pivotToggle(cat) {
+  const el = document.getElementById('spending-pivot');
+  if (el) { el.dataset.expanded = el.dataset.expanded === cat ? '' : cat; renderSpendingPivot(); }
+}
+
+function renderGoalTracker() {
+  const el = document.getElementById('goal-tracker');
+  if (!el) return;
+
+  const monthlyIncome = S.income || 7282;
+  const thirtyAgo = Date.now() - 30*86400000;
+  const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
+  const recentSpend = S.txns
+    .filter(t => t.ts > thirtyAgo && !t.income && !t._isCorrection && !t._isRoundup && !NON_DISC.includes(t.cat))
+    .reduce((s,t) => s+t.amt, 0);
+  const fixedMonthly = BILLS.filter(b => b.recurring).reduce((s,b) => s+b.amt, 0);
+  const currentSavingsRate = Math.max(0, monthlyIncome - fixedMonthly - recentSpend);
+  const optimisedRate = Math.max(0, monthlyIncome - (fixedMonthly - 780 - 110) - (recentSpend * 0.6));
+
+  const momDebt = S.debts.find(d => d.name === 'Owed to Mum');
+  const goals = [
+    {name:'Emergency fund',target:2000,current:S.savingsBuckets?.find(b=>b.name==='Rainy Day Fund')?.saved||0,icon:'🛡️',monthly:currentSavingsRate},
+    {name:'Owed to Mum',target:momDebt?.originalAmt||4658,current:(momDebt?.originalAmt||4658)-(momDebt?.amt||4658),icon:'👩',monthly:500},
+    {name:'Rental bond',target:6000,current:S.savingsBuckets?.reduce((s,b)=>s+b.saved,0)||0,icon:'🏠',monthly:currentSavingsRate},
+    {name:'Car loan cleared',target:S.carloanOriginal||37400,current:(S.carloanOriginal||37400)-(S.carloan||23214),icon:'🚗',monthly:780},
+    {name:'Move out fund',target:15000,current:S.savingsBuckets?.reduce((s,b)=>s+b.saved,0)||0,icon:'🔑',monthly:currentSavingsRate}
+  ];
+
+  const fmt = m => m>=999?'Not achievable now':m<=0?'✅ Done':m<12?m+'mo':(Math.floor(m/12))+'y '+(m%12)+'m';
+
+  let html = '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">YOUR GOALS & TIMELINE</div>';
+
+  goals.forEach(g => {
+    const remaining = Math.max(0, g.target - g.current);
+    const moCurrent = g.monthly > 0 ? Math.ceil(remaining/g.monthly) : 999;
+    const moOptimised = optimisedRate > 0 ? Math.ceil(remaining/(g.monthly === currentSavingsRate ? optimisedRate : g.monthly)) : 999;
+    const pct = Math.min(100, g.current/g.target*100);
+
+    html += '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px">';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+    html += '<span style="font-size:20px">'+g.icon+'</span><div style="flex:1">';
+    html += '<div style="font-size:14px;font-weight:600;color:var(--text)">'+g.name+'</div>';
+    html += '<div style="font-size:12px;color:var(--text3)">$'+Math.round(g.current).toLocaleString()+' of $'+g.target.toLocaleString()+'</div></div>';
+    html += '<div style="font-size:13px;font-weight:700;color:'+(pct>=100?'var(--green)':'var(--text)')+'">'+Math.round(pct)+'%</div></div>';
+    html += '<div style="background:var(--bg2);border-radius:6px;height:6px;margin-bottom:8px"><div style="background:var(--green);width:'+pct+'%;height:100%;border-radius:6px"></div></div>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<div style="flex:1;padding:6px 8px;background:var(--bg2);border-radius:8px"><div style="font-size:10px;color:var(--text3)">At current pace</div><div style="font-size:12px;color:var(--text);font-weight:600">'+fmt(moCurrent)+'</div></div>';
+    html += '<div style="flex:1;padding:6px 8px;background:rgba(0,200,100,0.1);border-radius:8px;border:1px solid rgba(0,200,100,0.2)"><div style="font-size:10px;color:var(--green)">If WRX sold + cuts</div><div style="font-size:12px;color:var(--green);font-weight:600">'+fmt(moOptimised)+'</div></div>';
+    html += '</div></div>';
+  });
+
+  html += '<div style="background:rgba(0,200,100,0.05);border:1px solid rgba(0,200,100,0.2);border-radius:12px;padding:14px;margin-top:4px">';
+  html += '<div style="font-size:13px;font-weight:600;color:var(--green);margin-bottom:8px">💡 What changes everything</div>';
+  [
+    {a:'Sell the WRX',i:'$1,060+/month freed — changes every timeline',u:true},
+    {a:'Food under $400/month',i:'Currently ~$900/mo — saves $500/month',u:true},
+    {a:'Quit vaping',i:'Saves $840-1,560/year + City2Surf ready',u:false},
+    {a:'No FIFA packs',i:'$116+ per incident — adds up fast',u:false}
+  ].forEach(t => {
+    html += '<div style="display:flex;gap:8px;margin-bottom:8px"><span>'+(t.u?'🔴':'🟡')+'</span>';
+    html += '<div><div style="font-size:13px;color:var(--text);font-weight:600">'+t.a+'</div>';
+    html += '<div style="font-size:12px;color:var(--text3)">'+t.i+'</div></div></div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderWeeklySnapshot() {
+  const el = document.getElementById('weekly-snapshot');
+  if (!el) return;
+  const weekAgo = Date.now() - 7*86400000;
+  const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
+  const weekTxns = S.txns.filter(t =>
+    t.ts > weekAgo && !t.income && !t._isCorrection && !t._isRoundup && !NON_DISC.includes(t.cat)
+  );
+  const cats = {};
+  weekTxns.forEach(t => { cats[t.cat] = (cats[t.cat]||0) + t.amt; });
+  const top3 = Object.entries(cats).sort((a,b) => b[1]-a[1]).slice(0,3);
+  const totalWeek = weekTxns.reduce((s,t) => s+t.amt, 0);
+  const dailyAvg = totalWeek / 7;
+  const maxDay = getDynamicDailyBudget();
+  const isOverPace = dailyAvg > maxDay;
+  const icons = {'Food / Coffee':'🍱','Transport / Fuel':'🚌','Shopping':'🛍️','Entertainment':'🎮','Subscription':'📱','Other':'💸'};
+
+  let html = '<div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin-bottom:8px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+  html += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">THIS WEEK</div>';
+  html += '<div style="font-size:14px;font-weight:700;color:'+(isOverPace?'var(--red)':'var(--green)')+'">$'+totalWeek.toFixed(0)+'</div></div>';
+
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  top3.forEach(([cat,amt]) => {
+    html += '<div onclick="document.querySelector(\'[data-tab=analysis]\')?.click()" style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg3);border-radius:20px;cursor:pointer;min-height:32px">';
+    html += '<span style="font-size:13px">'+(icons[cat]||'💳')+'</span>';
+    html += '<span style="color:var(--text2);font-size:12px">$'+amt.toFixed(0)+'</span></div>';
+  });
+  html += '</div>';
+
+  html += '<div style="font-size:12px;color:'+(isOverPace?'var(--red)':'var(--text3)')+'">$'+dailyAvg.toFixed(2)+'/day · ';
+  html += isOverPace ? '$'+(dailyAvg-maxDay).toFixed(2)+' over pace ⚠️' : '$'+(maxDay-dailyAvg).toFixed(2)+' under pace ✅';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:4px">🏁 City2Surf in '+getDaysToCity2Surf()+' days</div>';
+  html += '</div>';
+  el.innerHTML = html;
 }
 </script>
 <!-- SCANNER MODAL -->
