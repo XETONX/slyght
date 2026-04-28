@@ -1726,7 +1726,8 @@ function saveEditedTransaction() {
   txn.cat = $('txn-edit-cat')?.value || txn.cat;
   const dateVal = $('txn-edit-date')?.value;
   if (dateVal) txn.ts = new Date(dateVal).getTime() || txn.ts;
-  save(); closeModal('txn-edit-modal'); renderAll(); onBalanceChange();
+  closeModal('txn-edit-modal');
+  onStateChange('txn-edit');
   showToast('Transaction updated');
 }
 function deleteEditedTransaction() {
@@ -1737,7 +1738,8 @@ function deleteEditedTransaction() {
   if (!txn.income) S.bal = parseFloat((S.bal + txn.amt).toFixed(2));
   else S.bal = parseFloat((S.bal - txn.amt).toFixed(2));
   S.txns.splice(idx, 1);
-  save(); closeModal('txn-edit-modal'); renderAll(); onBalanceChange();
+  closeModal('txn-edit-modal');
+  onStateChange('txn-delete');
   showToast('Transaction deleted');
 }
 
@@ -2064,10 +2066,10 @@ function renderAnalysisTab() {
         '</div>';
     } catch(e) {}
   }
-  let html = '<div id="survival-forecast" style="margin-bottom:16px"></div>';
+  let html = htmlScore + '<div id="survival-forecast" style="margin-bottom:16px"></div>';
 
   if (!S.txns || !S.txns.length) {
-    c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>' + htmlScore;
+    c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
     renderSurvivalForecast();
     return;
   }
@@ -2378,9 +2380,6 @@ function renderAnalysisTab() {
       '</div>';
   });
   html += '</div></div>';
-
-  // FIX 7 ORDER 6: SLYGHT Score (moved from top)
-  html += htmlScore;
 
   // ─── FINANCIAL TIME MACHINE ────────────────────────────────────
   const snaps = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS.load() : [];
