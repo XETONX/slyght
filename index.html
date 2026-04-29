@@ -1705,12 +1705,17 @@ function getScoreRecommendation(rec) {
   return { text, actionable: true, color: 'var(--green)' };
 }
 
-// Returns true when an unpaid debt due near this bill's date covers it
-// (e.g. Teachers Health quarterly $259 covers monthly Health Insurance $119).
-function isBillCoveredByDebt(bill) {
+// Returns true when an unpaid debt due near this bill's date covers it.
+// `renderMonth`/`renderYear` are the calendar month being rendered (0-11 / 4-digit).
+// When omitted, falls back to today's month/year for legacy call sites.
+// This explicit-month design fixes the May-1 double-count bug where the
+// calendar rendered May 1 from April 29 but coverage compared against April 1.
+function isBillCoveredByDebt(bill, renderMonth, renderYear) {
   if (!bill || !bill.day) return false;
   const today = new Date();
-  const billDate = new Date(today.getFullYear(), today.getMonth(), bill.day);
+  const month = renderMonth !== undefined ? renderMonth : today.getMonth();
+  const year  = renderYear  !== undefined ? renderYear  : today.getFullYear();
+  const billDate = new Date(year, month, bill.day);
 
   return (S.debts||[]).some(d => {
     if (d.paid) return false;
@@ -4447,7 +4452,8 @@ function getCalendarDayItems(day, month, year) {
     if (b.recurring === false || b.day !== day) return;
     if (!isBillDueInMonth(b, month)) return;
     if (isThisMonthlyBillPaid(b.name, b.day)) return;
-    if (isBillCoveredByDebt(b)) return;
+    // Pass the rendered month/year so coverage check matches the calendar cell.
+    if (isBillCoveredByDebt(b, month, year)) return;
     items.push({ type: 'bill', name: b.name, amt: b.amt, color: 'var(--amber)', bill: b });
   });
 
