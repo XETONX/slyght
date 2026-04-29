@@ -1392,6 +1392,8 @@ function load() {
     S._afterpayUpdated = true;
     save();
   }
+  // Refresh the computed model now that all migrations have completed.
+  if (typeof refreshModel === 'function') refreshModel();
 }
 
 function daysInCurrentMonth() {
@@ -2091,6 +2093,204 @@ function getBillsDue() {
     const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
     return diff > 0 && diff < daysLeft(payday);
   });
+}
+
+// ─── COMPUTED FINANCIAL MODEL ───────────────────────────────────────────────
+// Single source of truth for every UI consumer. Façade phase: each field
+// delegates to the existing helper so behaviour is unchanged. Calendar
+// entries are the one exception — they're built fresh here so the May 1
+// rendered-month-aware coverage check happens once, not per cell.
+//
+// Tests inject `now` and a mock `state`. Production calls with no args.
+
+function buildCalendarEntries(state, now) {
+  const map = new Map();
+  const HEALTH = ['health','insurance','teacher','medibank','bupa','nib','hbf'];
+  const billsArr = (state && state.BILLS)
+    ? state.BILLS
+    : (typeof BILLS !== 'undefined' ? BILLS : []);
+  const debts = (state && state.debts) || [];
+  const paidBills = (state && state.paidBills) || {};
+
+  const _dueIn = (b, m) => {
+    if (!b.freq || b.freq === 'monthly') return true;
+    if (b.freq === 'yearly' || b.freq === 'annual') {
+      return b.dueMonth !== undefined ? m === b.dueMonth : true;
+    }
+    if (b.freq === 'quarterly') {
+      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
+      return [0, 3, 6, 9].includes(m);
+    }
+    if (b.freq === 'biannual' || b.freq === 'biannually') {
+      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
+      return [0, 6].includes(m);
+    }
+    return true;
+  };
+
+  const _covers = (debt, bill, billDate) => {
+    if (!debt.delayDate) return false;
+    const dueStr = debt.delayDate.split('T')[0];
+    const daysApart = Math.abs(new Date(dueStr) - billDate) / 86400000;
+    if (daysApart > 5) return false;
+    const dn = (debt.name || '').toLowerCase().split(' ');
+    const bn = (bill.name || '').toLowerCase().split(' ');
+    if (dn.some(w => HEALTH.includes(w)) && bn.some(w => HEALTH.includes(w))) return true;
+    const dFirst = dn.find(w => w.length > 3);
+    const bFirst = bn.find(w => w.length > 3);
+    return !!(dFirst && dFirst === bFirst);
+  };
+
+  const _add = (dateISO, entry) => {
+    if (!map.has(dateISO)) map.set(dateISO, []);
+    map.get(dateISO).push(entry);
+  };
+
+  // 1. Active debts with explicit delayDate (one entry per debt).
+  debts.filter(d => !d.paid && !d.viaRent && d.delayDate).forEach(d => {
+    const dateISO = d.delayDate.split('T')[0];
+    _add(dateISO, {
+      type: 'debt', name: d.name, amt: d.amt,
+      urgent: true, color: 'var(--red)',
+      debt: d, ref: d, source: 'debts'
+    });
+  });
+
+  // 2. Bills — walk a 13-month window centred on `now`. Skip months where
+  //    freq says the bill isn't due. Skip if a debt covers the bill in
+  //    THIS rendered month (the May 1 fix, structurally).
+  const baseY = now.getFullYear(), baseM = now.getMonth();
+  const debtsForCoverage = debts.filter(d => !d.paid);
+  for (let offset = -1; offset < 12; offset++) {
+    const m = ((baseM + offset) % 12 + 12) % 12;
+    const y = baseY + Math.floor((baseM + offset) / 12);
+    billsArr.forEach(b => {
+      if (b.recurring === false) return;
+      if (!_dueIn(b, m)) return;
+      const billDate = new Date(y, m, b.day);
+      const dateISO = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(b.day).padStart(2, '0');
+      const paidKey = y + '-' + (m + 1) + '-' + b.name + '-' + b.day;
+      if (paidBills[paidKey] === true) return;
+      const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
+      if (covered) return;
+      _add(dateISO, {
+        type: 'bill', name: b.name, amt: b.amt,
+        color: 'var(--amber)',
+        bill: b, ref: b, source: 'bills'
+      });
+    });
+  }
+
+  return map;
+}
+
+function computeFinancialModel(state, now) {
+  if (state === undefined) state = (typeof S !== 'undefined') ? S : {};
+  if (now === undefined) now = new Date();
+
+  const todayISO = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const todayMonth = now.getMonth();
+  const todayYear = now.getFullYear();
+
+  // Payday window (cycle-aware, mirrors getActiveDebtsDueBeforePayday logic).
+  const paydayDay = state.payday || 15;
+  const paydayDate = new Date(todayYear, todayMonth, paydayDay);
+  if (paydayDate <= now || (state.paydayReceived && now.getDate() <= paydayDay)) {
+    paydayDate.setMonth(paydayDate.getMonth() + 1);
+  }
+  const daysToPayday = Math.max(1, Math.ceil((paydayDate - now) / 86400000));
+  const cycleEnd = paydayDate;
+  const cycleStart = new Date(paydayDate); cycleStart.setMonth(cycleStart.getMonth() - 1);
+
+  // Debts due this cycle — array AND total.
+  const todayMidnight = new Date(now); todayMidnight.setHours(0,0,0,0);
+  const debtsBeforePayday = (state.debts || []).filter(d => {
+    if (d.paid || d.viaRent || !d.delayDate) return false;
+    const due = new Date(d.delayDate + 'T00:00:00');
+    return due >= todayMidnight && due <= paydayDate;
+  });
+  const debtsTotalCommitted = debtsBeforePayday.reduce((s, d) => s + (d.amt || 0), 0);
+
+  // Bills — façade. The existing helpers read global S so we delegate.
+  const billsBeforePayday = (typeof getBillsDue === 'function') ? getBillsDue() : [];
+  const billsTotalCommitted = billsBeforePayday.reduce((s, b) => s + b.amt, 0);
+  const billsThisMonth = (typeof getExpandedBills === 'function')
+    ? getExpandedBills().filter(b => typeof isBillDueThisMonth === 'function' ? isBillDueThisMonth(b) : true)
+    : [];
+
+  // Net worth — façade.
+  const nw = (typeof calculateNetWorth === 'function')
+    ? calculateNetWorth()
+    : { liquidAssets:0, assets:0, liabilities:0, liquidNet:0, net:0, breakdown:{} };
+
+  // Spending windows.
+  const weekAgoMs = now.getTime() - 7 * 86400000;
+  const weekSpent = (typeof getDiscretionarySpend === 'function')
+    ? getDiscretionarySpend(weekAgoMs, now.getTime()) : 0;
+  const cycleSpent = (typeof getDiscretionarySpend === 'function')
+    ? getDiscretionarySpend(cycleStart.getTime(), now.getTime()) : 0;
+  const todayMs = todayMidnight.getTime();
+  const todaySpent = (typeof getDiscretionarySpend === 'function')
+    ? getDiscretionarySpend(todayMs, now.getTime()) : 0;
+
+  // Plan-mode shapes (façades — null-safe for tests).
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
+  const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? PLAN.getGoals() : [];
+  const provisions = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions) ? PLAN.getAnnualProvisions() : [];
+  const wrxImpact = (typeof PLAN !== 'undefined' && PLAN.getWrxImpact) ? PLAN.getWrxImpact() : null;
+  const postWrxSurplus = (typeof PLAN !== 'undefined' && PLAN.getPostWrxSurplus) ? PLAN.getPostWrxSurplus() : 0;
+
+  // Calendar — built fresh here.
+  const calendarEntries = buildCalendarEntries(state, now);
+
+  return {
+    todayISO, todayMonth, todayYear,
+    paydayDate, daysToPayday,
+    paydayReceived: !!state.paydayReceived,
+    cycleStart, cycleEnd,
+
+    bal: state.bal || 0,
+    todaySpent, weekSpent, cycleSpent,
+    noSpendStreak: (typeof getNoSpendStreak === 'function') ? getNoSpendStreak() : 0,
+
+    liquidAssets: nw.liquidAssets,
+    totalAssets: nw.assets,
+    totalLiabilities: nw.liabilities,
+    liquidNet: nw.liquidNet,
+    totalNet: nw.net,
+    nwBreakdown: nw.breakdown || {},
+
+    safeToSpendToday: (typeof getDynamicDailyBudget === 'function') ? getDynamicDailyBudget() : 0,
+    userCap: (typeof getDailyBudget === 'function') ? getDailyBudget() : 60,
+    survivalMode: (typeof getSurvivalMode === 'function') ? getSurvivalMode() : 'normal',
+
+    billsBeforePayday,
+    debtsBeforePayday,
+    billsThisMonth,
+    billsTotalCommitted,
+    debtsTotalCommitted,
+    totalCommittedBeforePayday: billsTotalCommitted + debtsTotalCommitted,
+
+    calendarEntries,
+
+    trips, goals, provisions,
+    postWrxSurplus, wrxImpact,
+
+    warnings: []
+  };
+}
+
+// Global model snapshot. Refreshed at boot, after migrations, and at the
+// top of every render pass. Renderers read from MODEL.* — they should
+// never call the underlying helpers directly once migrated.
+let MODEL = null;
+function refreshModel() {
+  try {
+    MODEL = computeFinancialModel((typeof S !== 'undefined' ? S : {}), new Date());
+  } catch (e) {
+    if (window.SLYGHT_DEBUG) console.error('[MODEL] refresh failed:', e);
+    MODEL = null;
+  }
 }
 
 // Fix 6A: dynamic debt recommendation
@@ -2894,6 +3094,8 @@ function renderCache(key, fn) {
 
 function renderAll() {
   _renderCache = {}; // Clear render cache at start of each render pass
+  // Refresh the computed model so every renderer in this pass sees the same snapshot.
+  if (typeof refreshModel === 'function') refreshModel();
   // L2: Month-end snapshot — write to S.monthlyHistory when month rolls over
   const nowForSnap = new Date();
   const snapKey = nowForSnap.getFullYear() + '-' + (nowForSnap.getMonth() + 1);
