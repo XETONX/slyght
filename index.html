@@ -9520,14 +9520,14 @@ function updatePersistentStrip() {
   const md = document.getElementById('strip-maxday');
   const pd = document.getElementById('strip-payday');
   if (!nw || !md || !pd) return;
-  const nwResult = calculateNetWorth();
-  const nwLiquid = nwResult.liquidNet !== undefined ? nwResult.liquidNet : (nwResult.net || 0);
+  const _m = MODEL || computeFinancialModel();
+  const nwLiquid = _m.liquidNet !== undefined ? _m.liquidNet : (_m.totalNet || 0);
   nw.textContent = 'NW: ' +
     (nwLiquid >= 0 ? '+' : '-') + '$' +
     Math.abs(Math.round(nwLiquid)).toLocaleString();
   nw.style.color = nwLiquid >= 0 ? 'var(--green)' : 'var(--red)';
-  md.textContent = '$' + getDynamicDailyBudget().toFixed(0) + ' today';
-  pd.textContent = daysLeft() + 'd to payday';
+  md.textContent = '$' + _m.safeToSpendToday.toFixed(0) + ' today';
+  pd.textContent = _m.daysToPayday + 'd to payday';
 }
 
 const BRAND_LOGOS = {
