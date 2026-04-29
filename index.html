@@ -4623,48 +4623,11 @@ function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; }
 function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } renderCalendar(); }
 
 function getCalendarDayItems(day, month, year) {
-  const items = [];
-  const dateStr = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
-  const healthKeywords = ['health', 'insurance', 'teacher', 'medibank', 'bupa', 'nib'];
-
-  // Add unpaid debts due on this day
-  (S.debts || [])
-    .filter(d => !d.paid && !d.viaRent && d.delayDate)
-    .forEach(d => {
-      const dueStr = d.delayDate.split('T')[0];
-      if (dueStr === dateStr) {
-        items.push({ type: 'debt', name: d.name, amt: d.amt, urgent: true, color: 'var(--red)', debt: d });
-      }
-    });
-
-  // Add unpaid bills for the rendered month — respect freq metadata so
-  // yearly/quarterly bills don't appear every month.
-  function isBillDueInMonth(b, m) {
-    if (!b.freq || b.freq === 'monthly') return true;
-    if (b.freq === 'yearly' || b.freq === 'annual') {
-      return b.dueMonth !== undefined ? m === b.dueMonth : true;
-    }
-    if (b.freq === 'quarterly') {
-      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
-      return [0, 3, 6, 9].includes(m);
-    }
-    if (b.freq === 'biannual' || b.freq === 'biannually') {
-      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
-      return [0, 6].includes(m);
-    }
-    return true;
-  }
-
-  getExpandedBills().forEach(b => {
-    if (b.recurring === false || b.day !== day) return;
-    if (!isBillDueInMonth(b, month)) return;
-    if (isThisMonthlyBillPaid(b.name, b.day)) return;
-    // Pass the rendered month/year so coverage check matches the calendar cell.
-    if (isBillCoveredByDebt(b, month, year)) return;
-    items.push({ type: 'bill', name: b.name, amt: b.amt, color: 'var(--amber)', bill: b });
-  });
-
-  return items;
+  // Pure lookup — dedup happened during model build (rendered-month-aware).
+  // This is the structural fix for the May 1 double-count bug.
+  const dateISO = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+  const m = MODEL || computeFinancialModel();
+  return (m.calendarEntries && m.calendarEntries.get(dateISO)) || [];
 }
 
 function renderCalendar() {
