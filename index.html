@@ -584,6 +584,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
           <div style="display:flex;gap:8px;margin-top:8px">
             <button onclick="exportData()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📤 Export</button>
             <button onclick="importData ? importData() : doImport()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📥 Import</button>
+            <button onclick="generateSnapshot()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📋 Snapshot</button>
           </div>
         </div>
       </div>
@@ -4884,6 +4885,37 @@ function copyExport() {
     }).catch(() => {});
     localStorage.setItem('slyght_last_export', Date.now().toString());
   }
+}
+
+function generateSnapshot() {
+  const today = new Date();
+  const activeDebts = S.debts
+    .filter(d => !d.paid && !d.viaRent)
+    .map(d => d.name.substring(0,3).toUpperCase() + ':$' +
+         Math.round(d.amt) + (d.delayDate ? '/' + d.delayDate.substring(5) : ''))
+    .join('|');
+
+  const snap = [
+    'SLYGHT',
+    '$' + S.bal.toFixed(2),
+    S.txns.length + 'txns',
+    today.toISOString().substring(0,10),
+    daysLeft() + 'd',
+    getSurvivalMode(),
+    activeDebts || 'NO_DEBTS',
+    'MUM:$' + (S.debts.find(d=>d.name==='Owed to Mum')?.amt?.toFixed(0)||'0'),
+    'WRX:' + (S.wrxStatus||'unlisted'),
+    'NW:$' + Math.round((S.wrxValue||0) - (S.carloan||0) -
+      S.debts.filter(d=>!d.paid&&!d.viaRent).reduce((s,d)=>s+d.amt,0))
+  ].join('|');
+
+  navigator.clipboard.writeText(snap).then(() => {
+    showToast('✅ Snapshot copied — paste to Claude');
+  }).catch(() => {
+    prompt('Copy this snapshot:', snap);
+  });
+
+  return snap;
 }
 
 function doImport() {
