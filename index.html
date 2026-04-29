@@ -2234,12 +2234,21 @@ function computeFinancialModel(state, now) {
   const todaySpent = (typeof getDiscretionarySpend === 'function')
     ? getDiscretionarySpend(todayMs, now.getTime()) : 0;
 
-  // Plan-mode shapes (façades — null-safe for tests).
-  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
-  const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? PLAN.getGoals() : [];
-  const provisions = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions) ? PLAN.getAnnualProvisions() : [];
-  const wrxImpact = (typeof PLAN !== 'undefined' && PLAN.getWrxImpact) ? PLAN.getWrxImpact() : null;
-  const postWrxSurplus = (typeof PLAN !== 'undefined' && PLAN.getPostWrxSurplus) ? PLAN.getPostWrxSurplus() : 0;
+  // Plan-mode shapes — wrapped in try/catch because PLAN is declared with
+  // `const` later in the file. During boot, renderWeeklySnapshot() can fire
+  // before PLAN's initializer runs, putting it in the temporal dead zone.
+  // `typeof PLAN` on a const-in-TDZ throws ReferenceError (unlike undeclared
+  // identifiers, where typeof returns 'undefined' safely). Each access here
+  // gets its own try/catch so a single failure doesn't blank the whole model.
+  const _safePlan = (fn, fallback) => {
+    try { return fn(); }
+    catch (_) { return fallback; }
+  };
+  const trips         = _safePlan(() => PLAN.getTrips(), []);
+  const goals         = _safePlan(() => PLAN.getGoals(), []);
+  const provisions    = _safePlan(() => PLAN.getAnnualProvisions(), []);
+  const wrxImpact     = _safePlan(() => PLAN.getWrxImpact(), null);
+  const postWrxSurplus = _safePlan(() => PLAN.getPostWrxSurplus(), 0);
 
   // Calendar — built fresh here.
   const calendarEntries = buildCalendarEntries(state, now);
@@ -2284,13 +2293,38 @@ function computeFinancialModel(state, now) {
 // Global model snapshot. Refreshed at boot, after migrations, and at the
 // top of every render pass. Renderers read from MODEL.* — they should
 // never call the underlying helpers directly once migrated.
-let MODEL = null;
+//
+// Failure mode: if computeFinancialModel throws (e.g. because PLAN is in
+// the temporal dead zone during boot), MODEL is set to a minimal stub with
+// safe defaults so renderers reading MODEL.X don't null-deref the dashboard.
+function _modelStub() {
+  return {
+    todayISO: '', todayMonth: 0, todayYear: 0,
+    paydayDate: new Date(), daysToPayday: 1,
+    paydayReceived: false,
+    cycleStart: new Date(), cycleEnd: new Date(),
+    bal: 0, todaySpent: 0, weekSpent: 0, cycleSpent: 0, noSpendStreak: 0,
+    liquidAssets: 0, totalAssets: 0, totalLiabilities: 0,
+    liquidNet: 0, totalNet: 0, nwBreakdown: {},
+    safeToSpendToday: 0, userCap: 60, survivalMode: 'normal',
+    billsBeforePayday: [], debtsBeforePayday: [],
+    billsThisMonth: [], billsTotalCommitted: 0,
+    debtsTotalCommitted: 0, totalCommittedBeforePayday: 0,
+    calendarEntries: new Map(),
+    trips: [], goals: [], provisions: [],
+    postWrxSurplus: 0, wrxImpact: null,
+    warnings: ['model failed to compute — using stub']
+  };
+}
+let MODEL = _modelStub();
 function refreshModel() {
   try {
     MODEL = computeFinancialModel((typeof S !== 'undefined' ? S : {}), new Date());
   } catch (e) {
-    if (window.SLYGHT_DEBUG) console.error('[MODEL] refresh failed:', e);
-    MODEL = null;
+    // Always log this — it's a real bug if it fires in production. Not gated
+    // on SLYGHT_DEBUG because a silent stub-fallback would mask the cause.
+    try { console.error('[MODEL] refresh failed; using stub:', e); } catch (_) {}
+    MODEL = _modelStub();
   }
 }
 

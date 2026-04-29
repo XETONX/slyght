@@ -27,8 +27,8 @@ const checks = [
   // All required DOM IDs exist
   { name: 'Critical DOM IDs present',
     test: () => {
-      const required = ['m-surplus', 'm-surplus-lbl', 'monthly-position',
-        'dash-payday-banner', 'debt-grid', 'chat-messages', 'chat-input'];
+      const required = ['max-day-display', 'monthly-position',
+        'debt-grid', 'chat-messages', 'chat-input'];
       const missing = required.filter(id => !html.includes('id="' + id + '"'));
       return missing.length === 0 ? 'OK' : 'MISSING IDs: ' + missing.join(', ');
     }

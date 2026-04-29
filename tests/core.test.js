@@ -386,6 +386,17 @@ function computeFinancialModel(state, now) {
   const nw = calculateNetWorth();
   const calendarEntries = buildCalendarEntries(state, now);
 
+  // Mirror production: PLAN access wrapped in try/catch in case it's in TDZ
+  // or absent (browsers see TDZ during boot; tests can stub a throwing PLAN).
+  const _safePlan = (fn, fallback) => {
+    try { return fn(); } catch (_) { return fallback; }
+  };
+  const trips         = _safePlan(() => PLAN.getTrips(), []);
+  const goals         = _safePlan(() => PLAN.getGoals(), []);
+  const provisions    = _safePlan(() => PLAN.getAnnualProvisions(), []);
+  const wrxImpact     = _safePlan(() => PLAN.getWrxImpact(), null);
+  const postWrxSurplus = _safePlan(() => PLAN.getPostWrxSurplus(), 0);
+
   return {
     todayISO, todayMonth, todayYear,
     paydayDate, daysToPayday,
@@ -414,8 +425,8 @@ function computeFinancialModel(state, now) {
     totalCommittedBeforePayday: billsTotalCommitted + debtsTotalCommitted,
 
     calendarEntries,
-    trips: [], goals: [], provisions: [],
-    postWrxSurplus: 0, wrxImpact: null,
+    trips, goals, provisions,
+    postWrxSurplus, wrxImpact,
     warnings: []
   };
 }
@@ -598,6 +609,43 @@ test('Model: safeToSpendToday matches getDynamicDailyBudget for the same state',
   const mockNow = new Date(2026, 3, 29);
   const M = computeFinancialModel(S, mockNow);
   expect(M.safeToSpendToday).toBe(getDynamicDailyBudget());
+});
+
+// ── Boot-time TDZ resilience ──────────────────────────────────
+// In the browser, `const PLAN` is declared further down in index.html than
+// computeFinancialModel. During boot, renderWeeklySnapshot fires (via init
+// at line 9294) before PLAN's initializer has run, putting PLAN in the
+// temporal dead zone. `typeof PLAN` on a const-in-TDZ throws ReferenceError
+// (NOT 'undefined'), which used to crash the dashboard.
+//
+// Node can't reproduce true TDZ, but we can simulate the symptom: stub PLAN
+// as an object whose property access throws. The model must absorb it and
+// return a usable object with empty trips/goals/provisions and real values
+// for everything else.
+test('Boot resilience: computeFinancialModel survives PLAN access throwing (TDZ-equivalent)', () => {
+  const origPLAN = (typeof global.PLAN !== 'undefined') ? global.PLAN : undefined;
+  // Proxy that throws on every property read — emulates const-in-TDZ.
+  global.PLAN = new Proxy({}, {
+    get() { throw new ReferenceError("Cannot access 'PLAN' before initialization"); }
+  });
+  try {
+    const mockNow = new Date(2026, 3, 29);
+    const M = computeFinancialModel(S, mockNow);
+    // PLAN-sourced fields fall back to safe defaults.
+    expect(M.trips).toEqual([]);
+    expect(M.goals).toEqual([]);
+    expect(M.provisions).toEqual([]);
+    expect(M.wrxImpact).toBe(null);
+    expect(M.postWrxSurplus).toBe(0);
+    // Everything else still has real numbers — the failure was contained.
+    expect(M.bal).toBe(779.50);
+    expect(M.liquidNet).toBeGreaterThan(0);
+    expect(M.calendarEntries instanceof Map).toBeTruthy();
+    expect(M.billsBeforePayday.length).toBeGreaterThan(0);
+  } finally {
+    if (origPLAN === undefined) delete global.PLAN;
+    else global.PLAN = origPLAN;
+  }
 });
 
 // ── Summary ─────────────────────────────────────────────
