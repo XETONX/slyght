@@ -3254,13 +3254,14 @@ function renderAll() {
   const _maxDayCtx = $('max-day-context');
   const _paceDisp = $('pace-display');
   if (_maxDayDisp) {
-    const _ddb = getDynamicDailyBudget();
+    const _m = MODEL || computeFinancialModel();
+    const _ddb = _m.safeToSpendToday;
     _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
     _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
     if (_maxDayCtx) {
       let ctxText = '', ctxColor = 'var(--text3)';
       if (_ddb < 20) {
-        const _hasTH = getActiveDebtsDueBeforePayday() > 0;
+        const _hasTH = _m.debtsTotalCommitted > 0;
         ctxText = _hasTH ? 'Tight — Teachers Health hits tomorrow' : 'Tight — cover your essentials first';
         ctxColor = 'var(--red)';
       } else if (_ddb < 30) {
