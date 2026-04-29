@@ -30,7 +30,6 @@ export default {
           lunchLogged:      body.lunchLogged || false,
           breakfastLogged:  body.breakfastLogged || false,
           groceryDismissed: body.groceryDismissed || false,
-          // Section 4 additions
           weather:          body.weather || {},
           wfhToday:         body.wfhToday || false,
           characterScore:   body.characterScore || 0,
@@ -38,6 +37,15 @@ export default {
           daysToRace:       body.daysToRace || 0,
           quietMode:        body.quietMode || false,
           dailyLimit:       body.dailyLimit || 4,
+          // Plan-mode awareness — used by morning notifications
+          superBalance:        parseFloat((body.superBalance || 0).toFixed(2)),
+          mumAccountBalance:   parseFloat((body.mumAccountBalance || 0).toFixed(2)),
+          wrxStatus:           body.wrxStatus || 'unlisted',
+          wrxListedDays:       body.wrxListedDays || 0,
+          darwinTripDays:      body.darwinTripDays || 0,
+          chinaTripBudget:     body.chinaTripBudget || 0,
+          chinaTripSaved:      body.chinaTripSaved || 0,
+          depositGoalProgress: body.depositGoalProgress || 0,
           lastSync:         new Date().toISOString(),
         };
         await env.SLYGHT_DATA.put('state', JSON.stringify(state));
@@ -113,6 +121,24 @@ export default {
         }).format(new Date()),
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // GET /snapshot — compressed readable state for Claude sync
+    if (path === '/snapshot' && request.method === 'GET') {
+      const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
+      const text = [
+        'SLYGHT-WORKER-SNAP',
+        new Date().toISOString().substring(0,10),
+        'BAL:$' + (state.bal||0).toFixed(2),
+        (state.daysLeft||0) + 'D-PAYDAY',
+        (state.survivalMode||'unknown').toUpperCase(),
+        'MAX:$' + (state.maxDay||0).toFixed(2),
+        'SYNCED:' + (state.lastSync||'never').substring(0,16)
+      ].join(' | ');
+
+      return new Response(text, {
+        headers: {...corsHeaders, 'Content-Type': 'text/plain'}
       });
     }
 
@@ -236,6 +262,11 @@ async function handleSchedule(cron, env) {
   const recentSpending = state.recentSpending || [];
   const daysToRace     = state.daysToRace || 0;
   const quietMode      = state.quietMode || false;
+  // Plan-mode context
+  const wrxStatus           = state.wrxStatus || 'unlisted';
+  const wrxListedDays       = state.wrxListedDays || 0;
+  const darwinTripDays      = state.darwinTripDays || 0;
+  const depositGoalProgress = state.depositGoalProgress || 0;
 
   // Quiet mode: suppress everything except the 9am morning alert
   if (quietMode && !(sydHour === 9 && sydMin < 10)) return;
@@ -268,6 +299,18 @@ async function handleSchedule(cron, env) {
       title = '🌅 Good morning John';
       body  = 'Balance: $' + bal.toFixed(2) + ' · Max today: $' + maxDay.toFixed(2) +
               '\nPayday in ' + daysLeft + ' days. ';
+      // Plan-mode context line — pick the highest-priority signal of the day
+      if (wrxStatus === 'listed' && wrxListedDays > 0) {
+        body += '🚗 WRX listed ' + wrxListedDays + ' day' + (wrxListedDays > 1 ? 's' : '') + ' — respond to enquiries today. ';
+      } else if (darwinTripDays > 0 && darwinTripDays <= 14) {
+        body += '🐊 Darwin in ' + darwinTripDays + ' day' + (darwinTripDays > 1 ? 's' : '') + ' — budget on track? ';
+      } else if (depositGoalProgress >= 0.5) {
+        body += '🏠 Deposit ' + Math.round(depositGoalProgress * 100) + '% there — keep going. ';
+      } else if (depositGoalProgress >= 0.25) {
+        body += '🏠 Deposit ¼ there — momentum building. ';
+      } else if (depositGoalProgress >= 0.10) {
+        body += '🏠 First 10% of deposit done — milestone. ';
+      }
       if (isRaining) body += 'Raining today — smart move taking the train. ';
       if (isOfficeDay && !wfhToday) {
         body += 'Check the fridge before you leave — grab lunch if you prepped.';

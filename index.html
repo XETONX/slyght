@@ -421,7 +421,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <div id="h-bal-edit" style="display:none;margin-bottom:4px"><input id="h-bal-input" type="number" inputmode="decimal" style="font-size:22px;font-family:var(--mono);font-weight:700;background:var(--bg3);border:1px solid var(--green);border-radius:var(--r-sm);padding:8px 12px;color:var(--text);width:160px;text-align:center" placeholder="New balance"><button onclick="confirmHeroBalEdit()" style="margin-left:8px;background:var(--green-dim);border:1px solid var(--green-border);color:var(--green);border-radius:var(--r-sm);padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer">Save</button><button onclick="cancelHeroBalEdit()" style="margin-left:6px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);border-radius:var(--r-sm);padding:8px 12px;font-size:13px;cursor:pointer">✕</button></div>
       <div class="hero-note" id="h-note"></div>
       <div class="nw-line" onclick="openNetWorthModal()">
-        <span style="font-size:12px;color:var(--text3);font-weight:500">Net Worth <span style="font-size:10px;color:var(--text3);opacity:.6">▸ tap</span></span>
+        <span style="font-size:12px;color:var(--text3);font-weight:500">Liquid net worth <span style="font-size:10px;color:var(--text3);opacity:.6">· tap for full picture</span></span>
         <span class="nw-val" id="nw-val">—</span>
       </div>
     </div>
@@ -440,8 +440,6 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div style="font-size:12px;color:var(--text3);margin-top:4px" id="pace-display"></div>
       </div>
       <div id="dash-overspend"></div>
-      <div id="dash-mum-card"></div>
-      <div id="auditor-badge" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);color:var(--red);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
 
       <!-- FIX 1: REORDERED — Immediate Debts first -->
@@ -466,27 +464,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div id="dash-txns"></div>
         <button class="add-btn" onclick="openQuickLogModal()" style="margin-top:4px">+ Log a transaction</button>
       </div>
-      <!-- LONG-TERM LIABILITIES -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Long-Term Liabilities</div></div>
-        <div class="debt-grid">
-          <div id="lt-car-tile" class="debt-tile" onclick="openLtDebtModal('car')"></div>
-          <div id="lt-cc-tile" class="debt-tile" onclick="openLtDebtModal('cc')"></div>
-        </div>
-      </div>
-      <div id="wrx-tracker-card" style="margin-top:12px"></div>
-      <!-- AFFORDABILITY CHECK -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Affordability Check</div></div>
-        <div class="afford-row">
-          <input class="s-input" type="number" id="aff-amt" placeholder="Amount" inputmode="decimal" oninput="checkAfford()" style="max-width:130px" autocomplete="off" data-lpignore="true" data-form-type="other">
-          <input class="s-input" type="text" id="aff-what" placeholder="For what?" oninput="checkAfford()" autocomplete="off" data-lpignore="true" data-form-type="other">
-        </div>
-        <div id="aff-verdict"></div>
-        <div id="aff-cuts"></div>
-        <div id="aff-instalments"></div>
-      </div>
-      <!-- Payday plan + monthly position moved to Analysis tab -->
+      <!-- Long-term liabilities, WRX tracker, mum card, affordability check moved to Plan Mode -->
     </div>
   </div>
 
@@ -518,6 +496,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </div>
       <div id="cal-day-detail" style="display:none" class="card"><div id="cal-day-detail-content"></div></div>
       <div id="cal-week-content"></div>
+      <button onclick="openAddBillModal()" style="width:100%;padding:12px;margin:12px 0;background:rgba(255,255,255,0.06);border:1px dashed rgba(255,255,255,0.2);border-radius:12px;color:var(--text2);font-size:14px;cursor:pointer;min-height:48px">+ Add A Bill</button>
       <div id="bills-grouped"></div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Expected Extra Income</div></div>
@@ -634,10 +613,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
           <button onclick="saveBudgets()" style="width:100%;margin-top:8px;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer">Save Daily Budgets</button>
           <div id="budget-save-msg" style="font-size:12px;color:var(--green);margin-top:4px;display:none">✓ Budgets saved — Max/Day recalculated</div>
         </div>
-        <div class="settings-section">
-          <div class="settings-title">Assets</div>
-          <div class="settings-row"><span class="settings-lbl">Vehicle value ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-wrx-value" value="21000" oninput="saveSettings()"></div>
-        </div>
+        <!-- Vehicle value moved to top "📊 My Financial Data" panel (set-wrx) — single source -->
+
         <div class="settings-section">
           <div class="settings-title">Debt Strategy</div>
           <div class="settings-row"><span class="settings-lbl">Repayment order</span>
@@ -1144,13 +1121,10 @@ let S = {
   income_log: [],
   iid: 0,
   debts: [
-    {id:0, name:'Afterpay', amt:250.84, paid:false, delayed:false, delayDate:'2026-04-16', notes:'$121.16 due 16 Apr', rate:0},
-    {id:1, name:'Owed to Michael', amt:550, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill + $200 additional borrowing', rate:0},
-    {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May', rate:19.99},
-    {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK', rate:0},
-    {id:7, name:'Property Deposit (via Mum)', amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, notes:'CC payoff $2,158 + missed rent $2,500. $500/month extra included in $3,000 rent. ~9 months to clear. Pay remainder when WRX sells.', delayDate:'2027-01-15', viaRent:true},
+    {id:7, name:'Property Deposit (via Mum)', amt:5681.45, rate:0, priority:1, paid:false, monthlyPayment:2500, rentComponent:500, debtComponent:2500, accountBalance:3000, accountTarget:50000, notes:'Managed deposit savings account. $500/month rent + $2,500/month deposit savings.', delayDate:'2027-01-15', viaRent:true, originalAmt:5681.45},
+    {id:8, name:'Afterpay — Concert Tickets', amt:124.75, rate:0, priority:2, paid:false, delayDate:'2026-05-31', notes:'Concert tickets. $60 received back from friend for their ticket.'},
   ],
-  nextDebtId: 8,
+  nextDebtId: 9,
   savingsBuckets: [
     {id:0, name:'China Holiday', goal:4000, saved:61.82, account:'ING'},
     {id:1, name:'Rainy Day Fund', goal:2000, saved:0, account:'ING'},
@@ -1323,6 +1297,19 @@ function load() {
     S._paidBillsKeyMigrationV1 = true;
     save();
   }
+  // Stale notification cleanup — remove pings for debts the audit closed
+  if (!S._notifCleanV1) {
+    const staleIds = [
+      'urgent_Owed_to_Michael',
+      'urgent_Parking_Fine',
+      'warning_Optus'
+    ];
+    S.notifications = (S.notifications || []).filter(n =>
+      !staleIds.some(id => n.id?.startsWith(id))
+    );
+    S._notifCleanV1 = true;
+    save();
+  }
   // Superannuation — track in net worth and plan mode
   if (!S._superAdded) {
     S.superBalance = 63429.15;
@@ -1463,7 +1450,7 @@ function getDynamicDailyBudget() {
 
   const isWeekend = [0, 6].includes(new Date().getDay());
   const userCap = isWeekend
-    ? (S.weekendBudget || 100)
+    ? (S.weekendBudget || 180)
     : (S.weekdayBudget || 60);
 
   return Math.min(dailyAvailable, userCap);
@@ -1486,6 +1473,7 @@ function getSurvivalMode() {
   if (dailyAvailable < 25) return 'cautious';
   return 'normal';
 }
+// TODO: deprecate — getDynamicDailyBudget() already returns ≥0
 function getMaxDay() {
   if (daysLeft(S.payday) <= 0) return 0;
   return Math.max(0, getDynamicDailyBudget());
@@ -1511,12 +1499,17 @@ function onStateChange(reason) {
   save();
   S.bal = parseFloat((S.bal || 0).toFixed(2));
   const mode = getSurvivalMode();
+  if (typeof checkForWrxSaleInterception === 'function') {
+    try { checkForWrxSaleInterception(); } catch(e) {}
+  }
   try { autoDetectBillPayments(); } catch(e) {}
   try { checkDayBudgetAlert(); } catch(e) {}
   if (typeof CHARACTER !== 'undefined') try { CHARACTER.analyseTransactions(); } catch(e) {}
   if (typeof PUSH !== 'undefined') PUSH.syncState().catch(() => {});
   renderAll();
-  console.log('[SLYGHT] onStateChange:', reason, '| bal:', S.bal, '| mode:', mode);
+  if (window.SLYGHT_DEBUG) {
+    console.log('[SLYGHT]', reason, S.bal, mode);
+  }
 }
 function renderDashboardMetrics() {
   // Re-render just the three metric tiles and overspend row
@@ -1652,46 +1645,41 @@ function findMumDebt() {
 // WRX is owned outright (asset). Mum account is a managed deposit savings
 // account (asset). viaRent debts are not real liabilities — they sit
 // against the mum account already counted in assets.
+// Returns the full breakdown object with both LIQUID (today-accessible) and
+// TOTAL (including illiquid super) net worth. Single source of truth.
 function calculateNetWorth() {
   const wrxValue = S.wrxStatus === 'sold' ? 0 : (S.wrxValue || 25000);
   const cashBalance = S.bal || 0;
   const mumAccount = S.mumAccountBalance || 0;
-  const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
+  const savings = (S.savingsBuckets || []).reduce((s, b) => s + (b.saved || 0), 0);
   const superBalance = S.superBalance || 0;
-  const totalAssets = wrxValue + cashBalance + mumAccount + savings + superBalance;
+
+  const liquidAssets = wrxValue + cashBalance + mumAccount + savings;
+  const totalAssets = liquidAssets + superBalance;
 
   const kiaLoan = S.carloan || 0;
   const creditCard = S.cc || 0;
-  const immediateDebts = (S.debts||[])
+  const immediateDebts = (S.debts || [])
     .filter(d => !d.paid && !d.viaRent && d.amt > 0)
-    .reduce((s,d) => s + d.amt, 0);
+    .reduce((s, d) => s + d.amt, 0);
   const totalLiabilities = kiaLoan + creditCard + immediateDebts;
 
-  return parseFloat((totalAssets - totalLiabilities).toFixed(2));
-}
-
-// Detailed breakdown — used by the Net Worth tap modal on the dashboard.
-function calculateNetWorthBreakdown() {
-  const wrxValue = S.wrxStatus === 'sold' ? 0 : (S.wrxValue || 25000);
-  const cashBalance = S.bal || 0;
-  const mumAccount = S.mumAccountBalance || 0;
-  const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
-  const superBalance = S.superBalance || 0;
-  const totalAssets = wrxValue + cashBalance + mumAccount + savings + superBalance;
-
-  const kiaLoan = S.carloan || 0;
-  const creditCard = S.cc || 0;
-  const immediateDebts = (S.debts||[])
-    .filter(d => !d.paid && !d.viaRent && d.amt > 0)
-    .reduce((s,d) => s + d.amt, 0);
-  const totalLiabilities = kiaLoan + creditCard + immediateDebts;
+  const liquidNet = parseFloat((liquidAssets - totalLiabilities).toFixed(2));
+  const totalNet = parseFloat((totalAssets - totalLiabilities).toFixed(2));
 
   return {
     assets: parseFloat(totalAssets.toFixed(2)),
+    liquidAssets: parseFloat(liquidAssets.toFixed(2)),
     liabilities: parseFloat(totalLiabilities.toFixed(2)),
-    net: parseFloat((totalAssets - totalLiabilities).toFixed(2)),
+    net: totalNet,        // total including super
+    liquidNet: liquidNet, // what you can access now
     breakdown: { wrxValue, cashBalance, mumAccount, savings, superBalance, kiaLoan, creditCard, immediateDebts }
   };
+}
+
+// Backwards-compat wrapper — same shape as calculateNetWorth().
+function calculateNetWorthBreakdown() {
+  return calculateNetWorth();
 }
 function getNetWorth() {
   // Defers to calculateNetWorthBreakdown() — single source of truth.
@@ -2186,9 +2174,12 @@ function getSurvivalForecast() {
   const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
   if (paydayDate <= today) paydayDate.setMonth(paydayDate.getMonth() + 1);
 
-  // Get all upcoming unpaid bills before payday (skip bills covered by a debt)
+  // Get all upcoming unpaid bills before payday (skip bills covered by a debt
+  // and bills that aren't actually due this calendar month).
   const upcomingBills = getExpandedBills()
     .filter(b => {
+      if (b.recurring === false) return false;
+      if (!isBillDueThisMonth(b)) return false;
       if (isThisMonthlyBillPaid(b.name, b.day)) return false;
       // Build the bill's next occurrence date
       let billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
@@ -2955,7 +2946,7 @@ function renderAll() {
 
   // Net worth tile update
   const nwEl = $('nw-val');
-  if (nwEl) { const nw = getNetWorth(); const _nwNet = isNaN(nw.net) ? 0 : nw.net; nwEl.textContent = (_nwNet >= 0 ? '+' : '') + fmtC(_nwNet); nwEl.className = 'nw-val ' + (_nwNet >= 0 ? 'pos' : 'neg'); }
+  if (nwEl) { const nw = calculateNetWorth(); const _nwLiquid = isNaN(nw.liquidNet) ? 0 : nw.liquidNet; nwEl.textContent = (_nwLiquid >= 0 ? '+' : '') + fmtC(_nwLiquid); nwEl.className = 'nw-val ' + (_nwLiquid >= 0 ? 'pos' : 'neg'); }
 
   // H3: calculate actual cycle length from last payday to next payday instead of hardcoded /31
   const paydayDayV = S.payday || 15;
@@ -3329,17 +3320,22 @@ function setPlanItemStatus(key, status, btn) {
 }
 
 function openNetWorthModal() {
-  const nw = calculateNetWorthBreakdown();
+  const nw = calculateNetWorth();
   const liveBal = getLiveBal();
-  // Active immediate debts only — viaRent excluded (mum account is an asset).
   const activeDebts = (S.debts||[]).filter(d => !d.paid && !d.viaRent);
-  let html = '';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">';
-  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Assets</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green)">'+fmt(nw.assets)+'</div></div>';
-  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Liabilities</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--red)">'+fmt(nw.liabilities)+'</div></div>';
-  html += '</div>';
   const wrxLabel = (S.wrxStatus === 'listed' ? 'WRX (listed for sale)' : S.wrxStatus === 'sold' ? 'WRX (sold)' : 'WRX (owned outright)');
-  const assetRows = [
+
+  // ── LIQUID NET WORTH header ──
+  let html = '<div style="text-align:center;padding:8px 0 14px;border-bottom:1px solid var(--border);margin-bottom:14px">' +
+    '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Liquid Net Worth</div>' +
+    '<div style="font-family:var(--mono);font-size:30px;font-weight:800;color:'+(nw.liquidNet>=0?'var(--green)':'var(--red)')+'">' +
+      (nw.liquidNet>=0?'+':'-') + '$' + Math.abs(Math.round(nw.liquidNet)).toLocaleString() +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--text3);margin-top:4px">What you could access today</div>' +
+  '</div>';
+
+  // ── Liquid asset breakdown (excludes super) ──
+  const liquidAssetRows = [
     {label:wrxLabel, val: nw.breakdown.wrxValue},
     {label:'Virgin Money balance', val:liveBal},
     {label:'Deposit account (Mum)', val: nw.breakdown.mumAccount},
@@ -3350,11 +3346,25 @@ function openNetWorthModal() {
     {label:'Credit Card', val:S.cc},
     ...activeDebts.map(d => ({label:d.name, val:d.amt})),
   ];
-  html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Assets</div>';
-  html += assetRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">+'+fmt(r.val)+'</span></div>').join('');
+  html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Liquid Assets</div>';
+  html += liquidAssetRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">+'+fmt(r.val)+'</span></div>').join('');
+  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liquid assets</span><span style="font-family:var(--mono);font-size:13px;color:var(--green)">+'+fmt(nw.liquidAssets)+'</span></div>';
+
   html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 8px">Liabilities</div>';
   html += liabRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">-'+fmt(r.val)+'</span></div>').join('');
-  html += '<div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px;border-top:2px solid var(--border2)"><span style="font-size:14px;font-weight:600;color:var(--text)">Net Worth</span><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+(nw.net>=0?'var(--green)':'var(--red)')+'">'+fmtC(nw.net)+'</span></div>';
+  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liabilities</span><span style="font-family:var(--mono);font-size:13px;color:var(--red)">-'+fmt(nw.liabilities)+'</span></div>';
+
+  html += '<div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px;border-top:2px solid var(--border2)"><span style="font-size:14px;font-weight:600;color:var(--text)">Liquid Net Worth</span><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+(nw.liquidNet>=0?'var(--green)':'var(--red)')+'">'+fmtC(nw.liquidNet)+'</span></div>';
+
+  // ── TOTAL (incl super) bottom block ──
+  html += '<div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--border);background:rgba(78,205,196,0.05);border-radius:10px;padding:14px">' +
+    '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Total Net Worth (incl super)</div>' +
+    '<div style="font-family:var(--mono);font-size:24px;font-weight:800;color:'+(nw.net>=0?'var(--green)':'var(--red)')+'">' +
+      (nw.net>=0?'+':'-') + '$' + Math.abs(Math.round(nw.net)).toLocaleString() +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;margin-top:6px"><span style="color:var(--text2)">Aware Super (illiquid until ~60)</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+'+fmt(nw.breakdown.superBalance)+'</span></div>' +
+    '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:4px">This number matters for your long-term picture but not for today\'s spending decisions.</div>' +
+  '</div>';
   // Debt freedom estimate
   const surplus = getGenuineSurplus();
   const totalDebt = nw.liabilities - 0; // simplified: all liabilities
@@ -3931,9 +3941,26 @@ function markDebtCovered(id) {
   showToast('✅ ' + debt.name + ' marked as covered');
 }
 
+function openAddBillModal() {
+  activeBillIdx = -2; // sentinel — saveBill inserts a new entry instead of updating
+  const _bmn = $('bm-name'); if (_bmn) _bmn.value = '';
+  const _bma = $('bm-amt'); if (_bma) _bma.value = '';
+  const _bmd = $('bm-day'); if (_bmd) _bmd.value = '';
+  const _bmt2 = $('bm-tag'); if (_bmt2) _bmt2.value = 'Fixed';
+  const _bmrec = $('bm-recurring'); if (_bmrec) _bmrec.checked = true;
+  const _bmf = $('bm-freq'); if (_bmf) _bmf.value = 'monthly';
+  const _bmtitle = $('bill-modal-title'); if (_bmtitle) _bmtitle.textContent = 'Add A Bill';
+  const _bmpaid = $('bill-modal-mark-paid'); if (_bmpaid) _bmpaid.style.display = 'none';
+  const _bmundo = $('bill-modal-undo-paid'); if (_bmundo) _bmundo.style.display = 'none';
+  const _billm = $('bill-modal'); if (_billm) _billm.classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('bill-modal');
+}
+
 function openBillModal(idx) {
   activeBillIdx = idx;
   const b = BILLS[idx];
+  if (!b) return;
+  const _bmtitle = $('bill-modal-title'); if (_bmtitle) _bmtitle.textContent = 'Edit Bill';
   const _bmn = $('bm-name'); if (_bmn) _bmn.value = b.name;
   const _bma = $('bm-amt'); if (_bma) _bma.value = b.amt;
   const _bmd = $('bm-day'); if (_bmd) _bmd.value = b.day;
@@ -3981,10 +4008,12 @@ function openBillModal(idx) {
 }
 
 function saveBill() {
-  if (activeBillIdx < 0) return;
+  // -2 sentinel = new bill being added; otherwise must reference an existing index.
+  const isNew = activeBillIdx === -2;
+  if (!isNew && activeBillIdx < 0) return;
   const _bmrec2 = $('bm-recurring');
   const recurring = _bmrec2 ? _bmrec2.checked : true;
-  if (!recurring) {
+  if (!recurring && !isNew) {
     if (confirm('Uncheck recurring means this bill will be permanently removed. Continue?')) {
       saveUndoState();
       BILLS.splice(activeBillIdx, 1);
@@ -4003,6 +4032,26 @@ function saveBill() {
     return;
   }
   if (dayErrEl) dayErrEl.style.display = 'none';
+
+  if (isNew) {
+    const newBill = {
+      name: ($('bm-name')?.value || 'New Bill').trim(),
+      amt: parseFloat($('bm-amt')?.value) || 0,
+      day: dayVal,
+      tag: $('bm-tag')?.value || 'Fixed',
+      recurring: true,
+      freq: ($('bm-freq')?.value) || 'monthly'
+    };
+    if (!newBill.name || newBill.amt <= 0) {
+      showToast('Enter a bill name and amount');
+      return;
+    }
+    BILLS.push(newBill);
+    save(); closeModal('bill-modal', true); renderAll();
+    showUndoToast('✅ ' + newBill.name + ' added — $' + newBill.amt + ' on day ' + newBill.day);
+    return;
+  }
+
   BILLS[activeBillIdx] = {
     name: ($('bm-name') ? $('bm-name').value : '') || BILLS[activeBillIdx].name,
     amt: parseFloat($('bm-amt') ? $('bm-amt').value : '') || BILLS[activeBillIdx].amt,
@@ -5424,7 +5473,7 @@ function generateSnapshot() {
     'SLYGHT-SNAP',
     today.toISOString().substring(0,10),
     'BAL:$' + S.bal.toFixed(2),
-    'NW:$' + calculateNetWorth().toFixed(0),
+    'NW:$' + calculateNetWorth().liquidNet.toFixed(0),
     daysLeft() + 'D-PAYDAY',
     getSurvivalMode().toUpperCase(),
     'MAX:$' + getDynamicDailyBudget().toFixed(2),
@@ -5805,68 +5854,123 @@ async function sendChatMessage(userMessage) {
   const btn = $('chat-send-btn');
   if (btn) btn.disabled = true;
 
-  const today = new Date();
-  const todayTxns = S.txns.filter(t => new Date(t.ts).toDateString() === today.toDateString() && !t.income);
+  const nwData = calculateNetWorth();
+  const todayStr = new Date().toDateString();
+  const todayTxns = S.txns.filter(t =>
+    new Date(t.ts).toDateString() === todayStr &&
+    !t.income && !t._isCorrection && !t._isRoundup
+  );
   const todaySpent = todayTxns.reduce((s,t) => s+t.amt, 0);
   const weekAgo = Date.now() - 7*86400000;
-  const weekTxns = S.txns.filter(t => t.ts > weekAgo && !t.income && !t._isCorrection);
-  const weekByCategory = {};
-  weekTxns.forEach(t => { weekByCategory[t.cat] = (weekByCategory[t.cat]||0)+t.amt; });
-
-  const upcomingBills = BILLS
-    .filter(b => !isThisMonthlyBillPaid(b.name, b.day))
-    .sort((a,b) => a.day - b.day)
-    .slice(0,5)
-    .map(b => b.name+' $'+b.amt+' on '+b.day+'th')
+  const weekTxns = S.txns.filter(t =>
+    t.ts > weekAgo && !t.income && !t._isCorrection
+  );
+  const weekCats = {};
+  weekTxns.forEach(t => {
+    weekCats[t.cat] = (weekCats[t.cat]||0) + t.amt;
+  });
+  const weekTopSpend = Object.entries(weekCats)
+    .sort((a,b) => b[1]-a[1])
+    .slice(0,3)
+    .map(([k,v]) => k + ' $' + v.toFixed(0))
     .join(', ');
 
-  const systemPrompt = `You are SLYGHT — John's personal finance brain.
-You control the app and understand his financial situation in real time.
-Be direct, specific, and honest. Never generic advice.
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
+  const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? PLAN.getGoals() : [];
+  const darwinTrip = trips.find(t => t.id === 'darwin-2026');
+  const chinaTrip = trips.find(t => t.id === 'china-2026');
+  const freedomGoal = goals.find(g => g.id === 'freedom-buffer');
+  const upcomingBills = getBillsDue()
+    .sort((a,b) => a.day - b.day)
+    .slice(0,5)
+    .map(b => b.name + ' $' + b.amt + ' on ' + b.day + 'th')
+    .join(', ');
+  const activeDebts = (S.debts||[])
+    .filter(d => !d.paid && !d.viaRent)
+    .map(d => d.name + ' $' + d.amt.toFixed(2) +
+      (d.delayDate ? ' due ' + d.delayDate : ''))
+    .join('\n') || 'None';
 
-LIVE STATE RIGHT NOW (${today.toLocaleString('en-AU')}):
-Balance: $${S.bal.toFixed(2)}
-Payday: in ${daysLeft()} days (${S.payday}th)
-Mode: ${getSurvivalMode()}
-Can spend today: $${getDynamicDailyBudget().toFixed(2)}
-Spent today: $${todaySpent.toFixed(2)} across ${todayTxns.length} transactions
-${todayTxns.length > 0 ? 'Today: '+todayTxns.map(t=>t.note+' $'+t.amt).join(', ') : 'Nothing logged today yet'}
+  const kiaInterestDaily = parseFloat(
+    ((S.carloan||0) * (S.carLoanRate||9.87) / 100 / 365).toFixed(2)
+  );
 
-THIS WEEK BY CATEGORY:
-${Object.entries(weekByCategory).map(([k,v])=>k+': $'+v.toFixed(2)).join('\n')||'No spending this week'}
+  const systemPrompt = `You are SLYGHT — John's personal financial brain.
+You are Jarvis from Iron Man. You know everything about his finances and life.
+You are direct, specific and honest. Never generic. Always personal.
+Never say "I understand" or "Great question". Maximum 4 sentences for simple questions.
 
-UPCOMING BILLS: ${upcomingBills || 'None before payday'}
+━━ LIVE STATE ━━ ${new Date().toLocaleString('en-AU')}
 
-ACTIVE DEBTS:
-${S.debts.filter(d=>!d.paid&&!d.viaRent).map(d=>d.name+' $'+d.amt+(d.delayDate?' due '+d.delayDate:'')).join('\n')||'None'}
+BALANCE: $${S.bal.toFixed(2)} (Virgin Money)
+LIQUID NET WORTH: ${nwData.liquidNet >= 0 ? '+' : ''}$${Math.abs(Math.round(nwData.liquidNet)).toLocaleString()}
+TOTAL NET WORTH (incl super): ${nwData.net >= 0 ? '+' : ''}$${Math.abs(Math.round(nwData.net)).toLocaleString()}
+PAYDAY: ${S.payday}th — in ${daysLeft()} days
+MODE: ${getSurvivalMode()} — can spend $${getDynamicDailyBudget().toFixed(2)}/day
+TODAY: ${todayTxns.length > 0
+  ? 'spent $' + todaySpent.toFixed(2) + ' (' +
+    todayTxns.map(t => t.note + ' $' + t.amt).join(', ') + ')'
+  : 'nothing logged yet'}
+THIS WEEK: ${weekTopSpend || 'No spending logged'}
 
-Property Deposit (via Mum) / Owed to Mum: $${findMumDebt()?.amt?.toFixed(2) || '0'}
-Car loan: $${(S.carloan||0).toFixed(2)} at ${S.carLoanRate||9.87}% ($${((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)}/day interest)
-WRX: ${S.wrxStatus==='listed'?'Listed for sale':'NOT LISTED — $'+((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)+'/day wasted'}
-City2Surf: ${getDaysToCity2Surf()} days away (Aug 9 2026)
+━━ UPCOMING BILLS ━━
+${upcomingBills || 'None before payday'}
 
-JOHN'S PATTERNS:
-- Food is biggest spend ($900+/month)
-- Vaping costs $2,400/year — trying to quit
-- FIFA packs when balance looks okay
-- Living paycheck to paycheck despite $87k income
-- Goal: move out, save for holidays, build net worth
-- Net worth: -$2,467 (should be +$50,000 at his income level)
+━━ ACTIVE DEBTS ━━
+${activeDebts}
 
-YOU CAN TAKE THESE ACTIONS when the user describes them:
-- Log a transaction: respond with JSON action {"action":"log_txn","amt":X,"note":"...","cat":"..."}
-- Mark bill paid: respond with JSON action {"action":"mark_bill_paid","name":"...","day":X}
-- Update balance: respond with JSON action {"action":"update_balance","amt":X,"reason":"..."}
-- Record no-spend: respond with JSON action {"action":"no_spend"}
+━━ SAVINGS & GOALS ━━
+China Holiday fund: $${S.savingsBuckets?.find(b => b.name==='China Holiday')?.saved?.toFixed(2)||'0'} of $${chinaTrip?.budget||5000} target
+Property deposit (Mum managing): $${(S.mumAccountBalance||0).toLocaleString()} of $50,000 target
+Freedom buffer: $${freedomGoal?.saved?.toFixed(0)||'0'} of $${freedomGoal?.target?.toLocaleString()||'9,000'}
+KIA Loan (Firstmac): $${(S.carloan||0).toLocaleString()} at ${S.carLoanRate||9.87}% — $${kiaInterestDaily}/day interest
 
-Include the JSON action at the END of your response if an action is needed.
-Format: [ACTION:{"action":"..."}]
+━━ LONG-TERM ━━
+Aware Super (High Growth): $${(S.superBalance||0).toLocaleString()}
+Monthly super contribution: $1,311 (employer + salary sacrifice - fees)
+Salary: $117,500 + super | Take-home: $${(S.income||7282).toLocaleString()}/month
 
-RULES:
-- If balance < $200: very firm, no spending advice
-- Mention WRX daily interest if relevant
-- Call out FIFA/vaping/UberEats directly by name when detected
-- Always give a specific dollar number not ranges
+━━ UPCOMING LIFE EVENTS ━━
+WRX: ${S.wrxStatus === 'listed' ? 'Listed for $' + (S.wrxValue||25000).toLocaleString() + ' on Carsales. When sold: pay off KIA loan ($' + Math.round(S.carloan||0).toLocaleString() + '), free $780/month.'
+  : S.wrxStatus === 'sold' ? 'SOLD ✅ — KIA paid off, $780/month freed'
+  : 'NOT LISTED YET — costs $' + kiaInterestDaily + '/day in interest'}
+Darwin trip: June 7-15 (flights/accom/car covered by uncle). Spending budget: $${darwinTrip?.budget||900}. Saved: $${darwinTrip?.saved||0}.
+China trip: December 2026 with GF. Budget: $${chinaTrip?.budget||5000}. Saved: $${chinaTrip?.saved?.toFixed(0)||'70'}.
+City2Surf: Aug 9, 2026 — ${getDaysToCity2Surf()} days away
+
+━━ JOHN'S PATTERNS ━━
+Food spend: ~$900/month (target $400) — biggest leak
+Vaping: ~$200/month — quitting for City2Surf
+FIFA packs: $116+ when bored — always regretted
+Drinks out: $35-60 per session
+Living paycheck to paycheck despite $117k income
+Goal: own an apartment in Inner West/Meadowbank/Kogarah area
+Mum manages his deposit savings account ($3k currently)
+WRX listed — sale unlocks everything financially
+
+━━ WHAT YOU CAN DO ━━
+You can take these actions. Include ONE at end of response
+if appropriate, formatted as [ACTION:{...}]:
+
+log_txn: {"action":"log_txn","amt":X,"note":"...","cat":"..."}
+mark_bill_paid: {"action":"mark_bill_paid","name":"...","day":X}
+update_balance: {"action":"update_balance","amt":X,"reason":"..."}
+update_super: {"action":"update_super","amt":X}
+add_trip_savings: {"action":"add_trip_savings","tripId":"...","amt":X}
+mark_wrx_listed: {"action":"mark_wrx_listed"}
+mark_wrx_sold: {"action":"mark_wrx_sold","salePrice":X}
+open_plan: {"action":"open_plan"}
+no_spend: {"action":"no_spend"}
+
+━━ RULES ━━
+- Balance < $300: firm, no discretionary spending
+- Always use specific dollar amounts
+- Call out FIFA/vaping/UberEats by name when relevant
+- WRX sale is the single most important financial event coming
+- Every bonus should go to China then deposit, never lifestyle
+- After WRX: $780/month freed — redirect to deposit savings
+- Super grows automatically — don't touch it, just update balance quarterly
+- Liquid net worth is what matters day to day, not the $68k total
 - Maximum 3 sentences for simple questions
 - For spending requests: answer yes/no then the impact
 - Never say "I understand" or "Great question"`;
@@ -6008,6 +6112,42 @@ function executeChatAction(action) {
     case 'no_spend':
       showToast('✅ No spend recorded');
       onStateChange('chat_no_spend');
+      break;
+    case 'update_super':
+      if (action.amt > 0) {
+        S.superBalance = action.amt;
+        onStateChange('super_updated_chat');
+        showToast('✅ Super Updated To $' + action.amt.toLocaleString());
+      }
+      break;
+    case 'add_trip_savings':
+      if (action.tripId && action.amt > 0 && typeof PLAN !== 'undefined') {
+        const trips = PLAN.getTrips();
+        const trip = trips.find(t => t.id === action.tripId);
+        if (trip) {
+          trip.saved = (trip.saved||0) + action.amt;
+          PLAN.saveTrip(trip);
+          showToast('✅ $' + action.amt + ' Added To ' + trip.name);
+        }
+      }
+      break;
+    case 'mark_wrx_listed':
+      S.wrxStatus = 'listed';
+      S.wrxListedDate = new Date().toISOString().substring(0,10);
+      onStateChange('wrx_listed_chat');
+      showToast('✅ WRX Marked As Listed');
+      break;
+    case 'mark_wrx_sold':
+      S.wrxStatus = 'sold';
+      S.wrxSoldDate = new Date().toISOString().substring(0,10);
+      S.wrxSalePrice = action.salePrice || S.wrxValue || 25000;
+      onStateChange('wrx_sold_chat');
+      if (typeof checkForWrxSaleInterception === 'function') checkForWrxSaleInterception();
+      showToast('🎉 WRX SOLD — Time To Allocate The Proceeds');
+      break;
+    case 'open_plan':
+      if (typeof openPlanMode === 'function') openPlanMode();
+      showToast('Opening Plan Mode...');
       break;
   }
 }
@@ -8074,6 +8214,19 @@ const PUSH = {
       const lunchSpend  = lunchTxns.reduce((s, t) => s + t.amt, 0);
       const todaySpent  = todayTxns.reduce((s, t) => s + t.amt, 0);
 
+      // Plan-mode awareness for worker notifications
+      const _trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
+      const _darwin = _trips.find(t => t.id === 'darwin-2026');
+      const _china = _trips.find(t => t.id === 'china-2026');
+      const _now = new Date();
+      const darwinTripDays = _darwin ? Math.ceil((new Date(_darwin.startDate) - _now) / 86400000) : 0;
+      const chinaTripBudget = _china?.budget || 5000;
+      const chinaTripSaved = _china?.saved || 0;
+      const wrxListedDays = S.wrxListedDate
+        ? Math.ceil((Date.now() - new Date(S.wrxListedDate)) / 86400000)
+        : 0;
+      const depositGoalProgress = (S.mumAccountBalance || 0) / 50000;
+
       const state = {
         bal:             S.bal,
         maxDay:          (() => { const raw = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60; return (!raw || isNaN(raw)) ? parseFloat((Math.max(0, S.bal) / Math.max(1, daysLeft())).toFixed(2)) : parseFloat(raw.toFixed(2)); })(),
@@ -8091,6 +8244,15 @@ const PUSH = {
         daysToRace:       typeof getDaysToCity2Surf === 'function' ? getDaysToCity2Surf() : 0,
         quietMode:        this.quietMode || false,
         dailyLimit:       this.dailyLimit || 4,
+        // Plan-mode context — used by morning notifications
+        superBalance:     S.superBalance || 0,
+        mumAccountBalance: S.mumAccountBalance || 0,
+        wrxStatus:        S.wrxStatus || 'unlisted',
+        wrxListedDays,
+        darwinTripDays,
+        chinaTripBudget,
+        chinaTripSaved,
+        depositGoalProgress: parseFloat(depositGoalProgress.toFixed(3)),
       };
 
       await fetch(this.workerUrl + '/sync', {
@@ -9147,11 +9309,11 @@ function updatePersistentStrip() {
   const pd = document.getElementById('strip-payday');
   if (!nw || !md || !pd) return;
   const nwResult = calculateNetWorth();
-  const nwNet = nwResult.net !== undefined ? nwResult.net : nwResult;
+  const nwLiquid = nwResult.liquidNet !== undefined ? nwResult.liquidNet : (nwResult.net || 0);
   nw.textContent = 'NW: ' +
-    (nwNet >= 0 ? '+' : '-') + '$' +
-    Math.abs(Math.round(nwNet)).toLocaleString();
-  nw.style.color = nwNet >= 0 ? 'var(--green)' : 'var(--red)';
+    (nwLiquid >= 0 ? '+' : '-') + '$' +
+    Math.abs(Math.round(nwLiquid)).toLocaleString();
+  nw.style.color = nwLiquid >= 0 ? 'var(--green)' : 'var(--red)';
   md.textContent = '$' + getDynamicDailyBudget().toFixed(0) + ' today';
   pd.textContent = daysLeft() + 'd to payday';
 }
@@ -9757,8 +9919,8 @@ function renderPlanMode() {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
-  const nwNet = typeof calculateNetWorth === 'function' ? calculateNetWorth() : -7305;
-  const nw = { net: nwNet };
+  const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305 };
+  const nwNet = nw.net;
   const wrxImpact = PLAN.getWrxImpact();
   const surplus = PLAN.getPostWrxSurplus();
   const trips = PLAN.getTrips();
@@ -10105,13 +10267,33 @@ function showSliderInfo(id) {
 }
 
 function openBonusModal() {
-  const amt = parseFloat(prompt('Expected bonus amount ($):') || '0');
-  if (!isNaN(amt) && amt > 0) {
-    S._pendingBonus = amt;
-    save();
-    renderPlanMode();
-    showToast('Bonus of $' + amt + ' added to next payday plan');
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Add Expected Bonus',
+      'Factor a bonus into your payday plan') +
+    PLAN_MODAL.field('Bonus Amount ($)', 'bonus-amount-input',
+      S._pendingBonus || 2000, 'number',
+      'Your quarterly bonus is usually ~$2,000 after tax. ' +
+      'Add it here to see how it changes your allocations.') +
+    PLAN_MODAL.info(
+      'Rule: every bonus goes to your top priority goal first. ' +
+      'Currently that\'s the China Holiday fund, then Property Deposit.'
+    ) +
+    PLAN_MODAL.btn('Add To Plan', 'confirmBonusAmount()', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmBonusAmount() {
+  const amt = parseFloat(document.getElementById('bonus-amount-input')?.value);
+  if (isNaN(amt) || amt <= 0) {
+    showToast('Please Enter A Valid Amount');
+    return;
   }
+  S._pendingBonus = amt;
+  save();
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ $' + amt.toLocaleString() + ' Bonus Added To Payday Plan');
 }
 
 function wirePaydaySliders() { /* sliders use oninput in HTML */ }

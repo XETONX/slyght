@@ -230,7 +230,7 @@ function getDynamicDailyBudget() {
 
   const isWeekend = [0, 6].includes(new Date().getDay());
   const userCap = isWeekend
-    ? (S.weekendBudget || 100)
+    ? (S.weekendBudget || 180)
     : (S.weekdayBudget || 60);
 
   return Math.min(dailyAvailable, userCap);
@@ -259,7 +259,9 @@ function calculateNetWorth() {
   const mumAccount = S.mumAccountBalance || 0;
   const savings = (S.savingsBuckets || []).reduce((s, b) => s + (b.saved || 0), 0);
   const superBalance = S.superBalance || 0;
-  const totalAssets = wrxValue + cashBalance + mumAccount + savings + superBalance;
+
+  const liquidAssets = wrxValue + cashBalance + mumAccount + savings;
+  const totalAssets = liquidAssets + superBalance;
 
   const kiaLoan = S.carloan || 0;
   const creditCard = S.cc || 0;
@@ -268,10 +270,15 @@ function calculateNetWorth() {
     .reduce((s, d) => s + d.amt, 0);
   const totalLiabilities = kiaLoan + creditCard + immediateDebts;
 
+  const liquidNet = parseFloat((liquidAssets - totalLiabilities).toFixed(2));
+  const totalNet = parseFloat((totalAssets - totalLiabilities).toFixed(2));
+
   return {
     assets: parseFloat(totalAssets.toFixed(2)),
+    liquidAssets: parseFloat(liquidAssets.toFixed(2)),
     liabilities: parseFloat(totalLiabilities.toFixed(2)),
-    net: parseFloat((totalAssets - totalLiabilities).toFixed(2)),
+    net: totalNet,
+    liquidNet: liquidNet,
     breakdown: { wrxValue, cashBalance, mumAccount, savings, superBalance, kiaLoan, creditCard, immediateDebts }
   };
 }
@@ -348,6 +355,16 @@ test('calculateNetWorth() assets include super', () => {
 test('calculateNetWorth() does not include viaRent debts as liability', () => {
   const nw = calculateNetWorth();
   expect(nw.liabilities).toBeLessThan(25000);
+});
+
+test('calculateNetWorth() liquidNet excludes super', () => {
+  // Liquid = WRX 25000 + bal 779.50 + mum 3000 + savings 70.44
+  //          - KIA 23989.70 - debts 384.16 ≈ +$4,476
+  const nw = calculateNetWorth();
+  expect(nw.liquidNet).toBeGreaterThan(4000);
+  expect(nw.liquidNet).toBeLessThan(6000);
+  // Super (~$63k) should NOT be in liquidNet — total net must exceed liquid net
+  expect(nw.liquidNet).toBeLessThan(nw.net);
 });
 
 // ── Summary ─────────────────────────────────────────────
