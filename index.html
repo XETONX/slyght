@@ -4504,18 +4504,17 @@ function renderBillsGrouped() {
   const c = $('bills-grouped'); if (!c) return;
   const today = new Date().getDate();
   const now = new Date();
+  const _m = MODEL || computeFinancialModel();
   const grouped = {today:[], week:[], next:[], later:[]};
-  // Only include bills whose freq says they're due this month — yearly/quarterly
-  // bills shouldn't show up in months they're not actually billed.
-  getExpandedBills()
-    .filter(b => b.recurring !== false && isBillDueThisMonth(b))
-    .forEach(b => {
-      const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
-      if (diff === 0) grouped.today.push({...b, diff});
-      else if (diff <= 7) grouped.week.push({...b, diff});
-      else if (diff <= 14) grouped.next.push({...b, diff});
-      else grouped.later.push({...b, diff});
-    });
+  // MODEL.billsThisMonth already applies the freq filter so yearly/quarterly
+  // bills only show in the months they're actually due.
+  _m.billsThisMonth.forEach(b => {
+    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
+    if (diff === 0) grouped.today.push({...b, diff});
+    else if (diff <= 7) grouped.week.push({...b, diff});
+    else if (diff <= 14) grouped.next.push({...b, diff});
+    else grouped.later.push({...b, diff});
+  });
   ['week','next','later'].forEach(k => grouped[k].sort((a,b) => a.diff - b.diff));
 
   // Exclude paid bills from totals — paid bills still render with PAID badge but don't count toward amounts
@@ -4542,7 +4541,7 @@ function renderBillsGrouped() {
       const ri = BILLS.findIndex(x => x.name === b.name);
       const freqLabel = b.freq === 'fortnightly' ? 'FORTNIGHTLY' : b.freq === 'weekly' ? 'WEEKLY' : 'MONTHLY';
       const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
-      const isPaid = S.paidBills && S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
+      const isPaid = isThisMonthlyBillPaid(b.name, b.day);
       const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
       const todayBadge = b.diff === 0 ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
       return '<div class="bill-row">' +
