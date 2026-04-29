@@ -1142,7 +1142,7 @@ let S = {
     {id:1, name:'Owed to Michael', amt:550, paid:false, delayed:false, delayDate:'2026-04-15', notes:'$300 borrowed + $50 goodwill + $200 additional borrowing', rate:0},
     {id:2, name:'Credit Card (overdue)', amt:187.35, paid:false, delayed:true, delayDate:'2026-05-06', notes:'Min paid — next due 6 May', rate:19.99},
     {id:3, name:'WRX fines + rego', amt:1254, paid:false, delayed:false, delayDate:'', notes:'LIST THE WRX THIS WEEK', rate:0},
-    {id:7, name:'Owed to Mum', amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, notes:'CC payoff $2,158 + missed rent $2,500. $500/month extra included in $3,000 rent. ~9 months to clear. Pay remainder when WRX sells.', delayDate:'2027-01-15', viaRent:true},
+    {id:7, name:'Property Deposit (via Mum)', amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, notes:'CC payoff $2,158 + missed rent $2,500. $500/month extra included in $3,000 rent. ~9 months to clear. Pay remainder when WRX sells.', delayDate:'2027-01-15', viaRent:true},
   ],
   nextDebtId: 8,
   savingsBuckets: [
@@ -1160,7 +1160,7 @@ let S = {
   weekdayBudget: 60,
   weekendBudget: 180,
   lastOpenDate: null,
-  wrxValue: 21000,
+  wrxValue: 25000,
   debtStrategy: 'avalanche',
   chatHistory: [],
   apiKey: '',
@@ -1223,8 +1223,8 @@ function load() {
       return !matchedDebt || !matchedDebt.paid;
     });
   }
-  // One-time migration: Owed to Mum + NRMA $1,023.06 covered Apr 2026
-  const mumDebt = (S.debts||[]).find(d => d.name === 'Owed to Mum');
+  // One-time migration: mum debt + NRMA $1,023.06 covered Apr 2026
+  const mumDebt = findMumDebt();
   if (mumDebt && mumDebt.amt === 4658.39 && mumDebt.originalAmt === 4658.39) {
     mumDebt.amt = 5681.45;
     mumDebt.originalAmt = 5681.45;
@@ -1240,7 +1240,7 @@ function load() {
   }
   // Mum account reframe — debt → managed property deposit savings account
   if (!S._mumReframed) {
-    const md = (S.debts||[]).find(d => d.name === 'Owed to Mum' || d.name === 'Property Deposit (via Mum)');
+    const md = findMumDebt();
     if (md) {
       md.name = 'Property Deposit (via Mum)';
       md.amt = 5681.45;
@@ -1540,6 +1540,22 @@ function getNoSpendStreak() {
   const lastDate = new Date(lastTs); lastDate.setHours(0,0,0,0);
   return Math.floor((today - lastDate) / (1000*60*60*24));
 }
+// Capitalise the first letter of every word — used for plan-mode display strings.
+function toTitleCase(str) {
+  if (!str) return '';
+  return String(str).replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Locate the mum debt by either the legacy or the migrated name. Use this
+// instead of literal name lookups so code keeps working before and after
+// the _mumReframed migration runs.
+function findMumDebt() {
+  return (S.debts||[]).find(d =>
+    d.name === 'Property Deposit (via Mum)' ||
+    d.name === 'Owed to Mum'
+  );
+}
+
 // Single source of net worth truth — used everywhere NW is shown.
 // WRX is owned outright (asset). Mum account is a managed deposit savings
 // account (asset). viaRent debts are not real liabilities — they sit
@@ -3732,10 +3748,10 @@ function markDebtCovered(id) {
   debt.coveredDate = new Date().toISOString();
   debt._noBaladjust = true;
 
-  const mumDebt = S.debts.find(d => d.name === 'Owed to Mum');
+  const mumDebt = findMumDebt();
   if (mumDebt && mumDebt.id !== debt.id) {
     const addToMum = confirm(
-      'Add $' + debt.amt.toFixed(2) + ' to Owed to Mum?\n' +
+      'Add $' + debt.amt.toFixed(2) + ' to ' + mumDebt.name + '?\n' +
       '(Mum covered this debt — it increases what you owe her)'
     );
     if (addToMum) {
@@ -4824,8 +4840,8 @@ function quickLogTxn() {
     S.bal = parseFloat((S.bal + amt).toFixed(2));
     S.txns.push({amt, note: note||'From person', cat: cat||'Other', ts: Date.now(), _balAffected: true, _txnType: 'from-person'});
     if (amt >= 100) {
-      const mumDebt = S.debts.find(d => d.name === 'Owed to Mum');
-      if (mumDebt && confirm('Add $' + amt.toFixed(2) + ' to Owed to Mum?')) {
+      const mumDebt = findMumDebt();
+      if (mumDebt && confirm('Add $' + amt.toFixed(2) + ' to ' + mumDebt.name + '?')) {
         mumDebt.amt = parseFloat((mumDebt.amt + amt).toFixed(2));
       }
     }
@@ -5222,7 +5238,7 @@ function generateSnapshot() {
     'MAX:$' + getDynamicDailyBudget().toFixed(2),
     'WEEK:$' + weekSpend.toFixed(0),
     'DEBTS:[' + (activeDebts || 'NONE') + ']',
-    'MUM:$' + (S.debts.find(d=>d.name==='Owed to Mum')?.amt?.toFixed(0)||'0'),
+    'MUM:$' + (findMumDebt()?.amt?.toFixed(0)||'0'),
     'WRX:' + (S.wrxStatus||'unlisted').toUpperCase(),
     'TXNS:' + S.txns.length
   ].join(' | ');
@@ -5632,7 +5648,7 @@ UPCOMING BILLS: ${upcomingBills || 'None before payday'}
 ACTIVE DEBTS:
 ${S.debts.filter(d=>!d.paid&&!d.viaRent).map(d=>d.name+' $'+d.amt+(d.delayDate?' due '+d.delayDate:'')).join('\n')||'None'}
 
-Owed to Mum: $${S.debts.find(d=>d.name==='Owed to Mum')?.amt?.toFixed(2)||'0'}
+Property Deposit (via Mum) / Owed to Mum: $${findMumDebt()?.amt?.toFixed(2) || '0'}
 Car loan: $${(S.carloan||0).toFixed(2)} at ${S.carLoanRate||9.87}% ($${((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)}/day interest)
 WRX: ${S.wrxStatus==='listed'?'Listed for sale':'NOT LISTED — $'+((S.carloan||0)*(S.carLoanRate||9.87)/100/365).toFixed(2)+'/day wasted'}
 City2Surf: ${getDaysToCity2Surf()} days away (Aug 9 2026)
@@ -6036,7 +6052,7 @@ if ('serviceWorker' in navigator) {
       // add Mum debt if not present
       if (!Array.isArray(s.debts)) s.debts = [];
       if (!s.debts.find(d => d.id === 7)) {
-        s.debts.push({id:7, name:'Owed to Mum', amt:4658.39, rate:0, priority:1, paid:false,
+        s.debts.push({id:7, name:'Property Deposit (via Mum)', amt:4658.39, rate:0, priority:1, paid:false,
           monthlyPayment:500, viaRent:true,
           notes:'CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.',
           delayDate:'2027-01-15', originalAmt:4658.39});
@@ -6153,7 +6169,7 @@ const REAL_STATE_V17 = {
       {id:4, name:"Pet Insurance", amt:120.47, paid:false, rate:0, priority:1, delayDate:"2026-04-22"},
       {id:5, name:"Parking Fine", amt:140, paid:true, rate:0, priority:3, delayDate:"2026-04-16"},
       {id:6, name:"WRX Green Slip", amt:552.54, rate:0, paid:true, delayed:false, delayDate:"2026-04-15", notes:"", priority:4},
-      {id:7, name:"Owed to Mum", amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, viaRent:true, notes:"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.", delayDate:"2027-01-15", originalAmt:4658.39}
+      {id:7, name:"Property Deposit (via Mum)", amt:4658.39, rate:0, priority:1, paid:false, monthlyPayment:500, viaRent:true, notes:"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.", delayDate:"2027-01-15", originalAmt:4658.39}
     ],
     nextDebtId: 8,
     savingsBuckets: [
@@ -8803,10 +8819,10 @@ function renderGoalTracker() {
   const currentSavingsRate = Math.max(0, monthlyIncome - fixedMonthly - recentSpend);
   const optimisedRate = Math.max(0, monthlyIncome - (fixedMonthly - 780 - 110) - (recentSpend * 0.6));
 
-  const momDebt = S.debts.find(d => d.name === 'Owed to Mum');
+  const momDebt = findMumDebt();
   const goals = [
     {name:'Emergency fund',target:2000,current:S.savingsBuckets?.find(b=>b.name==='Rainy Day Fund')?.saved||0,icon:'🛡️',monthly:currentSavingsRate},
-    {name:'Owed to Mum',target:momDebt?.originalAmt||4658,current:(momDebt?.originalAmt||4658)-(momDebt?.amt||4658),icon:'👩',monthly:500},
+    {name: momDebt?.name || 'Property Deposit (via Mum)',target:momDebt?.originalAmt||4658,current:(momDebt?.originalAmt||4658)-(momDebt?.amt||4658),icon:'👩',monthly:500},
     {name:'Rental bond',target:6000,current:S.savingsBuckets?.reduce((s,b)=>s+b.saved,0)||0,icon:'🏠',monthly:currentSavingsRate},
     {name:'Car loan cleared',target:S.carloanOriginal||37400,current:(S.carloanOriginal||37400)-(S.carloan||23214),icon:'🚗',monthly:780},
     {name:'Move out fund',target:15000,current:S.savingsBuckets?.reduce((s,b)=>s+b.saved,0)||0,icon:'🔑',monthly:currentSavingsRate}
@@ -8940,9 +8956,12 @@ function updatePersistentStrip() {
   const md = document.getElementById('strip-maxday');
   const pd = document.getElementById('strip-payday');
   if (!nw || !md || !pd) return;
-  const netWorth = calculateNetWorth();
-  nw.textContent = 'NW: ' + (netWorth >= 0 ? '+' : '') + '$' + Math.abs(Math.round(netWorth)).toLocaleString();
-  nw.style.color = netWorth >= 0 ? 'var(--green)' : 'var(--red)';
+  const nwResult = calculateNetWorth();
+  const nwNet = nwResult.net !== undefined ? nwResult.net : nwResult;
+  nw.textContent = 'NW: ' +
+    (nwNet >= 0 ? '+' : '-') + '$' +
+    Math.abs(Math.round(nwNet)).toLocaleString();
+  nw.style.color = nwNet >= 0 ? 'var(--green)' : 'var(--red)';
   md.textContent = '$' + getDynamicDailyBudget().toFixed(0) + ' today';
   pd.textContent = daysLeft() + 'd to payday';
 }
@@ -9094,11 +9113,11 @@ const PLAN = {
     const defaults = [
       {
         id: 'apartment', name: 'Property Deposit', emoji: '🏠',
-        description: 'Saving toward your own apartment. Inner West, Meadowbank, Kogarah or Wolli Creek area.',
+        description: 'Building toward your own place. Inner West, Meadowbank, Kogarah or Wolli Creek area. $50,000 deposit target. Account managed by Mum.',
         target: 50000,
         saved: S.mumAccountBalance || 3000,
         monthly: 2500, targetDate: null, colour: '#4ECDC4', priority: 1,
-        notes: 'With guarantors, $50k demonstrates genuine savings history. Budget $550-700k property.'
+        notes: '$50k demonstrates genuine savings history. Budget $550-700k property.'
       },
       {
         id: 'freedom-buffer', name: 'Freedom buffer', emoji: '🛡️',
@@ -9196,6 +9215,256 @@ const PLAN = {
   }
 };
 
+// ─── WRX CARD (extracted from renderPlanMode) ───────────────────────────────
+function renderWrxCard() {
+  const wrxSold = S.wrxStatus === 'sold';
+  const wrxListed = S.wrxStatus === 'listed';
+  const salePrice = S.wrxValue || 25000;
+  const kiaLoan = S.carloan || 0;
+  const kiaRate = S.carLoanRate || 9.87;
+  const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
+  const earlyRepayFee = parseFloat((monthlyInterest * 2).toFixed(2));
+  const netAfterPayoff = salePrice - kiaLoan - earlyRepayFee;
+  const interestSaved = parseFloat((monthlyInterest * 18).toFixed(2));
+  const daysListed = S.wrxListedDate
+    ? Math.ceil((Date.now() - new Date(S.wrxListedDate)) / 86400000)
+    : 0;
+  const dailyInterest = parseFloat((kiaLoan * kiaRate / 100 / 365).toFixed(2));
+
+  const borderColor = wrxSold ? '#4ECDC4' : wrxListed ? '#FF6B35' : '#E74C3C';
+  const bgColor = wrxSold ? 'rgba(78,205,196,0.08)' : wrxListed ? 'rgba(255,107,53,0.06)' : 'rgba(231,76,60,0.06)';
+
+  return `
+  <div style="background:${bgColor};border:1px solid ${borderColor};border-radius:16px;padding:16px;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="color:#fff;font-size:15px;font-weight:700">
+        🚗 WRX — ${wrxSold ? 'Sold ✅' : wrxListed ? 'Listed — Waiting For Buyer' : 'Not Listed Yet'}
+      </div>
+      ${!wrxSold ? `
+      <div style="color:rgba(255,255,255,0.4);font-size:11px;text-align:right">
+        $${dailyInterest}/day<br>KIA interest
+      </div>` : ''}
+    </div>
+
+    ${wrxSold ? `
+    <div style="color:#4ECDC4;font-size:14px;text-align:center;padding:12px">
+      ✅ WRX Sold — KIA Loan Being Cleared
+    </div>` : `
+
+    <div style="background:rgba(255,255,255,0.04);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+        The Plan
+      </div>
+      <div style="color:rgba(255,255,255,0.7);font-size:13px;line-height:1.7">
+        Sell WRX → Pay Off KIA Loan → Free $780/Month
+      </div>
+    </div>
+
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Listed Sale Price</div>
+          <div style="color:#fff;font-size:24px;font-weight:800">$${salePrice.toLocaleString()}</div>
+        </div>
+        <button onclick="editWrxPrice()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:rgba(255,255,255,0.7);padding:8px 14px;font-size:13px;cursor:pointer">✏️ Edit</button>
+      </div>
+    </div>
+
+    <div style="background:rgba(255,107,53,0.08);border-radius:12px;padding:14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">KIA Loan Balance (Firstmac)</div>
+          <div style="color:#FF6B35;font-size:24px;font-weight:800">$${kiaLoan.toLocaleString()}</div>
+          <div style="color:rgba(255,255,255,0.3);font-size:11px;margin-top:4px">
+            ${kiaRate}% p.a. · $${monthlyInterest.toFixed(0)}/month interest
+          </div>
+        </div>
+        <button onclick="showKiaLoanInfo()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;color:rgba(255,255,255,0.6);font-size:16px;cursor:pointer">ℹ️</button>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:6px">Cash After KIA Payoff</div>
+        <div style="color:${netAfterPayoff >= 0 ? '#4ECDC4' : '#E74C3C'};font-size:18px;font-weight:700">
+          ${netAfterPayoff >= 0 ? '+' : '-'}$${Math.abs(Math.round(netAfterPayoff)).toLocaleString()}
+        </div>
+        <div style="color:rgba(255,255,255,0.3);font-size:10px;margin-top:4px">
+          ${netAfterPayoff >= 0 ? 'Goes To Deposit Savings' : 'Need $' + Math.abs(Math.round(netAfterPayoff)).toLocaleString() + ' Extra'}
+        </div>
+      </div>
+      <div style="background:rgba(78,205,196,0.08);border-radius:10px;padding:12px">
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:6px">Freed Per Month</div>
+        <div style="color:#4ECDC4;font-size:18px;font-weight:700">+$780</div>
+        <div style="color:rgba(255,255,255,0.3);font-size:10px;margin-top:4px">KIA Loan Payment Stops</div>
+      </div>
+    </div>
+
+    <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="color:rgba(255,255,255,0.6);font-size:12px;font-weight:600;margin-bottom:8px">Early Repayment Analysis</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="color:rgba(255,255,255,0.4)">Fee (2 months interest)</span>
+        <span style="color:#FF6B35">$${earlyRepayFee.toFixed(0)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px">
+        <span style="color:rgba(255,255,255,0.4)">Interest Saved (~18 months)</span>
+        <span style="color:#4ECDC4">$${interestSaved.toFixed(0)}</span>
+      </div>
+      <div style="color:#4ECDC4;font-size:13px;font-weight:700">
+        ✅ Net Saving: $${Math.round(interestSaved - earlyRepayFee).toLocaleString()} — Pay Off Early
+      </div>
+      <div style="color:rgba(255,255,255,0.3);font-size:11px;margin-top:4px">
+        Confirm exact fee with Firstmac before paying
+      </div>
+    </div>
+
+    ${wrxListed ? `
+    <div style="text-align:center;color:rgba(255,255,255,0.3);font-size:12px">
+      Listed ${daysListed} Day${daysListed !== 1 ? 's' : ''} Ago · Every Day Costs $${dailyInterest} In KIA Interest
+    </div>` : ''}
+
+    ${!wrxListed && !wrxSold ? `
+    <button onclick="markWrxListed()" style="width:100%;padding:12px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.4);border-radius:10px;color:#E74C3C;font-size:13px;font-weight:600;cursor:pointer">
+      🚗 Mark As Listed On Carsales
+    </button>` : ''}
+    `}
+  </div>`;
+}
+
+function editWrxPrice() {
+  const current = S.wrxValue || 25000;
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Update WRX Sale Price', 'Enter the price you\'ve listed it for on Carsales') +
+    PLAN_MODAL.field('Listed Price ($)', 'wrx-price-input', current, 'number',
+      'This updates the cash-after-payoff and net worth calculations.') +
+    PLAN_MODAL.info(
+      'At $' + current.toLocaleString() + ' listed, after paying off the ' +
+      'KIA loan ($' + Math.round(S.carloan||0).toLocaleString() + ') and ' +
+      'early repayment fee you\'ll have approximately $' +
+      Math.round(current - (S.carloan||0) -
+        ((S.carloan||0)*(S.carLoanRate||9.87)/100/12*2)).toLocaleString() +
+      ' remaining.'
+    ) +
+    PLAN_MODAL.btn('Update Price', 'confirmWrxPrice()', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmWrxPrice() {
+  const val = parseFloat(document.getElementById('wrx-price-input')?.value);
+  if (isNaN(val) || val < 1000) {
+    showToast('Please Enter A Valid Price');
+    return;
+  }
+  S.wrxValue = val;
+  S._wrxSlider = val;
+  S._wrxPriceUpdated = true;
+  onStateChange('wrx_price_updated');
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ WRX Price Updated To $' + val.toLocaleString());
+}
+
+function showKiaLoanInfo() {
+  const loan = S.carloan || 0;
+  const rate = S.carLoanRate || 9.87;
+  const original = S.carloanOriginal || 37400;
+  const paidOff = original - loan;
+  const pctPaid = original > 0 ? Math.round(paidOff / original * 100) : 0;
+  const monthlyInterest = loan * rate / 100 / 12;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('KIA Loan — Firstmac', 'Understanding your car loan') +
+    `<div style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-bottom:16px">
+      This is the loan for your KIA, held by Firstmac at ${rate}% p.a.
+      The loan is in your parents' names but you manage the repayments.
+      Selling the WRX gives you cash to pay this off early.
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <span style="color:rgba(255,255,255,0.5)">Original Loan</span>
+        <span style="color:#fff">$${original.toLocaleString()}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <span style="color:rgba(255,255,255,0.5)">Paid Off So Far</span>
+        <span style="color:#4ECDC4">$${Math.round(paidOff).toLocaleString()} (${pctPaid}%)</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <span style="color:rgba(255,255,255,0.5)">Remaining Balance</span>
+        <span style="color:#FF6B35">$${Math.round(loan).toLocaleString()}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:rgba(255,255,255,0.5)">Monthly Interest Cost</span>
+        <span style="color:#E74C3C">$${monthlyInterest.toFixed(0)}</span>
+      </div>
+    </div>` +
+    PLAN_MODAL.info(
+      'You pay $780/fortnight ($1,560/month total, ~$780/month net). ' +
+      'Every month you carry this loan costs $' + monthlyInterest.toFixed(0) +
+      ' in interest alone. Paying it off with the WRX proceeds saves ~$' +
+      Math.round(monthlyInterest * 18).toLocaleString() +
+      ' over the remaining term.'
+    ) +
+    PLAN_MODAL.btn('Got It', 'PLAN_MODAL.close()', true)
+  );
+}
+
+function markWrxListed() {
+  S.wrxStatus = 'listed';
+  S.wrxListedDate = new Date().toISOString().substring(0, 10);
+  onStateChange('wrx_listed');
+  renderPlanMode();
+  showToast('✅ WRX Marked As Listed');
+}
+
+function showNetWorthBreakdown() {
+  const nw = calculateNetWorthBreakdown();
+  const b = nw.breakdown || {};
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Net Worth Breakdown', 'Assets minus everything you owe') +
+    `<div style="margin-bottom:16px">
+      <div style="color:#4ECDC4;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Assets</div>
+      ${[
+        ['WRX (Listed For Sale)', b.wrxValue || 0],
+        ['Virgin Money Balance', b.cashBalance || 0],
+        ['Deposit Account (Mum)', b.mumAccount || 0],
+        ['Savings Buckets', b.savings || 0]
+      ].map(([label, val]) => `
+      <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.04)">
+        <span style="color:rgba(255,255,255,0.6)">${label}</span>
+        <span style="color:#fff">$${Math.round(val).toLocaleString()}</span>
+      </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700">
+        <span style="color:rgba(255,255,255,0.8)">Total Assets</span>
+        <span style="color:#4ECDC4">$${Math.round(nw.assets).toLocaleString()}</span>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="color:#E74C3C;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Liabilities</div>
+      ${[
+        ['KIA Loan (Firstmac)', b.kiaLoan || 0],
+        ['Credit Card', b.creditCard || 0],
+        ['Immediate Debts', b.immediateDebts || 0]
+      ].filter(([,v]) => v > 0).map(([label, val]) => `
+      <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,0.04)">
+        <span style="color:rgba(255,255,255,0.6)">${label}</span>
+        <span style="color:#E74C3C">-$${Math.round(val).toLocaleString()}</span>
+      </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700">
+        <span style="color:rgba(255,255,255,0.8)">Total Liabilities</span>
+        <span style="color:#E74C3C">-$${Math.round(nw.liabilities).toLocaleString()}</span>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:#fff;font-size:16px;font-weight:700">Net Worth</span>
+      <span style="font-size:20px;font-weight:800;color:${nw.net >= 0 ? '#4ECDC4' : '#E74C3C'}">
+        ${nw.net >= 0 ? '+' : '-'}$${Math.abs(Math.round(nw.net)).toLocaleString()}
+      </span>
+    </div>` +
+    PLAN_MODAL.btn('Close', 'PLAN_MODAL.close()', true)
+  );
+}
+
 // ─── PLAN MODE RENDERER ─────────────────────────────────────────────────────
 function renderPlanMode() {
   const el = document.getElementById('plan-content');
@@ -9212,82 +9481,31 @@ function renderPlanMode() {
   let html = '';
 
   // ── NET WORTH HEADER ─────────────────────────────────────
-  const nwPositive = nw.net >= 0;
+  const nwData = calculateNetWorth();
+  const nwVal = nwData.net !== undefined ? nwData.net : nwData;
+  const nwPositive = nwVal >= 0;
+  const nwDisplay = (nwPositive ? '+' : '-') + '$' +
+    Math.abs(Math.round(nwVal)).toLocaleString();
+  const nwColour = nwPositive ? '#4ECDC4' : '#E74C3C';
+
   html += `
-  <div style="text-align:center;padding:20px 0 8px">
-    <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:8px">NET WORTH TODAY</div>
-    <div style="font-size:42px;font-weight:800;color:${nwPositive ? '#4ECDC4' : '#FF6B35'};font-variant-numeric:tabular-nums">
-      ${nwPositive ? '+' : ''}$${Math.abs(Math.round(nw.net)).toLocaleString()}
+  <div style="text-align:center;padding:24px 0 8px">
+    <div style="font-size:11px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">
+      Net Worth Today
     </div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">
-      ${nwPositive ? 'You\'re ahead' : 'The number that needs to change'}
+    <div style="font-size:44px;font-weight:800;color:${nwColour};font-variant-numeric:tabular-nums;line-height:1">
+      ${nwDisplay}
     </div>
+    <div style="font-size:12px;color:rgba(255,255,255,0.35);margin-top:8px">
+      Your Real Financial Position
+    </div>
+    <button onclick="showNetWorthBreakdown()" style="margin-top:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:rgba(255,255,255,0.5);padding:6px 16px;font-size:12px;cursor:pointer">
+      See Breakdown ›
+    </button>
   </div>`;
 
   // ── WRX STATUS CARD ──────────────────────────────────────
-  const wrxListed = S.wrxStatus === 'listed';
-  const wrxSold = S.wrxStatus === 'sold';
-
-  html += `
-  <div style="background:${wrxSold ? 'rgba(78,205,196,0.1)' : wrxListed ? 'rgba(255,107,53,0.08)' : 'rgba(231,76,60,0.08)'};border:1px solid ${wrxSold ? '#4ECDC4' : wrxListed ? '#FF6B35' : '#E74C3C'};border-radius:16px;padding:16px;margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:#fff">
-        🚗 WRX — ${wrxSold ? 'SOLD ✅' : 'Sell To Clear KIA Loan'}
-      </div>
-      <div style="font-size:11px;color:rgba(255,255,255,0.4)">
-        $${PLAN.getKiaDailyInterest().toFixed(2)}/day interest
-      </div>
-    </div>`;
-
-  if (!wrxSold) {
-    html += `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">SALE PRICE</div>
-        <div style="color:#fff;font-size:18px;font-weight:700">$${(S.wrxValue||25000).toLocaleString()}</div>
-      </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">KIA LOAN BALANCE</div>
-        <div style="color:#FF6B35;font-size:18px;font-weight:700">$${Math.round(wrxImpact.kiaLoan).toLocaleString()}</div>
-      </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">EARLY REPAYMENT FEE</div>
-        <div style="color:#FF6B35;font-size:18px;font-weight:700">$${Math.round(wrxImpact.earlyRepayFee).toLocaleString()}</div>
-      </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">CASH AFTER KIA PAYOFF</div>
-        <div style="color:${wrxImpact.netAfterKiaPayoff >= 0 ? '#4ECDC4' : '#E74C3C'};font-size:18px;font-weight:700">
-          ${wrxImpact.netAfterKiaPayoff >= 0 ? '+' : ''}$${Math.round(wrxImpact.netAfterKiaPayoff).toLocaleString()}
-        </div>
-      </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">FREED/MONTH</div>
-        <div style="color:#4ECDC4;font-size:18px;font-weight:700">+$${wrxImpact.monthlyFreed.toLocaleString()}</div>
-      </div>
-      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">INTEREST SAVED</div>
-        <div style="color:#4ECDC4;font-size:18px;font-weight:700">$${Math.round(wrxImpact.interestSaved).toLocaleString()}</div>
-      </div>
-    </div>
-    <div style="background:rgba(78,205,196,0.08);border:1px solid rgba(78,205,196,0.25);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div style="color:#4ECDC4;font-size:13px;font-weight:700;margin-bottom:4px">
-        Sell WRX → pay off KIA → free $${wrxImpact.monthlyFreed}/month
-      </div>
-      <div style="color:rgba(255,255,255,0.6);font-size:12px">
-        ${wrxImpact.recommendation}
-      </div>
-    </div>`;
-
-    if (wrxListed) {
-      html += `
-      <div style="text-align:center;color:rgba(255,255,255,0.4);font-size:12px">
-        Listed ${S.wrxListedDate ? Math.ceil((Date.now() - new Date(S.wrxListedDate)) / 86400000) + ' days ago' : 'recently'} ·
-        Every day unlisted costs $${PLAN.getKiaDailyInterest().toFixed(2)}
-      </div>`;
-    }
-  }
-
-  html += `</div>`;
+  html += renderWrxCard();
 
   // ── SECTIONS ─────────────────────────────────────────────
   if (typeof renderPaydayAllocation === 'function') html += renderPaydayAllocation();
@@ -9340,9 +9558,32 @@ function renderPaydayAllocation() {
   defaults.living = Math.max(0, discretionary - allocatedGoals);
   const dailyLiving = daysUntil > 0 ? defaults.living / daysUntil : 0;
 
+  // Mum deposit account structure
+  const mumDebt = findMumDebt();
+  const rentAmt = mumDebt?.rentComponent || 500;
+  const depositAmt = mumDebt?.debtComponent || 2500;
+  const mumBalance = S.mumAccountBalance || 0;
+  const mumTarget = 50000;
+  const mumPct = Math.min(100, (mumBalance / mumTarget * 100));
+  const monthsToTarget = depositAmt > 0
+    ? Math.ceil((mumTarget - mumBalance) / depositAmt)
+    : 999;
+
+  // Lock state
+  const isLocked = !!(stored.locked && stored.payday === S.payday);
+
   return `
   <div style="margin-bottom:16px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">NEXT PAYDAY — ${daysUntil} DAYS</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">Next Payday — ${daysUntil} Days</div>
+
+    ${isLocked ? `
+    <div style="background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);border-radius:12px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="color:#4ECDC4;font-size:13px;font-weight:700">✓ Plan Locked</div>
+        <div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px">SLYGHT Will Hold You To This</div>
+      </div>
+      <button onclick="unlockAndEdit()" style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:10px;color:rgba(255,255,255,0.7);padding:8px 14px;font-size:12px;cursor:pointer">Update Plan</button>
+    </div>` : ''}
 
     <div style="background:rgba(255,255,255,0.05);border-radius:16px;padding:16px;margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:8px">
@@ -9358,12 +9599,26 @@ function renderPaydayAllocation() {
     </div>
 
     <div style="background:rgba(255,107,53,0.08);border-radius:12px;padding:14px;margin-bottom:8px">
-      <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">LOCKED — NON-NEGOTIABLE</div>
+      <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Locked — Non-Negotiable</div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+        <span style="color:rgba(255,255,255,0.6)">🏠 Rent (To Mum)</span>
+        <span style="color:#FF6B35">-$${rentAmt.toLocaleString()}</span>
+      </div>
+      <div style="padding:6px 0">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+          <span style="color:rgba(255,255,255,0.6)">💰 Deposit Savings</span>
+          <span style="color:#FF6B35">-$${depositAmt.toLocaleString()}</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.08);border-radius:4px;height:6px;margin:6px 0">
+          <div style="background:linear-gradient(90deg,#4ECDC4,#26d0ce);width:${mumPct}%;height:100%;border-radius:4px"></div>
+        </div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.4)">
+          $${mumBalance.toLocaleString()} saved of $50,000 · On track for ${PLAN.dateFromMonths(monthsToTarget)}
+        </div>
+      </div>
       ${[
-        ['Rent (to Mum)', 500],
-        ['🏠 Property Deposit Savings', 2500],
-        ['KIA loan (Firstmac)', 780],
-        ['Provisions (rego, service, health)', Math.round(provisions)],
+        ['KIA Loan (Firstmac)', 780],
+        ['Provisions (Rego, Service, Health)', Math.round(provisions)],
         teachersHealth > 0 ? ['Teachers Health', teachersHealth] : null
       ].filter(Boolean).map(([name, amt]) => `
       <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
@@ -9371,19 +9626,19 @@ function renderPaydayAllocation() {
         <span style="color:#FF6B35">-$${amt.toLocaleString()}</span>
       </div>`).join('')}
       <div style="border-top:1px solid rgba(255,107,53,0.3);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between">
-        <span style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:600">Remaining to allocate</span>
+        <span style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:600">Remaining To Allocate</span>
         <span style="color:#fff;font-size:15px;font-weight:700">$${discretionary.toLocaleString()}</span>
       </div>
     </div>
 
     <div style="background:rgba(78,205,196,0.06);border-radius:12px;padding:14px;margin-bottom:8px">
-      <div style="font-size:11px;color:#4ECDC4;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">YOUR CHOICE — ADJUST THESE</div>
+      <div style="font-size:11px;color:#4ECDC4;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Your Choice — Adjust These</div>
 
       ${[
-        { id:'china',     label:'🇨🇳 China holiday',     colour:'#E74C3C', current: defaults.china,     goal: chinaGoal },
-        { id:'apartment', label:'🏠 Apartment deposit', colour:'#4ECDC4', current: defaults.apartment, goal: apartments },
-        { id:'freedom',   label:'🛡️ Freedom buffer',    colour:'#FF6B35', current: defaults.freedom,   goal: freedomBuf },
-        { id:'darwin',    label:'🐊 Darwin trip',       colour:'#9B59B6', current: defaults.darwin,    goal: darwinTrip }
+        { id:'china',     label:'🇨🇳 China Holiday',          colour:'#E74C3C', current: defaults.china,     goal: chinaGoal },
+        { id:'apartment', label:'🏠 Deposit Savings (Extra)', colour:'#4ECDC4', current: defaults.apartment, goal: apartments },
+        { id:'freedom',   label:'🛡️ Freedom Buffer',          colour:'#FF6B35', current: defaults.freedom,   goal: freedomBuf },
+        { id:'darwin',    label:'🐊 Darwin Trip',             colour:'#9B59B6', current: defaults.darwin,    goal: darwinTrip }
       ].map(item => {
         const saved = item.goal?.saved || 0;
         const target = item.goal?.target || item.goal?.budget || 1000;
@@ -9391,32 +9646,36 @@ function renderPaydayAllocation() {
         return `
         <div style="margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <span style="color:#fff;font-size:13px">${item.label}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="color:#fff;font-size:13px">${item.label}</span>
+              <button onclick="showSliderInfo('${item.id}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:22px;height:22px;color:rgba(255,255,255,0.5);font-size:11px;cursor:pointer;line-height:1;padding:0">ℹ️</button>
+            </div>
             <span style="color:${item.colour};font-size:14px;font-weight:700" id="alloc-val-${item.id}">$${item.current}</span>
           </div>
           <input type="range" id="alloc-${item.id}" min="0" max="${Math.round(discretionary)}" step="50" value="${item.current}"
             style="width:100%;accent-color:${item.colour};height:4px;margin-bottom:4px"
             oninput="updateAllocation('${item.id}', this.value)">
           <div style="display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,0.3)">
-            <span>Saved: $${Math.round(saved).toLocaleString()} of $${target.toLocaleString()}</span>
-            <span>${pct.toFixed(0)}% there</span>
+            <span>Saved: $${Math.round(saved).toLocaleString()} Of $${target.toLocaleString()}</span>
+            <span>${pct.toFixed(0)}% There</span>
           </div>
         </div>`;
       }).join('')}
 
       <div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:12px;margin-top:4px">
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="color:rgba(255,255,255,0.6);font-size:13px">🍱 Living costs (food, transport, life)</span>
+          <span style="color:rgba(255,255,255,0.6);font-size:13px">🍱 Living Costs (Food, Transport, Life)</span>
           <span style="color:#fff;font-size:14px;font-weight:700" id="alloc-val-living">$${Math.round(defaults.living)}</span>
         </div>
         <div style="font-size:12px;color:rgba(255,255,255,0.3)" id="daily-living-calc">
-          = $${dailyLiving.toFixed(0)}/day for ${daysUntil} days
+          = $${dailyLiving.toFixed(0)}/day For ${daysUntil} Days
         </div>
       </div>
 
+      ${isLocked ? `` : `
       <button onclick="lockPaydayPlan()" style="width:100%;padding:14px;margin-top:16px;background:linear-gradient(135deg, #4ECDC4, #26d0ce);border:none;border-radius:12px;color:#000;font-weight:800;font-size:15px;cursor:pointer;letter-spacing:0.5px">
-        Lock this plan for May 15 →
-      </button>
+        Lock This Plan For May 15 →
+      </button>`}
     </div>
   </div>`;
 }
@@ -9451,11 +9710,46 @@ function updateAllocation(id, value) {
 
 function lockPaydayPlan() {
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+  const totalGoalAlloc =
+    (stored.china || 0) + (stored.apartment || 0) +
+    (stored.freedom || 0) + (stored.darwin || 0);
+  const income = PLAN.INCOME_MONTHLY + (S._pendingBonus || 0);
+  const fixedTotal = (BILLS||[])
+    .filter(b => b.recurring && ['Fixed','Loan'].includes(b.tag))
+    .reduce((s,b) => s + b.amt, 0);
+  const provisions = PLAN.getTotalProvisions();
+  // Rent ($3,000) already includes the $500 + $2,500 split — no double-count.
+  const discretionary = Math.max(0, income - fixedTotal - provisions);
+  const living = Math.max(0, discretionary - totalGoalAlloc);
+  const days = daysLeft();
+  const perDay = days > 0 ? living / days : 0;
+
+  if (perDay < 15) {
+    PLAN_MODAL.open(
+      PLAN_MODAL.header('⚠️ Living Budget Very Tight', 'Before you lock this plan') +
+      PLAN_MODAL.warning(
+        'This plan leaves only $' + perDay.toFixed(0) +
+        '/day for food, transport and daily life. ' +
+        'That\'s very tight — consider reducing your ' +
+        'savings allocations by $' +
+        Math.round((15 - perDay) * days).toLocaleString() +
+        ' to give yourself more breathing room.'
+      ) +
+      PLAN_MODAL.btn('Lock Anyway — I\'ll Be Disciplined', 'confirmLockPaydayPlan()', true) +
+      PLAN_MODAL.btn('Go Back And Adjust', 'PLAN_MODAL.close()', false)
+    );
+    return;
+  }
+
+  confirmLockPaydayPlan();
+}
+
+function confirmLockPaydayPlan() {
+  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
   stored.locked = true;
   stored.lockedAt = new Date().toISOString();
   stored.payday = S.payday;
   localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
-  showToast('✅ Plan locked — SLYGHT will hold you to this');
 
   const goals = PLAN.getGoals();
   if (stored.china) {
@@ -9466,6 +9760,60 @@ function lockPaydayPlan() {
     const apGoal = goals.find(g => g.id === 'apartment');
     if (apGoal) { apGoal.monthly = stored.apartment; PLAN.saveGoal(apGoal); }
   }
+
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ Plan Locked — SLYGHT Will Hold You To This');
+}
+
+function unlockAndEdit() {
+  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+  stored.locked = false;
+  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  renderPlanMode();
+  showToast('Plan Unlocked — Adjust And Re-Lock');
+}
+
+function showSliderInfo(id) {
+  const info = {
+    china: {
+      title: '🇨🇳 China Holiday',
+      body: 'Your monthly contribution to the China trip at end of 2026. ' +
+        'Staying with her family and friends so this is spending money only. ' +
+        'Her estimate: $5,000 excluding flights.',
+      tip: 'The June bonus alone could put you halfway there.'
+    },
+    apartment: {
+      title: '🏠 Deposit Savings (Extra)',
+      body: 'Additional savings on top of the $2,500/month already going to ' +
+        'Mum\'s deposit account. Every dollar here accelerates your apartment timeline.',
+      tip: 'Once the KIA is paid off post-WRX sale, redirect the $780/month here.'
+    },
+    freedom: {
+      title: '🛡️ Freedom Buffer',
+      body: 'Your safety net if something goes wrong. Target: $9,000 ' +
+        '(3 months expenses). First milestone: $1,000. Once you have this ' +
+        'you never need to borrow again.',
+      tip: 'Build $1,000 here before anything else. It changes how stress-free your life feels.'
+    },
+    darwin: {
+      title: '🐊 Darwin Trip',
+      body: 'Spending budget for June 7-15 in Darwin with your GF. Flights, ' +
+        'accommodation and car are covered by your uncle. This is for food, ' +
+        'activities, drinks and fun across 9 days.',
+      tip: 'Budget around $100/day each. Split costs with your GF.'
+    }
+  };
+
+  const i = info[id];
+  if (!i) return;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header(i.title) +
+    `<div style="color:rgba(255,255,255,0.7);font-size:14px;line-height:1.7;margin-bottom:16px">${i.body}</div>` +
+    PLAN_MODAL.info(i.tip) +
+    PLAN_MODAL.btn('Got It', 'PLAN_MODAL.close()', true)
+  );
 }
 
 function openBonusModal() {
@@ -9492,7 +9840,7 @@ function renderTrips(trips) {
   let html = `
   <div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px">UPCOMING TRIPS</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px">Upcoming Trips</div>
       <button onclick="addNewTrip()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:rgba(255,255,255,0.6);padding:6px 12px;font-size:11px;cursor:pointer">+ Add trip</button>
     </div>`;
 
@@ -9566,48 +9914,158 @@ function renderTrips(trips) {
 }
 
 function editTrip(tripId) {
-  const trips = PLAN.getTrips();
-  const trip = trips.find(t => t.id === tripId);
+  const trip = PLAN.getTrips().find(t => t.id === tripId);
   if (!trip) return;
-  const newBudget = parseFloat(prompt('Spending budget for ' + trip.name + ' ($):', trip.budget) || trip.budget);
-  if (!isNaN(newBudget) && newBudget >= 0) {
-    trip.budget = newBudget;
-    PLAN.saveTrip(trip);
-    renderPlanMode();
-    showToast('✅ ' + trip.name + ' budget updated to $' + newBudget);
-  }
+
+  const coveredItems = ['Flights','Accommodation','Car Hire','Food','Activities'];
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Edit ' + trip.emoji + ' ' + trip.name,
+      'Update your trip details and budget') +
+    PLAN_MODAL.field('Spending Budget ($)', 'trip-budget', trip.budget, 'number',
+      trip.covered?.length
+        ? 'Already covered: ' + trip.covered.join(', ') +
+          '. This is your personal spending money.'
+        : 'How much do you want to spend on this trip?'
+    ) +
+    PLAN_MODAL.field('Start Date', 'trip-start', trip.startDate, 'date') +
+    PLAN_MODAL.field('End Date', 'trip-end', trip.endDate, 'date') +
+    PLAN_MODAL.textarea('Notes', 'trip-notes', trip.notes || '',
+      'Anything to remember — what\'s covered, who you\'re going with, activities planned'
+    ) +
+    `<div style="margin-bottom:16px">
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">What\'s Already Covered</div>
+      ${coveredItems.map(item => {
+        const key = item.toLowerCase().replace(' ', '-');
+        const checked = (trip.covered||[])
+          .some(c => c.toLowerCase().includes(item.toLowerCase().split(' ')[0]));
+        return `
+        <label style="display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04)">
+          <input type="checkbox" ` + ('id=' + JSON.stringify('cover-' + key)) + ` ${checked ? 'checked' : ''} style="width:20px;height:20px;accent-color:#4ECDC4;flex-shrink:0">
+          <span style="color:#fff;font-size:14px">${item}</span>
+        </label>`;
+      }).join('')}
+    </div>` +
+    PLAN_MODAL.btn('Save Trip', 'confirmEditTrip("' + tripId + '")', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
 }
 
-function addTripSavings(tripId) {
+function confirmEditTrip(tripId) {
   const trips = PLAN.getTrips();
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
-  const amt = parseFloat(prompt('Amount saved for ' + trip.name + ':') || '0');
-  if (!isNaN(amt) && amt > 0) {
-    trip.saved = (trip.saved || 0) + amt;
-    PLAN.saveTrip(trip);
-    renderPlanMode();
-    showToast('✅ $' + amt + ' added to ' + trip.name + ' fund');
+
+  const budget = parseFloat(document.getElementById('trip-budget')?.value || trip.budget);
+  const start = document.getElementById('trip-start')?.value || trip.startDate;
+  const end = document.getElementById('trip-end')?.value || trip.endDate;
+  const notes = document.getElementById('trip-notes')?.value || '';
+  const covered = ['flights','accommodation','car-hire','food','activities']
+    .filter(id => document.getElementById('cover-' + id)?.checked)
+    .map(id => id.replace('-', ' '));
+
+  if (!isNaN(budget)) trip.budget = budget;
+  trip.startDate = start;
+  trip.endDate = end;
+  trip.notes = notes;
+  trip.covered = covered;
+  if (start && end) {
+    trip.days = Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1;
   }
+
+  PLAN.saveTrip(trip);
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ ' + trip.name + ' Updated');
 }
 
 function addNewTrip() {
-  const name = prompt('Trip name:');
-  if (!name) return;
-  const emoji = prompt('Emoji (e.g. 🏖️):') || '✈️';
-  const startDate = prompt('Start date (YYYY-MM-DD):') || '';
-  const endDate = prompt('End date (YYYY-MM-DD):') || '';
-  const budget = parseFloat(prompt('Spending budget ($):') || '0');
-  const trip = {
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Plan A New Trip',
+      'Add any upcoming travel to track your savings') +
+    PLAN_MODAL.field('Destination', 'new-trip-name', '', 'text',
+      'e.g. Japan, Bali, Melbourne, Fiji') +
+    PLAN_MODAL.field('Emoji', 'new-trip-emoji', '✈️', 'text',
+      'Pick an emoji that represents this trip') +
+    PLAN_MODAL.field('Start Date', 'new-trip-start', '', 'date') +
+    PLAN_MODAL.field('End Date', 'new-trip-end', '', 'date') +
+    PLAN_MODAL.field('Spending Budget ($)', 'new-trip-budget', '', 'number',
+      'How much do you want to spend total? Exclude anything already covered.'
+    ) +
+    PLAN_MODAL.textarea('Notes', 'new-trip-notes', '',
+      'What\'s covered, who you\'re going with, what you want to do...'
+    ) +
+    PLAN_MODAL.btn('Add Trip', 'confirmNewTrip()', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmNewTrip() {
+  const name = document.getElementById('new-trip-name')?.value?.trim();
+  if (!name) {
+    showToast('Please Enter A Destination');
+    return;
+  }
+  const emoji = document.getElementById('new-trip-emoji')?.value || '✈️';
+  const start = document.getElementById('new-trip-start')?.value || '';
+  const end = document.getElementById('new-trip-end')?.value || '';
+  const budget = parseFloat(document.getElementById('new-trip-budget')?.value || '0');
+  const notes = document.getElementById('new-trip-notes')?.value || '';
+  const days = start && end
+    ? Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1
+    : 7;
+
+  PLAN.saveTrip({
     id: 'trip-' + Date.now(),
-    name, emoji, startDate, endDate,
-    days: startDate && endDate ? Math.ceil((new Date(endDate) - new Date(startDate)) / 86400000) + 1 : 7,
-    budget, saved: 0,
-    covered: [], gfSplitting: false, notes: ''
-  };
-  PLAN.saveTrip(trip);
+    name, emoji, startDate: start, endDate: end,
+    days, budget, saved: 0, covered: [], notes,
+    gfSplitting: false
+  });
+  PLAN_MODAL.close();
   renderPlanMode();
-  showToast('✅ ' + name + ' trip added');
+  showToast('✅ ' + emoji + ' ' + name + ' Added');
+}
+
+function addTripSavings(tripId) {
+  const trip = PLAN.getTrips().find(t => t.id === tripId);
+  if (!trip) return;
+  const saved = trip.saved || 0;
+  const remaining = Math.max(0, trip.budget - saved);
+  const pct = trip.budget > 0 ? Math.min(100, saved / trip.budget * 100) : 0;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Add To ' + trip.emoji + ' ' + trip.name,
+      'Every dollar saved now is one less to worry about later') +
+    `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="background:rgba(255,255,255,0.08);border-radius:6px;height:8px;margin-bottom:12px">
+        <div style="background:linear-gradient(90deg,#4ECDC4,#26d0ce);width:${pct}%;height:100%;border-radius:6px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:rgba(255,255,255,0.5);font-size:13px">Saved: $${Math.round(saved).toLocaleString()}</span>
+        <span style="color:rgba(255,255,255,0.5);font-size:13px">Still Needed: $${Math.round(remaining).toLocaleString()}</span>
+      </div>
+    </div>` +
+    PLAN_MODAL.field('Amount To Add ($)', 'trip-save-amt', '', 'number',
+      'How much are you putting in today?') +
+    PLAN_MODAL.btn('Add Savings', 'confirmTripSavings("' + tripId + '")', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmTripSavings(tripId) {
+  const amt = parseFloat(document.getElementById('trip-save-amt')?.value || '0');
+  if (isNaN(amt) || amt <= 0) {
+    showToast('Please Enter A Valid Amount');
+    return;
+  }
+  const trips = PLAN.getTrips();
+  const trip = trips.find(t => t.id === tripId);
+  if (!trip) return;
+  trip.saved = (trip.saved || 0) + amt;
+  PLAN.saveTrip(trip);
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ $' + amt.toLocaleString() + ' Added To ' + trip.name + ' Fund');
 }
 
 function wireTripEditors() { /* wired via onclick */ }
@@ -9617,7 +10075,7 @@ function renderGoalCards(goals, surplus) {
   let html = `
   <div style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px">YOUR GOALS</div>
+      <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px">Your Goals</div>
       <button onclick="addNewGoal()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:rgba(255,255,255,0.6);padding:6px 12px;font-size:11px;cursor:pointer">+ Add goal</button>
     </div>`;
 
@@ -9696,99 +10154,271 @@ function renderGoalCards(goals, surplus) {
 }
 
 function editGoal(goalId) {
+  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  if (!goal) return;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Edit ' + goal.emoji + ' ' + goal.name,
+      'Update your goal details and monthly contribution') +
+    PLAN_MODAL.field('Goal Name', 'goal-name', goal.name, 'text') +
+    PLAN_MODAL.field('Target Amount ($)', 'goal-target', goal.target, 'number',
+      'How much do you need to save in total?') +
+    PLAN_MODAL.field('Monthly Contribution ($)', 'goal-monthly', goal.monthly || 0, 'number',
+      'How much will you put toward this goal each month from your payday allocation?') +
+    PLAN_MODAL.textarea('Description', 'goal-desc', goal.description || '',
+      'What is this goal for? Being specific keeps you motivated when it gets hard.') +
+    PLAN_MODAL.btn('Save Goal', 'confirmEditGoal("' + goalId + '")', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmEditGoal(goalId) {
   const goals = PLAN.getGoals();
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
-  const newTarget = parseFloat(prompt('Target amount ($):', goal.target) || goal.target);
-  const newMonthly = parseFloat(prompt('Monthly contribution ($):', goal.monthly || 0) || 0);
-  if (!isNaN(newTarget)) goal.target = newTarget;
-  if (!isNaN(newMonthly)) goal.monthly = newMonthly;
+  const name = document.getElementById('goal-name')?.value?.trim() || goal.name;
+  const target = parseFloat(document.getElementById('goal-target')?.value || goal.target);
+  const monthly = parseFloat(document.getElementById('goal-monthly')?.value || 0);
+  const desc = document.getElementById('goal-desc')?.value || '';
+  goal.name = name;
+  if (!isNaN(target) && target > 0) goal.target = target;
+  if (!isNaN(monthly)) goal.monthly = monthly;
+  goal.description = desc;
   PLAN.saveGoal(goal);
+  PLAN_MODAL.close();
   renderPlanMode();
-  showToast('✅ ' + goal.name + ' updated');
+  showToast('✅ ' + name + ' Updated');
 }
 
 function addGoalSavings(goalId) {
+  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  if (!goal) return;
+  const saved = goal.saved || 0;
+  const remaining = Math.max(0, goal.target - saved);
+  const pct = goal.target > 0 ? Math.min(100, saved / goal.target * 100) : 0;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Add To ' + goal.emoji + ' ' + goal.name,
+      'Every contribution brings this closer to reality') +
+    `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px">
+      <div style="background:rgba(255,255,255,0.08);border-radius:6px;height:8px;margin-bottom:12px">
+        <div style="background:linear-gradient(90deg,${goal.colour||'#4ECDC4'},#26d0ce);width:${pct}%;height:100%;border-radius:6px"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="color:rgba(255,255,255,0.5);font-size:13px">Saved: $${Math.round(saved).toLocaleString()}</span>
+        <span style="color:rgba(255,255,255,0.5);font-size:13px">To Go: $${Math.round(remaining).toLocaleString()}</span>
+      </div>
+    </div>` +
+    PLAN_MODAL.field('Amount To Add ($)', 'goal-save-amt', '', 'number',
+      'How much are you adding today?') +
+    PLAN_MODAL.btn('Add To ' + goal.name, 'confirmGoalSavings("' + goalId + '")', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmGoalSavings(goalId) {
+  const amt = parseFloat(document.getElementById('goal-save-amt')?.value || '0');
+  if (isNaN(amt) || amt <= 0) {
+    showToast('Please Enter A Valid Amount');
+    return;
+  }
   const goals = PLAN.getGoals();
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
-  const amt = parseFloat(prompt('Amount to add to ' + goal.name + ':') || '0');
-  if (!isNaN(amt) && amt > 0) {
-    goal.saved = (goal.saved || 0) + amt;
-    PLAN.saveGoal(goal);
-    if (goalId === 'china') {
-      const bucket = (S.savingsBuckets||[]).find(b => b.name === 'China Holiday');
-      if (bucket) { bucket.saved = goal.saved; save(); }
-    }
-    renderPlanMode();
-    showToast('✅ $' + amt + ' added to ' + goal.name);
+  goal.saved = (goal.saved || 0) + amt;
+  PLAN.saveGoal(goal);
+  if (goalId === 'china') {
+    const bucket = (S.savingsBuckets||[]).find(b => b.name === 'China Holiday');
+    if (bucket) { bucket.saved = goal.saved; save(); }
   }
+  if (goalId === 'apartment') {
+    S.mumAccountBalance = goal.saved;
+    save();
+  }
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
 }
 
 function addNewGoal() {
-  const name = prompt('Goal name (e.g. Holiday fund, New laptop):');
-  if (!name) return;
-  const emoji = prompt('Emoji:') || '🎯';
-  const target = parseFloat(prompt('Target amount ($):') || '0');
-  const monthly = parseFloat(prompt('How much will you save per month ($)?') || '0');
-  const description = prompt('Description (optional):') || '';
-  const goal = {
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Add A New Goal', 'What are you working toward?') +
+    PLAN_MODAL.field('Goal Name', 'new-goal-name', '', 'text',
+      'e.g. Japan Trip, New Laptop, Emergency Buffer') +
+    PLAN_MODAL.field('Emoji', 'new-goal-emoji', '🎯', 'text') +
+    PLAN_MODAL.field('Target Amount ($)', 'new-goal-target', '', 'number',
+      'How much do you need in total?') +
+    PLAN_MODAL.field('Monthly Savings ($)', 'new-goal-monthly', '', 'number',
+      'How much will you put toward this each month?') +
+    PLAN_MODAL.textarea('Description', 'new-goal-desc', '',
+      'Why does this goal matter to you? Being specific helps you stay committed when it gets hard.') +
+    PLAN_MODAL.btn('Create Goal', 'confirmNewGoal()', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmNewGoal() {
+  const name = document.getElementById('new-goal-name')?.value?.trim();
+  if (!name) {
+    showToast('Please Enter A Goal Name');
+    return;
+  }
+  const emoji = document.getElementById('new-goal-emoji')?.value || '🎯';
+  const target = parseFloat(document.getElementById('new-goal-target')?.value || '0');
+  const monthly = parseFloat(document.getElementById('new-goal-monthly')?.value || '0');
+  const desc = document.getElementById('new-goal-desc')?.value || '';
+  if (isNaN(target) || target <= 0) {
+    showToast('Please Enter A Target Amount');
+    return;
+  }
+  PLAN.saveGoal({
     id: 'goal-' + Date.now(),
     name, emoji, target, saved: 0, monthly,
-    description, colour: '#4ECDC4', priority: 99
-  };
-  PLAN.saveGoal(goal);
+    description: desc, colour: '#4ECDC4', priority: 99
+  });
+  PLAN_MODAL.close();
   renderPlanMode();
-  showToast('✅ ' + name + ' goal added');
+  showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
 
 function markGoalComplete(goalId) {
-  if (!confirm('Mark this goal as complete?')) return;
+  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  if (!goal) return;
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('🎉 Mark ' + goal.name + ' Complete?',
+      'This will archive the goal and celebrate your win') +
+    `<div style="text-align:center;font-size:48px;padding:20px 0">🎉</div>` +
+    PLAN_MODAL.btn('Yes — I Did It!', 'confirmGoalComplete("' + goalId + '")', true) +
+    PLAN_MODAL.btn('Not Yet', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmGoalComplete(goalId) {
   const goals = PLAN.getGoals();
   const goal = goals.find(g => g.id === goalId);
-  if (goal) { goal.completed = true; PLAN.saveGoal(goal); }
+  if (goal) {
+    goal.completed = true;
+    goal.completedDate = new Date().toISOString();
+    PLAN.saveGoal(goal);
+  }
+  PLAN_MODAL.close();
   renderPlanMode();
-  showToast('🎉 Goal complete!');
+  showToast('🎉 Goal Complete — Well Done!');
 }
 
 function wireGoalEditors() { /* wired via onclick */ }
 
 // ─── SECTION 7 — ANNUAL PROVISIONS + INCOME SIMULATOR ───────────────────────
+const PROVISIONS_KEY = 'slyght_provisions';
+
+function getCustomProvisions() {
+  try {
+    const stored = localStorage.getItem(PROVISIONS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch(e) {}
+  return PLAN.getAnnualProvisions();
+}
+
+function saveProvisions(provisions) {
+  localStorage.setItem(PROVISIONS_KEY, JSON.stringify(provisions));
+}
+
+function provisionFreqText(p) {
+  const divisors = { quarterly: 4, biannual: 2, annual: 1, monthly: 12 };
+  const payments = divisors[p.frequency] || 1;
+  const perPayment = (p.annual / payments).toFixed(2);
+  const labels = {
+    quarterly: 'Quarterly',
+    biannual: 'Every 6 Months',
+    annual: 'Annual',
+    monthly: 'Monthly'
+  };
+  return (labels[p.frequency] || 'Annual') +
+    ' · $' + perPayment + ' Per Payment · ' +
+    '$' + Math.round(p.annual).toLocaleString() + '/Year';
+}
+
 function renderAnnualProvisions(provisions) {
-  const total = PLAN.getTotalProvisions();
+  // Use custom (edited) provisions if present, otherwise the defaults from PLAN.
+  const list = getCustomProvisions();
+  const total = list.reduce((s,p) => s + (p.monthly || 0), 0);
   const now = new Date();
 
   return `
   <div style="margin-bottom:16px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">ANNUAL PROVISIONS</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">Annual Provisions</div>
     <div style="background:rgba(255,255,255,0.04);border-radius:16px;padding:16px;border:1px solid rgba(255,255,255,0.06)">
       <div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:12px">
         Put aside $${Math.round(total)}/month and you'll never be blindsided by annual costs again. These costs are real — they just don't feel urgent until they're due.
       </div>
-      ${provisions.map(p => {
+      ${list.map(p => {
         const nextDue = new Date(p.nextDue);
         const monthsUntil = Math.max(0,
           (nextDue.getFullYear() - now.getFullYear()) * 12 + nextDue.getMonth() - now.getMonth()
         );
         return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
-          <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px">
+          <div style="flex:1;min-width:0">
             <div style="color:#fff;font-size:13px">${p.name}</div>
             <div style="color:rgba(255,255,255,0.3);font-size:11px">
-              ${p.frequency} · $${p.annual.toLocaleString()}/yr · due ${monthsUntil === 0 ? 'this month' : 'in ' + monthsUntil + ' months'}
+              ${provisionFreqText(p)} · Due ${monthsUntil === 0 ? 'This Month' : 'In ' + monthsUntil + ' Months'}
             </div>
           </div>
           <div style="text-align:right">
             <div style="color:#FF6B35;font-size:14px;font-weight:700">$${p.monthly}/mo</div>
           </div>
+          <button onclick="editProvision('${p.name.replace(/'/g, "\\'")}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.5);padding:6px 10px;font-size:11px;cursor:pointer">✏️</button>
         </div>`;
       }).join('')}
       <div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:4px">
-        <span style="color:rgba(255,255,255,0.6);font-size:13px;font-weight:600">Total to set aside</span>
+        <span style="color:rgba(255,255,255,0.6);font-size:13px;font-weight:600">Total To Set Aside</span>
         <span style="color:#FF6B35;font-size:15px;font-weight:800">$${Math.round(total)}/month</span>
       </div>
     </div>
   </div>`;
+}
+
+function editProvision(name) {
+  const provisions = getCustomProvisions();
+  const p = provisions.find(p => p.name === name);
+  if (!p) return;
+
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Edit ' + p.name, 'Update if the cost changes') +
+    PLAN_MODAL.field('Annual Total ($)', 'prov-annual', p.annual, 'number',
+      'Total cost per year. Monthly provision = annual ÷ 12.') +
+    PLAN_MODAL.select('How Often Is This Charged?', 'prov-freq',
+      [
+        {value:'annual',    label:'Once A Year'},
+        {value:'biannual',  label:'Every 6 Months'},
+        {value:'quarterly', label:'Every 3 Months (Quarterly)'},
+        {value:'monthly',   label:'Monthly'}
+      ],
+      p.frequency
+    ) +
+    PLAN_MODAL.field('Next Due Date', 'prov-due', p.nextDue, 'date') +
+    PLAN_MODAL.btn('Save', 'confirmEditProvision("' + name.replace(/"/g, '\\"') + '")', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmEditProvision(name) {
+  const provisions = getCustomProvisions();
+  const p = provisions.find(p => p.name === name);
+  if (!p) return;
+  const annual = parseFloat(document.getElementById('prov-annual')?.value || p.annual);
+  const freq = document.getElementById('prov-freq')?.value || p.frequency;
+  const due = document.getElementById('prov-due')?.value || p.nextDue;
+  if (!isNaN(annual) && annual > 0) {
+    p.annual = annual;
+    p.monthly = parseFloat((annual / 12).toFixed(2));
+  }
+  p.frequency = freq;
+  p.nextDue = due;
+  saveProvisions(provisions);
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('✅ ' + name + ' Updated');
 }
 
 function renderIncomeSimulator() {
@@ -9797,7 +10427,7 @@ function renderIncomeSimulator() {
 
   return `
   <div style="margin-bottom:32px">
-    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">INCOME GROWTH SIMULATOR</div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">Income Growth Simulator</div>
     <div style="background:rgba(255,255,255,0.04);border-radius:16px;padding:16px;border:1px solid rgba(255,255,255,0.06)">
       <div style="font-size:13px;color:rgba(255,255,255,0.6);margin-bottom:16px">
         A $5-10k raise feels small. Here's what it actually does to your timelines.
@@ -9916,6 +10546,107 @@ function checkForWrxSaleInterception() {
     _wrxSoldNotified = false;
   }
 }
+
+// ─── PLAN MODAL CONTROLLER ──────────────────────────────────────────────────
+const PLAN_MODAL = {
+  open(html) {
+    const overlay = document.getElementById('plan-modal-overlay');
+    const content = document.getElementById('plan-modal-content');
+    if (!overlay || !content) return;
+    content.innerHTML = html;
+    overlay.style.display = 'flex';
+    setTimeout(() => {
+      const first = content.querySelector('input, textarea');
+      if (first) first.focus();
+    }, 100);
+  },
+
+  close() {
+    const overlay = document.getElementById('plan-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+  },
+
+  header(title, subtitle) {
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div style="flex:1;padding-right:12px">
+        <div style="color:#fff;font-size:18px;font-weight:700;line-height:1.3">${title}</div>
+        ${subtitle ? `<div style="color:rgba(255,255,255,0.4);font-size:13px;margin-top:6px;line-height:1.5">${subtitle}</div>` : ''}
+      </div>
+      <button onclick="PLAN_MODAL.close()" style="background:rgba(255,255,255,0.08);border:none;border-radius:50%;min-width:32px;height:32px;color:rgba(255,255,255,0.6);font-size:20px;cursor:pointer;line-height:1;flex-shrink:0">×</button>
+    </div>`;
+  },
+
+  field(label, id, value, type, hint) {
+    const idAttr = 'id=' + JSON.stringify(id);
+    const safeVal = String(value || '').replace(/"/g, '&quot;');
+    return `
+    <div style="margin-bottom:16px">
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${label}</div>
+      ${hint ? `<div style="color:rgba(255,255,255,0.3);font-size:11px;margin-bottom:8px;line-height:1.5">${hint}</div>` : ''}
+      <input ${idAttr} type="${type || 'text'}"
+        value="${safeVal}"
+        autocomplete="off" autocorrect="off" spellcheck="false"
+        inputmode="${type === 'number' ? 'decimal' : 'text'}"
+        style="width:100%;padding:14px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#fff;font-size:16px;box-sizing:border-box;-webkit-appearance:none">
+    </div>`;
+  },
+
+  textarea(label, id, value, hint) {
+    const idAttr = 'id=' + JSON.stringify(id);
+    return `
+    <div style="margin-bottom:16px">
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${label}</div>
+      ${hint ? `<div style="color:rgba(255,255,255,0.3);font-size:11px;margin-bottom:8px;line-height:1.5">${hint}</div>` : ''}
+      <textarea ${idAttr} rows="3" autocomplete="off"
+        style="width:100%;padding:14px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#fff;font-size:15px;resize:none;box-sizing:border-box;font-family:inherit">${value || ''}</textarea>
+    </div>`;
+  },
+
+  select(label, id, options, selected, hint) {
+    const idAttr = 'id=' + JSON.stringify(id);
+    return `
+    <div style="margin-bottom:16px">
+      <div style="color:rgba(255,255,255,0.5);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${label}</div>
+      ${hint ? `<div style="color:rgba(255,255,255,0.3);font-size:11px;margin-bottom:8px">${hint}</div>` : ''}
+      <select ${idAttr} style="width:100%;padding:14px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#fff;font-size:15px;box-sizing:border-box;-webkit-appearance:none">
+        ${options.map(o => `
+        <option value="${o.value}" ${o.value === selected ? 'selected' : ''} style="background:#0f1623">${o.label}</option>`).join('')}
+      </select>
+    </div>`;
+  },
+
+  info(text) {
+    return `
+    <div style="background:rgba(78,205,196,0.08);border:1px solid rgba(78,205,196,0.2);border-radius:10px;padding:12px;margin-bottom:16px">
+      <div style="color:rgba(255,255,255,0.6);font-size:13px;line-height:1.6">💡 ${text}</div>
+    </div>`;
+  },
+
+  warning(text) {
+    return `
+    <div style="background:rgba(255,107,53,0.1);border:1px solid rgba(255,107,53,0.3);border-radius:10px;padding:12px;margin-bottom:16px">
+      <div style="color:#FF6B35;font-size:13px;line-height:1.6">⚠️ ${text}</div>
+    </div>`;
+  },
+
+  btn(label, onclick, primary, danger) {
+    const bg = danger ? 'rgba(231,76,60,0.2)' :
+      primary ? 'linear-gradient(135deg,#4ECDC4,#26d0ce)' :
+      'rgba(255,255,255,0.08)';
+    const border = danger ? '1px solid rgba(231,76,60,0.5)' :
+      primary ? 'none' : '1px solid rgba(255,255,255,0.12)';
+    const color = primary ? '#000' : danger ? '#E74C3C' : '#fff';
+    return `
+    <button onclick="${onclick}" style="width:100%;padding:14px;margin-bottom:8px;background:${bg};border:${border};border-radius:12px;color:${color};font-weight:${primary ? '800' : '500'};font-size:15px;cursor:pointer;font-family:inherit">${label}</button>`;
+  }
+};
+
+// Close modal when tapping overlay background
+document.getElementById('plan-modal-overlay')
+  ?.addEventListener('click', function(e) {
+    if (e.target === this) PLAN_MODAL.close();
+  });
 </script>
 <!-- SCANNER MODAL -->
 <div class="modal-overlay" id="scanner-modal" onclick="handleOverlayClick(event,'scanner-modal')">
@@ -10023,6 +10754,10 @@ function checkForWrxSaleInterception() {
     <div style="width:70px"></div>
   </div>
   <div id="plan-content" style="padding:16px"></div>
+  <!-- PLAN MODAL OVERLAY -->
+  <div id="plan-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:601;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom)">
+    <div id="plan-modal-content" style="background:#0f1623;border-radius:24px 24px 0 0;padding:24px 24px 40px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-sizing:border-box"></div>
+  </div>
 </div>
 </body>
 </html>
