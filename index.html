@@ -574,7 +574,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
           </div>
           <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
             <div style="color:var(--text3);font-size:11px;margin-bottom:6px">WRX VALUE ($)</div>
-            <div style="display:flex;gap:8px"><input type="number" id="set-wrx" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="21000"><button onclick="saveWrxValue()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-wrx" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="25000"><button onclick="saveWrxValue()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">DEPOSIT ACCOUNT BALANCE (ASK MUM)</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-mum-account" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="3000"><button onclick="saveMumAccountBalance()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Check with Mum what's currently in the savings account. Updates your net worth and deposit timeline.</div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button onclick="exportData()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📤 Export</button>
@@ -1163,9 +1168,8 @@ let S = {
 };
 
 let BILLS = [
-  {name:'Rent', amt:3000, day:15, tag:'Fixed', recurring:true},
-  {name:'Car Loan — Firstmac', amt:780, day:16, tag:'Loan', recurring:true, freq:'monthly'},
-  {name:'Health Insurance (qtrly avg)', amt:119.04, day:1, tag:'Fixed', recurring:true},
+  {name:'Rent + Deposit Savings', amt:3000, day:15, tag:'Fixed', recurring:true, breakdown:{rent:500, depositSavings:2500}, note:'$500 rent to Mum + $2,500 to property deposit account'},
+  {name:'KIA Loan — Firstmac', amt:780, day:15, tag:'Loan', recurring:true, freq:'monthly'},
   {name:'Amazon Prime', amt:9.99, day:3, tag:'Subscription', recurring:true},
   {name:'Fuel', amt:110, day:5, tag:'Variable', recurring:true},
   {name:'Microsoft PC Game Pass', amt:19.45, day:7, tag:'Subscription', recurring:true},
@@ -1174,6 +1178,7 @@ let BILLS = [
   {name:'Netflix', amt:28.99, day:10, tag:'Streaming', recurring:true},
   {name:'Optus — Phone + Internet', amt:199, day:16, tag:'Fixed', recurring:true},
   {name:'YouTube Premium', amt:16.99, day:20, tag:'Streaming', recurring:true},
+  {name:'Food at Work', amt:100, day:28, tag:'Variable', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
   {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
   {name:'Car Rego — WRX', amt:462, day:15, tag:'Transport', recurring:true, freq:'yearly'},
@@ -1225,6 +1230,95 @@ function load() {
     mumDebt.originalAmt = 5681.45;
     mumDebt.notes = (mumDebt.notes || '') +
       ' + NRMA KIA Insurance $1,023.06 covered Apr 2026';
+    save();
+  }
+  // WRX listed price update — bump default $21k → $25k once
+  if (!S._wrxPriceUpdated) {
+    S.wrxValue = 25000;
+    S._wrxPriceUpdated = true;
+    save();
+  }
+  // Mum account reframe — debt → managed property deposit savings account
+  if (!S._mumReframed) {
+    const md = (S.debts||[]).find(d => d.name === 'Owed to Mum' || d.name === 'Property Deposit (via Mum)');
+    if (md) {
+      md.name = 'Property Deposit (via Mum)';
+      md.amt = 5681.45;
+      md.originalAmt = 5681.45;
+      md.monthlyPayment = 2500;
+      md.rentComponent = 500;
+      md.debtComponent = 2500;
+      md.accountBalance = 3000;
+      md.accountTarget = 50000;
+      md.notes = 'Managed deposit savings account. ' +
+        '$500/month rent + $2,500/month deposit savings. ' +
+        'Account has ~$3,000. $5,681 was spent from savings ' +
+        'and is being rebuilt at $2,500/month.';
+      md.redirectGoal = 'apartment';
+      md.viaRent = true;
+    }
+    S._mumReframed = true;
+    save();
+  }
+  // Track the live mum account balance — single source of truth
+  if (typeof S.mumAccountBalance !== 'number') {
+    S.mumAccountBalance = 3000;
+  }
+  // Bills cleanup migration — run once
+  if (!S._billsCleanedV1) {
+    if (Array.isArray(BILLS)) {
+      // Remove old/duplicate bills
+      BILLS = BILLS.filter(b =>
+        b.name !== 'Afterpay instalment' &&
+        b.name !== 'Health Insurance (qtrly avg)'
+      );
+      // Rename Rent → Rent + Deposit Savings
+      const rentBill = BILLS.find(b => b.name === 'Rent');
+      if (rentBill) {
+        rentBill.name = 'Rent + Deposit Savings';
+        rentBill.breakdown = { rent: 500, depositSavings: 2500 };
+        rentBill.note = '$500 rent to Mum + $2,500 to property deposit account';
+      }
+      // Rename Car Loan — Firstmac → KIA Loan — Firstmac and align day to payday
+      const carLoanBill = BILLS.find(b => b.name === 'Car Loan — Firstmac' || b.name === 'Car Loan — Firstmac');
+      if (carLoanBill) {
+        carLoanBill.name = 'KIA Loan — Firstmac';
+        carLoanBill.day = 15;
+      }
+      // Food at Work → $100
+      const foodBill = BILLS.find(b => b.name === 'Food at Work');
+      if (foodBill) foodBill.amt = 100;
+      // Ensure Teachers Health exists
+      if (!BILLS.find(b => b.name === 'Teachers Health')) {
+        BILLS.push({name:'Teachers Health', amt:259.41, day:1, tag:'Health', recurring:true, freq:'quarterly'});
+      }
+    }
+    S._billsCleanedV1 = true;
+    save();
+  }
+  // Afterpay debt update — old cleared, new for concert tickets
+  if (!S._afterpayUpdated) {
+    const oldAfterpay = (S.debts||[]).find(d => d.name === 'Afterpay');
+    if (oldAfterpay) oldAfterpay.paid = true;
+    const hasNew = (S.debts||[]).find(d => d.name === 'Afterpay — Concert Tickets' && !d.paid);
+    if (!hasNew) {
+      if (!S.nextDebtId) S.nextDebtId = (S.debts||[]).length;
+      if ((S.debts||[]).length) {
+        const _maxId = Math.max(...S.debts.map(d => d.id || 0));
+        if (S.nextDebtId <= _maxId) S.nextDebtId = _maxId + 1;
+      }
+      S.debts.push({
+        id: S.nextDebtId++,
+        name: 'Afterpay — Concert Tickets',
+        amt: 124.75,
+        rate: 0,
+        priority: 2,
+        paid: false,
+        notes: 'Concert tickets. $60 received back from friend for their ticket.',
+        delayDate: '2026-05-31'
+      });
+    }
+    S._afterpayUpdated = true;
     save();
   }
 }
@@ -1446,24 +1540,52 @@ function getNoSpendStreak() {
   const lastDate = new Date(lastTs); lastDate.setHours(0,0,0,0);
   return Math.floor((today - lastDate) / (1000*60*60*24));
 }
-// Single source of net worth truth — used everywhere NW is shown
+// Single source of net worth truth — used everywhere NW is shown.
+// WRX is owned outright (asset). Mum account is a managed deposit savings
+// account (asset). viaRent debts are not real liabilities — they sit
+// against the mum account already counted in assets.
 function calculateNetWorth() {
-  const assets = (S.wrxValue || 0) +
-                 (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0) +
-                 (S.bal || 0);
-  const liabilities = (S.carloan || 0) +
-                      (S.cc || 0) +
-                      (S.debts||[]).filter(d => !d.paid)
-                                   .reduce((s,d) => s + d.amt, 0);
-  return parseFloat((assets - liabilities).toFixed(2));
+  const wrxValue = S.wrxStatus === 'sold' ? 0 : (S.wrxValue || 25000);
+  const cashBalance = S.bal || 0;
+  const mumAccount = S.mumAccountBalance || 0;
+  const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
+  const totalAssets = wrxValue + cashBalance + mumAccount + savings;
+
+  const kiaLoan = S.carloan || 0;
+  const creditCard = S.cc || 0;
+  const immediateDebts = (S.debts||[])
+    .filter(d => !d.paid && !d.viaRent && d.amt > 0)
+    .reduce((s,d) => s + d.amt, 0);
+  const totalLiabilities = kiaLoan + creditCard + immediateDebts;
+
+  return parseFloat((totalAssets - totalLiabilities).toFixed(2));
+}
+
+// Detailed breakdown — used by the Net Worth tap modal on the dashboard.
+function calculateNetWorthBreakdown() {
+  const wrxValue = S.wrxStatus === 'sold' ? 0 : (S.wrxValue || 25000);
+  const cashBalance = S.bal || 0;
+  const mumAccount = S.mumAccountBalance || 0;
+  const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
+  const totalAssets = wrxValue + cashBalance + mumAccount + savings;
+
+  const kiaLoan = S.carloan || 0;
+  const creditCard = S.cc || 0;
+  const immediateDebts = (S.debts||[])
+    .filter(d => !d.paid && !d.viaRent && d.amt > 0)
+    .reduce((s,d) => s + d.amt, 0);
+  const totalLiabilities = kiaLoan + creditCard + immediateDebts;
+
+  return {
+    assets: parseFloat(totalAssets.toFixed(2)),
+    liabilities: parseFloat(totalLiabilities.toFixed(2)),
+    net: parseFloat((totalAssets - totalLiabilities).toFixed(2)),
+    breakdown: { wrxValue, cashBalance, mumAccount, savings, kiaLoan, creditCard, immediateDebts }
+  };
 }
 function getNetWorth() {
-  const wrx = S.wrxValue || 0;
-  const buckets = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
-  const assets = (S.bal || 0) + wrx + buckets;
-  const allUnpaid = (S.debts||[]).filter(d => !d.paid).reduce((s,d) => s+d.amt, 0);
-  const liabilities = (S.carloan||0) + (S.cc||0) + allUnpaid;
-  return {assets, liabilities, net: calculateNetWorth()};
+  // Defers to calculateNetWorthBreakdown() — single source of truth.
+  return calculateNetWorthBreakdown();
 }
 
 // Wraps a SLYGHT_SCORE.improvement() suggestion with affordability rules.
@@ -3030,22 +3152,24 @@ function setPlanItemStatus(key, status, btn) {
 }
 
 function openNetWorthModal() {
-  const nw = getNetWorth();
+  const nw = calculateNetWorthBreakdown();
   const liveBal = getLiveBal();
-  const activeDebts = S.debts.filter(d => !d.paid);
-  const debtTotal = activeDebts.reduce((s,d) => s+d.amt, 0);
+  // Active immediate debts only — viaRent excluded (mum account is an asset).
+  const activeDebts = (S.debts||[]).filter(d => !d.paid && !d.viaRent);
   let html = '';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">';
   html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Assets</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--green)">'+fmt(nw.assets)+'</div></div>';
   html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">Liabilities</div><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--red)">'+fmt(nw.liabilities)+'</div></div>';
   html += '</div>';
+  const wrxLabel = (S.wrxStatus === 'listed' ? 'WRX (listed for sale)' : S.wrxStatus === 'sold' ? 'WRX (sold)' : 'WRX (owned outright)');
   const assetRows = [
+    {label:wrxLabel, val: nw.breakdown.wrxValue},
     {label:'Virgin Money balance', val:liveBal},
-    {label:'WRX (est. value)', val: S.wrxValue || 21000}, // H2: read from S not hardcoded
-    ...(S.savingsBuckets||[]).map(b => ({label:b.name+' savings', val:b.saved})),
+    {label:'Deposit account (Mum)', val: nw.breakdown.mumAccount},
+    {label:'Savings buckets', val: nw.breakdown.savings}
   ];
   const liabRows = [
-    {label:'Car Loan — Firstmac', val:S.carloan},
+    {label:'KIA Loan (Firstmac)', val:S.carloan},
     {label:'Credit Card', val:S.cc},
     ...activeDebts.map(d => ({label:d.name, val:d.amt})),
   ];
@@ -3293,7 +3417,7 @@ function renderLtTiles() {
   const carAmt = S.carloan || 0;
   const carOrig = S.carloanOriginal || carAmt || 1;
   const carPct = carOrig > 0 ? Math.round(((carOrig - carAmt) / carOrig) * 100) : 0;
-  carTile.innerHTML = '<div class="dt-name">Car Loan</div>' +
+  carTile.innerHTML = '<div class="dt-name">KIA Loan</div>' +
     '<div class="dt-amt bad">' + fmtC(carAmt) + '</div>' +
     '<div class="dt-sub">' + carPct + '% paid off</div>' +
     '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + carPct + '% cleared</div>' +
@@ -3765,7 +3889,7 @@ function closeModal(id, actionTaken) {
 function openLtDebtModal(type) {
   ltDebtType = type;
   const bal = type === 'car' ? S.carloan : S.cc;
-  const _ltmt = $('lt-modal-title'); if (_ltmt) _ltmt.textContent = type === 'car' ? 'Car Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
+  const _ltmt = $('lt-modal-title'); if (_ltmt) _ltmt.textContent = type === 'car' ? 'KIA Loan — Firstmac 9.87%' : 'Credit Card — Virgin Money 19.99%';
   const _ltbal = $('lt-balance'); if (_ltbal) _ltbal.textContent = fmtC(bal);
   const _ltmp = $('lt-minpay');
   if (_ltmp) { if (type === 'car') { _ltmp.textContent = '$387.69 / fortnight (fixed)'; } else { _ltmp.textContent = '$92 / month (min — avoid this)'; } }
@@ -4900,6 +5024,24 @@ function saveIncome() {
 function saveWrxValue() {
   const v = parseFloat(document.getElementById('set-wrx')?.value);
   if (!isNaN(v) && v >= 0) { S.wrxValue = v; onStateChange('wrx_saved'); showToast('WRX value saved'); }
+}
+
+function saveMumAccountBalance() {
+  const v = parseFloat(document.getElementById('set-mum-account')?.value);
+  if (!isNaN(v) && v >= 0) {
+    S.mumAccountBalance = v;
+    // Mirror into the apartment goal so its progress reflects the live balance.
+    if (typeof PLAN !== 'undefined') {
+      const goals = PLAN.getGoals();
+      const apGoal = goals.find(g => g.id === 'apartment');
+      if (apGoal) {
+        apGoal.saved = v;
+        PLAN.saveGoal(apGoal);
+      }
+    }
+    onStateChange('mum_account_updated');
+    showToast('✅ Deposit Account Updated — $' + v.toLocaleString());
+  }
 }
 
 function saveApiKey() {
@@ -8709,19 +8851,18 @@ function renderGoalTracker() {
   el.innerHTML = html;
 }
 
-// Owed to Mum — shown as amber card on dashboard, separate from active debt grid
+// Property Deposit (via Mum) — shown as a teal asset card on dashboard
 function renderMumCard() {
   const el = document.getElementById('dash-mum-card');
   if (!el) return;
-  const mumDebt = (S.debts||[]).find(d => d.name === 'Owed to Mum');
-  if (!mumDebt || mumDebt.paid) { el.innerHTML = ''; return; }
-  const monthly = mumDebt.monthlyPayment || 500;
-  const monthsLeft = Math.ceil(mumDebt.amt / monthly);
+  const accountBalance = S.mumAccountBalance || 0;
+  const target = 50000;
+  const pct = Math.min(100, Math.round(accountBalance / target * 100));
   el.innerHTML =
-    '<div style="padding:10px 14px;background:rgba(255,150,0,0.1);border:1px solid rgba(255,150,0,0.2);border-radius:10px;margin-bottom:8px">' +
-      '<div style="font-size:12px;color:var(--amber)">Owed to Mum</div>' +
-      '<div style="font-size:18px;font-weight:700;color:var(--text)">$' + mumDebt.amt.toFixed(2) + '</div>' +
-      '<div style="font-size:11px;color:var(--text3)">$' + monthly + '/month via rent · ~' + monthsLeft + ' months remaining</div>' +
+    '<div style="padding:10px 14px;background:rgba(78,205,196,0.10);border:1px solid rgba(78,205,196,0.25);border-radius:10px;margin-bottom:8px">' +
+      '<div style="font-size:12px;color:#4ECDC4">🏠 Property Deposit (via Mum)</div>' +
+      '<div style="font-size:18px;font-weight:700;color:var(--text)">$' + accountBalance.toLocaleString() + '</div>' +
+      '<div style="font-size:11px;color:var(--text3)">+$2,500/month deposit savings · ' + pct + '% of $50k target</div>' +
     '</div>';
 }
 
@@ -8872,16 +9013,12 @@ function closePlanMode() {
 
 // ─── PLAN ENGINE — single source of truth for future planning ───────────────
 const PLAN = {
-  INCOME_MONTHLY: 7300,
+  INCOME_MONTHLY: 7282,
   BONUS_QUARTERLY: 2000,
   INCOME_GROSS: 117500,
 
   getKiaLoan() {
-    const kia = (S.debts||[]).find(d =>
-      d.name?.toLowerCase().includes('kia') ||
-      d.name?.toLowerCase().includes('car loan')
-    );
-    return kia?.amt || S.carloan || 23214;
+    return S.carloan || 23989.70;
   },
 
   getKiaRate() { return S.carLoanRate || 9.87; },
@@ -8899,10 +9036,9 @@ const PLAN = {
   },
 
   getMonthlyFreed() {
-    const carLoanPayment = 780;
-    const fuelMonthly = 110;
-    const wrxInsurance = 85;
-    return carLoanPayment + fuelMonthly + wrxInsurance;
+    // When WRX sells and KIA loan is paid off, the $780 KIA payment stops.
+    // Fuel + KIA insurance continue (still need to drive the KIA).
+    return 780;
   },
 
   getAnnualProvisions() {
@@ -8957,11 +9093,11 @@ const PLAN = {
     const stored = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
     const defaults = [
       {
-        id: 'apartment', name: 'Apartment deposit', emoji: '🏠',
-        description: 'Inner west / Meadowbank / Kogarah area. Parents as guarantors.',
+        id: 'apartment', name: 'Property Deposit', emoji: '🏠',
+        description: 'Saving toward your own apartment. Inner West, Meadowbank, Kogarah or Wolli Creek area.',
         target: 50000,
-        saved: S.savingsBuckets?.find(b => b.name === 'Rainy Day Fund')?.saved || 0,
-        monthly: 0, targetDate: null, colour: '#4ECDC4', priority: 1,
+        saved: S.mumAccountBalance || 3000,
+        monthly: 2500, targetDate: null, colour: '#4ECDC4', priority: 1,
         notes: 'With guarantors, $50k demonstrates genuine savings history. Budget $550-700k property.'
       },
       {
@@ -8996,13 +9132,23 @@ const PLAN = {
   },
 
   getPostWrxSurplus() {
-    const income = this.INCOME_MONTHLY;
-    const fixedBills = (BILLS||[]).filter(b => b.recurring).reduce((s,b) => s + b.amt, 0);
-    const provisions = this.getTotalProvisions();
-    const mumPayment = 500;
-    const foodBudget = 400;
-    const miscLiving = 300;
-    return income - fixedBills - provisions - mumPayment - foodBudget - miscLiving;
+    const income = 7282;
+    const rent = 500;
+    const depositSavings = 2500;
+    const kiaInsurance = 85;
+    const fuel = 110;
+    const otherBills = (BILLS||[])
+      .filter(b => b.recurring &&
+        !['Rent + Deposit Savings','KIA Loan — Firstmac',
+          'Fuel','Health Insurance (qtrly avg)'].includes(b.name))
+      .reduce((s,b) => s + b.amt, 0);
+    const teachersHealth = 259.41 / 3; // quarterly averaged to monthly
+    const food = 400;
+
+    // After WRX sells, the $780 KIA payment stops. Recommended: redirect
+    // it into deposit savings as an accelerator (tracked separately).
+    return income - rent - depositSavings - kiaInsurance -
+           fuel - otherBills - teachersHealth - food;
   },
 
   monthsToGoal(goal, monthlyContribution) {
@@ -9019,21 +9165,33 @@ const PLAN = {
   },
 
   getWrxImpact() {
-    const salePrice = S.wrxValue || 21000;
-    const loanBalance = this.getKiaLoan();
-    const netProceeds = Math.max(0, salePrice - loanBalance);
-    const monthlyFreed = this.getMonthlyFreed();
+    const salePrice = S.wrxValue || 25000;
+    const kiaLoan = S.carloan || 23989.70;
+    const kiaRate = S.carLoanRate || 9.87;
+    const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
+    const earlyRepayFee = parseFloat((monthlyInterest * 2).toFixed(2));
 
-    const remainingLoanMonths = 24;
-    const interestSaved = loanBalance * (this.getKiaRate() / 100 / 12) * remainingLoanMonths * 0.5;
-    const earlyRepayFee = loanBalance * (this.getKiaRate() / 100 / 12) * 2;
+    // WRX is unencumbered — full proceeds available.
+    // Recommended: use proceeds to pay off KIA immediately.
+    const netAfterKiaPayoff = parseFloat((salePrice - kiaLoan - earlyRepayFee).toFixed(2));
+    const interestSaved = parseFloat((monthlyInterest * 18).toFixed(2));
+    const monthlyFreed = 780; // KIA payment stops
 
     return {
-      salePrice, loanBalance, netProceeds, monthlyFreed,
-      interestSaved: parseFloat(interestSaved.toFixed(2)),
-      earlyRepayFee: parseFloat(earlyRepayFee.toFixed(2)),
-      worthPayingOff: interestSaved > earlyRepayFee,
-      newNetWorth: typeof calculateNetWorth === 'function' ? calculateNetWorth() + netProceeds : 0
+      salePrice,
+      kiaLoan,
+      earlyRepayFee,
+      netAfterKiaPayoff,
+      interestSaved,
+      monthlyFreed,
+      worthPayingOffKia: interestSaved > earlyRepayFee,
+      recommendation: netAfterKiaPayoff >= 0
+        ? 'Pay off KIA in full — $' +
+          Math.round(netAfterKiaPayoff).toLocaleString() +
+          ' cash remaining'
+        : 'Pay off KIA — you\'ll need $' +
+          Math.abs(Math.round(netAfterKiaPayoff)).toLocaleString() +
+          ' extra from savings to clear it'
     };
   }
 };
@@ -9074,7 +9232,7 @@ function renderPlanMode() {
   <div style="background:${wrxSold ? 'rgba(78,205,196,0.1)' : wrxListed ? 'rgba(255,107,53,0.08)' : 'rgba(231,76,60,0.08)'};border:1px solid ${wrxSold ? '#4ECDC4' : wrxListed ? '#FF6B35' : '#E74C3C'};border-radius:16px;padding:16px;margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;color:#fff">
-        🚗 WRX — ${wrxSold ? 'SOLD ✅' : wrxListed ? 'LISTED — waiting for buyer' : 'NOT LISTED'}
+        🚗 WRX — ${wrxSold ? 'SOLD ✅' : 'Sell To Clear KIA Loan'}
       </div>
       <div style="font-size:11px;color:rgba(255,255,255,0.4)">
         $${PLAN.getKiaDailyInterest().toFixed(2)}/day interest
@@ -9086,29 +9244,37 @@ function renderPlanMode() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
         <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">SALE PRICE</div>
-        <div style="color:#fff;font-size:18px;font-weight:700">$${(S.wrxValue||21000).toLocaleString()}</div>
+        <div style="color:#fff;font-size:18px;font-weight:700">$${(S.wrxValue||25000).toLocaleString()}</div>
       </div>
       <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">LOAN BALANCE</div>
-        <div style="color:#FF6B35;font-size:18px;font-weight:700">$${Math.round(PLAN.getKiaLoan()).toLocaleString()}</div>
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">KIA LOAN BALANCE</div>
+        <div style="color:#FF6B35;font-size:18px;font-weight:700">$${Math.round(wrxImpact.kiaLoan).toLocaleString()}</div>
       </div>
       <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
-        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">NET AFTER LOAN</div>
-        <div style="color:${wrxImpact.netProceeds > 0 ? '#4ECDC4' : '#E74C3C'};font-size:18px;font-weight:700">
-          ${wrxImpact.netProceeds > 0 ? '+' : ''}$${Math.round(wrxImpact.netProceeds).toLocaleString()}
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">EARLY REPAYMENT FEE</div>
+        <div style="color:#FF6B35;font-size:18px;font-weight:700">$${Math.round(wrxImpact.earlyRepayFee).toLocaleString()}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">CASH AFTER KIA PAYOFF</div>
+        <div style="color:${wrxImpact.netAfterKiaPayoff >= 0 ? '#4ECDC4' : '#E74C3C'};font-size:18px;font-weight:700">
+          ${wrxImpact.netAfterKiaPayoff >= 0 ? '+' : ''}$${Math.round(wrxImpact.netAfterKiaPayoff).toLocaleString()}
         </div>
       </div>
       <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
         <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">FREED/MONTH</div>
-        <div style="color:#4ECDC4;font-size:18px;font-weight:700">+$${PLAN.getMonthlyFreed().toLocaleString()}</div>
+        <div style="color:#4ECDC4;font-size:18px;font-weight:700">+$${wrxImpact.monthlyFreed.toLocaleString()}</div>
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px">
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">INTEREST SAVED</div>
+        <div style="color:#4ECDC4;font-size:18px;font-weight:700">$${Math.round(wrxImpact.interestSaved).toLocaleString()}</div>
       </div>
     </div>
-    <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;margin-bottom:8px">
-      <div style="color:rgba(255,255,255,0.6);font-size:12px;margin-bottom:4px">
-        Early repayment: pay $${wrxImpact.earlyRepayFee.toFixed(0)} fee, save $${wrxImpact.interestSaved.toFixed(0)} in interest
+    <div style="background:rgba(78,205,196,0.08);border:1px solid rgba(78,205,196,0.25);border-radius:10px;padding:12px;margin-bottom:8px">
+      <div style="color:#4ECDC4;font-size:13px;font-weight:700;margin-bottom:4px">
+        Sell WRX → pay off KIA → free $${wrxImpact.monthlyFreed}/month
       </div>
-      <div style="color:${wrxImpact.worthPayingOff ? '#4ECDC4' : '#FF6B35'};font-size:13px;font-weight:600">
-        ${wrxImpact.worthPayingOff ? '✅ Worth paying off early — saves $' + Math.round(wrxImpact.interestSaved - wrxImpact.earlyRepayFee).toLocaleString() : '⚠️ Check your contract — early repayment fee may not be worth it'}
+      <div style="color:rgba(255,255,255,0.6);font-size:12px">
+        ${wrxImpact.recommendation}
       </div>
     </div>`;
 
@@ -9148,10 +9314,11 @@ function renderPaydayAllocation() {
   const fixed = (BILLS||[]).filter(b => b.recurring && ['Fixed','Loan'].includes(b.tag))
     .reduce((s,b) => s + b.amt, 0);
   const provisions = PLAN.getTotalProvisions();
-  const mumPayment = 500;
   const teachersHealth = (S.debts||[]).find(d => d.name === 'Teachers Health' && !d.paid)?.amt || 0;
 
-  const totalFixed = fixed + provisions + mumPayment + teachersHealth;
+  // Rent bill ($3,000) already includes the $500 rent + $2,500 deposit savings
+  // — do not double-count via a separate mumPayment line.
+  const totalFixed = fixed + provisions + teachersHealth;
   const discretionary = Math.max(0, total - totalFixed);
 
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
@@ -9193,10 +9360,10 @@ function renderPaydayAllocation() {
     <div style="background:rgba(255,107,53,0.08);border-radius:12px;padding:14px;margin-bottom:8px">
       <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">LOCKED — NON-NEGOTIABLE</div>
       ${[
-        ['Rent', 3000],
-        ['Car loan (Firstmac)', 780],
+        ['Rent (to Mum)', 500],
+        ['🏠 Property Deposit Savings', 2500],
+        ['KIA loan (Firstmac)', 780],
         ['Provisions (rego, service, health)', Math.round(provisions)],
-        ['Owed to Mum', mumPayment],
         teachersHealth > 0 ? ['Teachers Health', teachersHealth] : null
       ].filter(Boolean).map(([name, amt]) => `
       <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
