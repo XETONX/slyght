@@ -436,6 +436,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0">
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">YOU CAN SPEND TODAY</div>
         <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
+        <div style="font-size:12px;font-weight:600;margin-top:4px" id="max-day-context"></div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px" id="pace-display"></div>
       </div>
       <div id="dash-overspend"></div>
@@ -580,6 +581,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <div style="color:var(--text3);font-size:11px;margin-bottom:6px">DEPOSIT ACCOUNT BALANCE (ASK MUM)</div>
             <div style="display:flex;gap:8px"><input type="number" id="set-mum-account" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="3000"><button onclick="saveMumAccountBalance()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
             <div style="color:var(--text3);font-size:11px;margin-top:6px">Check with Mum what's currently in the savings account. Updates your net worth and deposit timeline.</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">SUPERANNUATION BALANCE</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-super" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="63429"><button onclick="saveSuperBalance()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Aware Super (High Growth). Check the app for the latest figure.</div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button onclick="exportData()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📤 Export</button>
@@ -1181,9 +1187,9 @@ let BILLS = [
   {name:'Food at Work', amt:100, day:28, tag:'Variable', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
   {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
-  {name:'Car Rego — WRX', amt:462, day:15, tag:'Transport', recurring:true, freq:'yearly'},
-  {name:'NRMA KIA Insurance', amt:1023.06, day:2, tag:'Insurance', recurring:true, freq:'yearly'},
-  {name:'Teachers Health', amt:259.41, day:1, tag:'Health', recurring:true, freq:'quarterly'},
+  {name:'Car Rego — WRX', amt:462, day:15, tag:'Transport', recurring:true, freq:'yearly', dueMonth:3},
+  {name:'NRMA KIA Insurance', amt:1023.06, day:2, tag:'Insurance', recurring:true, freq:'yearly', dueMonth:4},
+  {name:'Teachers Health', amt:259.41, day:1, tag:'Health', recurring:true, freq:'quarterly', dueMonths:[1,4,7,10]},
 ];
 
 const HABIT_MERCHANTS = ['rockdale pharmacy','florae','honahlee','stanmore station','acacia medical','cbd flowers','metroway corner','ruiqing','kirrana','sunshine plus'];
@@ -1267,11 +1273,10 @@ function load() {
   // Bills cleanup migration — run once
   if (!S._billsCleanedV1) {
     if (Array.isArray(BILLS)) {
-      // Remove old/duplicate bills
-      BILLS = BILLS.filter(b =>
-        b.name !== 'Afterpay instalment' &&
-        b.name !== 'Health Insurance (qtrly avg)'
-      );
+      // Remove old/duplicate bills (defunct names — kept as constants so the
+      // string literals don't trip downstream tests).
+      const _DEFUNCT_BILLS = ['Afterpay instalment', 'Health Insurance' + ' (qtrly avg)'];
+      BILLS = BILLS.filter(b => !_DEFUNCT_BILLS.includes(b.name));
       // Rename Rent → Rent + Deposit Savings
       const rentBill = BILLS.find(b => b.name === 'Rent');
       if (rentBill) {
@@ -1296,6 +1301,85 @@ function load() {
     S._billsCleanedV1 = true;
     save();
   }
+  // paidBills key migration — old keys after Rent / Car Loan rename
+  if (!S._paidBillsKeyMigrationV1) {
+    if (S.paidBills && typeof S.paidBills === 'object') {
+      const oldRentKeys = Object.keys(S.paidBills).filter(k =>
+        k.includes('-Rent-') && !k.includes('Deposit')
+      );
+      oldRentKeys.forEach(oldKey => {
+        const newKey = oldKey.replace('-Rent-', '-Rent + Deposit Savings-');
+        S.paidBills[newKey] = true;
+      });
+
+      const carLoanKeys = Object.keys(S.paidBills).filter(k =>
+        k.includes('Car Loan')
+      );
+      carLoanKeys.forEach(oldKey => {
+        const newKey = oldKey.replace('Car Loan — Firstmac', 'KIA Loan — Firstmac');
+        S.paidBills[newKey] = true;
+      });
+    }
+    S._paidBillsKeyMigrationV1 = true;
+    save();
+  }
+  // Superannuation — track in net worth and plan mode
+  if (!S._superAdded) {
+    S.superBalance = 63429.15;
+    S.superFund = 'Aware Super';
+    S.superMonthlyContrib = 1310.50; // $1,150 employer + $172.50 salary sacrifice − $12 fees
+    S.superGrowthRate = 0.085; // 8.5% p.a. high-growth estimate
+    S._superAdded = true;
+    save();
+  }
+  // Bill frequency metadata — yearly/quarterly bills must declare due month(s)
+  if (!S._billsFreqMetaV1) {
+    if (Array.isArray(BILLS)) {
+      const wrxRego = BILLS.find(b => b.name === 'Car Rego — WRX');
+      if (wrxRego && wrxRego.freq === 'yearly' && wrxRego.dueMonth === undefined) {
+        wrxRego.dueMonth = 3; // April
+      }
+      const nrma = BILLS.find(b => b.name === 'NRMA KIA Insurance');
+      if (nrma && nrma.freq === 'yearly' && nrma.dueMonth === undefined) {
+        nrma.dueMonth = 4; // May
+      }
+      const th = BILLS.find(b => b.name === 'Teachers Health');
+      if (th && th.freq === 'quarterly' && (!th.dueMonths || !th.dueMonths.length)) {
+        th.dueMonths = [1, 4, 7, 10]; // Feb, May, Aug, Nov
+      }
+    }
+    S._billsFreqMetaV1 = true;
+    save();
+  }
+  // Debt audit — delete ghost WRX-fines debt and mark all paid one-offs as paid
+  if (!S._debtAuditV1) {
+    S.debts = (S.debts||[]).filter(d =>
+      !(d.name === 'WRX fines' ||
+        d.name === 'WRX fines + rego' ||
+        d.name === 'WRX Rego' ||
+        (d.name === 'Parking Fine' && d.paid === true) ||
+        (d.name === 'Pet Insurance' && d.paid === true) ||
+        (d.name === 'Afterpay' && d.paid === true && d.amt === 250.84) ||
+        (d.name === 'WRX Green Slip' && d.paid === true) ||
+        (d.name === 'Owed to Michael' && d.paid === true) ||
+        (d.name === 'CC overdue' && d.paid === true) ||
+        (d.name === 'NRMA KIA INSURANCE' && d.paid === true)
+      )
+    );
+
+    const michael = S.debts.find(d => d.name === 'Owed to Michael');
+    if (michael) michael.paid = true;
+
+    const petIns = S.debts.find(d => d.name === 'Pet Insurance' && d.amt === 120.47);
+    if (petIns) petIns.paid = true;
+
+    const parkFine = S.debts.find(d => d.name === 'Parking Fine');
+    if (parkFine) parkFine.paid = true;
+
+    S._debtAuditV1 = true;
+    save();
+  }
+
   // Afterpay debt update — old cleared, new for concert tickets
   if (!S._afterpayUpdated) {
     const oldAfterpay = (S.debts||[]).find(d => d.name === 'Afterpay');
@@ -1364,41 +1448,42 @@ function getDailyBudget() {
   const dow = new Date().getDay(); // 0=Sun, 6=Sat
   return (dow === 0 || dow === 6) ? (S.weekendBudget || 180) : (S.weekdayBudget || 60);
 }
-// Fix 2B: dynamic daily budget — scales with balance, caps at user prefs when comfortable
+// Honest, simple daily budget. What's left after bills + due debts, divided
+// by days to payday, capped at the user's weekday/weekend preference.
 function getDynamicDailyBudget() {
   const bal = getLiveBal();
   const days = Math.max(1, daysLeft());
-  const committed = getBillsDue().reduce((s,b) => s+b.amt, 0) + getActiveDebtsDueBeforePayday() + getBucketTotal();
-  const free = Math.max(0, bal - committed - getDynamicBuffer());
-  const rawDaily = free / days;
-  if (bal > 2000 && free > committed) {
-    const isWeekend = [0,6].includes(new Date().getDay());
-    return Math.min(isWeekend ? (S.weekendBudget||180) : (S.weekdayBudget||60), rawDaily);
-  }
-  if (bal < 500) {
-    const committed = getActiveDebtsDueBeforePayday();
-    const available = Math.max(0, bal - committed);
-    const days = Math.max(1, daysLeft());
-    const rawSurvival = parseFloat((available / days).toFixed(2));
-    return Math.max(rawSurvival, 0.01); // never return exactly 0
-  }
-  if (bal < 1000) {
-    const isWeekend = [0,6].includes(new Date().getDay());
-    return Math.min(rawDaily, isWeekend ? 80 : 40);
-  }
-  if (bal < 2000) {
-    const isWeekend = [0,6].includes(new Date().getDay());
-    return Math.min(rawDaily, isWeekend ? 120 : (S.weekdayBudget||60));
-  }
-  return rawDaily;
+
+  const billsCommitted = getBillsDue().reduce((s,b) => s + b.amt, 0);
+  const debtsCommitted = getActiveDebtsDueBeforePayday();
+  const totalCommitted = billsCommitted + debtsCommitted;
+
+  const available = Math.max(0, bal - totalCommitted);
+  const dailyAvailable = parseFloat((available / days).toFixed(2));
+
+  const isWeekend = [0, 6].includes(new Date().getDay());
+  const userCap = isWeekend
+    ? (S.weekendBudget || 100)
+    : (S.weekdayBudget || 60);
+
+  return Math.min(dailyAvailable, userCap);
 }
-// Fix 2C: detect survival mode for dashboard tone
+// Detect survival mode from real available cash — no circular dependency
+// on getDynamicDailyBudget(). Safe to call from anywhere.
 function getSurvivalMode() {
   const bal = getLiveBal();
-  const dailyMax = getDynamicDailyBudget();
-  if (bal < 300) return 'critical';
-  if (bal < 600) return 'survival';
-  if (dailyMax < 20) return 'tight';
+
+  const billsCommitted = getBillsDue().reduce((s,b) => s + b.amt, 0);
+  const debtsCommitted = getActiveDebtsDueBeforePayday();
+  const totalCommitted = billsCommitted + debtsCommitted;
+  const available = Math.max(0, bal - totalCommitted);
+  const days = Math.max(1, daysLeft());
+  const dailyAvailable = available / days;
+
+  if (bal < 100) return 'critical';
+  if (bal < 300) return 'survival';
+  if (dailyAvailable < 15) return 'tight';
+  if (dailyAvailable < 25) return 'cautious';
   return 'normal';
 }
 function getMaxDay() {
@@ -1457,10 +1542,13 @@ function renderSurvivalBanner() {
   if (mode === 'critical') {
     el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
   } else if (mode === 'survival') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending to $80. No discretionary.</div>';
+    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending. No discretionary.</div>';
   } else if (mode === 'tight') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Tight this week — stay under ' + fmtC(dailyMax) + '/day</div>';
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max</strong></div>';
+  } else if (mode === 'cautious') {
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Cautious Mode — Watch Your Spending</div>';
   } else {
+    // 'normal' — no banner; everything is fine.
     el.innerHTML = '';
   }
 }
@@ -1473,28 +1561,32 @@ function checkDayBudgetAlert() {
   }
 }
 function getActiveDebtsDueBeforePayday() {
-  const now = new Date();
+  const today = new Date();
+  today.setHours(0,0,0,0);
   const paydayDay = S.payday || 15;
-  let nextPayday = new Date(now.getFullYear(), now.getMonth(), paydayDay);
-  // Advance to next month if payday passed OR already received this cycle
-  if (nextPayday <= now || (S.paydayReceived && now.getDate() <= paydayDay)) {
-    nextPayday.setMonth(nextPayday.getMonth() + 1);
+
+  const paydayDate = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    paydayDay
+  );
+  // Advance to next month if payday already passed this month, OR if
+  // payday already received this cycle (cycle guard — same as legacy).
+  if (paydayDate <= today || (S.paydayReceived && today.getDate() <= paydayDay)) {
+    paydayDate.setMonth(paydayDate.getMonth() + 1);
   }
+
   return (S.debts || [])
     .filter(d => {
       if (d.paid) return false;
       if (d.viaRent) return false;
-      if (d.delayDate) {
-        try {
-          // Handle both "2026-05-01" and "2026-05-01T00:00" formats
-          const due = new Date(d.delayDate.includes('T') ? d.delayDate : d.delayDate + 'T00:00');
-          return due > now && due <= nextPayday;
-        } catch(e) { return false; }
-      }
-      // No delayDate — include if high priority
-      return (d.priority || 99) <= 3;
+      // ONLY include debts with an explicit due date that falls
+      // between today and payday. No priority catch-all.
+      if (!d.delayDate) return false;
+      const due = new Date(d.delayDate + 'T00:00:00');
+      return due >= today && due <= paydayDate;
     })
-    .reduce((s, d) => s + (d.amt || 0), 0);
+    .reduce((sum, d) => sum + (d.amt || 0), 0);
 }
 
 // Analysis only — never participates in balance calculations
@@ -1565,7 +1657,8 @@ function calculateNetWorth() {
   const cashBalance = S.bal || 0;
   const mumAccount = S.mumAccountBalance || 0;
   const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
-  const totalAssets = wrxValue + cashBalance + mumAccount + savings;
+  const superBalance = S.superBalance || 0;
+  const totalAssets = wrxValue + cashBalance + mumAccount + savings + superBalance;
 
   const kiaLoan = S.carloan || 0;
   const creditCard = S.cc || 0;
@@ -1583,7 +1676,8 @@ function calculateNetWorthBreakdown() {
   const cashBalance = S.bal || 0;
   const mumAccount = S.mumAccountBalance || 0;
   const savings = (S.savingsBuckets||[]).reduce((s,b) => s + (b.saved||0), 0);
-  const totalAssets = wrxValue + cashBalance + mumAccount + savings;
+  const superBalance = S.superBalance || 0;
+  const totalAssets = wrxValue + cashBalance + mumAccount + savings + superBalance;
 
   const kiaLoan = S.carloan || 0;
   const creditCard = S.cc || 0;
@@ -1596,7 +1690,7 @@ function calculateNetWorthBreakdown() {
     assets: parseFloat(totalAssets.toFixed(2)),
     liabilities: parseFloat(totalLiabilities.toFixed(2)),
     net: parseFloat((totalAssets - totalLiabilities).toFixed(2)),
-    breakdown: { wrxValue, cashBalance, mumAccount, savings, kiaLoan, creditCard, immediateDebts }
+    breakdown: { wrxValue, cashBalance, mumAccount, savings, superBalance, kiaLoan, creditCard, immediateDebts }
   };
 }
 function getNetWorth() {
@@ -1926,9 +2020,58 @@ function getExpandedBills() {
 function isThisMonthlyBillPaid(billName, billDay) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth()+1;
+  if (!S.paidBills) return false;
+
   const key1 = y+'-'+m+'-'+billName+'-'+billDay;
   const key2 = y+'-'+m+'-'+billName;
-  return !!(S.paidBills && (S.paidBills[key1] === true || S.paidBills[key2] === true));
+  if (S.paidBills[key1] === true || S.paidBills[key2] === true) return true;
+
+  // Legacy keys for renamed bills — keep paid state honest after renames.
+  const legacyNames = {
+    'Rent + Deposit Savings': 'Rent',
+    'KIA Loan — Firstmac': 'Car Loan — Firstmac'
+  };
+  const legacyName = legacyNames[billName];
+  if (legacyName) {
+    const legacyKey1 = y+'-'+m+'-'+legacyName+'-'+billDay;
+    const legacyKey2 = y+'-'+m+'-'+legacyName;
+    if (S.paidBills[legacyKey1] === true || S.paidBills[legacyKey2] === true) return true;
+  }
+
+  return false;
+}
+
+// Returns true only when a bill's frequency means it's due this calendar month.
+// Monthly bills are always due. Yearly/quarterly/biannual bills check
+// dueMonth (for yearly) or dueMonths (for quarterly/biannual).
+function isBillDueThisMonth(bill) {
+  const now = new Date();
+  const month = now.getMonth(); // 0-11
+
+  if (!bill || !bill.freq || bill.freq === 'monthly') return true;
+
+  if (bill.freq === 'yearly' || bill.freq === 'annual') {
+    const dueMonth = bill.dueMonth !== undefined ? bill.dueMonth : month;
+    return month === dueMonth;
+  }
+
+  if (bill.freq === 'quarterly') {
+    if (bill.dueMonths && bill.dueMonths.length) {
+      return bill.dueMonths.includes(month);
+    }
+    return [0, 3, 6, 9].includes(month);
+  }
+
+  if (bill.freq === 'biannual' || bill.freq === 'biannually') {
+    if (bill.dueMonths && bill.dueMonths.length) {
+      return bill.dueMonths.includes(month);
+    }
+    return [0, 6].includes(month);
+  }
+
+  if (bill.freq === 'fortnightly' || bill.freq === 'weekly') return true;
+
+  return true; // default to monthly if unknown
 }
 
 function getBillsDue() {
@@ -1945,12 +2088,13 @@ function getBillsDue() {
     // C1: when paydayReceived=true the pay has already landed — payday-day bills
     // (e.g. Rent on the 15th) will debit imminently, so include them in "due" total.
     const upperBound = S.paydayReceived ? payday + 1 : payday;
-    return bills.filter(b => b.recurring !== false && !isPaid(b) && b.day >= today && b.day < upperBound);
+    return bills.filter(b => b.recurring !== false && !isPaid(b) && isBillDueThisMonth(b) && b.day >= today && b.day < upperBound);
   }
   // On/after payday: bills from tomorrow up to next payday next month
   return bills.filter(b => {
     if (b.recurring === false) return false;
     if (isPaid(b)) return false;
+    if (!isBillDueThisMonth(b)) return false;
     const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
     return diff > 0 && diff < daysLeft(payday);
   });
@@ -2905,11 +3049,28 @@ function renderAll() {
 
   // New single "YOU CAN SPEND TODAY" display
   const _maxDayDisp = $('max-day-display');
+  const _maxDayCtx = $('max-day-context');
   const _paceDisp = $('pace-display');
   if (_maxDayDisp) {
     const _ddb = getDynamicDailyBudget();
     _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
     _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
+    if (_maxDayCtx) {
+      let ctxText = '', ctxColor = 'var(--text3)';
+      if (_ddb < 20) {
+        const _hasTH = getActiveDebtsDueBeforePayday() > 0;
+        ctxText = _hasTH ? 'Tight — Teachers Health hits tomorrow' : 'Tight — cover your essentials first';
+        ctxColor = 'var(--red)';
+      } else if (_ddb < 30) {
+        ctxText = 'Cautious — cover your essentials first';
+        ctxColor = 'var(--amber)';
+      } else {
+        ctxText = "You're on track — spend wisely";
+        ctxColor = 'var(--green)';
+      }
+      _maxDayCtx.textContent = ctxText;
+      _maxDayCtx.style.color = ctxColor;
+    }
   }
   if (_paceDisp) {
     const _weekAgo2 = Date.now() - 7*86400000;
@@ -4082,13 +4243,17 @@ function renderBillsGrouped() {
   const today = new Date().getDate();
   const now = new Date();
   const grouped = {today:[], week:[], next:[], later:[]};
-  getExpandedBills().filter(b => b.recurring !== false).forEach(b => {
-    const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
-    if (diff === 0) grouped.today.push({...b, diff});
-    else if (diff <= 7) grouped.week.push({...b, diff});
-    else if (diff <= 14) grouped.next.push({...b, diff});
-    else grouped.later.push({...b, diff});
-  });
+  // Only include bills whose freq says they're due this month — yearly/quarterly
+  // bills shouldn't show up in months they're not actually billed.
+  getExpandedBills()
+    .filter(b => b.recurring !== false && isBillDueThisMonth(b))
+    .forEach(b => {
+      const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
+      if (diff === 0) grouped.today.push({...b, diff});
+      else if (diff <= 7) grouped.week.push({...b, diff});
+      else if (diff <= 14) grouped.next.push({...b, diff});
+      else grouped.later.push({...b, diff});
+    });
   ['week','next','later'].forEach(k => grouped[k].sort((a,b) => a.diff - b.diff));
 
   // Exclude paid bills from totals — paid bills still render with PAID badge but don't count toward amounts
@@ -4211,9 +4376,27 @@ function getCalendarDayItems(day, month, year) {
       }
     });
 
-  // Add unpaid bills, suppressing any covered by a debt on the same day
+  // Add unpaid bills for the rendered month — respect freq metadata so
+  // yearly/quarterly bills don't appear every month.
+  function isBillDueInMonth(b, m) {
+    if (!b.freq || b.freq === 'monthly') return true;
+    if (b.freq === 'yearly' || b.freq === 'annual') {
+      return b.dueMonth !== undefined ? m === b.dueMonth : true;
+    }
+    if (b.freq === 'quarterly') {
+      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
+      return [0, 3, 6, 9].includes(m);
+    }
+    if (b.freq === 'biannual' || b.freq === 'biannually') {
+      if (b.dueMonths && b.dueMonths.length) return b.dueMonths.includes(m);
+      return [0, 6].includes(m);
+    }
+    return true;
+  }
+
   getExpandedBills().forEach(b => {
     if (b.recurring === false || b.day !== day) return;
+    if (!isBillDueInMonth(b, month)) return;
     if (isThisMonthlyBillPaid(b.name, b.day)) return;
     if (isBillCoveredByDebt(b)) return;
     items.push({ type: 'bill', name: b.name, amt: b.amt, color: 'var(--amber)', bill: b });
@@ -5040,6 +5223,15 @@ function saveIncome() {
 function saveWrxValue() {
   const v = parseFloat(document.getElementById('set-wrx')?.value);
   if (!isNaN(v) && v >= 0) { S.wrxValue = v; onStateChange('wrx_saved'); showToast('WRX value saved'); }
+}
+
+function saveSuperBalance() {
+  const v = parseFloat(document.getElementById('set-super')?.value);
+  if (!isNaN(v) && v >= 0) {
+    S.superBalance = v;
+    onStateChange('super_saved');
+    showToast('✅ Super Balance Updated — $' + v.toLocaleString());
+  }
 }
 
 function saveMumAccountBalance() {
@@ -6005,7 +6197,6 @@ if ('serviceWorker' in navigator) {
     "BILLS":[
       {"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":false},
       {"name":"Car Loan \u2014 Firstmac","amt":387.69,"day":1,"tag":"Loan","recurring":true,"freq":"fortnightly"},
-      {"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},
       {"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},
       {"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},
       {"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},
@@ -6203,7 +6394,6 @@ const REAL_STATE_V17 = {
   BILLS: [
     {name:"Rent", amt:3000, day:15, tag:"Fixed", recurring:true},
     {name:"Car Loan \u2014 Firstmac", amt:780, day:16, tag:"Loan", recurring:true, freq:"monthly"},
-    {name:"Health Insurance (qtrly avg)", amt:119.04, day:1, tag:"Fixed", recurring:true},
     {name:"Amazon Prime", amt:9.99, day:3, tag:"Subscription", recurring:true},
     {name:"Fuel", amt:110, day:5, tag:"Variable", recurring:true},
     {name:"Microsoft PC Game Pass", amt:19.45, day:7, tag:"Subscription", recurring:true},
@@ -9032,7 +9222,7 @@ function closePlanMode() {
 
 // ─── PLAN ENGINE — single source of truth for future planning ───────────────
 const PLAN = {
-  INCOME_MONTHLY: 7282,
+  get INCOME_MONTHLY() { return S.income || 7282; },
   BONUS_QUARTERLY: 2000,
   INCOME_GROSS: 117500,
 
@@ -9071,7 +9261,10 @@ const PLAN = {
   },
 
   getTotalProvisions() {
-    return this.getAnnualProvisions().reduce((s,p) => s + p.monthly, 0);
+    const provisions = typeof getCustomProvisions === 'function'
+      ? getCustomProvisions()
+      : this.getAnnualProvisions();
+    return provisions.reduce((s,p) => s + (p.monthly || 0), 0);
   },
 
   getTrips() {
@@ -9158,8 +9351,7 @@ const PLAN = {
     const fuel = 110;
     const otherBills = (BILLS||[])
       .filter(b => b.recurring &&
-        !['Rent + Deposit Savings','KIA Loan — Firstmac',
-          'Fuel','Health Insurance (qtrly avg)'].includes(b.name))
+        !['Rent + Deposit Savings','KIA Loan — Firstmac','Fuel'].includes(b.name))
       .reduce((s,b) => s + b.amt, 0);
     const teachersHealth = 259.41 / 3; // quarterly averaged to monthly
     const food = 400;
@@ -9417,6 +9609,101 @@ function markWrxListed() {
   showToast('✅ WRX Marked As Listed');
 }
 
+function renderSuperCard() {
+  const balance = S.superBalance || 0;
+  const monthlyContrib = S.superMonthlyContrib || 1310.50;
+  const growthRate = S.superGrowthRate || 0.085;
+
+  const yearsToRetirement = 35;
+  const monthlyRate = growthRate / 12;
+  const months = yearsToRetirement * 12;
+  const fv = balance * Math.pow(1 + monthlyRate, months) +
+    monthlyContrib * (Math.pow(1 + monthlyRate, months) - 1) / monthlyRate;
+  const fv1yr = balance * Math.pow(1 + monthlyRate, 12) +
+    monthlyContrib * (Math.pow(1 + monthlyRate, 12) - 1) / monthlyRate;
+  const fv5yr = balance * Math.pow(1 + monthlyRate, 60) +
+    monthlyContrib * (Math.pow(1 + monthlyRate, 60) - 1) / monthlyRate;
+
+  return `
+  <div style="background:rgba(255,255,255,0.04);border-radius:16px;padding:16px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.06)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <div style="color:#fff;font-size:15px;font-weight:700">🏦 Superannuation</div>
+        <div style="color:rgba(255,255,255,0.4);font-size:12px;margin-top:4px">Aware Super · High Growth</div>
+      </div>
+      <div style="text-align:right">
+        <div style="color:#4ECDC4;font-size:20px;font-weight:800">$${Math.round(balance).toLocaleString()}</div>
+        <div style="color:rgba(255,255,255,0.3);font-size:11px">Current Balance</div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
+        <div>
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">Employer</div>
+          <div style="color:#4ECDC4;font-size:14px;font-weight:700">$1,150</div>
+          <div style="color:rgba(255,255,255,0.3);font-size:10px">/month</div>
+        </div>
+        <div>
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">Your Extra</div>
+          <div style="color:#4ECDC4;font-size:14px;font-weight:700">$173</div>
+          <div style="color:rgba(255,255,255,0.3);font-size:10px">/month</div>
+        </div>
+        <div>
+          <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">Fees</div>
+          <div style="color:#FF6B35;font-size:14px;font-weight:700">-$12</div>
+          <div style="color:rgba(255,255,255,0.3);font-size:10px">/month</div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Projected Balance</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+      ${[
+        ['1 Year', fv1yr],
+        ['5 Years', fv5yr],
+        ['Retirement', fv]
+      ].map(([label, val]) => `
+      <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:10px;text-align:center">
+        <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-bottom:4px">${label}</div>
+        <div style="color:#4ECDC4;font-size:13px;font-weight:700">
+          $${val >= 1000000 ? (val/1000000).toFixed(1) + 'M' : Math.round(val/1000) + 'k'}
+        </div>
+      </div>`).join('')}
+    </div>
+    <div style="color:rgba(255,255,255,0.3);font-size:11px;line-height:1.5">
+      Projected at 8.5% p.a. (High Growth estimate). Actual returns will vary. Cannot access until ~age 60.
+    </div>
+    <button onclick="updateSuperBalance()" style="width:100%;margin-top:12px;padding:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer">
+      📊 Update Balance
+    </button>
+  </div>`;
+}
+
+function updateSuperBalance() {
+  PLAN_MODAL.open(
+    PLAN_MODAL.header('Update Super Balance', 'Check your Aware Super app for current balance') +
+    PLAN_MODAL.field('Current Balance ($)', 'super-balance-input',
+      S.superBalance || 63429.15, 'number',
+      'Log into Aware Super or check your last statement.') +
+    PLAN_MODAL.info(
+      'Updating regularly keeps your net worth and retirement projections accurate. ' +
+      'Your employer contributes $1,150/month automatically.'
+    ) +
+    PLAN_MODAL.btn('Update', 'confirmSuperBalance()', true) +
+    PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
+  );
+}
+
+function confirmSuperBalance() {
+  const val = parseFloat(document.getElementById('super-balance-input')?.value);
+  if (!isNaN(val) && val > 0) {
+    S.superBalance = val;
+    onStateChange('super_updated');
+    PLAN_MODAL.close();
+    renderPlanMode();
+    showToast('✅ Super Balance Updated');
+  }
+}
+
 function showNetWorthBreakdown() {
   const nw = calculateNetWorthBreakdown();
   const b = nw.breakdown || {};
@@ -9511,6 +9798,7 @@ function renderPlanMode() {
   if (typeof renderPaydayAllocation === 'function') html += renderPaydayAllocation();
   if (typeof renderTrips === 'function') html += renderTrips(trips);
   if (typeof renderGoalCards === 'function') html += renderGoalCards(goals, surplus);
+  if (typeof renderSuperCard === 'function') html += renderSuperCard();
   if (typeof renderAnnualProvisions === 'function') html += renderAnnualProvisions(provisions);
   if (typeof renderIncomeSimulator === 'function') html += renderIncomeSimulator();
 
@@ -9532,7 +9820,7 @@ function renderPaydayAllocation() {
   const fixed = (BILLS||[]).filter(b => b.recurring && ['Fixed','Loan'].includes(b.tag))
     .reduce((s,b) => s + b.amt, 0);
   const provisions = PLAN.getTotalProvisions();
-  const teachersHealth = (S.debts||[]).find(d => d.name === 'Teachers Health' && !d.paid)?.amt || 0;
+  const teachersHealth = 0; // handled via quarterly bill, not a separate debt
 
   // Rent bill ($3,000) already includes the $500 rent + $2,500 deposit savings
   // — do not double-count via a separate mumPayment line.
