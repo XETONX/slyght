@@ -3153,7 +3153,11 @@ function renderAll() {
 
   // Net worth tile update
   const nwEl = $('nw-val');
-  if (nwEl) { const nw = calculateNetWorth(); const _nwLiquid = isNaN(nw.liquidNet) ? 0 : nw.liquidNet; nwEl.textContent = (_nwLiquid >= 0 ? '+' : '') + fmtC(_nwLiquid); nwEl.className = 'nw-val ' + (_nwLiquid >= 0 ? 'pos' : 'neg'); }
+  if (nwEl) {
+    const _nwLiquid = (MODEL && !isNaN(MODEL.liquidNet)) ? MODEL.liquidNet : 0;
+    nwEl.textContent = (_nwLiquid >= 0 ? '+' : '') + fmtC(_nwLiquid);
+    nwEl.className = 'nw-val ' + (_nwLiquid >= 0 ? 'pos' : 'neg');
+  }
 
   // H3: calculate actual cycle length from last payday to next payday instead of hardcoded /31
   const paydayDayV = S.payday || 15;
