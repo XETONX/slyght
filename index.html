@@ -1530,10 +1530,11 @@ function renderDashboardMetrics() {
 }
 function renderSurvivalBanner() {
   const el = $('dash-survival-banner'); if (!el) return;
-  const mode = getSurvivalMode();
-  const bal = getLiveBal();
-  const days = Math.max(1, daysLeft());
-  const dailyMax = getDynamicDailyBudget();
+  const _m = MODEL || computeFinancialModel();
+  const mode = _m.survivalMode;
+  const bal = _m.bal;
+  const days = _m.daysToPayday;
+  const dailyMax = _m.safeToSpendToday;
   if (mode === 'critical') {
     el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
   } else if (mode === 'survival') {
