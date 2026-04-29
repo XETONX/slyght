@@ -2013,9 +2013,14 @@ function getExpandedBills() {
   return result;
 }
 
-function isThisMonthlyBillPaid(billName, billDay) {
+// month/year are optional. When omitted, defaults to today's month/year — preserves
+// existing default callers. When provided (month is 0-indexed, matching JS Date),
+// the lookup key is built for that rendered month so callers rendering future
+// months don't bleed today's paid-status across.
+function isThisMonthlyBillPaid(billName, billDay, month, year) {
   const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth()+1;
+  const y = (year !== undefined) ? year : now.getFullYear();
+  const m = (month !== undefined) ? month + 1 : now.getMonth() + 1;
   if (!S.paidBills) return false;
 
   const key1 = y+'-'+m+'-'+billName+'-'+billDay;
@@ -4551,9 +4556,22 @@ function renderBillsGrouped() {
   });
   ['week','next','later'].forEach(k => grouped[k].sort((a,b) => a.diff - b.diff));
 
+  // A bill in week/next/later groups whose b.day < today actually renders as next
+  // month's instance — pass that rendered month/year to the paid-lookup so April-paid
+  // bills don't appear paid in May's view.
+  function _billRenderedMY(b) {
+    const sameMonth = b.day >= today;
+    const m = sameMonth ? now.getMonth() : (now.getMonth() + 1) % 12;
+    const y = sameMonth ? now.getFullYear() : now.getFullYear() + (now.getMonth() === 11 ? 1 : 0);
+    return { m, y };
+  }
+
   // Exclude paid bills from totals — paid bills still render with PAID badge but don't count toward amounts
   const todayTotal = grouped.today.filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
-  const weekTotal = [...grouped.today,...grouped.week].filter(b => !isThisMonthlyBillPaid(b.name, b.day)).reduce((s,b) => s+b.amt, 0);
+  const weekTotal = [...grouped.today,...grouped.week].filter(b => {
+    const my = _billRenderedMY(b);
+    return !isThisMonthlyBillPaid(b.name, b.day, my.m, my.y);
+  }).reduce((s,b) => s+b.amt, 0);
   const liveBal = getLiveBal();
   const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   let warn = '';
@@ -4575,7 +4593,8 @@ function renderBillsGrouped() {
       const ri = BILLS.findIndex(x => x.name === b.name);
       const freqLabel = b.freq === 'fortnightly' ? 'FORTNIGHTLY' : b.freq === 'weekly' ? 'WEEKLY' : 'MONTHLY';
       const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
-      const isPaid = isThisMonthlyBillPaid(b.name, b.day);
+      const _myb = _billRenderedMY(b);
+      const isPaid = isThisMonthlyBillPaid(b.name, b.day, _myb.m, _myb.y);
       const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
       const todayBadge = b.diff === 0 ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
       return '<div class="bill-row">' +
@@ -4596,8 +4615,14 @@ function renderBillsGrouped() {
   const upcomingAll = [...grouped.next, ...grouped.later]
     .filter(b => !isBillCoveredByDebt(b))
     .sort((a,b) => a.day - b.day);
-  const upcomingUnpaid = upcomingAll.filter(b => !isThisMonthlyBillPaid(b.name, b.day));
-  const upcomingPaid = upcomingAll.filter(b => isThisMonthlyBillPaid(b.name, b.day));
+  const upcomingUnpaid = upcomingAll.filter(b => {
+    const my = _billRenderedMY(b);
+    return !isThisMonthlyBillPaid(b.name, b.day, my.m, my.y);
+  });
+  const upcomingPaid = upcomingAll.filter(b => {
+    const my = _billRenderedMY(b);
+    return isThisMonthlyBillPaid(b.name, b.day, my.m, my.y);
+  });
   let monthlyHtml = '';
   if (upcomingUnpaid.length || upcomingPaid.length) {
     const monthlyTotal = upcomingUnpaid.reduce((s,b) => s+b.amt, 0);
@@ -4740,7 +4765,7 @@ function calDayClick(day) {
   // Render bills with Pay Now / Already Paid buttons
   bills.forEach(it => {
     const b = it.bill;
-    const bPaid = isThisMonthlyBillPaid(b.name, b.day);
+    const bPaid = isThisMonthlyBillPaid(b.name, b.day, calMonth, calYear);
     if (bPaid) {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.6">' +
         '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px">$'+b.amt.toFixed(2)+'</div></div>' +
@@ -4755,7 +4780,7 @@ function calDayClick(day) {
         '</div></div>';
     }
   });
-  const total = items.filter(it => it.type === 'debt' || !isThisMonthlyBillPaid((it.bill||{}).name, (it.bill||{}).day)).reduce((s, it) => s + (it.amt || 0), 0);
+  const total = items.filter(it => it.type === 'debt' || !isThisMonthlyBillPaid((it.bill||{}).name, (it.bill||{}).day, calMonth, calYear)).reduce((s, it) => s + (it.amt || 0), 0);
   if (total > 0) html += '<div style="display:flex;justify-content:space-between;padding:10px 0 0"><span style="font-size:12px;color:var(--text3);font-weight:600">TOTAL DUE</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$'+total.toFixed(2)+'</span></div>';
   else if (items.length) html += '<div style="padding:8px 0;font-size:13px;color:var(--green)">All bills on this day are paid ✓</div>';
   html += '<button onclick="document.getElementById(\'cal-day-detail\').style.display=\'none\'" style="width:100%;margin-top:12px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-size:13px;cursor:pointer">Close</button>';

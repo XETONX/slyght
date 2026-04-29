@@ -170,6 +170,30 @@ function getExpandedBills() {
   return BILLS.filter(b => b.recurring !== false);
 }
 
+function isThisMonthlyBillPaid(billName, billDay, month, year) {
+  const now = new Date();
+  const y = (year !== undefined) ? year : now.getFullYear();
+  const m = (month !== undefined) ? month + 1 : now.getMonth() + 1;
+  if (!S.paidBills) return false;
+
+  const key1 = y+'-'+m+'-'+billName+'-'+billDay;
+  const key2 = y+'-'+m+'-'+billName;
+  if (S.paidBills[key1] === true || S.paidBills[key2] === true) return true;
+
+  const legacyNames = {
+    'Rent + Deposit Savings': 'Rent',
+    'KIA Loan — Firstmac': 'Car Loan — Firstmac'
+  };
+  const legacyName = legacyNames[billName];
+  if (legacyName) {
+    const legacyKey1 = y+'-'+m+'-'+legacyName+'-'+billDay;
+    const legacyKey2 = y+'-'+m+'-'+legacyName;
+    if (S.paidBills[legacyKey1] === true || S.paidBills[legacyKey2] === true) return true;
+  }
+
+  return false;
+}
+
 function getBillsDue() {
   const today = new Date().getDate();
   const payday = S.payday || 15;
@@ -645,6 +669,37 @@ test('Boot resilience: computeFinancialModel survives PLAN access throwing (TDZ-
   } finally {
     if (origPLAN === undefined) delete global.PLAN;
     else global.PLAN = origPLAN;
+  }
+});
+
+// ── Paid-lookup month-awareness ───────────────────────────────
+// Bug: lookup used today.getMonth() to construct paidBills key, so April-paid
+// bills appeared as PAID when rendering future months (May calendar day-detail,
+// "This Week" totals). Fix: optional (month, year) params on canonical lookup.
+
+test('Paid lookup: April-paid Amazon Prime is NOT paid in May', () => {
+  const oldPaid = S.paidBills;
+  S.paidBills = { '2026-4-Amazon Prime-3': true };
+  try {
+    const amazon = BILLS.find(b => b.name === 'Amazon Prime');
+    // May = month index 4. April key is set, May key is not.
+    expect(isThisMonthlyBillPaid(amazon.name, amazon.day, 4, 2026)).toBe(false);
+    // Sanity: April (month index 3) should still be true.
+    expect(isThisMonthlyBillPaid(amazon.name, amazon.day, 3, 2026)).toBe(true);
+  } finally {
+    S.paidBills = oldPaid;
+  }
+});
+
+test('Paid lookup: default behavior unchanged (no month/year arg → today)', () => {
+  // Mocked Date is 2026-04-29, so default month/year is April 2026.
+  const oldPaid = S.paidBills;
+  S.paidBills = { '2026-4-Amazon Prime-3': true };
+  try {
+    const amazon = BILLS.find(b => b.name === 'Amazon Prime');
+    expect(isThisMonthlyBillPaid(amazon.name, amazon.day)).toBe(true);
+  } finally {
+    S.paidBills = oldPaid;
   }
 });
 
