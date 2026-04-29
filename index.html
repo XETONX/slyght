@@ -9451,17 +9451,20 @@ function renderMumCard() {
 function renderWeeklySnapshot() {
   const el = document.getElementById('weekly-snapshot');
   if (!el) return;
+  const _m = MODEL || computeFinancialModel();
   const weekAgo = Date.now() - 7*86400000;
   const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
+  // Top-3 categories still derived inline (filter is for category breakdown,
+  // not the headline total — total comes from MODEL).
   const weekTxns = (S.txns||[]).filter(t =>
     t.ts > weekAgo && !t.income && !t._isCorrection && !t._isRoundup && !NON_DISC.includes(t.cat)
   );
   const cats = {};
   weekTxns.forEach(t => { cats[t.cat] = (cats[t.cat]||0) + t.amt; });
   const top3 = Object.entries(cats).sort((a,b) => b[1]-a[1]).slice(0,3);
-  const totalWeek = getDiscretionarySpend(weekAgo, Date.now());
+  const totalWeek = _m.weekSpent;
   const dailyAvg = totalWeek / 7;
-  const maxDay = getDynamicDailyBudget();
+  const maxDay = _m.safeToSpendToday;
   const isOverPace = dailyAvg > maxDay;
   const icons = {'Food / Coffee':'🍱','Transport / Fuel':'🚌','Shopping':'🛍️','Entertainment':'🎮','Subscription':'📱','Other':'💸'};
 
