@@ -277,6 +277,82 @@ function getSurvivalMode() {
   return 'normal';
 }
 
+// ── Canonical spend filter (added by misleading-math fix) ───────────────
+const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer','Loan','Car Loan','CC Payment']);
+
+function computeSpentInRange(fromTs, toTs) {
+  return (S.txns||[]).filter(t =>
+    t.ts >= fromTs && t.ts <= toTs &&
+    !t.income && !_NON_SPEND_CATS.has(t.cat) &&
+    !t._isCorrection && !t._isRoundup
+  ).reduce((s,t) => s+t.amt, 0);
+}
+function computeSpentToday() {
+  const start = new Date(); start.setHours(0,0,0,0);
+  return computeSpentInRange(start.getTime(), Date.now());
+}
+
+function getThisWeekProjection() {
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysSoFarInWeek = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const daysLeftInWeek = 7 - daysSoFarInWeek;
+  const weekStart = new Date(today);
+  weekStart.setDate(today.getDate() - daysSoFarInWeek);
+  weekStart.setHours(0,0,0,0);
+  const spentSoFar = computeSpentInRange(weekStart.getTime(), today.getTime());
+  const _isDueInMonth = (b, monthIdx) => {
+    if (!b.freq || b.freq === 'monthly' || b.freq === 'fortnightly' || b.freq === 'weekly') return true;
+    if (b.freq === 'yearly' || b.freq === 'annual') {
+      const dm = b.dueMonth !== undefined ? b.dueMonth : monthIdx;
+      return monthIdx === dm;
+    }
+    if (b.freq === 'quarterly') {
+      const months = (b.dueMonths && b.dueMonths.length) ? b.dueMonths : [0,3,6,9];
+      return months.includes(monthIdx);
+    }
+    if (b.freq === 'biannual' || b.freq === 'biannually') {
+      const months = (b.dueMonths && b.dueMonths.length) ? b.dueMonths : [0,6];
+      return months.includes(monthIdx);
+    }
+    return true;
+  };
+  let billsDueThisWeek = 0;
+  for (let i = 0; i < daysLeftInWeek; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    const day = d.getDate(), m = d.getMonth(), y = d.getFullYear();
+    const dim = new Date(y, m + 1, 0).getDate();
+    BILLS.forEach(b => {
+      if (b.recurring === false) return;
+      const occursOn = [b.day];
+      if (b.freq === 'fortnightly') {
+        const d2 = b.day + 14;
+        occursOn.push(d2 <= dim ? d2 : d2 - dim);
+      }
+      if (b.freq === 'weekly') {
+        for (let w = 1; w <= 3; w++) {
+          const dw = b.day + w * 7;
+          if (dw <= dim) occursOn.push(dw);
+        }
+      }
+      if (!occursOn.includes(day)) return;
+      if (!_isDueInMonth(b, m)) return;
+      if (isThisMonthlyBillPaid(b.name, day, m, y)) return;
+      billsDueThisWeek += b.amt;
+    });
+  }
+  const dailyRate = getDynamicDailyBudget();
+  const projectedRemaining = (dailyRate * daysLeftInWeek) + billsDueThisWeek;
+  return {
+    spentSoFar: parseFloat(spentSoFar.toFixed(2)),
+    billsDueThisWeek: parseFloat(billsDueThisWeek.toFixed(2)),
+    projectedRemaining: parseFloat(projectedRemaining.toFixed(2)),
+    projectedTotal: parseFloat((spentSoFar + projectedRemaining).toFixed(2)),
+    daysLeftInWeek, daysSoFarInWeek,
+    dailyRate: parseFloat(dailyRate.toFixed(2))
+  };
+}
+
 function calculateNetWorth() {
   const wrxValue = S.wrxStatus === 'sold' ? 0 : (S.wrxValue || 25000);
   const cashBalance = S.bal || 0;
@@ -699,6 +775,59 @@ test('Paid lookup: default behavior unchanged (no month/year arg → today)', ()
     const amazon = BILLS.find(b => b.name === 'Amazon Prime');
     expect(isThisMonthlyBillPaid(amazon.name, amazon.day)).toBe(true);
   } finally {
+    S.paidBills = oldPaid;
+  }
+});
+
+// ── Reconciliation tests (misleading-math fix) ──────────
+
+test('computeSpentToday: excludes corrections and round-ups', () => {
+  const oldTxns = S.txns;
+  // Mocked clock pins Date.now() at Apr 29 00:00. Place txns at exactly today's
+  // midnight so they're inside [startOfToday, Date.now()] (toTs inclusive).
+  const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+  S.txns = [
+    { ts: todayMidnight.getTime(),             amt: 50,   cat: 'Food / Coffee' },                  // counts: $50
+    { ts: todayMidnight.getTime(),             amt: 0.55, cat: 'Food / Coffee', _isRoundup: true }, // excluded
+    { ts: todayMidnight.getTime(),             amt: 30,   cat: 'Shopping', _isCorrection: true },  // excluded
+    { ts: todayMidnight.getTime(),             amt: 100,  cat: 'Bills' },                          // excluded (non-spend)
+    { ts: todayMidnight.getTime() - 86400000,  amt: 99,   cat: 'Food / Coffee' },                  // excluded (yesterday)
+  ];
+  try {
+    expect(computeSpentToday()).toBe(50);
+  } finally { S.txns = oldTxns; }
+});
+
+test('Bills remaining this week: spans month boundary, excludes paid', () => {
+  // Apr 29 (Wed): days remaining in week = Wed/Thu/Fri/Sat/Sun = 5 days → Apr 29 → May 3
+  // In that range: NRMA day 2 (yearly, May only) → INCLUDED; Amazon day 3 monthly → INCLUDED;
+  // Teachers Health day 1 quarterly (May in dueMonths [1,4,7,10]) → INCLUDED.
+  // Mark Amazon paid for May → excluded.
+  const oldPaid = S.paidBills;
+  const oldTxns = S.txns;
+  S.txns = [];
+  S.paidBills = { '2026-5-Amazon Prime-3': true };
+  try {
+    const proj = getThisWeekProjection();
+    // NRMA $1023.06 + Teachers Health $259.41 = $1282.47 (Amazon excluded as paid)
+    expect(proj.billsDueThisWeek).toBe(1282.47);
+  } finally {
+    S.paidBills = oldPaid;
+    S.txns = oldTxns;
+  }
+});
+
+test('Week total projection = spent so far + bills remaining + projected living', () => {
+  const oldTxns = S.txns;
+  const oldPaid = S.paidBills;
+  S.txns = [];  // no spend this week — keeps spentSoFar at $0
+  S.paidBills = {};
+  try {
+    const proj = getThisWeekProjection();
+    const components = proj.spentSoFar + proj.billsDueThisWeek + (proj.dailyRate * proj.daysLeftInWeek);
+    expect(proj.projectedTotal).toBe(parseFloat(components.toFixed(2)));
+  } finally {
+    S.txns = oldTxns;
     S.paidBills = oldPaid;
   }
 });

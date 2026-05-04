@@ -1607,10 +1607,23 @@ function getDynamicBuffer() {
   if (bal < 2000) return 300;
   return 500; // only apply full buffer when genuinely comfortable
 }
-// Only discretionary spend today — debt repayments/income/savings never count toward daily budget
+// Canonical "discretionary spend in range" — single source of truth for
+// Dashboard "spent today", Analysis pivot, and Bills tab "spent so far this week".
+// Excludes income, non-spend categories (incl. Bills/Transfer), corrections, round-ups.
+function computeSpentInRange(fromTs, toTs) {
+  return (S.txns||[]).filter(t =>
+    t.ts >= fromTs && t.ts <= toTs &&
+    !t.income && !_NON_SPEND_CATS.has(t.cat) &&
+    !t._isCorrection && !t._isRoundup
+  ).reduce((s,t) => s+t.amt, 0);
+}
+function computeSpentToday(now) {
+  const start = new Date(now || Date.now()); start.setHours(0,0,0,0);
+  return computeSpentInRange(start.getTime(), Date.now());
+}
+// Only discretionary spend today — debt repayments/income/savings/corrections/round-ups never count
 function getTodaySpent() {
-  const today = new Date(); today.setHours(0,0,0,0);
-  return S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && new Date(t.ts) >= today).reduce((s,t) => s+t.amt, 0);
+  return computeSpentToday();
 }
 // Alias: explicitly discretionary only — excludes all debt repayments, income, savings, loans, CC payments
 // Used by "Over by" alert and TODAY metric tile so debt repayments never trigger overspend warnings
@@ -2236,8 +2249,8 @@ function computeFinancialModel(state, now) {
   const cycleSpent = (typeof getDiscretionarySpend === 'function')
     ? getDiscretionarySpend(cycleStart.getTime(), now.getTime()) : 0;
   const todayMs = todayMidnight.getTime();
-  const todaySpent = (typeof getDiscretionarySpend === 'function')
-    ? getDiscretionarySpend(todayMs, now.getTime()) : 0;
+  const todaySpent = (typeof computeSpentInRange === 'function')
+    ? computeSpentInRange(todayMs, now.getTime()) : 0;
 
   // Plan-mode shapes — wrapped in try/catch because PLAN is declared with
   // `const` later in the file. During boot, renderWeeklySnapshot() can fire
@@ -4580,7 +4593,12 @@ function renderBillsGrouped() {
 
   function renderGroup(title, bills, cls) {
     if (!bills.length) return '';
-    const gt = bills.reduce((s,b) => s+b.amt, 0);
+    // Group title shows sum of UNPAID items only — must reconcile with displayed bills
+    // and with the "$X due this week" warn header which uses unpaid-only weekTotal.
+    const gt = bills.filter(b => {
+      const my = _billRenderedMY(b);
+      return !isThisMonthlyBillPaid(b.name, b.day, my.m, my.y);
+    }).reduce((s,b) => s+b.amt, 0);
     const isWeekSection = cls === 'today' || cls === 'week';
     const tc = cls === 'today' ? 'var(--red)' : cls === 'week' ? 'var(--amber)' : 'var(--text3)';
     // Week highlight border
@@ -4596,10 +4614,13 @@ function renderBillsGrouped() {
       const _myb = _billRenderedMY(b);
       const isPaid = isThisMonthlyBillPaid(b.name, b.day, _myb.m, _myb.y);
       const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
-      const todayBadge = b.diff === 0 ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
+      // Suppress TODAY badge when paid — never show PAID + TODAY simultaneously (#13)
+      const todayBadge = (b.diff === 0 && !isPaid) ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
+      // Variable bills (Fuel, Food at Work) are estimates, not fixed obligations (#2)
+      const variableBadge = (b.tag === 'Variable' && !isPaid) ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--bg5);color:var(--text2);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;margin-left:4px">EST</span>' : '';
       return '<div class="bill-row">' +
         '<div class="bill-chip '+cc+'" onclick="openBillModal('+ri+')" style="min-width:38px">'+String(b.day).padStart(2,'0')+'</div>' +
-        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+todayBadge+paidBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
+        '<div class="bill-info" onclick="openBillModal('+ri+')" style="flex:1"><div class="bill-name">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+todayBadge+paidBadge+variableBadge+'</div><div class="bill-tag">'+b.tag+rec+'</div></div>' +
         '<div style="display:flex;align-items:center;gap:6px">' +
         '<div class="bill-amt" style="'+(isPaid?'text-decoration:line-through;color:var(--text3)':b.diff===0?'color:var(--red)':'')+'">'+fmt(b.amt)+'</div>' +
         '</div></div>';
@@ -4798,18 +4819,57 @@ function getThisWeekProjection() {
   const weekStart = new Date(today);
   weekStart.setDate(today.getDate() - daysSoFarInWeek);
   weekStart.setHours(0,0,0,0);
-  const spentSoFar = (S.txns||[])
-    .filter(t => { const d = new Date(t.ts); return d >= weekStart && !t.income && !['Debt repayment','Savings','Loan'].includes(t.cat) && !t._isCorrection; })
-    .reduce((s,t) => s+t.amt, 0);
-  const billsDueThisWeek = getExpandedBills()
-    .filter(b => {
-      if (isThisMonthlyBillPaid(b.name, b.day)) return false;
-      const billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
-      return billDate > today && billDate <= new Date(today.getTime() + daysLeftInWeek * 86400000);
-    })
-    .reduce((s,b) => s+b.amt, 0);
+  // Spent so far: canonical discretionary spend (matches "Spent today" filter)
+  const spentSoFar = computeSpentInRange(weekStart.getTime(), today.getTime());
+  // Bills remaining: iterate today through end-of-week, handle month rollover.
+  // For each day in range, find bills with matching day-of-month (incl. fortnightly/weekly
+  // generations), filter by frequency for the day's calendar month, and exclude paid.
+  const _isDueInMonth = (b, monthIdx) => {
+    if (!b.freq || b.freq === 'monthly' || b.freq === 'fortnightly' || b.freq === 'weekly') return true;
+    if (b.freq === 'yearly' || b.freq === 'annual') {
+      const dm = b.dueMonth !== undefined ? b.dueMonth : monthIdx;
+      return monthIdx === dm;
+    }
+    if (b.freq === 'quarterly') {
+      const months = (b.dueMonths && b.dueMonths.length) ? b.dueMonths : [0,3,6,9];
+      return months.includes(monthIdx);
+    }
+    if (b.freq === 'biannual' || b.freq === 'biannually') {
+      const months = (b.dueMonths && b.dueMonths.length) ? b.dueMonths : [0,6];
+      return months.includes(monthIdx);
+    }
+    return true;
+  };
+  let billsDueThisWeek = 0;
+  for (let i = 0; i < daysLeftInWeek; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    const day = d.getDate(), m = d.getMonth(), y = d.getFullYear();
+    const dim = new Date(y, m + 1, 0).getDate();
+    BILLS.forEach(b => {
+      if (b.recurring === false) return;
+      const occursOn = [];
+      occursOn.push(b.day);
+      if (b.freq === 'fortnightly') {
+        const d2 = b.day + 14;
+        occursOn.push(d2 <= dim ? d2 : d2 - dim);
+      }
+      if (b.freq === 'weekly') {
+        for (let w = 1; w <= 3; w++) {
+          const dw = b.day + w * 7;
+          if (dw <= dim) occursOn.push(dw);
+        }
+      }
+      if (!occursOn.includes(day)) return;
+      if (!_isDueInMonth(b, m)) return;
+      if (isThisMonthlyBillPaid(b.name, day, m, y)) return;
+      // Skip today's bill if today is the actual day AND user already paid earlier today via txn —
+      // but the paidBills lookup above already captures that.
+      billsDueThisWeek += b.amt;
+    });
+  }
   const dailyRate = getDynamicDailyBudget();
-  const projectedRemaining = (dailyRate * daysLeftInWeek) + billsDueThisWeek;
+  const projectedLiving = dailyRate * daysLeftInWeek;
+  const projectedRemaining = projectedLiving + billsDueThisWeek;
   return {
     spentSoFar: parseFloat(spentSoFar.toFixed(2)),
     billsDueThisWeek: parseFloat(billsDueThisWeek.toFixed(2)),
@@ -5067,11 +5127,14 @@ function renderSpendingCoach() {
 function addBonus() { S.bonuses.push({id:S.bid++, label:'', amt:0}); save(); renderBonusList(0,0); }
 function renderBonusList(bonusTotal, safe) {
   const c = $('bonus-list'); if (!c) return;
-  c.innerHTML = S.bonuses.map(b => '<div class="bonus-row"><input class="s-input" type="text" placeholder="What is it?" value="'+b.label+'" oninput="updBonus('+b.id+',\'label\',this.value)" style="flex:2"><input class="s-input" type="number" placeholder="$" value="'+(b.amt||'')+'" oninput="updBonus('+b.id+',\'amt\',+this.value)" inputmode="decimal"><button class="rm-btn" onclick="rmBonus('+b.id+')">&#x00D7;</button></div>').join('');
+  // oninput only stores state + saves (no full re-render — was killing input focus on every keystroke).
+  // onblur commits via onStateChange which triggers renderAll and recomputes downstream.
+  c.innerHTML = S.bonuses.map(b => '<div class="bonus-row"><input class="s-input" type="text" placeholder="What is it?" value="'+b.label+'" oninput="updBonus('+b.id+',\'label\',this.value)" onblur="commitBonus()" style="flex:2"><input class="s-input" type="number" placeholder="$" value="'+(b.amt||'')+'" oninput="updBonus('+b.id+',\'amt\',+this.value)" onblur="commitBonus()" inputmode="decimal"><button class="rm-btn" onclick="rmBonus('+b.id+')">&#x00D7;</button></div>').join('');
   const el = $('bonus-impact'); if (!el) return;
   el.innerHTML = bonusTotal > 0 ? '<div class="alert ok" style="margin-top:10px">+'+fmt(bonusTotal)+' expected. Safe-to-spend: '+fmtS(safe)+'.</div>' : '';
 }
-function updBonus(id, f, v) { const b = S.bonuses.find(x => x.id === id); if (b) { b[f] = v; onStateChange('bonus-update'); } }
+function updBonus(id, f, v) { const b = S.bonuses.find(x => x.id === id); if (b) { b[f] = v; save(); } }
+function commitBonus() { onStateChange('bonus-update'); }
 function rmBonus(id) { S.bonuses = S.bonuses.filter(x => x.id !== id); save(); renderBonusList(0,0); renderAll(); }
 
 function setSeg(s) { S.seg = s; ['1m','3m','6m'].forEach(x => $('sg-'+x).classList.toggle('on', x === s)); renderCutSliders(); }
@@ -9301,12 +9364,13 @@ function triggerCamera() {
 
 function buildSpendingPivot(period) {
   const now = Date.now();
-  const cutoffs = {today:now-86400000, week:now-7*86400000, month:now-30*86400000, all:0};
+  // 'today' must align with Dashboard's "Spent today" — calendar-day boundary, _NON_SPEND_CATS filter
+  const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
+  const cutoffs = {today:startOfToday.getTime(), week:now-7*86400000, month:now-30*86400000, all:0};
   const cutoff = cutoffs[period] || 0;
-  const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
   const txns = S.txns.filter(t =>
     t.ts >= cutoff && !t.income && !t._isCorrection && !t._isRoundup &&
-    !NON_DISC.includes(t.cat)
+    !_NON_SPEND_CATS.has(t.cat)
   );
   const cats = {};
   txns.forEach(t => {
