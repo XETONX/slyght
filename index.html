@@ -2715,27 +2715,8 @@ function renderSurvivalForecast() {
 function renderAnalysisTab() {
   const c = $('analysis-content'); if (!c) return;
 
-  // FIX 7: SLYGHT Score moved to bottom of analysis tab
-  let htmlScore = '';
-  if (typeof SLYGHT_SCORE !== 'undefined') {
-    try {
-      const {total: scoreTotal, c: scoreC} = SLYGHT_SCORE.calculate();
-      const {t: scoreLbl, c: scoreCol} = SLYGHT_SCORE.label(scoreTotal);
-      const imp = SLYGHT_SCORE.improvement(scoreC);
-      const recObj = getScoreRecommendation(imp);
-      const ring = Math.min(100, Math.round(scoreTotal/10));
-      const recBg = recObj && recObj.actionable
-        ? 'background:var(--green-dim);border:1px solid var(--green-border)'
-        : 'background:var(--bg3);border:1px solid var(--border2)';
-      htmlScore += '<div class="card" style="margin-bottom:12px"><div class="card-hdr"><div class="card-title">SLYGHT Score</div><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:'+scoreCol+'">'+scoreTotal+'</div></div>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0">' +
-        Object.entries(scoreC).map(([k,v])=>'<div style="background:var(--bg3);border-radius:var(--r-sm);padding:8px 10px"><div style="font-size:10px;color:var(--text3);margin-bottom:2px;text-transform:uppercase;font-weight:600">'+v.l+'</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text)">'+v.s+'<span style="font-size:10px;color:var(--text3)">/200</span></div></div>').join('') +
-        '</div>' +
-        (recObj ? '<div style="'+recBg+';border-radius:var(--r-sm);padding:10px;font-size:13px;color:'+recObj.color+'">💡 ' + recObj.text + '</div>' : '') +
-        '</div>';
-    } catch(e) {}
-  }
-  let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="goal-tracker" style="margin-bottom:16px"></div>' + htmlScore + '<div id="survival-forecast" style="margin-bottom:16px"></div>';
+  // #19 — SLYGHT Score tile removed (calc kept in SLYGHT_SCORE for AI prompt context).
+  let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="goal-tracker" style="margin-bottom:16px"></div><div id="survival-forecast" style="margin-bottom:16px"></div>';
 
   if (!S.txns || !S.txns.length) {
     c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
@@ -2758,28 +2739,9 @@ function renderAnalysisTab() {
     html += '<div class="alert bad" style="margin-bottom:12px"><strong>&#x26A0;&#xFE0F; Spending alert.</strong> At this rate you will not cover bills before payday. Cut discretionary spending now.</div>';
   }
 
-  // --- Spending by category ---
+  // #21 — Spending by Category tile removed (canonical pivot at top of tab covers this).
+  // Keep sortedCats + sortedCats[0] computation since downstream tiles reference it.
   const sortedCats = Object.entries(cats).sort((a,b) => b[1]-a[1]);
-  const baselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending by Category</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">$'+Math.round(total).toLocaleString('en-AU')+'</div></div>' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (discretionary only)</div>';
-  if (!sortedCats.length) {
-    html += '<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">No discretionary spending logged yet.<br>Bills, debt repayments and income are excluded.</div>';
-  }
-  html += sortedCats.map(([k,v], i) => {
-    const pct = Math.round((v/total)*100);
-    const col = CHIP_COLORS[i % CHIP_COLORS.length];
-    const baseline = baselines[k] || 200;
-    const isOver = v > baseline;
-    const overBadge = isOver ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">'+(i===0?'WORST':'OVER')+'</span>' : '';
-    return '<div onclick="openCategoryDrillDown(\''+k+'\')" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer">' +
-      '<div style="width:32px;height:32px;border-radius:8px;background:'+col+'22;color:'+col+';display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0">'+k[0].toUpperCase()+'</div>' +
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k+overBadge+'</div>' +
-      '<div style="height:3px;background:var(--bg5);border-radius:2px;margin-top:5px;overflow:hidden"><div style="width:'+pct+'%;height:3px;background:'+col+';border-radius:2px"></div></div></div>' +
-      '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+(isOver?'var(--red)':'var(--text)')+';white-space:nowrap">'+fmt(v)+'</div>' +
-      '</div>';
-  }).join('');
-  html += '</div>';
 
   // --- Opportunity cost coaching ---
   const worstCat = sortedCats[0];
@@ -2839,32 +2801,7 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // --- Worst 5 vs baseline ---
-  const catBaselines = {'Food / Coffee':480,'Entertainment':750,'Transport / Fuel':300,'Shopping':300,'Health':100,'Subscriptions':95,'Other':300};
-  const catSpendW5 = {};
-  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other')).forEach(t => { const k = t.cat||'Other'; catSpendW5[k] = (catSpendW5[k]||0)+t.amt; });
-  const worst5 = Object.entries(catSpendW5)
-    .map(([k,v]) => ({cat:k, spent:v, baseline: catBaselines[k]||200, over: v - (catBaselines[k]||200)}))
-    .filter(x => x.over > 0)
-    .sort((a,b) => b.over - a.over)
-    .slice(0,5);
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">Worst 5 vs Baseline</div></div>';
-  if (worst5.length) {
-    html += worst5.map((x,i) => {
-      const col = i === 0 ? 'var(--red)' : i === 1 ? 'var(--amber)' : 'var(--text3)';
-      const barPct = Math.min(100, Math.round((x.spent / (x.baseline||1)) * 100));
-      return '<div style="padding:9px 0;border-bottom:1px solid var(--border)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">' +
-        '<span style="font-size:13px;color:var(--text);font-weight:500">'+x.cat+'</span>' +
-        '<span style="font-family:var(--mono);font-size:12px;font-weight:700;color:'+col+'">+'+fmt(x.over)+' over</span></div>' +
-        '<div style="display:flex;align-items:center;gap:6px">' +
-        '<div style="flex:1;height:4px;background:var(--bg5);border-radius:2px;overflow:hidden"><div style="width:'+barPct+'%;height:4px;background:'+col+';border-radius:2px"></div></div>' +
-        '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+fmt(x.spent)+' vs '+fmt(x.baseline)+'</span></div></div>';
-    }).join('');
-  } else {
-    html += '<div class="empty-state">All categories within baseline — nice work.</div>';
-  }
-  html += '</div>';
+  // #24 — Worst 5 vs Baseline tile removed (unused per John's backlog).
 
   // FIX 7 ORDER 2: Last 7 Days bar chart
   const chartDays = [];
@@ -2895,35 +2832,7 @@ function renderAnalysisTab() {
     }).join('') +
     '</div></div>';
 
-  // FIX 7 ORDER 3: Spending DNA
-  if (total > 0) {
-    const dnaColors = {'Food / Coffee':'#00e87a','Transport / Fuel':'#4d9fff','Shopping':'#f5a623','Entertainment':'#ff6b6b','Health':'#c084fc','Subscriptions':'#34d399','Other':'#6b7280'};
-    const income2 = S.income || 7282;
-    const prevMonthCats = (S.monthlyHistory||[]).length >= 1 ? (S.monthlyHistory[S.monthlyHistory.length-1]||{}) : {};
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">Spending DNA</div><div style="font-size:11px;color:var(--text3)">tap segment to drill in</div></div>';
-    html += '<div class="dna-bar">';
-    sortedCats.forEach(([k,v]) => {
-      const w = Math.max(1, Math.round((v/total)*100));
-      const col = dnaColors[k]||'#6b7280';
-      html += '<div class="dna-seg" onclick="openCategoryDrillDown(\''+k+'\')" style="flex:'+w+';background:'+col+'" title="'+k+': '+fmt(v)+' ('+w+'%)">'+(w>=8?k[0]:'')+'</div>';
-    });
-    html += '</div>';
-    // Insights
-    const debtCats = cats['Debt repayment']||0;
-    const debtPct = total+debtCats>0 ? Math.round((debtCats/(total+debtCats))*100) : 0;
-    if (debtPct>0) html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">💳 Debt repayments: <strong>'+fmt(debtCats)+'</strong> ('+debtPct+'% of income) — reducing net worth liability ✅</div>';
-    const subSpend = cats['Subscriptions']||0;
-    if (subSpend>80) html += '<div style="font-size:12px;color:var(--amber);margin-bottom:4px">📺 Subscriptions: <strong>'+fmt(subSpend)+'</strong> ('+Math.round((subSpend/income2)*100)+'% of income) — cutting $34 Claude saves $408/year</div>';
-    // Worst offender vs prev month
-    if (sortedCats.length) {
-      const worst = sortedCats[0];
-      const prevAmt = prevMonthCats[worst[0]]||0;
-      const delta = worst[1]-prevAmt;
-      const deltaStr = prevAmt>0 ? (delta>0?' ▲+'+fmt(delta)+' vs last month':delta<0?' ▼'+fmt(Math.abs(delta))+' vs last month — great work':'') : '';
-      html += '<div style="font-size:12px;margin-top:4px"><span style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 6px;font-family:var(--mono);font-size:10px;font-weight:700;margin-right:6px">WORST</span><strong>'+worst[0]+'</strong>: '+fmt(worst[1])+esc(deltaStr)+'</div>';
-    }
-    html += '</div>';
-  }
+  // #26 — Spending DNA tile removed (unused per John's backlog).
 
   // FIX 7 ORDER 4: Essential vs Discretionary breakdown
   const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
@@ -3032,29 +2941,13 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // ─── PREDICTIVE CASH FLOW ─────────────────────────────────────
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">90-Day Forecast</div></div><div id="predictor-card">';
-  const proj = PREDICTOR.project(3);
-  const wrxP = PREDICTOR.wrxImpact(S.wrxValue||21000, proj);
-  html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Based on current income, bills &amp; avg daily spend</div>';
-  html += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">If you keep this up:</div>';
-  proj.forEach((p,i)=>{
-    const nwCol = p.netWorth>=0?'var(--green)':'var(--red)';
-    html += '<div class="pred-row"><div style="display:flex;justify-content:space-between;align-items:flex-start">'+
-      '<div style="font-size:13px;font-weight:700;color:var(--text)">'+esc(p.date)+'</div>'+
-      '<div style="text-align:right;font-size:12px;line-height:1.7">'+
-        '<span style="color:var(--text3)">Bal </span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">~'+fmt(p.bal)+'</span>  '+
-        '<span style="color:var(--text3)">CC </span><span style="font-family:var(--mono);color:var(--red)">~'+fmt(p.cc)+'</span>  '+
-        '<span style="color:var(--text3)">NW </span><span style="font-family:var(--mono);font-weight:700;color:'+nwCol+'">'+(p.netWorth>=0?'+':'')+fmt(p.netWorth)+'</span>'+
-      '</div></div>'+
-      ((S.wrxValue>0&&wrxP[i].wrxNW>p.netWorth+500)?'<div style="font-size:11px;color:var(--green);margin-top:3px">✈ If WRX sells this month: NW → <strong>+'+fmt(wrxP[i].wrxNW)+'</strong></div>':'')+
-      '</div>';
-  });
-  html += '</div></div>';
-
+  // #29 — 90-Day Forecast tile removed (unused per John's backlog). PREDICTOR.project
+  // is preserved (still consumed by Time Machine projected rows below and elsewhere).
   // ─── FINANCIAL TIME MACHINE ────────────────────────────────────
   const snaps = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS.load() : [];
   if (snaps.length) {
+    // PREDICTOR.project still consumed here for the projected (dashed) rows.
+    const proj = PREDICTOR.project(3);
     html += '<div class="card"><div class="card-hdr"><div class="card-title">⏳ Time Machine</div><div style="font-size:11px;color:var(--text3)">tap restore to go back</div></div>';
     html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Past snapshots — green dot = improvement, red = drop</div>';
     const nwNow = getNetWorth().net;
@@ -4588,8 +4481,9 @@ function renderBillsGrouped() {
   const liveBal = getLiveBal();
   const bucketTotal = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   let warn = '';
+  // #11 — "$X due this week" warn was duplicate of the "This Week" group header + Balance after row
+  // already shown in the section below. Keep the more urgent "today is charging" alert only.
   if (todayTotal > 0) warn = '<div class="alert bad" style="margin-bottom:16px"><strong>' + fmt(todayTotal) + ' charging today.</strong><br>Real balance after: <strong>' + fmtC(liveBal - todayTotal) + '</strong></div>';
-  else if (weekTotal > 0) warn = '<div class="alert warn" style="margin-bottom:16px"><strong>' + fmt(weekTotal) + ' due this week.</strong><br>Real balance after bills: <strong>' + fmtC(liveBal - weekTotal) + '</strong></div>';
 
   function renderGroup(title, bills, cls) {
     if (!bills.length) return '';
@@ -8036,39 +7930,20 @@ const CHARACTER = {
     renderWeeklySnapshot();
   },
 
+  // #14 — Simplified per John's backlog: keep no-spend-evening tracking only.
+  // Stripped: uber-eats, vape, FIFA detection (negative pattern keyword scanning) and
+  // under-daily-budget tracking. The points aggregation that produced the "character
+  // score" number is no longer fed by these signals.
   analyseTransactions() {
     try {
       const today = new Date().toDateString();
       const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === today && !t.income);
-      todayTxns.forEach(t => {
-        const note = (t.note || '').toLowerCase();
-        if (note.includes('uber eats') || note.includes('ubereats')) {
-          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'UBER_EATS' && e.ts >= t.ts - 60000));
-          if (!already) this.addEvent('UBER_EATS', 'UberEats: $' + t.amt);
-        }
-        if (note.includes('vape') || note.includes('vaping')) {
-          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'VAPE_PURCHASE' && e.ts >= t.ts - 60000));
-          if (!already) this.addEvent('VAPE_PURCHASE', 'Vape: $' + t.amt);
-        }
-        if (note.includes('fifa') || note.includes('ea sports') || note.includes('ea fc')) {
-          const already = this.history.find(h => h.date === today && h.events.some(e => e.type === 'FIFA_PURCHASE' && e.ts >= t.ts - 60000));
-          if (!already) this.addEvent('FIFA_PURCHASE', 'FIFA: $' + t.amt);
-        }
-      });
       const hour = new Date().getHours();
       if (hour >= 21) {
         const eveningTxns = todayTxns.filter(t => new Date(t.ts).getHours() >= 18);
         if (eveningTxns.length === 0) {
           const alreadyLogged = this.history.find(h => h.date === today && h.events.some(e => e.type === 'NO_SPEND_EVENING'));
           if (!alreadyLogged) this.addEvent('NO_SPEND_EVENING', 'No evening spending');
-        }
-      }
-      if (hour >= 22) {
-        const spent = typeof getTodayDiscretionarySpend === 'function' ? getTodayDiscretionarySpend() : 0;
-        const budget = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60;
-        if (spent < budget) {
-          const alreadyLogged = this.history.find(h => h.date === today && h.events.some(e => e.type === 'UNDER_DAILY_BUDGET'));
-          if (!alreadyLogged) this.addEvent('UNDER_DAILY_BUDGET', 'Spent $' + spent.toFixed(2) + ' of $' + budget.toFixed(2));
         }
       }
     } catch(e) {}
