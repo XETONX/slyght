@@ -2716,7 +2716,10 @@ function renderAnalysisTab() {
   const c = $('analysis-content'); if (!c) return;
 
   // #19 — SLYGHT Score tile removed (calc kept in SLYGHT_SCORE for AI prompt context).
-  let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="goal-tracker" style="margin-bottom:16px"></div><div id="survival-forecast" style="margin-bottom:16px"></div>';
+  // #17 — goal-tracker placeholder removed from Analysis. Plan Mode renderGoalCards
+  // is the single source of truth for goals. The unconditional renderGoalTracker()
+  // call from renderAll() (line ~7553) becomes a graceful no-op via its `if (!el) return` guard.
+  let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="survival-forecast" style="margin-bottom:16px"></div>';
 
   if (!S.txns || !S.txns.length) {
     c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:13px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
@@ -2756,19 +2759,10 @@ function renderAnalysisTab() {
       '</div></div>';
   }
 
-  // --- Financial Progress ---
-  const debtPaidThisMonth = S.txns.filter(t => !t.income && t.cat === 'Debt repayment').reduce((s,t) => s+t.amt, 0);
-  if (debtPaidThisMonth > 0) {
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">Financial Progress &#x2713;</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">'+fmt(debtPaidThisMonth)+'</div></div>' +
-      '<div style="font-size:13px;color:var(--text2);line-height:1.7">Debt repayments logged this month — not counted as discretionary spending. <strong style="color:var(--green)">Debt repayments are not spending — they build your net worth.</strong></div></div>';
-  }
-
-  // --- Income received ---
-  const incomeThisMonth = S.txns.filter(t => t.income).reduce((s,t) => s+t.amt, 0);
-  if (incomeThisMonth > 0) {
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">Income Received</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">+'+fmt(incomeThisMonth)+'</div></div>' +
-      '<div style="font-size:13px;color:var(--text2)">Total income logged this month.</div></div>';
-  }
+  // #23 — "Financial Progress" + "Income Received" tiles removed (backward-looking
+  // summaries that didn't fit Analysis's "right now" framing or Plan Mode's
+  // forward-allocation theme). Underlying txn data preserved in S.txns and surfaces
+  // in AI chat context.
 
   // --- Flagged habits ---
   const flagged = S.txns.filter(t => t.flagged);
@@ -2869,23 +2863,9 @@ function renderAnalysisTab() {
       '</div>';
   }
 
-  // --- FA5: Emergency fund check ---
-  const avgDailyAdv = getAvgDailySpend();
-  const emergencyNeeded = Math.round(avgDailyAdv * 90);
-  const bucketSaved = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
-  const rainyDay = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('rainy') || b.name.toLowerCase().includes('emergency'));
-  const rainyAmt = rainyDay ? rainyDay.saved : 0;
-  html += '<div class="card"><div class="card-hdr"><div class="card-title">Emergency Fund</div></div>';
-  if (rainyAmt >= emergencyNeeded) {
-    html += '<div class="alert ok">90-day emergency fund covered — ' + fmtC(rainyAmt) + ' saved. Well done.</div>';
-  } else {
-    const gap = emergencyNeeded - rainyAmt;
-    const gapPct = Math.round((rainyAmt / emergencyNeeded) * 100);
-    html += '<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:4px"><span>Saved: ' + fmtC(rainyAmt) + '</span><span>Target: ' + fmtC(emergencyNeeded) + ' (90 days)</span></div>' +
-      '<div style="height:6px;background:var(--bg5);border-radius:3px;overflow:hidden"><div style="width:'+Math.min(100,gapPct)+'%;height:6px;background:var(--amber);border-radius:3px"></div></div></div>' +
-      '<div style="font-size:13px;color:var(--text2);line-height:1.7">You need <strong>' + fmtC(gap) + ' more</strong> for a 90-day emergency buffer. Once immediate debts are cleared, allocate a portion each month.</div>';
-  }
-  html += '</div>';
+  // #28 — Emergency Fund tile removed from Analysis. Settings's `emergency-fund-status`
+  // (rendered by renderEmergencyFundStatus) remains as the single home for the dynamic
+  // 90-day calc. Plan Mode's Freedom Buffer goal is left untouched (different target).
 
   // --- FA6: Net worth trend ---
   const nwHistory = S.monthlyHistory || [];
@@ -2941,45 +2921,14 @@ function renderAnalysisTab() {
     html += '</div>';
   }
 
-  // #29 — 90-Day Forecast tile removed (unused per John's backlog). PREDICTOR.project
-  // is preserved (still consumed by Time Machine projected rows below and elsewhere).
-  // ─── FINANCIAL TIME MACHINE ────────────────────────────────────
-  const snaps = typeof SNAPSHOTS !== 'undefined' ? SNAPSHOTS.load() : [];
-  if (snaps.length) {
-    // PREDICTOR.project still consumed here for the projected (dashed) rows.
-    const proj = PREDICTOR.project(3);
-    html += '<div class="card"><div class="card-hdr"><div class="card-title">⏳ Time Machine</div><div style="font-size:11px;color:var(--text3)">tap restore to go back</div></div>';
-    html += '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Past snapshots — green dot = improvement, red = drop</div>';
-    const nwNow = getNetWorth().net;
-    snaps.slice(0,8).forEach((snap, si) => {
-      const nwSnap = snap.netWorth ? snap.netWorth.net || snap.netWorth || 0 : 0;
-      const improved = nwSnap < nwNow;
-      html += '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">'+
-        '<div style="width:8px;height:8px;border-radius:50%;background:'+(improved?'var(--green)':'var(--red)')+';flex-shrink:0"></div>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:12px;color:var(--text)">'+esc(snap.date+' '+snap.time)+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">Bal '+fmtC(snap.bal)+' · '+(snap.reason||'auto')+'</div>'+
-        '</div>'+
-        '<button onclick="SNAPSHOTS.restore('+si+')" style="font-size:11px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer">restore</button>'+
-        '</div>';
-    });
-    // Future projections (dashed)
-    html += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 6px;opacity:.6">Projected (dashed)</div>';
-    proj.slice(0,3).forEach(p=>{
-      const nwCol = p.netWorth>=0?'var(--green)':'var(--amber)';
-      html += '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--border);opacity:.7">'+
-        '<div style="width:8px;height:8px;border-radius:50%;border:2px dashed var(--text3);flex-shrink:0"></div>'+
-        '<div style="flex:1"><div style="font-size:12px;color:var(--text2)">'+esc(p.date)+' (projected)</div>'+
-        '<div style="font-size:11px;color:var(--text3)">Bal ~'+fmtC(p.bal)+' · NW <span style="color:'+nwCol+'">'+(p.netWorth>=0?'+':'')+fmt(p.netWorth)+'</span></div></div>'+
-        '</div>';
-    });
-    html += '</div>';
-  }
+  // #4/#30 — Time Machine moved to Settings. Settings's "State Snapshots" tile
+  // (renderSnapshots → snapshots-content) is the canonical home for past-snapshot
+  // restore. The projected (dashed) rows are dropped — consistent with #29 deletion.
 
   c.innerHTML = html;
   renderSurvivalForecast();
   renderSpendingPivot();
-  renderGoalTracker();
+  // #17 — renderGoalTracker() call removed from Analysis. Plan Mode owns goals UI.
 }
 
 function filterTxns() {
@@ -10910,7 +10859,11 @@ function renderGoalCards(goals, surplus) {
       <button onclick="addNewGoal()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:rgba(255,255,255,0.6);padding:6px 12px;font-size:11px;cursor:pointer">+ Add goal</button>
     </div>`;
 
-  goals.filter(g => !g.completed).forEach(goal => {
+  // #52 — China appears in both Trips (canonical, has dates) and Goals.
+  // Filter it out of the Goals section so it only renders once via renderTrips.
+  // The 'china' goal data stays intact — payday allocation slider + bonus preview
+  // still resolve `goals.find(g => g.id === 'china')` for their lookups.
+  goals.filter(g => !g.completed && g.id !== 'china').forEach(goal => {
     const remaining = Math.max(0, goal.target - goal.saved);
     const pct = Math.min(100, (goal.saved / goal.target * 100));
     const monthlyAlloc = goal.monthly || 0;
