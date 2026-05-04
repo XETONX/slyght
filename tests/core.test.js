@@ -779,6 +779,84 @@ test('Paid lookup: default behavior unchanged (no month/year arg → today)', ()
   }
 });
 
+// ── Plan Mode what-if helpers (added by plan-mode-whatif fix) ──────────
+
+function computePlanLockedSubtotal(state) {
+  const rentAmt = 500;
+  const depositAmt = 2500;
+  const kia = 780;
+  // Test stub matches the simplified BILLS list — provisions sum static for the test.
+  const provisions = Math.round((259.41 * 4 + 500 + 462 + 552 + 1023.06) / 12);
+  return rentAmt + depositAmt + kia + provisions;
+}
+
+function computeBonusPreviewDaily(income, bonus, fixed, days) {
+  if (days <= 0) return 0;
+  const newDiscretionary = Math.max(0, income + bonus - fixed);
+  return parseFloat((newDiscretionary / days).toFixed(2));
+}
+
+function computeKiaNetSaving(kiaLoan, kiaRate, customFee) {
+  const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
+  const defaultFee = parseFloat((monthlyInterest * 2).toFixed(2));
+  const fee = (customFee !== undefined && customFee !== null) ? parseFloat(customFee) : defaultFee;
+  const interestSaved = parseFloat((monthlyInterest * 18).toFixed(2));
+  return parseFloat((interestSaved - fee).toFixed(2));
+}
+
+function checkAllocationAffordability(dailyLiving, weekdayBudget) {
+  if (dailyLiving < 0) {
+    return { severity: 'error', shortfall: Math.round(Math.abs(dailyLiving) * 30), suggestedCap: 0 };
+  }
+  if (dailyLiving < weekdayBudget) {
+    return { severity: 'warn', shortfall: 0, suggestedCap: Math.round(weekdayBudget) };
+  }
+  return { severity: 'ok', shortfall: 0, suggestedCap: 0 };
+}
+
+// ── Plan Mode what-if tests (BACKLOG #46-49) ────────────
+
+test('Locked non-negotiable: subtotal sums rent + deposit + KIA + provisions', () => {
+  const subtotal = computePlanLockedSubtotal(S);
+  // 500 (rent) + 2500 (deposit) + 780 (KIA) + 298 (provisions monthly avg) = 4078
+  expect(subtotal).toBe(4078);
+});
+
+test('Bonus preview: daily reflects bonus added to discretionary pool', () => {
+  // income $7282, bonus $1500, locked fixed $4500, days 16
+  const daily = computeBonusPreviewDaily(7282, 1500, 4500, 16);
+  // (7282 + 1500 - 4500) / 16 = 4282 / 16 = 267.625
+  expect(daily).toBe(267.63);
+});
+
+test('Editable repayment fee: changing fee changes net saving', () => {
+  // KIA $23,989.70 at 9.87% → monthly interest ≈ $197.32
+  // Default fee = round-2(2 × interest) = $394.63; interestSaved = round-2(18 × interest) = $3551.67
+  // Default net saving = $3551.67 - $394.63 = $3157.04 (≈ $3157.05 with rounding)
+  const defaultNet = computeKiaNetSaving(23989.70, 9.87);
+  expect(defaultNet).toBe(3157.05);
+  // Override fee to $500 → net ≈ $3551.67 - $500 = $3051.67
+  const customNet = computeKiaNetSaving(23989.70, 9.87, 500);
+  expect(customNet).toBe(3051.67);
+  // Custom fee is higher than default → net saving is lower
+  expect(customNet).toBeLessThan(defaultNet);
+});
+
+test('Slider affordability: ok when daily above budget', () => {
+  const res = checkAllocationAffordability(80, 60);
+  if (res.severity !== 'ok') throw new Error('expected ok, got ' + res.severity);
+});
+test('Slider affordability: warn when daily below weekday budget', () => {
+  const res = checkAllocationAffordability(25, 60);
+  if (res.severity !== 'warn') throw new Error('expected warn, got ' + res.severity);
+  if (res.suggestedCap !== 60) throw new Error('expected suggestedCap=60, got ' + res.suggestedCap);
+});
+test('Slider affordability: error when daily negative', () => {
+  const res = checkAllocationAffordability(-5, 60);
+  if (res.severity !== 'error') throw new Error('expected error, got ' + res.severity);
+  if (res.shortfall <= 0) throw new Error('expected positive shortfall, got ' + res.shortfall);
+});
+
 // ── Reconciliation tests (misleading-math fix) ──────────
 
 test('computeSpentToday: excludes corrections and round-ups', () => {

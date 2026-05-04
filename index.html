@@ -9879,7 +9879,13 @@ function renderWrxCard() {
   const kiaLoan = S.carloan || 0;
   const kiaRate = S.carLoanRate || 9.87;
   const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
-  const earlyRepayFee = parseFloat((monthlyInterest * 2).toFixed(2));
+  // #46 — Editable repayment fee. Defaults to 2 months interest; user can override
+  // (e.g., after confirming with Firstmac). Stored on S.kiaEarlyRepayFee.
+  const defaultEarlyRepayFee = parseFloat((monthlyInterest * 2).toFixed(2));
+  const earlyRepayFee = (S.kiaEarlyRepayFee !== undefined && S.kiaEarlyRepayFee !== null)
+    ? parseFloat(S.kiaEarlyRepayFee)
+    : defaultEarlyRepayFee;
+  const isFeeOverridden = S.kiaEarlyRepayFee !== undefined && S.kiaEarlyRepayFee !== null;
   const netAfterPayoff = salePrice - kiaLoan - earlyRepayFee;
   const interestSaved = parseFloat((monthlyInterest * 18).toFixed(2));
   const daysListed = S.wrxListedDate
@@ -9958,15 +9964,22 @@ function renderWrxCard() {
 
     <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin-bottom:12px">
       <div style="color:rgba(255,255,255,0.6);font-size:12px;font-weight:600;margin-bottom:8px">Early Repayment Analysis</div>
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-        <span style="color:rgba(255,255,255,0.4)">Fee (2 months interest)</span>
-        <span style="color:#FF6B35">$${earlyRepayFee.toFixed(0)}</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:4px">
+        <span style="color:rgba(255,255,255,0.4)">Fee ${isFeeOverridden ? '<span style="color:rgba(255,255,255,0.3);font-size:10px">(custom)</span>' : '(2 months interest)'}</span>
+        <span style="display:flex;align-items:center;gap:6px">
+          <span style="color:rgba(255,255,255,0.3);font-size:10px">$</span>
+          <input type="number" id="kia-fee-input" value="${earlyRepayFee.toFixed(0)}" min="0" step="1" inputmode="decimal"
+            oninput="updateKiaFeeInline(this.value)" onblur="commitKiaFee(this.value)"
+            style="width:70px;padding:4px 6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,107,53,0.3);border-radius:6px;color:#FF6B35;font-size:13px;font-weight:700;text-align:right;font-family:var(--mono)">
+          ${isFeeOverridden ? `<span onclick="resetKiaFee()" style="color:rgba(255,255,255,0.4);font-size:10px;cursor:pointer">reset</span>` : ''}
+        </span>
       </div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-bottom:8px">Default: $${defaultEarlyRepayFee.toFixed(0)} (2 months interest at ${kiaRate}% p.a.)</div>
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px">
         <span style="color:rgba(255,255,255,0.4)">Interest Saved (~18 months)</span>
         <span style="color:#4ECDC4">$${interestSaved.toFixed(0)}</span>
       </div>
-      <div style="color:#4ECDC4;font-size:13px;font-weight:700">
+      <div id="kia-net-saving" style="color:#4ECDC4;font-size:13px;font-weight:700">
         ✅ Net Saving: $${Math.round(interestSaved - earlyRepayFee).toLocaleString()} — Pay Off Early
       </div>
       <div style="color:rgba(255,255,255,0.3);font-size:11px;margin-top:4px">
@@ -9985,6 +9998,36 @@ function renderWrxCard() {
     </button>` : ''}
     `}
   </div>`;
+}
+
+// #46 — Live recalc as user types (no save until blur — keyboard stays open).
+function updateKiaFeeInline(raw) {
+  const fee = parseFloat(raw);
+  if (isNaN(fee) || fee < 0) return;
+  const kiaLoan = S.carloan || 0;
+  const kiaRate = S.carLoanRate || 9.87;
+  const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
+  const interestSaved = parseFloat((monthlyInterest * 18).toFixed(2));
+  const net = Math.round(interestSaved - fee);
+  const el = document.getElementById('kia-net-saving');
+  if (el) {
+    const positive = net > 0;
+    el.style.color = positive ? '#4ECDC4' : '#E74C3C';
+    el.textContent = (positive ? '✅' : '⚠️') + ' Net Saving: $' + net.toLocaleString() + (positive ? ' — Pay Off Early' : ' — Fee Eats The Saving');
+  }
+}
+function commitKiaFee(raw) {
+  const fee = parseFloat(raw);
+  if (isNaN(fee) || fee < 0) return;
+  S.kiaEarlyRepayFee = parseFloat(fee.toFixed(2));
+  save();
+  renderPlanMode();
+}
+function resetKiaFee() {
+  delete S.kiaEarlyRepayFee;
+  save();
+  renderPlanMode();
+  showToast('Fee reset to default (2 months interest)');
 }
 
 function editWrxPrice() {
@@ -10324,6 +10367,11 @@ function renderPaydayAllocation() {
   // Lock state
   const isLocked = !!(stored.locked && stored.payday === S.payday);
 
+  // #48 — Locked transparency: compute locked subtotal so the "show the math" line is honest.
+  // Components: rent + deposit savings (= bill total $3000) + KIA + provisions + (teachersHealth via debt covers).
+  const lockedSubtotal = rentAmt + depositAmt + 780 + Math.round(provisions) + (teachersHealth > 0 ? teachersHealth : 0);
+  const lockedExpanded = stored.lockedExpanded !== false; // default expanded
+
   return `
   <div style="margin-bottom:16px">
     <div style="font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">Next Payday — ${daysUntil} Days</div>
@@ -10343,15 +10391,26 @@ function renderPaydayAllocation() {
         <span style="color:#4ECDC4;font-size:18px;font-weight:700">+$${total.toLocaleString()}</span>
       </div>
       ${bonus > 0 ? `
-      <div style="font-size:12px;color:#FF6B35">Includes $${bonus.toLocaleString()} bonus 🎉</div>` : `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:12px;color:#FF6B35">Includes $${bonus.toLocaleString()} bonus 🎉</div>
+        <span onclick="openBonusModal()" style="color:rgba(255,255,255,0.4);font-size:11px;cursor:pointer">edit</span>
+      </div>` : `
       <div style="font-size:12px;color:rgba(255,255,255,0.3)">
         Expecting a ~$2,000 quarterly bonus?
         <span onclick="openBonusModal()" style="color:#4ECDC4;cursor:pointer">Add it →</span>
       </div>`}
     </div>
+    ${bonus > 0 ? renderBonusPreview(bonus, totalFixed, daysUntil) : ''}
 
     <div style="background:rgba(255,107,53,0.08);border-radius:12px;padding:14px;margin-bottom:8px">
-      <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Locked — Non-Negotiable</div>
+      <div onclick="togglePlanLocked()" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:pointer">
+        <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px">Locked — Non-Negotiable</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="color:#FF6B35;font-size:14px;font-weight:700">-$${lockedSubtotal.toLocaleString()}</span>
+          <span style="color:rgba(255,255,255,0.4);font-size:12px">${lockedExpanded ? '▾' : '▸'}</span>
+        </div>
+      </div>
+      ${lockedExpanded ? `
       <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
         <span style="color:rgba(255,255,255,0.6)">🏠 Rent (To Mum)</span>
         <span style="color:#FF6B35">-$${rentAmt.toLocaleString()}</span>
@@ -10377,6 +10436,9 @@ function renderPaydayAllocation() {
         <span style="color:rgba(255,255,255,0.6)">${name}</span>
         <span style="color:#FF6B35">-$${amt.toLocaleString()}</span>
       </div>`).join('')}
+      <div style="border-top:1px solid rgba(255,107,53,0.15);margin-top:8px;padding-top:8px;font-size:11px;color:rgba(255,255,255,0.4);font-family:var(--mono);line-height:1.6">
+        $${total.toLocaleString()} income − $${lockedSubtotal.toLocaleString()} locked = $${discretionary.toLocaleString()} discretionary
+      </div>` : ''}
       <div style="border-top:1px solid rgba(255,107,53,0.3);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between">
         <span style="color:rgba(255,255,255,0.8);font-size:13px;font-weight:600">Remaining To Allocate</span>
         <span style="color:#fff;font-size:15px;font-weight:700">$${discretionary.toLocaleString()}</span>
@@ -10449,15 +10511,44 @@ function updateAllocation(id, value) {
   const discretionary = Math.max(0, income - fixed - provisions - 500);
   const living = Math.max(0, discretionary - china - apartment - freedom - darwin);
   const days = daysLeft();
+  const dailyLiving = days > 0 ? living / days : 0;
 
   const livingEl = document.getElementById('alloc-val-living');
   const dailyEl = document.getElementById('daily-living-calc');
   if (livingEl) livingEl.textContent = '$' + Math.round(living);
-  if (dailyEl) dailyEl.textContent = '= $' + (days > 0 ? (living/days).toFixed(0) : '0') + '/day for ' + days + ' days';
+  // #49 — Slider affordability check: real-time feedback when daily falls below thresholds.
+  const weekdayBudget = S.weekdayBudget || 60;
+  const aff = checkAllocationAffordability(dailyLiving, weekdayBudget);
+  if (dailyEl) {
+    const base = '= $' + dailyLiving.toFixed(0) + '/day for ' + days + ' days';
+    if (aff.severity === 'error') {
+      dailyEl.style.color = '#E74C3C';
+      dailyEl.innerHTML = base + ' · <strong>⚠ Negative — pull back at least $' + aff.shortfall + '</strong>';
+    } else if (aff.severity === 'warn') {
+      dailyEl.style.color = '#FF6B35';
+      dailyEl.innerHTML = base + ' · <strong>Below your $' + weekdayBudget + ' weekday budget — try $' + aff.suggestedCap + ' cap</strong>';
+    } else {
+      dailyEl.style.color = 'rgba(255,255,255,0.3)';
+      dailyEl.textContent = base;
+    }
+  }
 
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
   stored[id] = val;
   localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+}
+
+// #49 — Pure helper for affordability decision; covered by tests/core.test.js.
+function checkAllocationAffordability(dailyLiving, weekdayBudget) {
+  if (dailyLiving < 0) {
+    return { severity: 'error', shortfall: Math.round(Math.abs(dailyLiving) * 30), suggestedCap: 0 };
+  }
+  if (dailyLiving < weekdayBudget) {
+    // Suggest a cap that brings daily back to weekdayBudget (rough — informational).
+    const suggestedCap = Math.max(0, Math.round(dailyLiving * (weekdayBudget / Math.max(1, weekdayBudget))));
+    return { severity: 'warn', shortfall: 0, suggestedCap: Math.round(weekdayBudget) };
+  }
+  return { severity: 'ok', shortfall: 0, suggestedCap: 0 };
 }
 
 function lockPaydayPlan() {
@@ -10524,6 +10615,14 @@ function unlockAndEdit() {
   localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
   renderPlanMode();
   showToast('Plan Unlocked — Adjust And Re-Lock');
+}
+
+// #48 — Toggle the locked-non-negotiable breakdown so John can collapse the math when he's confirmed it.
+function togglePlanLocked() {
+  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+  stored.lockedExpanded = stored.lockedExpanded === false ? true : false;
+  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  renderPlanMode();
 }
 
 function showSliderInfo(id) {
@@ -10599,6 +10698,91 @@ function confirmBonusAmount() {
 }
 
 function wirePaydaySliders() { /* sliders use oninput in HTML */ }
+
+// #47 — Bonus preview: shows what the bonus actually buys, with one-tap allocation prefills.
+// Read-only impact summary + 3 allocation suggestions. Tapping a suggestion pre-fills the
+// payday sliders for that scenario but does NOT lock the plan.
+function renderBonusPreview(bonus, totalFixed, daysUntil) {
+  const baseIncome = PLAN.INCOME_MONTHLY;
+  const baseDiscretionary = Math.max(0, baseIncome - totalFixed);
+  const newDiscretionary = Math.max(0, baseIncome + bonus - totalFixed);
+  const baseDaily = daysUntil > 0 ? baseDiscretionary / daysUntil : 0;
+  const newDaily  = daysUntil > 0 ? newDiscretionary / daysUntil : 0;
+
+  const goals = PLAN.getGoals();
+  const trips = PLAN.getTrips();
+  const china = goals.find(g => g.id === 'china') || trips.find(t => t.id === 'china-2026');
+  const chinaTarget = china?.target || china?.budget || 5000;
+  const chinaSaved = china?.saved || 0;
+  const chinaRemaining = Math.max(0, chinaTarget - chinaSaved);
+
+  const kiaLoan = S.carloan || 0;
+  const kiaRate = S.carLoanRate || 9.87;
+  const monthlyInterest = kiaLoan * kiaRate / 100 / 12;
+  // Months saved off KIA payoff if bonus is thrown at it: bonus / 780 (the freed monthly).
+  const kiaMonthsSaved = monthlyInterest > 0 ? Math.max(1, Math.round(bonus / 780)) : 0;
+  const kiaInterestSaved = parseFloat((monthlyInterest * kiaMonthsSaved).toFixed(2));
+
+  // Suggested split: 50% China, 30% deposit, 20% freedom buffer
+  const splitChina   = Math.round(bonus * 0.5);
+  const splitDeposit = Math.round(bonus * 0.3);
+  const splitFreedom = bonus - splitChina - splitDeposit;
+
+  return `
+  <div style="background:rgba(255,107,53,0.06);border:1px solid rgba(255,107,53,0.2);border-radius:14px;padding:14px;margin-bottom:12px">
+    <div style="font-size:11px;color:#FF6B35;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">With $${bonus.toLocaleString()} Bonus Expected</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <span style="color:rgba(255,255,255,0.6);font-size:13px">Daily budget</span>
+      <span style="font-family:var(--mono);font-size:13px;color:#fff">
+        $${newDaily.toFixed(0)}/day <span style="color:rgba(255,255,255,0.35);font-size:11px">(was $${baseDaily.toFixed(0)})</span>
+      </span>
+    </div>
+    <div style="font-size:11px;color:rgba(255,255,255,0.5);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Or allocate it</div>
+    <div onclick="prefillBonusAllocation('china')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <div>
+        <div style="font-size:13px;color:#fff">→ China Holiday (+$${bonus.toLocaleString()})</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.4)">Goal $${chinaTarget.toLocaleString()} · $${Math.round(chinaRemaining).toLocaleString()} remaining</div>
+      </div>
+      <span style="color:#4ECDC4;font-size:11px">Tap →</span>
+    </div>
+    <div onclick="prefillBonusAllocation('kia')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06)">
+      <div>
+        <div style="font-size:13px;color:#fff">→ KIA payoff (+$${bonus.toLocaleString()})</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.4)">~${kiaMonthsSaved} mo saved · $${kiaInterestSaved.toFixed(0)} interest saved</div>
+      </div>
+      <span style="color:#4ECDC4;font-size:11px">Tap →</span>
+    </div>
+    <div onclick="prefillBonusAllocation('split')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;cursor:pointer">
+      <div>
+        <div style="font-size:13px;color:#fff">→ Split 50/30/20</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.4)">$${splitChina} China · $${splitDeposit} Deposit · $${splitFreedom} Freedom</div>
+      </div>
+      <span style="color:#4ECDC4;font-size:11px">Tap →</span>
+    </div>
+    <div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:8px">Preview only — tap an option to pre-fill the sliders below.</div>
+  </div>`;
+}
+
+// Pre-fill allocation sliders to match a bonus scenario. Does NOT lock the plan.
+function prefillBonusAllocation(scenario) {
+  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+  const bonus = S._pendingBonus || 0;
+  if (bonus <= 0) return;
+  if (scenario === 'china') {
+    stored.china = (stored.china || 0) + bonus;
+  } else if (scenario === 'kia') {
+    // KIA gets paid via the WRX flow, not the slider — surface that with a toast.
+    showToast('KIA early payoff path tracked in WRX card · sliders unchanged');
+    return;
+  } else if (scenario === 'split') {
+    stored.china     = (stored.china || 0) + Math.round(bonus * 0.5);
+    stored.apartment = (stored.apartment || 0) + Math.round(bonus * 0.3);
+    stored.freedom   = (stored.freedom || 0) + (bonus - Math.round(bonus * 0.5) - Math.round(bonus * 0.3));
+  }
+  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  renderPlanMode();
+  showToast('Sliders pre-filled — review and lock when ready');
+}
 
 // ─── SECTION 5 — TRIP PLANNER CARDS ─────────────────────────────────────────
 function renderTrips(trips) {
