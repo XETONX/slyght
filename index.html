@@ -443,7 +443,6 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div class="pd-lbl" id="pd-lbl">— days to payday</div>
       </div>
       <div id="dash-survival-banner"></div>
-      <div id="weekly-snapshot"></div>
       <div id="dash-alerts"></div>
       <div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0">
         <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">YOU CAN SPEND TODAY</div>
@@ -451,7 +450,6 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div style="font-size:12px;font-weight:600;margin-top:4px" id="max-day-context"></div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px" id="pace-display"></div>
       </div>
-      <div id="dash-overspend"></div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:13px;margin:8px 0"></div>
 
       <!-- FIX 1: REORDERED — Immediate Debts first -->
@@ -2310,8 +2308,8 @@ function computeFinancialModel(state, now) {
     ? computeSpentInRange(todayMs, now.getTime()) : 0;
 
   // Plan-mode shapes — wrapped in try/catch because PLAN is declared with
-  // `const` later in the file. During boot, renderWeeklySnapshot() can fire
-  // before PLAN's initializer runs, putting it in the temporal dead zone.
+  // `const` later in the file. During boot, refreshModel() called from load()
+  // runs before PLAN's initializer, putting it in the temporal dead zone.
   // `typeof PLAN` on a const-in-TDZ throws ReferenceError (unlike undeclared
   // identifiers, where typeof returns 'undefined' safely). Each access here
   // gets its own try/catch so a single failure doesn't blank the whole model.
@@ -3554,21 +3552,6 @@ function renderAll() {
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
   const todaySpent = getTodaySpent();
-  // Overspend rollover display
-  const overspendEl = $('dash-overspend');
-  if (overspendEl) {
-    const overspend = todaySpent - dailyBudget;
-    if (overspend > 0 && maxDay > 0) {
-      const daysLeftVal = daysLeft(S.payday);
-      const allBillsDue2 = getBillsDue().reduce((s,b) => s+b.amt, 0);
-      const adjustedDay = daysLeftVal > 1 ? Math.max(0, (liveBal - allBillsDue2 - getActiveDebtsDueBeforePayday() - getDynamicBuffer()) / daysLeftVal) : 0;
-      overspendEl.innerHTML = '<div style="font-size:12px;color:var(--red);margin-top:4px;font-family:var(--mono)">Over by ' + fmt(overspend) + ' today <span style="font-size:10px;color:var(--text3)">(discretionary only)</span>' +
-        (daysLeftVal > 1 ? ' &middot; <span style="color:var(--amber)">Adjusted: ' + fmtC(adjustedDay) + '/day for ' + daysLeftVal + ' days</span>' : '') + '</div>';
-    } else {
-      overspendEl.innerHTML = '';
-    }
-  }
-
   // New single "YOU CAN SPEND TODAY" display
   const _maxDayDisp = $('max-day-display');
   const _maxDayCtx = $('max-day-context');
@@ -7704,7 +7687,6 @@ renderAll = function() {
   if (typeof UX !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) UX.renderReport();
   if (typeof API_COSTS !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) API_COSTS.render();
   if (typeof PUSH !== 'undefined' && document.getElementById('pg-settings')?.classList.contains('active')) PUSH.renderSubscribeButton();
-  renderWeeklySnapshot();
   updatePersistentStrip();
   // Render WFH toggle in dashboard hero
   const _wfhEl = document.getElementById('wfh-toggle');
@@ -8081,7 +8063,6 @@ const CHARACTER = {
       };
       if (msgs[type]) showToast(msgs[type]);
     }
-    renderWeeklySnapshot();
   },
 
   // #14 — Simplified per John's backlog: keep no-spend-evening tracking only.
@@ -9330,7 +9311,7 @@ NOTIFY.refresh();
 })();
 HEARTBEAT.start();
 if (typeof UX !== 'undefined') UX.init();
-if (typeof CHARACTER !== 'undefined') { CHARACTER.load(); } renderWeeklySnapshot();
+if (typeof CHARACTER !== 'undefined') { CHARACTER.load(); }
 if (typeof PUSH !== 'undefined') PUSH.init();
 if (typeof LOCATION !== 'undefined') LOCATION.check();
 if (typeof WEATHER !== 'undefined') {
@@ -9457,48 +9438,6 @@ function pivotToggle(cat) {
 
 // Property Deposit (via Mum) — shown as a teal asset card on dashboard
 
-function renderWeeklySnapshot() {
-  const el = document.getElementById('weekly-snapshot');
-  if (!el) return;
-  const _m = MODEL || computeFinancialModel();
-  const weekAgo = Date.now() - 7*86400000;
-  const NON_DISC = ['Debt repayment','Savings','Loan','Income'];
-  // Top-3 categories still derived inline (filter is for category breakdown,
-  // not the headline total — total comes from MODEL).
-  const weekTxns = (S.txns||[]).filter(t =>
-    t.ts > weekAgo && !t.income && !t._isCorrection && !t._isRoundup && !NON_DISC.includes(t.cat)
-  );
-  const cats = {};
-  weekTxns.forEach(t => { cats[t.cat] = (cats[t.cat]||0) + t.amt; });
-  const top3 = Object.entries(cats).sort((a,b) => b[1]-a[1]).slice(0,3);
-  const totalWeek = _m.weekSpent;
-  const dailyAvg = totalWeek / 7;
-  const maxDay = _m.safeToSpendToday;
-  const isOverPace = dailyAvg > maxDay;
-  const icons = {'Food / Coffee':'🍱','Transport / Fuel':'🚌','Shopping':'🛍️','Entertainment':'🎮','Subscription':'📱','Other':'💸'};
-
-  let html = '<div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin-bottom:8px">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
-  html += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">THIS WEEK</div>';
-  html += '<div style="font-size:14px;font-weight:700;color:'+(isOverPace?'var(--red)':'var(--green)')+'">$'+totalWeek.toFixed(0)+'</div></div>';
-
-  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
-  top3.forEach(([cat,amt]) => {
-    const shortName = cat.split(/[ /]/)[0];
-    html += '<div onclick="document.querySelector(\'[data-tab=analysis]\')?.click()" style="display:flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg3);border-radius:20px;cursor:pointer;min-height:32px">';
-    html += '<span style="font-size:13px">'+(icons[cat]||'💳')+'</span>';
-    html += '<span style="color:var(--text);font-size:12px;font-weight:600">'+shortName+'</span>';
-    html += '<span style="color:var(--text2);font-size:12px">$'+amt.toFixed(0)+'</span></div>';
-  });
-  html += '</div>';
-
-  html += '<div style="font-size:12px;color:'+(isOverPace?'var(--red)':'var(--text3)')+'">$'+dailyAvg.toFixed(2)+'/day · Budget $'+maxDay.toFixed(2)+'/day · ';
-  html += isOverPace ? '⚠️ $'+(dailyAvg-maxDay).toFixed(2)+' over pace' : '✅ $'+(maxDay-dailyAvg).toFixed(2)+' under pace';
-  html += '</div>';
-  html += '<div style="font-size:11px;color:var(--text3);margin-top:4px">🏁 City2Surf in '+getDaysToCity2Surf()+' days</div>';
-  html += '</div>';
-  el.innerHTML = html;
-}
 
 function payBillNow(billName, billDay, billAmt) {
   S.txns.push({
