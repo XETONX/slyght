@@ -128,15 +128,108 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 
 ## 11. Plan Mode "Add savings" buttons non-functional on China Holiday and Darwin allocation sliders
 - **Bug:** "Add savings" buttons on the China Holiday and Darwin
-  allocation sliders in Plan Mode render correctly but the click
-  handler is broken — pressing the button has no effect (no modal
-  opens, no state change, no error visible to user).
-- **Source:** John, 2026-05-05 evening session (state export review during
-  Dead Code Cleanup mission triage)
-- **Repro needed:** no — confirmed visually
+  allocation sliders in Plan Mode. **Updated repro detail:** John typed
+  21.93 in the amount field, tapped "Add savings". Modal renders,
+  input accepts, submit button is wired (tappable). Handler does not:
+  update the bucket's `saved` field, close the modal, show a
+  confirmation, or log a transaction. **Three candidate failure
+  modes need disambiguation by repro:**
+    1. Click handler not wired — button exists but no listener attached
+    2. Handler runs but throws silently — error in console, state never updates
+    3. Handler runs and mutates state but doesn't trigger renderAll —
+       change happens invisibly until modal close
+  **Diagnostic question for next repro:** when you tap "Add savings"
+  with 21.93 entered, does the modal close, stay open with the field
+  cleared, or stay open with 21.93 still showing? That answer
+  identifies which of the three failure modes is in play.
+- **Source:** John, 2026-05-05 evening session (state export review +
+  manual repro on phone)
+- **Repro needed:** specific — modal close behavior on tap
 - **Fix bundle:** unscheduled — likely fold into Allocation Playground
   v1 work (which rebuilds the slider interaction model from scratch);
-  not blocking dead code cleanup
+  not blocking dead code cleanup or Layer 2
+- **Status:** investigating
+
+## 12. Cross-tile coherence — "today's spend" disagrees across three tiles
+- **Bug:** Footer persistent strip says one value for "today's spend",
+  dashboard alert says another (the "Over by $X today" overspend
+  number), Analysis tab says a third. Same concept, three numbers,
+  each presenting itself as authoritative. Concrete repro from
+  John's phone 2026-05-05: footer "$22 today", dashboard alert "Over
+  by $44 today", Analysis tab "$74.09". Each renderer computes its
+  own filter; values drift because the filters disagree (likely RC2
+  / OPEN-BUGS #6 cousin — some use strict `_NON_SPEND_CATS`, some use
+  lax `EXCLUDED_CATS`, some don't filter at all).
+- **Source:** John phone 2026-05-05
+- **Repro needed:** no (visible on phone)
+- **Fix bundle:** **Layer 2 calibration target** — Layer 2's
+  MI-08-cross-tile-coherence invariant is designed to catch exactly
+  this. Building Layer 2 forces the renderers to consume
+  `MODEL.todaySpent` as single source of truth; the invariant gates
+  future drift. Don't fix in a separate mission — Layer 2 is the fix.
+- **Status:** open (calibration target for Layer 2)
+
+## 13. Net Worth trend "+$90,739 vs last month" — math source unclear
+- **Bug:** Plan Mode (or dashboard NW tile, location TBD) shows
+  "+$90,739 vs last month" but only one monthly history entry exists
+  showing a $569 baseline. The +$90,739 delta math is unclear and
+  almost certainly wrong — could be subtracting current NW from a
+  zero-or-near-zero baseline, or pulling from a misindexed history
+  array, or summing something that shouldn't be summed. Visible on
+  John's phone 2026-05-05.
+- **Source:** John phone 2026-05-05
+- **Repro needed:** no (visible)
+- **Fix bundle:** **Layer 2 calibration target** — Layer 2's
+  MI-07-net-worth-component-sum should fire because the rendered NW
+  delta won't match `MODEL.liquidNet - prevMonth.liquidNet`. Use this
+  case to verify the invariant catches the regression.
+- **Status:** open (calibration target for Layer 2)
+
+## 14. Notification spam — nine "Net worth up $96,XXX" notifications
+- **Bug:** Within minutes John saw nine "Net worth up $96,XXX"
+  notifications in different amounts (each different by hundreds to
+  thousands of dollars). The notification renderer is consuming a
+  broken NW calculation (likely the same source feeding bug #13's
+  +$90,739 delta) and re-firing on every render pass without
+  deduplication. Notification queue is also bypassing
+  `S.dismissedNotifications` because the id varies per amount.
+- **Source:** John phone 2026-05-05
+- **Repro needed:** no (visible)
+- **Fix bundle:** **Layer 2 calibration target** (compound) — Layer 2's
+  state-shape and net-worth invariants will catch the upstream NW
+  math. Notification dedup is a separate concern but this bug surfaces
+  when NW math is fixed; if it persists post-Layer-2, file as #14b in
+  a follow-up mission.
+- **Status:** open (calibration target for Layer 2)
+
+## 15. Three different daily-cost figures across forecast tiles
+- **Bug:** Survival/forecast section presents three different daily
+  living-cost numbers ($38.65, $41.56, $16.56), each labeled
+  authoritatively. Different filter scopes / different time windows /
+  different categorizations. User cannot tell which is "real". Visible
+  on John's phone 2026-05-05.
+- **Source:** John phone 2026-05-05
+- **Repro needed:** no (visible)
+- **Fix bundle:** **Layer 2 calibration target** — same MI-08
+  cross-tile-coherence as bug #12. The three values must reconcile or
+  the invariant fires. Likely fix is repointing all three to a single
+  MODEL field (e.g. `MODEL.minDailySpend` for survival floor vs.
+  `MODEL.recentPace` for current pace — naming the concepts properly
+  resolves the "which is real" confusion).
+- **Status:** open (calibration target for Layer 2)
+
+## 16. Emergency fund "saved" sums travel-goal buckets too
+- **Bug:** Emergency fund tile shows "saved" amount that includes
+  China Holiday + other travel-goal buckets, not just
+  emergency-purpose buckets (Rainy Day Fund, etc.). Misleading — the
+  user reads "$X saved toward emergency" but the figure includes
+  money earmarked for trips. Visible on John's phone 2026-05-05.
+- **Source:** John phone 2026-05-05
+- **Repro needed:** no (visible)
+- **Fix bundle:** unscheduled — small filter fix; pure data
+  partitioning bug, not a cross-tile drift. Could fold into Layer 2
+  or ship as its own micro-fix in a hygiene commit. Not a Layer 2
+  invariant target (it's a single-tile filter scope problem).
 - **Status:** open
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
