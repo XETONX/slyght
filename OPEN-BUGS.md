@@ -126,6 +126,19 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** unscheduled (likely overlaps with bug #8)
 - **Status:** open
 
+## 11. Plan Mode "Add savings" buttons non-functional on China Holiday and Darwin allocation sliders
+- **Bug:** "Add savings" buttons on the China Holiday and Darwin
+  allocation sliders in Plan Mode render correctly but the click
+  handler is broken — pressing the button has no effect (no modal
+  opens, no state change, no error visible to user).
+- **Source:** John, 2026-05-05 evening session (state export review during
+  Dead Code Cleanup mission triage)
+- **Repro needed:** no — confirmed visually
+- **Fix bundle:** unscheduled — likely fold into Allocation Playground
+  v1 work (which rebuilds the slider interaction model from scratch);
+  not blocking dead code cleanup
+- **Status:** open
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
