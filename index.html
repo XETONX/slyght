@@ -148,6 +148,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .cal-day-num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);line-height:1}
 .cal-day.today .cal-day-num{color:var(--green)}
 .cal-day-dot{width:4px;height:4px;border-radius:50%;margin-top:2px}
+.cal-day-dot.is-debt{width:6px;height:6px;border-radius:0;transform:rotate(45deg);margin-top:0}
 .cal-day-amt{font-size:10px;font-family:var(--mono);color:var(--text3);margin-top:1px;line-height:1;text-align:center}
 /* AFFORD */
 .afford-row{display:flex;gap:8px;margin-bottom:12px}
@@ -2140,6 +2141,55 @@ function isBillDueThisMonth(bill) {
   if (bill.freq === 'fortnightly' || bill.freq === 'weekly') return true;
 
   return true; // default to monthly if unknown
+}
+
+// Lookup a bill by (name, day) for sites that only have those two fields
+// (calendar tap handlers, chat actions). Returns undefined if not found —
+// callers should fall back to a synthetic { name, day } so canMarkBillPaid
+// degrades gracefully (defaults to "allow" for unknown freq).
+function findBillByNameDay(name, day) {
+  const arr = (typeof BILLS !== 'undefined') ? BILLS : [];
+  return arr.find(b => b.name === name && b.day === day);
+}
+
+// OPEN-BUGS #1: bills cannot be marked paid before their day-of-month.
+// True ⇒ today is on or after the bill's next due date for the current
+// period (handles monthly/yearly/quarterly/biannual/fortnightly/weekly).
+// False ⇒ user is trying to mark paid early; caller should confirm.
+function canMarkBillPaid(bill, now) {
+  if (!bill) return true;
+  now = now || new Date();
+  const todayD = now.getDate(), todayM = now.getMonth();
+  const f = bill.freq;
+
+  if (!f || f === 'monthly' || f === 'fortnightly' || f === 'weekly') {
+    return bill.day <= todayD;
+  }
+  if (f === 'yearly' || f === 'annual') {
+    if (bill.dueMonth === undefined) return true;
+    if (todayM < bill.dueMonth) return false;
+    if (todayM > bill.dueMonth) return true;
+    return bill.day <= todayD;
+  }
+  if (f === 'quarterly' || f === 'biannual' || f === 'biannually') {
+    const months = bill.dueMonths;
+    if (!months || !months.length) return true;
+    if (months.includes(todayM)) return bill.day <= todayD;
+    return months.some(m => m < todayM); // any prior period this year ⇒ allow late
+  }
+  return true; // unknown freq — degrade to allow
+}
+
+// OPEN-BUGS #1: confirm-dialog gate. Wraps any mark-paid action so
+// that future-dated calls require explicit user confirmation.
+// Three legitimate flavors all funnel through the confirm:
+//   1. Accidental tap (user picks No)
+//   2. Recording an early payment (user picks Yes)
+//   3. Pre-marking a scheduled auto-debit (user picks Yes)
+// See OPEN-BUGS #23 for the future "scheduled auto-debit" distinction.
+function withMarkPaidGate(bill, action) {
+  if (!bill || canMarkBillPaid(bill)) { action(); return; }
+  if (confirm(bill.name + " isn't due until day " + bill.day + ". Mark as paid anyway?")) action();
 }
 
 function getBillsDue() {
@@ -4443,16 +4493,18 @@ function deleteBill() {
 function markBillPaidMonth() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
-  saveUndoState(); // L3: undo support
-  // Deduct from S.bal and log to history
-  S.bal -= b.amt;
-  S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
-  if (!S.paidBills) S.paidBills = {};
-  S.paidBills[paidBillKey(b.name, b.day)] = true;
-  closeModal('bill-modal', true); onStateChange('bill-paid-month');
-  if(navigator.vibrate) navigator.vibrate(50);
-  // Immediately remove any notification for this bill — don't wait for heartbeat
-  try { NOTIFY.refresh(); } catch(e) {}
+  withMarkPaidGate(b, () => {
+    saveUndoState(); // L3: undo support
+    // Deduct from S.bal and log to history
+    S.bal -= b.amt;
+    S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
+    if (!S.paidBills) S.paidBills = {};
+    S.paidBills[paidBillKey(b.name, b.day)] = true;
+    closeModal('bill-modal', true); onStateChange('bill-paid-month');
+    if(navigator.vibrate) navigator.vibrate(50);
+    // Immediately remove any notification for this bill — don't wait for heartbeat
+    try { NOTIFY.refresh(); } catch(e) {}
+  });
 }
 
 // Undo paid bill — removes paidBills key; only accessible inside the modal to prevent accidental triggers
@@ -4781,9 +4833,12 @@ function renderBillsGrouped() {
 
 function markBillPaid(event, name, day) {
   event.stopPropagation();
-  if (!S.paidBills) S.paidBills = {};
-  S.paidBills[paidBillKey(name, day)] = true;
-  onStateChange('bill-paid');
+  const bill = findBillByNameDay(name, day) || { name, day };
+  withMarkPaidGate(bill, () => {
+    if (!S.paidBills) S.paidBills = {};
+    S.paidBills[paidBillKey(name, day)] = true;
+    onStateChange('bill-paid');
+  });
 }
 
 document.addEventListener('click', function(e) {
@@ -4792,9 +4847,12 @@ document.addEventListener('click', function(e) {
   e.stopPropagation();
   const name = btn.dataset.name;
   const day = parseInt(btn.dataset.day);
-  if (!S.paidBills) S.paidBills = {};
-  S.paidBills[paidBillKey(name, day)] = true;
-  onStateChange('bill-paid');
+  const bill = findBillByNameDay(name, day) || { name, day };
+  withMarkPaidGate(bill, () => {
+    if (!S.paidBills) S.paidBills = {};
+    S.paidBills[paidBillKey(name, day)] = true;
+    onStateChange('bill-paid');
+  });
 });
 
 function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
@@ -4840,11 +4898,14 @@ function renderCalendar() {
     else if (billCount === 1) cls += ' has-bill';
     if (isToday) cls += ' today';
     const dotColor = isPayday && items.length ? 'var(--amber)' : isPayday ? 'var(--green)' : hasDebt ? 'var(--red)' : billCount > 1 ? 'var(--amber)' : billCount === 1 ? 'var(--red)' : 'transparent';
+    // OPEN-BUGS #5/#20: distinguish debt days from bill days at-a-glance.
+    // Diamond shape (45° rotated square) instead of circle. Color stays red.
+    const dotCls = hasDebt ? 'cal-day-dot is-debt' : 'cal-day-dot';
     const amtStr = itemTotal > 0 ? '$' + Math.round(itemTotal) : '';
     const clickFn = isThis ? 'calDayClick(' + d + ')' : '';
     html += '<div class="'+cls+'" onclick="'+clickFn+'">' +
       '<div class="cal-day-num">'+d+'</div>' +
-      (items.length || isPayday ? '<div class="cal-day-dot" style="background:'+dotColor+'"></div>' : '') +
+      (items.length || isPayday ? '<div class="'+dotCls+'" style="background:'+dotColor+'"></div>' : '') +
       (amtStr ? '<div class="cal-day-amt">'+amtStr+'</div>' : '') +
       '</div>';
   }
@@ -6515,10 +6576,13 @@ function executeChatAction(action) {
       break;
     case 'mark_bill_paid':
       if (action.name && action.day) {
-        if (!S.paidBills) S.paidBills = {};
-        S.paidBills[paidBillKey(action.name, action.day)] = true;
-        onStateChange('chat_bill_paid');
-        showToast('✅ ' + action.name + ' marked as paid');
+        const _chatBill = findBillByNameDay(action.name, action.day) || { name: action.name, day: action.day };
+        withMarkPaidGate(_chatBill, () => {
+          if (!S.paidBills) S.paidBills = {};
+          S.paidBills[paidBillKey(action.name, action.day)] = true;
+          onStateChange('chat_bill_paid');
+          showToast('✅ ' + action.name + ' marked as paid');
+        });
       }
       break;
     case 'update_balance':
@@ -9532,28 +9596,34 @@ function pivotToggle(cat) {
 
 
 function payBillNow(billName, billDay, billAmt) {
-  S.txns.push({
-    amt: billAmt,
-    note: billName + ' — paid',
-    cat: 'Bills',
-    ts: Date.now(),
-    income: false,
-    _balAffected: true
+  const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
+  withMarkPaidGate(bill, () => {
+    S.txns.push({
+      amt: billAmt,
+      note: billName + ' — paid',
+      cat: 'Bills',
+      ts: Date.now(),
+      income: false,
+      _balAffected: true
+    });
+    S.bal = parseFloat((S.bal - billAmt).toFixed(2));
+    if (!S.paidBills) S.paidBills = {};
+    S.paidBills[paidBillKey(billName, billDay)] = true;
+    onStateChange('bill_paid_now');
+    showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
+    document.getElementById('cal-day-detail').style.display = 'none';
   });
-  S.bal = parseFloat((S.bal - billAmt).toFixed(2));
-  if (!S.paidBills) S.paidBills = {};
-  S.paidBills[paidBillKey(billName, billDay)] = true;
-  onStateChange('bill_paid_now');
-  showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
-  document.getElementById('cal-day-detail').style.display = 'none';
 }
 
 function markBillAlreadyPaid(billName, billDay) {
-  if (!S.paidBills) S.paidBills = {};
-  S.paidBills[paidBillKey(billName, billDay)] = true;
-  onStateChange('bill_already_paid');
-  showToast('✅ ' + billName + ' marked as paid');
-  document.getElementById('cal-day-detail').style.display = 'none';
+  const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
+  withMarkPaidGate(bill, () => {
+    if (!S.paidBills) S.paidBills = {};
+    S.paidBills[paidBillKey(billName, billDay)] = true;
+    onStateChange('bill_already_paid');
+    showToast('✅ ' + billName + ' marked as paid');
+    document.getElementById('cal-day-detail').style.display = 'none';
+  });
 }
 
 function updatePersistentStrip() {

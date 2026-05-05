@@ -333,6 +333,34 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   prevent regression.
 - **Status:** open
 
+## 23. MI-13 fires on John's pre-marked auto-debit pattern
+- **Bug:** John's real-state phone walk on 2026-05-05 surfaced 6
+  future-dated paidBills entries firing MI-13 simultaneously (KIA
+  Loan day 15, YouTube Premium day 20, Adobe day 25, Spotify day 26,
+  + 2 more not visible in the export truncation). Session counter
+  showed 5 firings. The dismiss-once-then-escalate logic triggered
+  the non-dismissible card immediately.
+- **Pattern:** these aren't accidents — they're scheduled auto-debits
+  that John pre-marks because he knows the payment will come out.
+  Legitimate workflow that the invariant cannot distinguish from
+  "accidentally clicked paid early."
+- **Source:** John phone walk 2026-05-05 🟡 (post-Mission-D ship)
+- **Decision (Mission B):** keep MI-13 at fail-tier. The non-
+  dismissible card IS the appropriate signal — user should know
+  about future-dated paidBills. Mission B's gating prevents future
+  paid-early actions; existing entries persist until John addresses
+  them via UI (undo each via bill-modal, or accept the noise).
+- **Repro needed:** no — directly observed.
+- **Fix bundle:** future feature mission. Plan: distinguish
+  "scheduled auto-debit" (legitimate per-user workflow) from
+  "accidental paid-early" (real bug) via a state flag like
+  `_scheduledAutoDebit: true` on the paidBills entry. Mission B's
+  confirm dialog could optionally set this when user picks Yes for
+  a future-dated bill, suppressing MI-13 for that specific entry.
+  Out of scope for Mission B — consider when/if John decides the
+  noise is too high.
+- **Status:** open (deferred — calibration question, not a bug)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
