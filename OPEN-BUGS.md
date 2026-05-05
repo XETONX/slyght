@@ -517,6 +517,33 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Status:** open (deferred — pattern hardening for future
   migrations)
 
+## 33. Mission V fullPage screenshot truncation — Layer V coverage gap
+- **Bug:** Playwright `fullPage: true` screenshots are capping at the
+  412×915 viewport instead of capturing full document scrollHeight.
+  Body's `scrollHeight` reports 915 even when content extends much
+  further (Settings: Math Health panel at y=2980 invisible to capture;
+  Bills tab: NRMA-as-yearly schema fix produced live DOM change at
+  `MODEL.billsThisMonth.length: 13 → 14` but visual baseline showed
+  zero diff because the new entry sits below the cutoff).
+- **First surfaced:** STATE-AUDIT-2026-05-05.md Anomaly B (Settings tab)
+- **Confirmed second instance:** Mission B follow-up commit 65ecbba
+  (Bills tab — NRMA addition invisible to capture)
+- **Why this matters:** the gap is now demonstrably masking
+  intentional changes (false negatives). If intentional changes are
+  invisible, unintentional regressions in the same areas are also
+  invisible. Layer V's coverage is significantly narrower than the
+  baseline file count implies.
+- **Hypothesis:** some CSS height constraint on `<body>` or `.screen`
+  is bounding the layout flow; Playwright's `fullPage` honors document
+  scrollHeight which the constraint pins at viewport size. Possible
+  fix: identify the constraint and remove for test runs only, OR
+  switch capture method to programmatic scroll-and-stitch.
+- **Repro needed:** no — directly observable.
+- **Fix bundle:** Mission V follow-up. **Priority upgraded** vs
+  initial "investigate" framing per Mission B follow-up finding —
+  silent under-coverage is worse than originally scoped.
+- **Status:** open (priority high — Mission V follow-up)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
