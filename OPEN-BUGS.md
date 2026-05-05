@@ -586,6 +586,57 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Status:** open (deferred — research/audit work, not mechanical
   fix; Mission E shipped the surface-level UX win)
 
+## 35. Mission V2: Layer 2 render-coherence invariants
+- **Bug:** Layer V (visual regression) catches pixel changes but
+  not semantic correctness. Mission E exposed this — three cards
+  saying contradictory things ("Cautious Mode" + "Very tight" +
+  "Spending alert won't cover bills" + "you can spend $19.86")
+  shipped to John's phone for hours before he caught it on a phone
+  walk. Layer V's pixel diff would never have flagged it because
+  the pixels were stable; the SEMANTICS were broken.
+- **Source:** Mission E investigation 2026-05-05
+- **Solution sketch:** add Layer 2 invariants that check rendered
+  DOM coherence, not just state. Examples:
+  - `mode-classifier-coherent`: `MODEL.survivalMode` + Card 4
+    visibility + Card 6 ctxText must agree (Mission E encodes
+    suppression in renderers; this invariant verifies it didn't
+    silently regress).
+  - `magnitude-coherent`: buffer math across cards reconciles
+    (Card 3's `safe` vs Card 6's `dailyMax × days`).
+  - `label-matches-math`: card labels match what they describe
+    (Card 6's "MAX PER DAY" matches `min(sustainable, cap)`).
+- **Build approach:** incrementally, one invariant per identified
+  bug class. Each ~10-30 lines, low risk, high value. First
+  candidate post-Mission-E: encode the Card 4 vs Card 6
+  contradiction Mission E just resolved so it can never regress.
+- **Repro needed:** no — pattern observable.
+- **Fix bundle:** future Mission V2 (render-coherence layer).
+  Lower priority than active bug-fix queue.
+- **Status:** open (deferred — foundation work)
+
+## 36. Mission V3: AI-vision review of baselines
+- **Bug (proactive):** Layer V baselines capture pixels; Mission E2
+  + #35 audit semantic correctness via encoded rules. Neither
+  catches the broadest class of UI bugs that a human eye notices
+  immediately — visual hierarchy issues, redundant copy, layout
+  weirdness, color-meaning mismatches, accessibility hints. These
+  require holistic visual judgement.
+- **Source:** Mission E investigation 2026-05-05
+- **Solution sketch:** pipeline that sends each baseline image
+  to Claude Vision API with a structured review prompt
+  ("review this dashboard screenshot for: contradictions between
+  cards, mislabeled numbers, layout issues, copy problems, anything
+  a human reviewing the UI would flag"). Output: structured report
+  of findings.
+- **Cost model:** ~$0.10–$0.30 per screenshot per review. Too
+  expensive for a per-commit gate. Run periodically as audit:
+  weekly, pre-release, or on-demand. Right complement to Layer 2's
+  encoded rules — catches the broadest class.
+- **Repro needed:** no — net-new capability.
+- **Fix bundle:** future Mission V3 (AI-vision review). Lower
+  priority than #35 and active bug-fix queue.
+- **Status:** open (deferred — net-new capability)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
