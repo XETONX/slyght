@@ -20,7 +20,12 @@ const fs = require('fs');
 const path = require('path');
 
 const FIXTURE_PATH = path.resolve(__dirname, '../state-snapshot.json');
-const FROZEN_ISO = '2026-05-05T12:00:00+10:00';   // Sydney noon — within paycycle, mid-day
+// Locked AFTER the fixture's export time (2026-05-05T10:59:02Z = 20:59 Sydney).
+// Pinning the test clock before the export would render real txns as
+// "future-dated" relative to the test clock and trip MI-12 — that's a
+// test-environment artifact, not real-state behavior. 22:00 Sydney is
+// 1 hour clear of the export.
+const FROZEN_ISO = '2026-05-05T22:00:00+10:00';
 
 const TABS = [
   { id: 'pg-dash',     name: 'dashboard' },
@@ -56,11 +61,22 @@ test.describe('Mission V — Option A baseline', () => {
       // 1. Lock the clock — must happen before navigation.
       await page.clock.install({ time: new Date(FROZEN_ISO) });
 
-      // 3. Seed localStorage before app boot.
-      await context.addInitScript((seed) => {
-        try { localStorage.setItem('slyght_v5', JSON.stringify(seed)); }
+      // 3. Seed localStorage before app boot. We also set side-channel
+      // keys that the app's boot code uses to skip first-run logic:
+      //   - slyght_seeded_v13: prevents seedV13 from re-seeding defaults
+      //     (it already returns early when txns > 10, but defensive)
+      //   - slyght_bills_reset_month: prevents the monthly reset at L7720
+      //     from clearing S.paidBills before MI-13 has a chance to fire.
+      //     Set to the rendered month so the reset is "already done."
+      //   - slyght_seeded_v11/v12: legacy compat flags
+      await context.addInitScript((args) => {
+        try { localStorage.setItem('slyght_v5', JSON.stringify(args.seed)); }
         catch (_) {}
-      }, buildSlyghtV5(fixture));
+        try { localStorage.setItem('slyght_seeded_v13', '1'); } catch (_) {}
+        try { localStorage.setItem('slyght_seeded_v12', '1'); } catch (_) {}
+        try { localStorage.setItem('slyght_seeded_v11', '1'); } catch (_) {}
+        try { localStorage.setItem('slyght_bills_reset_month', args.monthKey); } catch (_) {}
+      }, { seed: buildSlyghtV5(fixture), monthKey: '2026-5' });
 
       // 7. Console + page errors — collect, assert at end.
       const errors = [];
@@ -71,6 +87,10 @@ test.describe('Mission V — Option A baseline', () => {
         // Service-worker registration failures are expected when SW is
         // blocked at context level. Filter them out.
         if (/serviceWorker|sw\.js|Failed to register/i.test(text)) return;
+        // Network-resource failures (Google Fonts CDN DNS hiccups, etc.)
+        // are environment concerns, not app bugs. The visual diff would
+        // catch any actual rendering breakage from missing resources.
+        if (/Failed to load resource|net::ERR_/i.test(text)) return;
         errors.push('[console.error] ' + text);
       });
 
