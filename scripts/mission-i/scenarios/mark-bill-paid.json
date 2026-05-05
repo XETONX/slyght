@@ -1,0 +1,5 @@
+{
+  "name": "mark-bill-paid",
+  "description": "Mark a bill as paid via the bill modal.",
+  "user_goal": "Your task: open the Bills tab (cal). Find a bill that is NOT yet paid this month (look for ones without a PAID badge). Try to mark it paid. Note: bills due AFTER today (May 5) should trigger a confirm dialog asking 'Mark as paid anyway?' (Mission B's gating). Bills due ON OR BEFORE today should mark paid without confirm. Verify your action with read_state('paidBills') — the entry should appear. Apply your adversarial niche. If you encounter the confirm dialog, decide whether to accept based on your persona (Nora cancels — she didn't mean it; Sam accepts — she's testing; Pat taps through fast; Riley clicks both Yes and No to see what happens; Connor reads the dialog text and reports any confusing copy). Stop with done() when complete or stuck."
+}

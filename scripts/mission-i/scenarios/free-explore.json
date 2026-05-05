@@ -1,0 +1,5 @@
+{
+  "name": "free-explore",
+  "description": "Open-ended exploration. The persona decides what to test based on their adversarial niche.",
+  "user_goal": "Use SLYGHT for the next ~25 turns. Apply your adversarial niche from the system prompt. Take screenshots, click things, verify with read_state, report what you find. Stop with done() when you've explored your niche thoroughly OR you're stuck OR you've collected several findings."
+}

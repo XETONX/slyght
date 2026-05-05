@@ -731,6 +731,33 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   baseline limitation is orthogonal.
 - **Status:** fixed in this commit
 
+## 39. MI-13 banner "details" button does nothing
+- **Bug:** When the MI-13 paidbills-key-not-future invariant fires
+  (currently fires on John's real state with 6 future-dated paidBills),
+  a red banner appears at the top of pg-dash with a `× Dismiss` button
+  and a `details` link. Tapping the `details` link does nothing
+  visible — no modal opens, no detail view is rendered, no navigation
+  occurs. The button's onclick handler at index.html L403 calls
+  `MathInvariants.showDetails(...)` which exists at L2945 and does
+  `alert(...)` with the violation details — but the alert flow may not
+  be working in the deployed context, OR Nora's Playwright environment
+  somehow suppressed the alert dialog without surfacing the issue.
+- **Source:** **Mission I iteration 1 — Nora persona × free-explore
+  scenario, turn 5.** Before the API rate-limit cut the run short,
+  Nora tapped the `details` button on the MI-13 banner, took
+  before/after screenshots (shot-001 → shot-002 in
+  test-reports/2026-05-05-2359/nora_free-explore/), observed no
+  visible change, and reported `hard_fail` per her adversarial niche
+  ("the obvious path is broken"). **First bug found by Layer I.**
+- **Repro needed:** yes — open the deployed app on phone, observe
+  MI-13 banner is present, tap `details`. Should an alert appear?
+  Should a modal? Determine intent before fix.
+- **Fix bundle:** small follow-up. Likely either (a) `showDetails`'s
+  `alert(...)` is broken in current deployment context — replace with
+  modal-based detail view, OR (b) add explicit modal UI for invariant
+  details (more user-friendly than alert anyway).
+- **Status:** open
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,

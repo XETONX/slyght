@@ -11,6 +11,8 @@
     "visual": "playwright test",
     "visual:update": "playwright test --update-snapshots",
     "visual:report": "playwright show-report",
+    "test:interaction": "node scripts/mission-i/run.js",
+    "test:interaction:dry": "node scripts/mission-i/run.js --dry-run",
     "test": "node guardian-all.js && node guardian-static.js && node tests/core.test.js"
   },
   "devDependencies": {

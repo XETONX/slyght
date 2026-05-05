@@ -1,0 +1,5 @@
+{
+  "name": "add-transaction",
+  "description": "Log a discretionary expense via the quick-log flow.",
+  "user_goal": "Your task: log a $20 transaction with category 'Food / Coffee' and note 'lunch'. Find the quick-log button on the dashboard (likely the green '+' in the bottom nav), open it, fill in the fields, submit. After submitting, verify via read_state('txns.length') that the count went up by exactly 1 (not 0, not 2). Verify via read_state('bal') that the balance decreased by $20. Apply your adversarial niche while doing this — Nora takes the obvious path; Connor reads every label; Riley tries weird values; Sam checks edges; Pat taps fast. Stop with done() when you've completed the task OR found a hard_fail OR you're stuck after the 3-attempt rule."
+}

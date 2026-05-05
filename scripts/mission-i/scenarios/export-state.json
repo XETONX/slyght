@@ -1,0 +1,5 @@
+{
+  "name": "export-state",
+  "description": "Export state via the Settings export flow.",
+  "user_goal": "Your task: navigate to Settings. Find the export buttons in the 'My Financial Data' section (you may need to expand it — tap the section header). Try the 📁 Download Export (file) button. Note: this triggers a file download, not a clipboard write. Then try the Copy Export Code button. Then try the 📤 Export button at the top of the section. Verify via read_state that the export functions exist and work. Note what happens on each button — does anything visible to the user confirm the action succeeded? Apply your adversarial niche. Stop with done() when you've tried all three export buttons or you're stuck."
+}
