@@ -202,7 +202,6 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .settings-lbl{font-size:14px;color:var(--text2);font-weight:500}
 .settings-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 12px;font-size:14px;font-family:var(--mono);color:var(--text);width:120px;text-align:right;outline:none;transition:border-color .2s}
 .settings-input:focus{border-color:var(--green)}
-.export-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:11px;color:var(--text3);word-break:break-all;line-height:1.6;margin-bottom:8px}
 .action-btn{width:100%;padding:13px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:14px;font-weight:600;color:var(--text);cursor:pointer;margin-bottom:8px;transition:border-color .2s}
 .action-btn:hover{border-color:var(--green)}
 .import-area{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:12px;color:var(--text);min-height:80px;outline:none;resize:none;margin-bottom:8px}
@@ -698,7 +697,6 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div class="card-hdr"><div class="card-title">Export / Import</div></div>
         <div class="section-hdr">Export — paste into Claude to sync</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠️ This export contains real financial data. Only paste into trusted conversations.</div>
-        <div class="export-box" id="export-box"></div>
         <button class="action-btn" onclick="copyExport()" title="⚠️ Export contains sensitive financial data — store securely">Copy Export Code</button>
         <div class="section-hdr">Import — paste Claude's updated code</div>
         <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
@@ -3795,7 +3793,6 @@ function renderAll() {
   renderSavingsBuckets();
   renderSpendingCoach();
   if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
-  updateExport();
   checkAfford();
   if ($('s-bal')) $('s-bal').value = S.bal != null ? S.bal : '';
   if ($('s-income')) $('s-income').value = S.income || 7282;
@@ -5924,11 +5921,6 @@ function checkAfford() {
       instEl.innerHTML = '';
     }
   }
-}
-
-function updateExport() {
-  const el = $('export-box'); if (!el) return;
-  el.textContent = JSON.stringify({S, BILLS, exported: new Date().toISOString()});
 }
 
 // Fix 7A: comprehensive export with all monitoring data.

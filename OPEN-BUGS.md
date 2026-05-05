@@ -705,6 +705,32 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   7. Other queued items
 - **Status:** open (deferred — net-new capability, queue lead)
 
+## 38. Export-box JSON preview removed from Settings (Option A cleanup)
+- **Bug (UX):** The `#export-box` div in the Settings card showed a
+  full-width JSON preview of state on every renderAll. After Mission
+  EXPORT removed the `max-height: 100px` clip (commit bb30b86), the
+  preview rendered at full document height — ~6 phone-scrolls worth
+  of monospace JSON wedged into the Export/Import card. John's phone
+  walk noted he hasn't actually used the inline preview in months;
+  the `📁 Download Export (file)` and `Copy Export Code` paths
+  superseded it.
+- **Source:** John phone walk 2026-05-05 evening
+- **Resolution:** Option A — hide entirely. Removed:
+  - `<div class="export-box" id="export-box">` element (L701)
+  - `.export-box{...}` CSS rule (L205)
+  - `function updateExport()` (was L5929-5932)
+  - `updateExport()` call from renderAll (was L3798)
+  Pure deletion, no behavior change to export functionality. The
+  Copy Export Code button still works (clipboard path); the
+  📁 Download Export (file) button still works (Blob download
+  path). Settings card now reads cleaner — warning + buttons +
+  Import textarea, no JSON wall.
+- **Visual capture:** settings.png didn't diff because the
+  export-box lived below the 412×915 viewport cutoff (Layer V
+  fullPage truncation, OPEN-BUGS #33). DOM change is real; visual
+  baseline limitation is orthogonal.
+- **Status:** fixed in this commit
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
