@@ -417,6 +417,40 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   uses SLYGHT.
 - **Status:** documented (semantic shift, not a bug)
 
+## 30. Gate verification reliability concern (Mission F finding)
+- **Bug:** Mission EXPORT (commit bb30b86) reported "all gates green"
+  but `npm run guardian-static` was actually exiting **1** because
+  the `copy-export-strips-secrets` rule wasn't updated for the
+  `buildFullExport` refactor. The rule scanned `function copyExport`'s
+  body for `delete _.apiKey` / `delete _.chatHistory`, but those
+  deletes had moved into the new `buildFullExport`. Surfaced during
+  Mission F (commit b3d1105) gate run; rule fix shipped in F's same
+  commit.
+- **Source:** Mission F gate run 2026-05-05
+- **Diagnosis:** the rule fix itself is documented in Mission F's
+  commit body. **The deeper concern this entry tracks is gate-report
+  trustworthiness:** post-mission verification reported false-clean,
+  mechanism unknown. Working hypothesis: pipe-to-`tail` masked npm's
+  actual exit code (the shell-builtin pipeline returns the LAST
+  command's exit by default; `tail` always succeeds). Hypothesis
+  unverified.
+- **Why this matters:** the whole point of Layer 1 + Layer 2 + Layer V
+  is that "gate green" means "gate green." If gate reports can be
+  false-clean, that confidence erodes. Mission F's gate run did catch
+  the false-clean from Mission EXPORT — the system self-corrects
+  through later commits running fresh gates — but the catch is
+  retrospective, not preventive.
+- **Repro needed:** yes — reproduce the false-clean conditions and
+  identify the exact mechanism. Then add an explicit per-gate exit
+  code capture + output validation step in mission verification so
+  false-clean reports become impossible.
+- **Fix bundle:** dedicated future mission. Lower priority than
+  current bug-fix queue (Missions C / B-followup / E). Until shipped,
+  fresh gates on subsequent missions are de-facto regression checks
+  for any prior mission that touched code paths a Layer 1 rule
+  targeted by name.
+- **Status:** open (deferred — foundation hardening, not user-visible)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
