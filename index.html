@@ -2657,6 +2657,98 @@ const MathInvariants = {
       },
       message(v) { return 'Audit log lying: ' + v.details + '.'; },
     },
+
+    // ─── temporal-tier (date/time coherence) ────────────────────────
+    // Mission D additions. Anchored to specific OPEN-BUGS classes that
+    // the existing state-shape + math-shape invariants couldn't catch.
+    {
+      // Anchor: paranoia. No current code path manufactures future ts;
+      // would catch corrupt import or future manual ts entry.
+      name: 'no-future-dated-txns',
+      tier: 'fail',
+      anchor: 'temporal',
+      check() {
+        if (!Array.isArray(S.txns)) return null;
+        const cutoff = Date.now() + 3600000; // 1hr clock-skew tolerance
+        const future = S.txns.filter(t => t && typeof t.ts === 'number' && t.ts > cutoff);
+        if (future.length === 0) return null;
+        const sample = future.slice(0, 3).map(t => new Date(t.ts).toISOString().slice(0, 10)).join(', ');
+        return { displayValue: future.length + ' txn(s)', expected: 'ts ≤ now + 1hr',
+          details: future.length + ' future-dated txn(s) (sample: ' + sample + ')' };
+      },
+      message(v) { return 'Future-dated transactions: ' + v.details + '. Filters that clamp by date will silently exclude them.'; },
+    },
+    {
+      // Anchor: OPEN-BUGS #1 — bills marked paid before their due date.
+      // Key format from paidBillKey: ${y}-${m+1}-${name}-${day}.
+      name: 'paidbills-key-not-future',
+      tier: 'fail',
+      anchor: 'OPEN-BUGS#1',
+      check() {
+        if (!S.paidBills) return null;
+        const today = new Date();
+        const todayY = today.getFullYear();
+        const todayM = today.getMonth() + 1;
+        const todayD = today.getDate();
+        const future = Object.keys(S.paidBills).filter(key => {
+          const m = key.match(/^(\d{4})-(\d{1,2})-.*-(\d{1,2})$/);
+          if (!m) return false; // malformed handled by state-shape-paidbills
+          const y = +m[1], mo = +m[2], d = +m[3];
+          if (y > todayY) return true;
+          if (y === todayY && mo > todayM) return true;
+          if (y === todayY && mo === todayM && d > todayD) return true;
+          return false;
+        });
+        if (future.length === 0) return null;
+        return { displayValue: future.length + ' bill(s)',
+          expected: 'paidBills key day ≤ today',
+          details: future.length + ' bill(s) marked paid before due date: ' + future.slice(0, 3).join(', ') };
+      },
+      message(v) { return 'Bills marked paid before due date: ' + v.details + '.'; },
+    },
+    {
+      // Anchor: OPEN-BUGS #4 (narrow). Catches "expansion silently drops
+      // a recurring source bill" — does not catch the broader BILLS
+      // schema continuity / isBillDueThisMonth filtering bugs (Mission B).
+      name: 'bill-recurrence-coherent',
+      tier: 'warn',
+      anchor: 'OPEN-BUGS#4',
+      check() {
+        if (typeof getExpandedBills !== 'function') return null;
+        const expanded = getExpandedBills();
+        const recurring = (typeof BILLS !== 'undefined' ? BILLS : (S.BILLS || []))
+          .filter(b => b && b.recurring === true);
+        const missing = recurring.filter(b =>
+          !expanded.some(e => e.name === b.name && e.day === b.day)
+        );
+        if (missing.length === 0) return null;
+        return { displayValue: missing.length + ' bill(s)',
+          expected: 'every recurring bill present in expansion',
+          details: 'Recurring bill(s) missing from current month expansion: ' +
+            missing.slice(0, 3).map(b => b.name).join(', ') };
+      },
+      message(v) { return 'Recurring bills dropped from expansion: ' + v.details + '.'; },
+    },
+    {
+      // Anchor: 12+ inline daysLeft(S.payday) call sites diverge from
+      // MODEL.daysToPayday on Feb-31 clamping and payday-morning gating
+      // (see OPEN-BUGS #22). MODEL.daysToPayday already exists; this
+      // invariant is the runtime gate against the parallel impl drift.
+      name: 'payday-interpretation-canonical',
+      tier: 'fail',
+      anchor: 'OPEN-BUGS#22',
+      check() {
+        if (typeof daysLeft !== 'function') return null;
+        if (!MODEL || typeof MODEL.daysToPayday !== 'number') return null;
+        const canonical = daysLeft(S.payday);
+        if (MODEL.daysToPayday === canonical) return null;
+        return { displayValue: 'MODEL=' + MODEL.daysToPayday + ', daysLeft=' + canonical,
+          expected: 'MODEL.daysToPayday === daysLeft(S.payday)',
+          details: 'Payday-distance drift: MODEL.daysToPayday=' + MODEL.daysToPayday +
+            ' but daysLeft(S.payday)=' + canonical };
+      },
+      message(v) { return 'Payday distance disagrees between MODEL and daysLeft(): ' + v.details + '. Forecast tiles will diverge.'; },
+    },
   ],
 
   // Run all invariants. Returns array of violation objects.

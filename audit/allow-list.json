@@ -1,12 +1,12 @@
 {
-  "lastGenerated": "2026-05-05T07:37:51.509Z",
+  "lastGenerated": "2026-05-05T09:13:20.943Z",
   "totalAllows": 20,
   "unusedAllows": 0,
   "byRule": {
     "no-direct-paidbills-access": [
       {
         "type": "single",
-        "line": 2521,
+        "line": 2519,
         "removability": "permanent",
         "reason": "this invariant's job is to verify the shape of paidBills values; cannot delegate to isThisMonthlyBillPaid which already assumes shape",
         "condition": "invariant validating the canonical helper's input contract",
@@ -14,7 +14,7 @@
       },
       {
         "type": "single",
-        "line": 2523,
+        "line": 2521,
         "removability": "permanent",
         "reason": "same reason: shape-of-paidBills check must read raw values to report what's wrong",
         "condition": "invariant validating the canonical helper's input contract",
@@ -24,7 +24,7 @@
     "no-bare-non-income-filter-on-txns": [
       {
         "type": "single",
-        "line": 3140,
+        "line": 3230,
         "removability": "removable",
         "reason": "survival forecast filter inspects last-7-day txns regardless of category; uses date-range filter, not category exclusion",
         "condition": "filter migrates to consume getDiscretionaryByCategory(weekAgo, now) — earliest review post Layer 2 ship",
@@ -32,7 +32,7 @@
       },
       {
         "type": "single",
-        "line": 3302,
+        "line": 3392,
         "removability": "removable",
         "reason": "Essential vs Discretionary breakdown excludes only Debt repayment; should switch to strict _NON_SPEND_CATS filter to align with Bundle B canonical",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -40,7 +40,7 @@
       },
       {
         "type": "single",
-        "line": 5124,
+        "line": 5199,
         "removability": "removable",
         "reason": "overspend flags currently exclude only Debt repayment; should use strict _NON_SPEND_CATS filter",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -48,7 +48,7 @@
       },
       {
         "type": "single",
-        "line": 5239,
+        "line": 5314,
         "removability": "removable",
         "reason": "renderTrend uses bare !t.income (no category filter); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -56,7 +56,7 @@
       },
       {
         "type": "single",
-        "line": 5254,
+        "line": 5329,
         "removability": "removable",
         "reason": "renderCatBreakdown uses bare !t.income (all-time, all categories); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -64,7 +64,7 @@
       },
       {
         "type": "single",
-        "line": 5698,
+        "line": 5773,
         "removability": "removable",
         "reason": "checkAfford \"what to cut\" tally excludes only Debt repayment; should use strict _NON_SPEND_CATS filter",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -74,8 +74,8 @@
     "no-hardcoded-bill-name": [
       {
         "type": "block",
-        "startLine": 1265,
-        "endLine": 1414,
+        "startLine": 1263,
+        "endLine": 1412,
         "removability": "removable",
         "reason": "schema migrations reference legacy/renamed bill names by string literal so existing user data can be upgraded",
         "condition": "all migration flags _billsCleanedV1, _paidBillsKeyMigrationV1, _billsFreqMetaV1, _debtAuditV1, _afterpayUpdated have been true on every known device for ≥ 6 months — earliest review 2027-05-05",
@@ -83,7 +83,7 @@
       },
       {
         "type": "single",
-        "line": 3305,
+        "line": 3395,
         "removability": "removable",
         "reason": "\"Fuel\" used here as a category-alias check (legacy txns logged with cat='Fuel' rather than 'Transport / Fuel'), not as a bill-name ref",
         "condition": "ESSENTIAL_KEYS is extracted to a constant and category vocabulary normalized — earliest review 2026-09-01",
@@ -91,8 +91,8 @@
       },
       {
         "type": "block",
-        "startLine": 6627,
-        "endLine": 6813,
+        "startLine": 6702,
+        "endLine": 6888,
         "removability": "permanent",
         "reason": "seed v13 captures literal bill names from a real-data snapshot used to bootstrap state in clean browsers",
         "condition": "see seed function design: seeds must enumerate the bill set explicitly so existing-user-detection logic can identify and patch ghost/renamed entries",
@@ -100,8 +100,8 @@
       },
       {
         "type": "block",
-        "startLine": 6815,
-        "endLine": 6975,
+        "startLine": 6890,
+        "endLine": 7050,
         "removability": "permanent",
         "reason": "seed v17 captures John's real-state snapshot from 15 Apr 2026 + post-seed migration patches (NRMA, Teachers Health, etc.) requiring literal bill-name lookups to identify and update specific entries",
         "condition": "see seed function design",
@@ -109,7 +109,7 @@
       },
       {
         "type": "single",
-        "line": 9640,
+        "line": 9671,
         "removability": "permanent",
         "reason": "provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers",
         "condition": "see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS",
@@ -117,7 +117,7 @@
       },
       {
         "type": "single",
-        "line": 9740,
+        "line": 9771,
         "removability": "removable",
         "reason": "\"other bills\" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner",
         "condition": "bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2",
@@ -125,7 +125,7 @@
       },
       {
         "type": "single",
-        "line": 9999,
+        "line": 10030,
         "removability": "permanent",
         "reason": "modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view",
         "condition": "see showKiaLoanInfo design",
@@ -133,7 +133,7 @@
       },
       {
         "type": "single",
-        "line": 10357,
+        "line": 10388,
         "removability": "permanent",
         "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
         "condition": "see locked-items breakdown design",
@@ -143,8 +143,8 @@
     "no-render-fn-mutates-state": [
       {
         "type": "block",
-        "startLine": 3462,
-        "endLine": 3485,
+        "startLine": 3552,
+        "endLine": 3575,
         "removability": "permanent",
         "reason": "month-end snapshot is the SINGLE sanctioned exception to \"renders are pure\"; writing monthlyHistory at month rollover requires render-time observation of the date change. All other state mutations were refactored out (see detectPaydayCycleRollover for the payday-detection refactor)",
         "condition": "see architectural rule \"renders are pure with one sanctioned exception\"",
@@ -154,8 +154,8 @@
     "tdz-safe-engine-access": [
       {
         "type": "block",
-        "startLine": 5630,
-        "endLine": 5639,
+        "startLine": 5705,
+        "endLine": 5714,
         "removability": "permanent",
         "reason": "confirmSuperBalance/Mum-account update is a user-action handler called only post-boot (button click after splash + onboard); PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard",
         "condition": "see UI handler call paths",
@@ -163,8 +163,8 @@
       },
       {
         "type": "block",
-        "startLine": 6219,
-        "endLine": 6222,
+        "startLine": 6294,
+        "endLine": 6297,
         "removability": "permanent",
         "reason": "sendChatMessage system-prompt builder runs only when user sends a chat message (post-boot); the `typeof PLAN !== 'undefined' && PLAN.X` checks are defensive null-guards, not TDZ guards",
         "condition": "chat is user-initiated, never called during boot",
@@ -172,8 +172,8 @@
       },
       {
         "type": "block",
-        "startLine": 6466,
-        "endLine": 6476,
+        "startLine": 6541,
+        "endLine": 6551,
         "removability": "permanent",
         "reason": "executeChatAction runs only after the AI returns a structured action from a user-initiated chat message; PLAN is fully initialized by then",
         "condition": "chat-action call path is user-initiated, never during boot",

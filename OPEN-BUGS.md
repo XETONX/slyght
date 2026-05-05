@@ -261,6 +261,78 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   invariant target (it's a single-tile filter scope problem).
 - **Status:** open
 
+## 18. Add A Bill view — May entries appear less populated than April
+- **Bug:** Phone walk on May 5 noted that the Add-A-Bill / current-month
+  bill view surfaces fewer entries in May than were visible in April.
+  Could be: (a) `BILLS` array schema continuity broken between months,
+  (b) `isBillDueThisMonth` filtering too aggressively for May, (c)
+  `getExpandedBills` silently dropping a recurring source bill.
+- **Source:** John phone walk 2026-05-05 🔴
+- **Coverage:** MI-14 `bill-recurrence-coherent` (Mission D, commit
+  pending) catches case (c) only — fires when `getExpandedBills` drops
+  a recurring source bill from its expansion. MI-14 is a coherence
+  guard for expansion drops, **not a fix for #18**. Cases (a) and (b)
+  need Mission B investigation.
+- **Repro needed:** yes — capture both April and May snapshots, diff
+  the `Add A Bill` rendered list against `S.BILLS` to identify which
+  case applies.
+- **Fix bundle:** Mission B (bill state lifecycle)
+- **Status:** open
+
+## 19. Forecast doesn't net upcoming payday salary
+- **Bug:** Survival forecast tile / borrow recommendation does not
+  appear to fold in upcoming payday salary as a positive cashflow
+  event on its scheduled day. Dashboard math implies "you'll run out"
+  by ignoring the next paycheque.
+- **Source:** John phone walk 2026-05-05 🔴
+- **Coverage:** MI-15 `payday-interpretation-canonical` (Mission D)
+  is partial coverage — it ensures `MODEL.daysToPayday` and
+  `daysLeft(S.payday)` agree, so all consumers see the same payday
+  distance. But the forecast also needs to *credit income on payday*,
+  which is a Mission C concern (forecast payday netting), not gated
+  by MI-15.
+- **Repro needed:** yes — Mission C investigation will produce
+  expected vs. actual forecast trajectory across the payday boundary.
+- **Fix bundle:** Mission C (forecast payday netting)
+- **Status:** open
+
+## 20. Calendar not showing immediate debts on their due dates
+- **Bug:** Calendar view does not render markers for immediate-debt
+  due dates. Bills/recurring entries appear; ad-hoc debts (Teachers
+  Health, Afterpay etc.) do not.
+- **Source:** John phone walk 2026-05-05 🔴
+- **Coverage:** Not gated by Mission D. The temporal invariants
+  validate state-temporal coherence, not calendar rendering output.
+  Needs separate Mission B/C investigation of `buildCalendarEntries`
+  output vs. what the calendar tile renders.
+- **Repro needed:** yes — log `buildCalendarEntries(state, now)` for
+  the current month and compare against rendered DOM.
+- **Fix bundle:** Mission B (calendar marker scope)
+- **Status:** open
+
+## 22. Parallel implementation: 12+ inline `daysLeft(S.payday)` call sites
+- **Bug:** `daysLeft(S.payday)` and `MODEL.daysToPayday` are two
+  separate code paths that diverge on (a) Feb-with-payday-31 clamping
+  and (b) payday-morning `paydayReceived` gating. `daysLeft` clamps
+  payday day to days-in-month (`Math.min(rawPd, daysInMonth)`); MODEL
+  builds the date directly and lets JS roll over.
+- **Sites:** L1482, 1507, 1518, 1525, 1760, 1831, 2166, 2889, 3198,
+  3496, 5098, 5666 — all reading `daysLeft(S.payday)` instead of
+  `MODEL.daysToPayday`.
+- **Source:** Mission D Step 1 investigation 2026-05-05
+- **Coverage:** MI-15 `payday-interpretation-canonical` (Mission D,
+  commit pending) catches the divergence at runtime — fires whenever
+  the two impls produce different values. Migration is OUT OF SCOPE
+  for Mission D; the runtime gate makes the bug class visible before
+  the migration ships.
+- **Repro needed:** no — divergence is provable from the two function
+  bodies (L1442-1455 for `daysLeft`, L2270-2275 for MODEL).
+- **Fix bundle:** future migration mission. Plan: replace 12+ inline
+  `daysLeft(S.payday)` calls with `MODEL.daysToPayday`, then add a
+  Layer 1 static rule `no-inline-daysleft-outside-canonical` to
+  prevent regression.
+- **Status:** open
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
