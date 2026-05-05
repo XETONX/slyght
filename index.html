@@ -1242,6 +1242,7 @@ function load() {
   if (typeof S.mumAccountBalance !== 'number') {
     S.mumAccountBalance = 3000;
   }
+  // guardian-allow-block-start: no-hardcoded-bill-name — schema migrations reference legacy/renamed bill names by string literal so existing user data can be upgraded (removable when all migration flags _billsCleanedV1, _paidBillsKeyMigrationV1, _billsFreqMetaV1, _debtAuditV1, _afterpayUpdated have been true on every known device for ≥ 6 months — earliest review 2027-05-05)
   // Bills cleanup migration — run once
   if (!S._billsCleanedV1) {
     if (Array.isArray(BILLS)) {
@@ -1390,6 +1391,9 @@ function load() {
     S._afterpayUpdated = true;
     save();
   }
+  // guardian-allow-block-end: no-hardcoded-bill-name
+  // Detect cycle rollover post-load (in case the user reopens after a new month started).
+  try { detectPaydayCycleRollover(); } catch(e) {}
   // Refresh the computed model now that all migrations have completed.
   if (typeof refreshModel === 'function') refreshModel();
 }
@@ -1398,6 +1402,24 @@ function daysInCurrentMonth() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 }
+
+// Auto-reset paydayReceived when calendar month rolls over.
+// Refactored OUT of renderAll (Guardian Layer 1: renders are pure with one
+// sanctioned exception). Called from onStateChange, load() post-migrations,
+// and HEARTBEAT.tick(). Returns true if state was mutated.
+function detectPaydayCycleRollover() {
+  if (!S.paydayReceived || !S.paydayReceivedDate) return false;
+  const rec = new Date(S.paydayReceivedDate), now = new Date();
+  if (rec.getMonth() !== now.getMonth() || rec.getFullYear() !== now.getFullYear()) {
+    S.paydayReceived = false;
+    S.paydayReceivedDate = null;
+    S.paydayBannerDismissed = false;
+    save();
+    return true;
+  }
+  return false;
+}
+
 // L1: clamp pd to actual days in month so day-31 in February doesn't wrap to March
 function daysLeft(payday) {
   const now = new Date(), today = now.getDate();
@@ -1498,6 +1520,7 @@ function onBalanceChange() {
 function onStateChange(reason) {
   save();
   S.bal = parseFloat((S.bal || 0).toFixed(2));
+  try { detectPaydayCycleRollover(); } catch(e) {}
   const mode = getSurvivalMode();
   if (typeof checkForWrxSaleInterception === 'function') {
     try { checkForWrxSaleInterception(); } catch(e) {}
@@ -2701,6 +2724,7 @@ function renderSurvivalForecast() {
 
     const cuts = [];
     // Check recent spending for cuttable items
+    // guardian-allow: no-bare-non-income-filter-on-txns — survival forecast filter inspects last-7-day txns regardless of category; uses date-range filter, not category exclusion (removable when filter migrates to consume getDiscretionaryByCategory(weekAgo, now) — earliest review post Layer 2 ship)
     const recentDiscretionary = S.txns
       .filter(t => {
         const d = new Date(t.ts);
@@ -2865,8 +2889,10 @@ function renderAnalysisTab() {
   const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
   const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings'];
   let essTotal = 0, discTotal = 0;
+  // guardian-allow: no-bare-non-income-filter-on-txns — Essential vs Discretionary breakdown excludes only Debt repayment; should switch to strict _NON_SPEND_CATS filter to align with Bundle B canonical (removable when OPEN-BUGS #6 is fixed)
   S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => {
     const k = t.cat || 'Other';
+    // guardian-allow: no-hardcoded-bill-name — "Fuel" used here as a category-alias check (legacy txns logged with cat='Fuel' rather than 'Transport / Fuel'), not as a bill-name ref (removable when ESSENTIAL_KEYS is extracted to a constant and category vocabulary normalized — earliest review 2026-09-01)
     if (ESSENTIAL_KEYS.includes(k) || k === 'Fuel') essTotal += t.amt;
     else discTotal += t.amt;
   });
@@ -3024,6 +3050,7 @@ function renderAll() {
   _renderCache = {}; // Clear render cache at start of each render pass
   // Refresh the computed model so every renderer in this pass sees the same snapshot.
   if (typeof refreshModel === 'function') refreshModel();
+  // guardian-allow-block-start: no-render-fn-mutates-state — month-end snapshot is the SINGLE sanctioned exception to "renders are pure"; writing monthlyHistory at month rollover requires render-time observation of the date change. All other state mutations were refactored out (see detectPaydayCycleRollover for the payday-detection refactor) (permanent — see architectural rule "renders are pure with one sanctioned exception")
   // L2: Month-end snapshot — write to S.monthlyHistory when month rolls over
   const nowForSnap = new Date();
   const snapKey = nowForSnap.getFullYear() + '-' + (nowForSnap.getMonth() + 1);
@@ -3046,6 +3073,7 @@ function renderAll() {
   const prevSnapMonth = S._lastSnapMonth;
   S._lastSnapMonth = snapKey;
   if (prevSnapMonth !== snapKey) save();
+  // guardian-allow-block-end: no-render-fn-mutates-state
 
   const txnSpent = getTxnSpent();
   // RC1: hero "this cycle" line reads cycle-bounded spend from MODEL,
@@ -3108,13 +3136,8 @@ function renderAll() {
   // Timing context — phase used throughout renderAll for conditional messaging
   const phase = getMonthPhase();
 
-  // Auto-reset paydayReceived when calendar month rolls over
-  if (S.paydayReceived && S.paydayReceivedDate) {
-    const rec = new Date(S.paydayReceivedDate), now2 = new Date();
-    if (rec.getMonth() !== now2.getMonth() || rec.getFullYear() !== now2.getFullYear()) {
-      S.paydayReceived = false; S.paydayReceivedDate = null; S.paydayBannerDismissed = false; save();
-    }
-  }
+  // (Payday-rollover auto-reset moved to detectPaydayCycleRollover() and called
+  // from onStateChange + load + HEARTBEAT.tick — Guardian Layer 1: renders are pure.)
 
   // Fix 2C: survival mode banner
   renderSurvivalBanner();
@@ -3398,6 +3421,7 @@ function renderPaydayPlan() {
   lines.push({label: 'Buffer after debts', amt: remaining, col: remaining >= 400 ? 'var(--green)' : remaining >= 0 ? 'var(--amber)' : 'var(--red)', bold: true, runBal: remaining});
 
   // Merge saved statuses into lines
+  // guardian-allow: no-render-fn-mutates-state — renderPaydayPlan is dead code (writes to non-existent DOM payday-plan-body) targeted for deletion in Dead Code Cleanup mission; allow until cleanup runs (removable when renderPaydayPlan is deleted in Dead Code Cleanup mission — see PROJECT-EXTRACT § 5.1 dead-renderer list)
   if (!S.paydayPlanItems) S.paydayPlanItems = {};
   lines.forEach((r, i) => {
     const key = r.label.replace(/\s+/g, '_').toLowerCase();
@@ -4978,6 +5002,7 @@ function renderSpendingCoach() {
 
   // Category overspend flags — exclude Debt repayment (not discretionary spend)
   const cats = {};
+  // guardian-allow: no-bare-non-income-filter-on-txns — overspend flags currently exclude only Debt repayment; should use strict _NON_SPEND_CATS filter (removable when OPEN-BUGS #6 is fixed)
   S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => { const k = t.cat||'Other'; cats[k] = (cats[k]||0)+t.amt; });
   const overCats = Object.entries(cats).filter(([k,v]) => v > 200);
   if (overCats.length) {
@@ -5092,6 +5117,7 @@ function renderTrend() {
   const history = S.monthlyHistory || [];
   if (history.length < 2) { c.innerHTML = '<div class="empty-state">Trend data builds up as you use Slyght each month.</div>'; return; }
   const cats = {};
+  // guardian-allow: no-bare-non-income-filter-on-txns — renderTrend uses bare !t.income (no category filter); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter (removable when OPEN-BUGS #6 is fixed)
   S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
     const prev = (history[history.length-1]||{})[k] || 0;
@@ -5106,6 +5132,7 @@ function renderCatBreakdown() {
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   // M8: show time period label
   const cats = {};
+  // guardian-allow: no-bare-non-income-filter-on-txns — renderCatBreakdown uses bare !t.income (all-time, all categories); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter (removable when OPEN-BUGS #6 is fixed)
   S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
   const timePeriodLabel = '<div style="font-size:11px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
@@ -5482,6 +5509,7 @@ function saveMumAccountBalance() {
   if (!isNaN(v) && v >= 0) {
     S.mumAccountBalance = v;
     // Mirror into the apartment goal so its progress reflects the live balance.
+    // guardian-allow-block-start: tdz-safe-engine-access — confirmSuperBalance/Mum-account update is a user-action handler called only post-boot (button click after splash + onboard); PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard (permanent — see UI handler call paths)
     if (typeof PLAN !== 'undefined') {
       const goals = PLAN.getGoals();
       const apGoal = goals.find(g => g.id === 'apartment');
@@ -5490,6 +5518,7 @@ function saveMumAccountBalance() {
         PLAN.saveGoal(apGoal);
       }
     }
+    // guardian-allow-block-end: tdz-safe-engine-access
     onStateChange('mum_account_updated');
     showToast('✅ Deposit Account Updated — $' + v.toLocaleString());
   }
@@ -5547,6 +5576,7 @@ function checkAfford() {
   if (after < 0 || newMaxDay < 20) {
     // L4: Build "What to cut" from actual txn category spend data
     const catSpend = {};
+    // guardian-allow: no-bare-non-income-filter-on-txns — checkAfford "what to cut" tally excludes only Debt repayment; should use strict _NON_SPEND_CATS filter (removable when OPEN-BUGS #6 is fixed)
     S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => { catSpend[t.cat||'Other'] = (catSpend[t.cat||'Other']||0) + t.amt; });
     const cuts = Object.entries(catSpend).sort((a,b) => b[1]-a[1]).map(([n,s]) => ({n, s}));
     if (!cuts.length) cuts.push({n:'Discretionary spending', s: 200}); // fallback if no data
@@ -6068,8 +6098,10 @@ async function sendChatMessage(userMessage) {
     .map(([k,v]) => k + ' $' + v.toFixed(0))
     .join(', ');
 
+  // guardian-allow-block-start: tdz-safe-engine-access — sendChatMessage system-prompt builder runs only when user sends a chat message (post-boot); the `typeof PLAN !== 'undefined' && PLAN.X` checks are defensive null-guards, not TDZ guards (permanent — chat is user-initiated, never called during boot)
   const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
   const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? PLAN.getGoals() : [];
+  // guardian-allow-block-end: tdz-safe-engine-access
   const darwinTrip = trips.find(t => t.id === 'darwin-2026');
   const chinaTrip = trips.find(t => t.id === 'china-2026');
   const freedomGoal = goals.find(g => g.id === 'freedom-buffer');
@@ -6313,6 +6345,7 @@ function executeChatAction(action) {
       }
       break;
     case 'add_trip_savings':
+      // guardian-allow-block-start: tdz-safe-engine-access — executeChatAction runs only after the AI returns a structured action from a user-initiated chat message; PLAN is fully initialized by then (permanent — chat-action call path is user-initiated, never during boot)
       if (action.tripId && action.amt > 0 && typeof PLAN !== 'undefined') {
         const trips = PLAN.getTrips();
         const trip = trips.find(t => t.id === action.tripId);
@@ -6322,6 +6355,7 @@ function executeChatAction(action) {
           showToast('✅ $' + action.amt + ' Added To ' + trip.name);
         }
       }
+      // guardian-allow-block-end: tdz-safe-engine-access
       break;
     case 'mark_wrx_listed':
       S.wrxStatus = 'listed';
@@ -6472,6 +6506,7 @@ if ('serviceWorker' in navigator) {
   }
 })();
 
+// guardian-allow-block-start: no-hardcoded-bill-name — seed v13 captures literal bill names from a real-data snapshot used to bootstrap state in clean browsers (permanent — see seed function design: seeds must enumerate the bill set explicitly so existing-user-detection logic can identify and patch ghost/renamed entries)
 // Seed v13: real state 14 Apr 2026. S.bal=3345.99 (getLiveBal() = S.bal, pure identity)
 (function seedV13() {
   const flag = 'slyght_seeded_v13';
@@ -6657,7 +6692,9 @@ if ('serviceWorker' in navigator) {
   } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV16 error', e); }
   localStorage.setItem(flag, '1');
 })();
+// guardian-allow-block-end: no-hardcoded-bill-name
 
+// guardian-allow-block-start: no-hardcoded-bill-name — seed v17 captures John's real-state snapshot from 15 Apr 2026 + post-seed migration patches (NRMA, Teachers Health, etc.) requiring literal bill-name lookups to identify and update specific entries (permanent — see seed function design)
 // Seed v17: inject John's real financial state captured 15 Apr 2026
 // Only patches if existing data looks wrong (stale balance or too few txns)
 const REAL_STATE_V17 = {
@@ -6817,6 +6854,7 @@ const REAL_STATE_V17 = {
   }
   localStorage.setItem(flag, 'true');
 })();
+// guardian-allow-block-end: no-hardcoded-bill-name
 
 // Shared helper used by multiple systems
 function getBucketTotal() {
@@ -9086,6 +9124,9 @@ const HEARTBEAT = {
   tick() {
     this.tickCount++;
 
+    // Detect payday cycle rollover (was inline in renderAll pre-Guardian-Layer-1).
+    try { detectPaydayCycleRollover(); } catch(e) {}
+
     // Fix 4B: end-of-day check — runs once per calendar day at midnight crossover
     try {
       const today = new Date().toDateString();
@@ -9580,6 +9621,7 @@ const PLAN = {
 
   getAnnualProvisions() {
     return [
+      // guardian-allow: no-hardcoded-bill-name — provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers (permanent — see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS)
       { name: 'Teachers Health',    annual: 259.41 * 4, monthly: parseFloat((259.41 * 4 / 12).toFixed(2)), frequency: 'quarterly', nextDue: '2026-08-01', bucket: 'provisions' },
       { name: 'Car service (KIA)',  annual: 500,        monthly: 42, frequency: 'biannual', nextDue: '2026-10-01', bucket: 'provisions' },
       { name: 'KIA registration',   annual: 462,        monthly: 39, frequency: 'annual',   nextDue: '2027-04-01', bucket: 'provisions' },
@@ -9679,6 +9721,7 @@ const PLAN = {
     const fuel = 110;
     const otherBills = (BILLS||[])
       .filter(b => b.recurring &&
+        // guardian-allow: no-hardcoded-bill-name — "other bills" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner (removable when bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2)
         !['Rent + Deposit Savings','KIA Loan — Firstmac','Fuel'].includes(b.name))
       .reduce((s,b) => s + b.amt, 0);
     const teachersHealth = 259.41 / 3; // quarterly averaged to monthly
@@ -9937,6 +9980,7 @@ function showKiaLoanInfo() {
   const monthlyInterest = loan * rate / 100 / 12;
 
   PLAN_MODAL.open(
+    // guardian-allow: no-hardcoded-bill-name — modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view (permanent — see showKiaLoanInfo design)
     PLAN_MODAL.header('KIA Loan — Firstmac', 'Understanding your car loan') +
     `<div style="color:rgba(255,255,255,0.6);font-size:14px;line-height:1.7;margin-bottom:16px">
       This is the loan for your KIA, held by Firstmac at ${rate}% p.a.
@@ -10294,6 +10338,7 @@ function renderPaydayAllocation() {
       ${[
         ['KIA Loan (Firstmac)', 780],
         ['Provisions (Rego, Service, Health)', Math.round(provisions)],
+        // guardian-allow: no-hardcoded-bill-name — locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration (permanent — see locked-items breakdown design)
         teachersHealth > 0 ? ['Teachers Health', teachersHealth] : null
       ].filter(Boolean).map(([name, amt]) => `
       <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">

@@ -1,0 +1,174 @@
+{
+  "lastGenerated": "2026-05-05T05:18:57.761Z",
+  "totalAllows": 19,
+  "unusedAllows": 0,
+  "byRule": {
+    "no-bare-non-income-filter-on-txns": [
+      {
+        "type": "single",
+        "line": 2728,
+        "removability": "removable",
+        "reason": "survival forecast filter inspects last-7-day txns regardless of category; uses date-range filter, not category exclusion",
+        "condition": "filter migrates to consume getDiscretionaryByCategory(weekAgo, now) — earliest review post Layer 2 ship",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 2893,
+        "removability": "removable",
+        "reason": "Essential vs Discretionary breakdown excludes only Debt repayment; should switch to strict _NON_SPEND_CATS filter to align with Bundle B canonical",
+        "condition": "OPEN-BUGS #6 is fixed",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 5006,
+        "removability": "removable",
+        "reason": "overspend flags currently exclude only Debt repayment; should use strict _NON_SPEND_CATS filter",
+        "condition": "OPEN-BUGS #6 is fixed",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 5121,
+        "removability": "removable",
+        "reason": "renderTrend uses bare !t.income (no category filter); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter",
+        "condition": "OPEN-BUGS #6 is fixed",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 5136,
+        "removability": "removable",
+        "reason": "renderCatBreakdown uses bare !t.income (all-time, all categories); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter",
+        "condition": "OPEN-BUGS #6 is fixed",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 5580,
+        "removability": "removable",
+        "reason": "checkAfford \"what to cut\" tally excludes only Debt repayment; should use strict _NON_SPEND_CATS filter",
+        "condition": "OPEN-BUGS #6 is fixed",
+        "used": true
+      }
+    ],
+    "no-hardcoded-bill-name": [
+      {
+        "type": "block",
+        "startLine": 1245,
+        "endLine": 1394,
+        "removability": "removable",
+        "reason": "schema migrations reference legacy/renamed bill names by string literal so existing user data can be upgraded",
+        "condition": "all migration flags _billsCleanedV1, _paidBillsKeyMigrationV1, _billsFreqMetaV1, _debtAuditV1, _afterpayUpdated have been true on every known device for ≥ 6 months — earliest review 2027-05-05",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 2896,
+        "removability": "removable",
+        "reason": "\"Fuel\" used here as a category-alias check (legacy txns logged with cat='Fuel' rather than 'Transport / Fuel'), not as a bill-name ref",
+        "condition": "ESSENTIAL_KEYS is extracted to a constant and category vocabulary normalized — earliest review 2026-09-01",
+        "used": true
+      },
+      {
+        "type": "block",
+        "startLine": 6509,
+        "endLine": 6695,
+        "removability": "permanent",
+        "reason": "seed v13 captures literal bill names from a real-data snapshot used to bootstrap state in clean browsers",
+        "condition": "see seed function design: seeds must enumerate the bill set explicitly so existing-user-detection logic can identify and patch ghost/renamed entries",
+        "used": true
+      },
+      {
+        "type": "block",
+        "startLine": 6697,
+        "endLine": 6857,
+        "removability": "permanent",
+        "reason": "seed v17 captures John's real-state snapshot from 15 Apr 2026 + post-seed migration patches (NRMA, Teachers Health, etc.) requiring literal bill-name lookups to identify and update specific entries",
+        "condition": "see seed function design",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 9625,
+        "removability": "permanent",
+        "reason": "provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers",
+        "condition": "see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 9725,
+        "removability": "removable",
+        "reason": "\"other bills\" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner",
+        "condition": "bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 9984,
+        "removability": "permanent",
+        "reason": "modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view",
+        "condition": "see showKiaLoanInfo design",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 10342,
+        "removability": "permanent",
+        "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
+        "condition": "see locked-items breakdown design",
+        "used": true
+      }
+    ],
+    "no-render-fn-mutates-state": [
+      {
+        "type": "block",
+        "startLine": 3053,
+        "endLine": 3076,
+        "removability": "permanent",
+        "reason": "month-end snapshot is the SINGLE sanctioned exception to \"renders are pure\"; writing monthlyHistory at month rollover requires render-time observation of the date change. All other state mutations were refactored out (see detectPaydayCycleRollover for the payday-detection refactor)",
+        "condition": "see architectural rule \"renders are pure with one sanctioned exception\"",
+        "used": true
+      },
+      {
+        "type": "single",
+        "line": 3425,
+        "removability": "removable",
+        "reason": "renderPaydayPlan is dead code (writes to non-existent DOM payday-plan-body) targeted for deletion in Dead Code Cleanup mission; allow until cleanup runs",
+        "condition": "renderPaydayPlan is deleted in Dead Code Cleanup mission — see PROJECT-EXTRACT § 5.1 dead-renderer list",
+        "used": true
+      }
+    ],
+    "tdz-safe-engine-access": [
+      {
+        "type": "block",
+        "startLine": 5512,
+        "endLine": 5521,
+        "removability": "permanent",
+        "reason": "confirmSuperBalance/Mum-account update is a user-action handler called only post-boot (button click after splash + onboard); PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard",
+        "condition": "see UI handler call paths",
+        "used": true
+      },
+      {
+        "type": "block",
+        "startLine": 6101,
+        "endLine": 6104,
+        "removability": "permanent",
+        "reason": "sendChatMessage system-prompt builder runs only when user sends a chat message (post-boot); the `typeof PLAN !== 'undefined' && PLAN.X` checks are defensive null-guards, not TDZ guards",
+        "condition": "chat is user-initiated, never called during boot",
+        "used": true
+      },
+      {
+        "type": "block",
+        "startLine": 6348,
+        "endLine": 6358,
+        "removability": "permanent",
+        "reason": "executeChatAction runs only after the AI returns a structured action from a user-initiated chat message; PLAN is fully initialized by then",
+        "condition": "chat-action call path is user-initiated, never during boot",
+        "used": true
+      }
+    ]
+  }
+}

@@ -2,12 +2,16 @@
   "name": "slyght",
   "version": "1.0.0",
   "scripts": {
-    "guardian": "node guardian-all.js",
+    "guardian-static": "node guardian-static.js",
+    "guardian-all": "node guardian-all.js",
+    "guardian": "node guardian-all.js && node guardian-static.js",
     "runtime": "node guardian-runtime.js",
     "capture": "node capture-state.js",
-    "test": "node guardian-all.js"
+    "test": "node guardian-all.js && node guardian-static.js && node tests/core.test.js"
   },
   "devDependencies": {
+    "acorn": "^8.16.0",
+    "acorn-walk": "^8.3.5",
     "canvas": "^3.2.3"
   }
 }

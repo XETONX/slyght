@@ -126,6 +126,32 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** unscheduled (likely overlaps with bug #8)
 - **Status:** open
 
+## 10. Test-source drift — canonical helpers copy-pasted in tests
+- **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
+  of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
+  `getBillsDue`, `calculateNetWorth`, `computeFinancialModel`,
+  `buildCalendarEntries`, etc.) verbatim from `index.html`. When a
+  helper is refactored in production, the test copy can silently
+  drift. Concrete example created during Bundle B: I refactored
+  `isThisMonthlyBillPaid` to call `paidBillKey` internally; the
+  test file's inline copy (lines 173–194) does not call
+  `paidBillKey`. Tests still pass because external behavior is
+  identical, but if a future change updates ONLY the canonical key
+  format inside `paidBillKey`, the test would silently keep using
+  the old format and never catch the production drift. Layer 1's
+  static analyzer doesn't read tests, so this gap is not closed
+  by Guardian.
+- **Source:** Bundle B refactor + PROJECT-EXTRACT-2026-05-05.md
+  § 8.1 + Guardian design discussion 2026-05-05
+- **Repro needed:** no (code review against tests/core.test.js)
+- **Fix bundle:** unscheduled — long-term fix is extracting
+  canonical helpers to a `lib/` ES module that both `index.html`
+  and `tests/core.test.js` import. Multi-session refactor (touches
+  the build system: index.html stops being self-contained, needs
+  bundler or `<script src>` loading). **Defer.** Revisit after
+  Guardian is in place when team has bandwidth.
+- **Status:** open (deferred)
+
 ---
 
 ## Process
