@@ -637,6 +637,74 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   priority than #35 and active bug-fix queue.
 - **Status:** open (deferred — net-new capability)
 
+## 37. Layer I: AI agent as test user (interaction layer)
+- **Bug (proactive — missing layer):** The validation stack today
+  catches code drift (Layer 1), state drift (Layer 2), pixel drift
+  (Layer V), and queued semantic drift (#35 V2 invariants + #36 V3
+  vision review of *static* screenshots). The missing layer is
+  **interaction drift** — what happens when a user actually USES
+  the app. Most of the bug walks tonight (#11 Add Savings buttons,
+  Mission EXPORT's broken `📤` button, any "modal opens empty /
+  button does nothing / interaction breaks state" class) are
+  invisible to all current and queued layers because they only
+  manifest mid-interaction.
+- **Source:** Mission E retrospective + entire night's bug-walk
+  pattern 2026-05-05. John has been Layer I himself — walking the
+  phone after every commit. The question is whether automation
+  can take some of that load.
+- **Distinction from #36 (V3 AI vision review):** #36 sends static
+  baseline PNGs to Claude Vision for passive critique. Layer I has
+  the AI agent ACT — driving Playwright to click, fill, tap,
+  navigate, observing what happens, deciding next action. V3 is
+  reviewer; Layer I is user.
+- **Three increasingly capable versions:**
+  (a) **Scripted interaction** (Playwright only). Mission V's
+      original Option B — pre-recorded action sequences. Catches
+      pre-anticipated flows; brittle to UI changes.
+  (b) **AI-driven exploration** (Claude Vision + Playwright,
+      open-ended). Agent receives a goal ("test this finance
+      app — try common flows, report anything confusing"), decides
+      what to click. Catches UX/copy/flow issues a human eye
+      would notice.
+  (c) **Structured scenarios** (Vision + Playwright + assertions).
+      Each scenario specifies pre-state, action sequence, expected
+      outcomes. Agent executes, observes, compares, reports.
+      Catches both UX and behavior correctness.
+- **Recommended scope:** (c) structured scenarios as PERIODIC
+  audit — weekly or pre-release, not per-commit. Cost ~$10-15/week
+  at Claude API pricing for 5-10 scenarios. Each scenario is
+  20-50 actions × Vision call per action.
+- **What it would have caught (retrospective):**
+  - #11 Add Savings buttons non-functional (Plan Mode)
+  - Mission EXPORT's broken `📤` button (Layer I would have caught
+    earlier than the Step 1 code investigation did — agent taps
+    Export, nothing happens, surface)
+  - Any future modal-opens-empty / dead-button / state-breaks-
+    after-action class
+- **Why this is the highest-leverage queued gate:** SLYGHT's
+  actual bug profile (per night's missions) is heavily
+  interaction-shaped. Layer 3 is theoretical defense for a
+  hypothetical bug class; Layer I is concrete defense for the
+  bug class John has actually been hitting most.
+- **Scope sketch (Mission I, future):** `test-scenarios/` directory
+  with structured specs; `scripts/test-runner.js` Playwright +
+  Claude API integration; `npm run test:interaction` runs all,
+  `npm run test:interaction --scenario=X` runs one;
+  `test-reports/interaction-YYYY-MM-DD.md` output format with
+  per-step success/fail + screenshot evidence + suggested
+  investigation paths.
+- **Cost model:** medium-large build (~3-5 hours of mission work),
+  $5-15/week runtime, modest scenario maintenance.
+- **Recommended priority order for post-tonight queue:**
+  1. **Mission I (#37)** — highest leverage for current bug profile
+  2. Mission V2 (#35) — encoded render-coherence invariants
+  3. Mission V3 (#36) — periodic vision audit
+  4. Mission E2 (#34) — dashboard deeper audit
+  5. #30 gate verification hardening
+  6. #2 runOutDays off-by-one
+  7. Other queued items
+- **Status:** open (deferred — net-new capability, queue lead)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
