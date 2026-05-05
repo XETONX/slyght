@@ -544,6 +544,48 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   silent under-coverage is worse than originally scoped.
 - **Status:** open (priority high — Mission V follow-up)
 
+## 34. Mission E2: dashboard mode-classifier + threshold + filter audit
+- **Bug:** Mission E (commit pending) resolved the visible card
+  contradictions on the dashboard via Hierarchy A (Survival-first)
+  with suppression and relabeling. Deeper questions remain that
+  Mission E intentionally scoped out — they're research/audit work,
+  not mechanical fix.
+- **Source:** Mission E Step 1 investigation 2026-05-05; refined
+  via review-deeper instinct from John's response to Step 1.
+- **Open questions for Mission E2:**
+  (a) **Mode-classifier calibration.** `getSurvivalMode()` at L1508
+      uses thresholds `bal < 100` (critical), `bal < 300` (survival),
+      `dailyAvailable < 15` (tight), `dailyAvailable < 25` (cautious).
+      Are these calibrated to John's real spending patterns? What
+      mode IS John actually in given $381 + 10 days + bills? Audit
+      against historical state (monthlyHistory + txn cycles) to
+      verify thresholds match reality.
+  (b) **`shouldShowAlert` gating.** The `!(S.paydayReceived &&
+      getGenuineSurplus() >= 0)` check appears in renderAlerts.
+      When does it fire? Can it disagree with `MODEL.survivalMode`?
+      Mission E uses mode === 'normal' as the suppression key, but
+      shouldShowAlert is a separate signal — investigate any modes
+      where they conflict.
+  (c) **Card 3 vs Card 6 magnitude inconsistency.** Card 3 used
+      `safe = liveBal − dueTotal − immDebtsForSafe + bonusTotal −
+      bucketSafe` ($124 on May 5). Card 6's math implies daily ×
+      days (~$198.60). Different filter granularities producing
+      different "remaining buffer" numbers. Mission E suppressed
+      Card 3 in non-normal modes so user no longer sees the
+      inconsistency, but it persists in code. Future Layer 1 rule
+      candidate: filter-divergence-detection between
+      bills-filter and forecast-filter.
+  (d) **Magic threshold constants.** 15, 25, 200 are hardcoded.
+      Pin to constants? Tie to derived state (income, recent spend
+      patterns)? Layer 1 has `no-hardcoded-survival-mode-string`
+      for labels but not for thresholds.
+- **Repro needed:** no — pattern is observable in code.
+- **Fix bundle:** future Mission E2. Lower priority than current
+  open queue (#2 runOutDays, #30 gate verification, #31 paydayDate
+  rule, #32 migration UX, #33 Layer V truncation).
+- **Status:** open (deferred — research/audit work, not mechanical
+  fix; Mission E shipped the surface-level UX win)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,

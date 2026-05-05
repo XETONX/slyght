@@ -446,7 +446,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <div id="dash-survival-banner"></div>
       <div id="dash-alerts"></div>
       <div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0">
-        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">YOU CAN SPEND TODAY</div>
+        <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">MAX PER DAY</div>
         <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
         <div style="font-size:12px;font-weight:600;margin-top:4px" id="max-day-context"></div>
         <div style="font-size:12px;color:var(--text3);margin-top:4px" id="pace-display"></div>
@@ -1559,21 +1559,27 @@ function onStateChange(reason) {
     console.log('[SLYGHT]', reason, S.bal, mode);
   }
 }
-function renderSurvivalBanner() {
+// Mission E: optional `safe` arg lets renderAll pass the post-commitments
+// buffer (liveBal − bills − debts + bonuses − buckets) so the tight/cautious
+// banners can fold in "— $X buffer after bills" rather than rendering as a
+// separate "Very tight" alert. onBalanceChange callers omit it; the fold-in
+// just doesn't fire there.
+function renderSurvivalBanner(safe) {
   const el = $('dash-survival-banner'); if (!el) return;
   const _m = MODEL || computeFinancialModel();
   const mode = _m.survivalMode;
   const bal = _m.bal;
   const days = _m.daysToPayday;
   const dailyMax = _m.safeToSpendToday;
+  const buffer = (typeof safe === 'number' && safe < 200) ? ' — ' + fmt(safe) + ' buffer after bills' : '';
   if (mode === 'critical') {
     el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
   } else if (mode === 'survival') {
     el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending. No discretionary.</div>';
   } else if (mode === 'tight') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max</strong></div>';
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max' + buffer + '</strong></div>';
   } else if (mode === 'cautious') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Cautious Mode — Watch Your Spending</div>';
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Cautious Mode — Watch Your Spending' + buffer + '</div>';
   } else {
     // 'normal' — no banner; everything is fine.
     el.innerHTML = '';
@@ -3717,7 +3723,10 @@ function renderAll() {
   // from onStateChange + load + HEARTBEAT.tick — Guardian Layer 1: renders are pure.)
 
   // Fix 2C: survival mode banner
-  renderSurvivalBanner();
+  // Mission E: pass `safe` so the banner can fold in "— $X buffer after bills"
+  // for tight/cautious modes, replacing the separate "Very tight" alert that
+  // renderAlerts now suppresses in non-normal modes.
+  renderSurvivalBanner(safe);
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
@@ -3732,22 +3741,32 @@ function renderAll() {
     _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
     _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
     if (_maxDayCtx) {
-      let ctxText = '', ctxColor = 'var(--text3)';
-      if (_ddb < 20) {
-        // Layer 2 Part 2.5: read from MODEL.tomorrowBill (state-based, not inline date math)
-        const _next = _m.tomorrowBill;
-        ctxText = _next ? 'Tight — ' + _next.name + ' hits tomorrow'
-                        : 'Tight — cover your essentials first';
-        ctxColor = 'var(--red)';
-      } else if (_ddb < 30) {
-        ctxText = 'Cautious — cover your essentials first';
-        ctxColor = 'var(--amber)';
+      // Mission E: when survival banner is declaring a non-normal mode,
+      // ctxText would echo the same severity language ("Tight/Cautious —
+      // cover essentials") that the banner already conveys. Hide ctxText
+      // in non-normal modes; show only on 'normal' as guidance.
+      const _mode = _m.survivalMode || 'normal';
+      if (_mode !== 'normal') {
+        _maxDayCtx.textContent = '';
+        _maxDayCtx.style.color = '';
       } else {
-        ctxText = "You're on track — spend wisely";
-        ctxColor = 'var(--green)';
+        let ctxText = '', ctxColor = 'var(--text3)';
+        if (_ddb < 20) {
+          // Layer 2 Part 2.5: read from MODEL.tomorrowBill (state-based, not inline date math)
+          const _next = _m.tomorrowBill;
+          ctxText = _next ? 'Tight — ' + _next.name + ' hits tomorrow'
+                          : 'Tight — cover your essentials first';
+          ctxColor = 'var(--red)';
+        } else if (_ddb < 30) {
+          ctxText = 'Cautious — cover your essentials first';
+          ctxColor = 'var(--amber)';
+        } else {
+          ctxText = "You're on track — spend wisely";
+          ctxColor = 'var(--green)';
+        }
+        _maxDayCtx.textContent = ctxText;
+        _maxDayCtx.style.color = ctxColor;
       }
-      _maxDayCtx.textContent = ctxText;
-      _maxDayCtx.style.color = ctxColor;
     }
   }
   if (_paceDisp) {
@@ -4044,14 +4063,21 @@ function updateBalanceFromSettings() {
 function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   const c = $('dash-alerts'); if (!c) return; c.innerHTML = '';
   const shouldShowAlert = !(S.paydayReceived && getGenuineSurplus() >= 0);
+  // Mission E (Hierarchy A): the survival banner is the authoritative mode
+  // declaration. Card 3 ("Very tight") and Card 4 ("Spending alert") are
+  // second-opinion duplicates when mode != 'normal'. Suppress them in that
+  // case — the banner already conveys the state, and the buffer number
+  // folds into the banner itself (see renderSurvivalBanner). Show only on
+  // mode === 'normal' (catches the "looks fine but trending bad" case).
+  const mode = (MODEL && MODEL.survivalMode) ? MODEL.survivalMode : 'normal';
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (shouldShowAlert && safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
-  else if (shouldShowAlert && safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
-  // Layer 2 Part 2.5: gate on MODEL.shouldShowSpendingAlert. The trajectory
-  // pace + zero-spend suppression + phase-suppression decision now lives in
-  // MODEL.shouldShowSpendingAlert (computeFinancialModel) so renderers
-  // converge and Layer 2's alert-coherence invariant has state to assert on.
-  if (MODEL && MODEL.shouldShowSpendingAlert && dueTotal > 0) {
+  else if (shouldShowAlert && safe < 200 && mode === 'normal') c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
+  // Layer 2 Part 2.5: gate on MODEL.shouldShowSpendingAlert. Mission E
+  // adds mode === 'normal' gate so this only fires when the survival banner
+  // ISN'T already declaring tight/cautious — removes the direct contradiction
+  // between "you will not cover bills" and Card 6's "MAX PER DAY $X".
+  if (MODEL && MODEL.shouldShowSpendingAlert && dueTotal > 0 && mode === 'normal') {
     c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
   }
   // Cap note
