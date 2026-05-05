@@ -25,7 +25,7 @@ at C:\Users\admin\slyght\index.html.
       category for today
 - [ ] "$X this cycle" sub-line equals sum of cycle.txns 
       (excluding corrections and round-ups) — must NOT exceed 
-      S.income for the cycle 🔴 (showing $9,950 vs income $7,282)
+      S.income for the cycle ✓ (Bundle B RC1 — hero now reads MODEL.cycleSpent)
 - [ ] "11 days to payday" counter is correct relative to today's 
       date and S.payday
 - [ ] Liquid net worth shows liquidNet (NOT net inclusive of 
@@ -60,7 +60,7 @@ at C:\Users\admin\slyght\index.html.
 ### Spending alerts
 - [ ] "Spending alert. At this rate you will not cover bills" 
       fires only when CURRENT pace (not stale data) projects 
-      under-funded payday 🔴 (firing today with $0 spend)
+      under-funded payday ✓ (Bundle B RC4 — last-7-day pace + zero-spend suppression)
 - [ ] "Bills won't clear. You're -$X short" matches survival 
       forecast bottom-line number — must agree across tiles
 - [ ] Tone is informational not shaming
@@ -70,7 +70,10 @@ at C:\Users\admin\slyght\index.html.
 - [ ] Total amount = sum of category chips
 - [ ] Category chips render with correct totals
 - [ ] "$X/day · Budget $Y/day · over/under pace" calculation 
-      uses today's actual elapsed days (not 0 days) ✓ (Bundle A — Mondays now show "today")
+      uses today's actual elapsed days (not 0 days) 🔴 (Bundle A over-claim 
+      — only the Bills-tab "Spent so far (0 days)" was fixed; the dashboard 
+      pace tile here uses _weekSpent/7 not days-elapsed, so different bug 
+      surface — re-investigation needed)
 - [ ] City2Surf countdown displays
 - [ ] Tile tappable to drill into category-detail (analysis tab 
       pivot)
@@ -159,10 +162,9 @@ at C:\Users\admin\slyght\index.html.
 - [ ] All monthly bills listed with day-of-month, name, amount
 - [ ] Paid bills moved to "Paid this month ✓ (N)" collapsible 
       section
-- [ ] N matches actual count of paid:true bills in current month 🔴
+- [ ] N matches actual count of paid:true bills in current month ✓ (Bundle B RC11 — canonical isThisMonthlyBillPaid + paidBillKey, ~13 call sites migrated)
 - [ ] Monthly Total (Unpaid) = sum of bills.filter(b => 
-      !b.paidThisMonth).amount 🔴 (currently disagreeing with 
-      "paid this month" count)
+      !b.paidThisMonth).amount ✓ (Bundle B RC11 — both consume canonical helper, can't drift)
 - [ ] Each row shows linked debit transaction when paid — and 
       ensures the transaction is from THIS month not bleeding 
       from prior month 🔴
@@ -221,7 +223,7 @@ at C:\Users\admin\slyght\index.html.
 ### "Where your money went" / Spending pivot
 - [ ] Time range toggle: Today / 7 days / 30 days / All time 🔴
 - [ ] Category list with totals, sorted descending
-- [ ] Total of categories = total discretionary spend in period 🔴
+- [ ] Total of categories = total discretionary spend in period ✓ (Bundle B RC2 — pivot consumes canonical getDiscretionaryByCategory)
 - [ ] Subcategories expand on tap (e.g., Food → Coffee, Takeaway, 
       Groceries) 🔴
 - [ ] Each row shows # transactions and average per transaction
@@ -230,7 +232,7 @@ at C:\Users\admin\slyght\index.html.
 
 ### "What to cut" suggestions
 - [ ] Suggestions correct given current state — calculations valid 
-      🔴 (e.g., "groceries $100" suggested when user has only $20)
+      ✓ (Bundle B RC2 — renderCutSliders uses strict _NON_SPEND_CATS filter; Bills/Car Loan/CC Payment no longer suggested as cuts)
 - [ ] Each suggestion has an "execute" or "set target" action 🔴
 - [ ] Suggestions are based on actual spending patterns, not 
       generic templates

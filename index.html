@@ -1615,6 +1615,28 @@ function computeSpentInRange(fromTs, toTs) {
     !t._isCorrection && !t._isRoundup
   ).reduce((s,t) => s+t.amt, 0);
 }
+
+// RC2: canonical "strict discretionary by category" — same filter as
+// computeSpentInRange (uses _NON_SPEND_CATS, drops corrections + roundups)
+// but groups by category. Used by Analysis pivot and Cut sliders so both
+// converge on the same categories + totals.
+function getDiscretionaryByCategory(fromTs, toTs) {
+  const result = {};
+  const from = fromTs || 0;
+  const to = toTs || Date.now();
+  (S.txns || []).filter(t =>
+    t.ts >= from && t.ts <= to &&
+    !t.income && !_NON_SPEND_CATS.has(t.cat) &&
+    !t._isCorrection && !t._isRoundup
+  ).forEach(t => {
+    const k = t.cat || 'Other';
+    if (!result[k]) result[k] = {total: 0, count: 0, txns: []};
+    result[k].total += t.amt;
+    result[k].count++;
+    result[k].txns.push(t);
+  });
+  return result;
+}
 function computeSpentToday(now) {
   const start = new Date(now || Date.now()); start.setHours(0,0,0,0);
   return computeSpentInRange(start.getTime(), Date.now());
@@ -1845,10 +1867,7 @@ function checkEodRecon() {
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   const yd = yesterday.getDate(), ym = yesterday.getMonth() + 1, yy = yesterday.getFullYear();
   const yesterdayBills = getExpandedBills().filter(b => b.recurring !== false && b.day === yd);
-  const unpaid = yesterdayBills.filter(b => {
-    const key = yy+'-'+ym+'-'+b.name+'-'+b.day;
-    return !(S.paidBills && S.paidBills[key]);
-  });
+  const unpaid = yesterdayBills.filter(b => !isThisMonthlyBillPaid(b.name, b.day, yesterday.getMonth(), yy));
   if (!unpaid.length) return;
   const total = unpaid.reduce((s,b) => s+b.amt, 0);
   const eodBody = $('eod-recon-body');
@@ -2024,6 +2043,18 @@ function getExpandedBills() {
   return result;
 }
 
+// RC11: canonical paidBills key builder. Every read/write of S.paidBills goes
+// through this (or via isThisMonthlyBillPaid for reads). Month is 0-indexed (JS
+// Date); storage format uses month+1. Year/month default to today's calendar.
+// One source of truth for the key format prevents the parallel-impl drift that
+// produced the count-vs-total disagreement.
+function paidBillKey(billName, billDay, month, year) {
+  const now = new Date();
+  const y = (year !== undefined) ? year : now.getFullYear();
+  const m = (month !== undefined) ? month + 1 : now.getMonth() + 1;
+  return y + '-' + m + '-' + billName + '-' + billDay;
+}
+
 // month/year are optional. When omitted, defaults to today's month/year — preserves
 // existing default callers. When provided (month is 0-indexed, matching JS Date),
 // the lookup key is built for that rendered month so callers rendering future
@@ -2034,7 +2065,7 @@ function isThisMonthlyBillPaid(billName, billDay, month, year) {
   const m = (month !== undefined) ? month + 1 : now.getMonth() + 1;
   if (!S.paidBills) return false;
 
-  const key1 = y+'-'+m+'-'+billName+'-'+billDay;
+  const key1 = paidBillKey(billName, billDay, (month !== undefined ? month : now.getMonth()), y);
   const key2 = y+'-'+m+'-'+billName;
   if (S.paidBills[key1] === true || S.paidBills[key2] === true) return true;
 
@@ -2045,7 +2076,7 @@ function isThisMonthlyBillPaid(billName, billDay, month, year) {
   };
   const legacyName = legacyNames[billName];
   if (legacyName) {
-    const legacyKey1 = y+'-'+m+'-'+legacyName+'-'+billDay;
+    const legacyKey1 = paidBillKey(legacyName, billDay, (month !== undefined ? month : now.getMonth()), y);
     const legacyKey2 = y+'-'+m+'-'+legacyName;
     if (S.paidBills[legacyKey1] === true || S.paidBills[legacyKey2] === true) return true;
   }
@@ -2093,8 +2124,7 @@ function getBillsDue() {
   const now = new Date();
   // C2: exclude bills already marked paid this month
   function isPaid(b) {
-    if (!S.paidBills) return false;
-    return !!S.paidBills[now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day];
+    return isThisMonthlyBillPaid(b.name, b.day);
   }
   if (today < payday) {
     // C1: when paydayReceived=true the pay has already landed — payday-day bills
@@ -2186,7 +2216,9 @@ function buildCalendarEntries(state, now) {
       if (!_dueIn(b, m)) return;
       const billDate = new Date(y, m, b.day);
       const dateISO = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(b.day).padStart(2, '0');
-      const paidKey = y + '-' + (m + 1) + '-' + b.name + '-' + b.day;
+      // RC11: read from injected `paidBills` (state-pure for testability) but
+      // build the key via canonical paidBillKey so format stays unified.
+      const paidKey = paidBillKey(b.name, b.day, m, y);
       if (paidBills[paidKey] === true) return;
       const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
       if (covered) return;
@@ -2732,11 +2764,14 @@ function renderAnalysisTab() {
   const days = daysLeft(S.payday);
   const liveBal = getLiveBal();
   const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
-  const avgDaily = getAvgDailySpend();
+  // RC4: see renderAlerts — last-7-day pace + zero-spend suppression.
+  const recentPace = getDiscretionarySpend(Date.now() - 7*86400000, Date.now()) / 7;
 
   // --- Trajectory warning ---
   const shouldShowAlert = !(S.paydayReceived && getGenuineSurplus() >= 0);
-  if (shouldShowAlert && liveBal - (avgDaily * days) < allBillsDue) {
+  const _minDaily2 = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
+  const _zeroToday2 = getTodaySpent() === 0 && liveBal >= allBillsDue + (days * _minDaily2);
+  if (shouldShowAlert && liveBal - (recentPace * days) < allBillsDue && !_zeroToday2) {
     html += '<div class="alert bad" style="margin-bottom:12px"><strong>&#x26A0;&#xFE0F; Spending alert.</strong> At this rate you will not cover bills before payday. Cut discretionary spending now.</div>';
   }
 
@@ -3013,6 +3048,9 @@ function renderAll() {
   if (prevSnapMonth !== snapKey) save();
 
   const txnSpent = getTxnSpent();
+  // RC1: hero "this cycle" line reads cycle-bounded spend from MODEL,
+  // not the all-time txnSpent. txnSpent stays for the monthly snapshot above.
+  const cycleSpent = (MODEL && !isNaN(MODEL.cycleSpent)) ? MODEL.cycleSpent : 0;
   const liveBal = getLiveBal();
   const due = getBillsDue();
   const dueTotal = due.reduce((s,b) => s + b.amt, 0);
@@ -3037,8 +3075,8 @@ function renderAll() {
       hn.textContent = fmt(_todayDiscSpent) + ' spent today · ' + fmt(_todayDebtTotal) + ' in debt payments \u2193';
     } else if (_todayDiscSpent > 0) {
       hn.textContent = fmt(_todayDiscSpent) + ' spent today';
-    } else if (txnSpent > 0) {
-      hn.textContent = 'Nothing spent today · ' + fmt(txnSpent) + ' this cycle';
+    } else if (cycleSpent > 0) {
+      hn.textContent = 'Nothing spent today · ' + fmt(cycleSpent) + ' this cycle';
     } else {
       hn.textContent = 'Enter your Virgin Money balance to start';
     }
@@ -3320,7 +3358,7 @@ function renderPaydayPlan() {
 
   // Step 1b: Other bills due before payday (not on payday day, not payday-day bills)
   const otherBills = BILLS.filter(b => b.recurring !== false && b.day !== paydayDay).filter(b => {
-    const now2 = new Date(); const key = now2.getFullYear()+'-'+(now2.getMonth()+1)+'-'+b.name+'-'+b.day; return !(S.paidBills && S.paidBills[key]);
+    return !isThisMonthlyBillPaid(b.name, b.day);
   }).filter(b => {
     const now2 = new Date(); const bDate = new Date(now2.getFullYear(), now2.getMonth(), b.day);
     const nextPd = new Date(now2.getFullYear(), now2.getMonth(), paydayDay);
@@ -3597,11 +3635,17 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (shouldShowAlert && safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
   else if (shouldShowAlert && safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
-  // Trajectory alert — validate phase before firing; suppress in PRE_PAYDAY/PAYDAY to avoid duplicate warnings
-  const avgDaily = getAvgDailySpend();
+  // RC4: trajectory alert based on last-7-day pace (was getAvgDailySpend which
+  // weights heavily on post-payday triage and produces stale projections).
+  // Suppressed in PRE_PAYDAY/PAYDAY (existing) and additionally when today's
+  // spend is $0 AND balance already covers bills + days × minDaily — no false
+  // alarm at zero-spend mid-cycle.
   const days = daysLeft(S.payday);
+  const recentPace = getDiscretionarySpend(Date.now() - 7*86400000, Date.now()) / 7;
   const alertPhase = getMonthPhase();
-  if (shouldShowAlert && dueTotal > 0 && liveBal - (avgDaily * days) < dueTotal && alertPhase !== 'PRE_PAYDAY' && alertPhase !== 'PAYDAY') {
+  const _minDaily = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
+  const _zeroToday = getTodaySpent() === 0 && liveBal >= dueTotal + (days * _minDaily);
+  if (shouldShowAlert && dueTotal > 0 && liveBal - (recentPace * days) < dueTotal && alertPhase !== 'PRE_PAYDAY' && alertPhase !== 'PAYDAY' && !_zeroToday) {
     c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
   }
   // Cap note
@@ -3936,12 +3980,10 @@ function markDebtPaid() {
   showUndoToast('Debt marked paid');
   // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill paid
   if (d.name.toLowerCase().includes('afterpay')) {
-    const now = new Date();
     const apBill = BILLS.find(b => b.name.toLowerCase().includes('afterpay'));
     if (apBill) {
       if (!S.paidBills) S.paidBills = {};
-      const apKey = now.getFullYear() + '-' + (now.getMonth()+1) + '-' + apBill.name + '-' + apBill.day;
-      S.paidBills[apKey] = true;
+      S.paidBills[paidBillKey(apBill.name, apBill.day)] = true;
     }
   }
   // UX2: debt cleared celebration
@@ -4111,9 +4153,7 @@ function openBillModal(idx) {
       '</div></div>';
   }
   // Show correct paid/undo button based on current paid state from S.paidBills map
-  const _n = new Date();
-  const _key = _n.getFullYear()+'-'+(_n.getMonth()+1)+'-'+b.name+'-'+b.day;
-  const _isPaid = S.paidBills && S.paidBills[_key];
+  const _isPaid = isThisMonthlyBillPaid(b.name, b.day);
   const _bmpaid = $('bill-modal-mark-paid'); if (_bmpaid) _bmpaid.style.display = _isPaid ? 'none' : '';
   const _bmundo = $('bill-modal-undo-paid'); if (_bmundo) _bmundo.style.display = _isPaid ? '' : 'none';
   const _billm = $('bill-modal'); if (_billm) _billm.classList.add('open');
@@ -4190,10 +4230,8 @@ function markBillPaidMonth() {
   // Deduct from S.bal and log to history
   S.bal -= b.amt;
   S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
-  const now = new Date();
-  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
   if (!S.paidBills) S.paidBills = {};
-  S.paidBills[key] = true;
+  S.paidBills[paidBillKey(b.name, b.day)] = true;
   closeModal('bill-modal', true); onStateChange('bill-paid-month');
   if(navigator.vibrate) navigator.vibrate(50);
   // Immediately remove any notification for this bill — don't wait for heartbeat
@@ -4204,9 +4242,7 @@ function markBillPaidMonth() {
 function undoBillPaid() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
-  const now = new Date();
-  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
-  if (S.paidBills) delete S.paidBills[key];
+  if (S.paidBills) delete S.paidBills[paidBillKey(b.name, b.day)];
   save(); closeModal('bill-modal', true); renderAll();
 }
 
@@ -4528,10 +4564,8 @@ function renderBillsGrouped() {
 
 function markBillPaid(event, name, day) {
   event.stopPropagation();
-  const now = new Date();
-  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+name+'-'+day;
   if (!S.paidBills) S.paidBills = {};
-  S.paidBills[key] = true;
+  S.paidBills[paidBillKey(name, day)] = true;
   onStateChange('bill-paid');
 }
 
@@ -4541,10 +4575,8 @@ document.addEventListener('click', function(e) {
   e.stopPropagation();
   const name = btn.dataset.name;
   const day = parseInt(btn.dataset.day);
-  const now = new Date();
-  const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+name+'-'+day;
   if (!S.paidBills) S.paidBills = {};
-  S.paidBills[key] = true;
+  S.paidBills[paidBillKey(name, day)] = true;
   onStateChange('bill-paid');
 });
 
@@ -4992,9 +5024,13 @@ function renderCutSliders() {
   const c = $('cut-sliders'); if (!c) return;
   const mult = S.seg === '1m' ? 1 : S.seg === '3m' ? 3 : 6;
 
-  // Change 4: Use actual transaction data instead of static slider baselines
+  // RC2: suggestions read STRICT discretionary (excludes Bills/Car Loan/CC
+  // Payment/Transfer + corrections/roundups) so we don't suggest cutting
+  // categories that aren't real discretionary spend. All-time scope; the
+  // monthly-baseline comparison should narrow scope later — logged separately.
+  const catData = getDiscretionaryByCategory(0, Date.now());
   const cats = {};
-  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
 
   // Monthly reference baselines per category
   const baselines = {
@@ -5280,13 +5316,12 @@ function autoMatchBillsToTxns(silent) {
   const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === todayStr);
   let matched = [];
   (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
-    const key = now.getFullYear() + '-' + (now.getMonth()+1) + '-' + b.name + '-' + b.day;
-    if (S.paidBills && S.paidBills[key]) return; // already paid
+    if (isThisMonthlyBillPaid(b.name, b.day)) return; // already paid
     const amtMatch = todayTxns.some(t => !t.income && Math.abs(t.amt - b.amt) <= 1.00);
     const nameMatch = todayTxns.some(t => !t.income && (t.note || '').toLowerCase().includes(b.name.toLowerCase().split(' ')[0]));
     if (amtMatch || nameMatch) {
       if (!S.paidBills) S.paidBills = {};
-      S.paidBills[key] = true;
+      S.paidBills[paidBillKey(b.name, b.day)] = true;
       matched.push(b.name);
     }
   });
@@ -5302,13 +5337,12 @@ function autoDetectBillPayments() {
   const recentTxns = (S.txns || []).filter(t => !t.income && t.ts >= sevenDaysAgo);
   const detected = [];
   (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
-    const key = now.getFullYear() + '-' + (now.getMonth()+1) + '-' + b.name + '-' + b.day;
-    if (S.paidBills && S.paidBills[key]) return;
+    if (isThisMonthlyBillPaid(b.name, b.day)) return;
     const amtMatch = recentTxns.some(t => Math.abs(t.amt - b.amt) <= 1.00);
     const nameMatch = recentTxns.some(t => (t.note || '').toLowerCase().includes(b.name.toLowerCase().split(' ')[0]));
     if (amtMatch || nameMatch) {
       if (!S.paidBills) S.paidBills = {};
-      S.paidBills[key] = true;
+      S.paidBills[paidBillKey(b.name, b.day)] = true;
       detected.push(b.name);
     }
   });
@@ -5782,9 +5816,8 @@ function buildSystemPrompt() {
 
   // Bills paid this month
   const paidBillsThisMonth = getExpandedBills().filter(b => {
-    if (!S.paidBills || b.recurring === false) return false;
-    const key = now.getFullYear()+'-'+(now.getMonth()+1)+'-'+b.name+'-'+b.day;
-    return !!S.paidBills[key];
+    if (b.recurring === false) return false;
+    return isThisMonthlyBillPaid(b.name, b.day);
   });
 
   const recentTxns = (S.txns||[]).slice(-10).reverse();
@@ -6257,9 +6290,8 @@ function executeChatAction(action) {
       break;
     case 'mark_bill_paid':
       if (action.name && action.day) {
-        const today = new Date();
-        const key = today.getFullYear()+'-'+(today.getMonth()+1)+'-'+action.name+'-'+action.day;
-        S.paidBills[key] = true;
+        if (!S.paidBills) S.paidBills = {};
+        S.paidBills[paidBillKey(action.name, action.day)] = true;
         onStateChange('chat_bill_paid');
         showToast('✅ ' + action.name + ' marked as paid');
       }
@@ -9212,20 +9244,12 @@ function buildSpendingPivot(period) {
   const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
   const cutoffs = {today:startOfToday.getTime(), week:now-7*86400000, month:now-30*86400000, all:0};
   const cutoff = cutoffs[period] || 0;
-  const txns = S.txns.filter(t =>
-    t.ts >= cutoff && !t.income && !t._isCorrection && !t._isRoundup &&
-    !_NON_SPEND_CATS.has(t.cat)
-  );
-  const cats = {};
-  txns.forEach(t => {
-    if (!cats[t.cat]) cats[t.cat] = {total:0,count:0,txns:[]};
-    cats[t.cat].total += t.amt;
-    cats[t.cat].count++;
-    cats[t.cat].txns.push(t);
-  });
+  // RC2: consume canonical helper instead of duplicating the filter inline.
+  const cats = getDiscretionaryByCategory(cutoff, now);
   const totalSpend = Object.values(cats).reduce((s,c) => s+c.total, 0);
+  const allTxns = Object.values(cats).reduce((acc, c) => acc.concat(c.txns), []);
   const periodDays = period==='today'?1:period==='week'?7:period==='month'?30:
-    Math.max(1,Math.ceil((now - Math.min(...(txns.map(t=>t.ts).concat([now]))))/86400000));
+    Math.max(1,Math.ceil((now - Math.min(...(allTxns.map(t=>t.ts).concat([now]))))/86400000));
   return Object.entries(cats)
     .sort((a,b) => b[1].total - a[1].total)
     .map(([cat,data]) => ({
@@ -9430,20 +9454,16 @@ function payBillNow(billName, billDay, billAmt) {
     _balAffected: true
   });
   S.bal = parseFloat((S.bal - billAmt).toFixed(2));
-  const today = new Date();
-  const key = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + billName + '-' + billDay;
   if (!S.paidBills) S.paidBills = {};
-  S.paidBills[key] = true;
+  S.paidBills[paidBillKey(billName, billDay)] = true;
   onStateChange('bill_paid_now');
   showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
   document.getElementById('cal-day-detail').style.display = 'none';
 }
 
 function markBillAlreadyPaid(billName, billDay) {
-  const today = new Date();
-  const key = today.getFullYear() + '-' + (today.getMonth()+1) + '-' + billName + '-' + billDay;
   if (!S.paidBills) S.paidBills = {};
-  S.paidBills[key] = true;
+  S.paidBills[paidBillKey(billName, billDay)] = true;
   onStateChange('bill_already_paid');
   showToast('✅ ' + billName + ' marked as paid');
   document.getElementById('cal-day-detail').style.display = 'none';
