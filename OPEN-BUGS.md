@@ -361,6 +361,33 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   noise is too high.
 - **Status:** open (deferred — calibration question, not a bug)
 
+## 24. Settings header `📤 Export` button calls undefined `exportData()`
+- **Bug:** The button at index.html:575 has `onclick="exportData()"`
+  but no `exportData` function existed anywhere in the file. Tapping
+  the button silently failed with a ReferenceError. Preexisting bug
+  surfaced during Mission EXPORT investigation.
+- **Source:** Mission EXPORT Step 1 investigation 2026-05-05
+- **Fix bundle:** Mission EXPORT (this commit). `exportData` is now
+  aliased to `copyExport()` so the button works as users expect.
+- **Status:** fixed in this commit
+
+## 25. Copy-paste of large export to Messenger (and similar apps) truncates
+- **Bug:** John pasted a `copyExport()` clipboard payload into
+  Messenger; the message was cut off mid-BILLS-array around "Google
+  Microsoft". Messenger has historical per-message char caps
+  (~20K chars); typical SLYGHT export is 30–50KB. Other paste
+  destinations with similar caps: ChatGPT mobile, Notes apps, Slack
+  mobile.
+- **Diagnosis:** **NOT an app bug.** The app's `copyExport()` uses
+  native `JSON.stringify` + `navigator.clipboard.writeText` with no
+  truncation in either build or output stage (verified Mission EXPORT
+  Step 1).
+- **Mitigation shipped Mission EXPORT:** new `📁 Download Export (file)`
+  button uses Blob download and bypasses clipboard / paste-target
+  caps entirely. Users with large state should use this path; copy-
+  paste remains available for small exports / quick syncs.
+- **Status:** mitigated (out-of-app cause; Download path bypasses)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,

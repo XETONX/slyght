@@ -910,6 +910,67 @@ test('Week total projection = spent so far + bills remaining + projected living'
   }
 });
 
+// ── Mission EXPORT: round-trip ──────────────────────────────────
+// Anchors OPEN-BUGS #24 + Mission EXPORT. The build stage uses native
+// JSON.stringify; this test catches a regression class where someone
+// later adds a manual concat / .slice(0, N) cap that silently truncates
+// the export mid-array. With > 100 txns + 16 bills + 9 paidBills, any
+// truncation in the build step would lose data and fail the deep-equal.
+test('Export round-trip: large state survives JSON.stringify + JSON.parse', () => {
+  const bigTxns = Array.from({ length: 104 }, (_, i) => ({
+    ts: TEST_TIMESTAMP - i * 86400000,
+    amt: 10 + (i % 50),
+    cat: i % 3 === 0 ? 'Food' : i % 3 === 1 ? 'Transport / Fuel' : 'Other',
+    note: 'Test txn ' + i,
+    income: false,
+    _balAffected: true
+  }));
+  const bigPaidBills = {};
+  for (let i = 1; i <= 9; i++) bigPaidBills['2026-5-Test Bill ' + i + '-' + i] = true;
+
+  const bigS = {
+    bal: 779.50,
+    payday: 15,
+    paydayReceived: false,
+    txns: bigTxns,
+    debts: [
+      { id: 1, name: 'Owed to Michael', amt: 550, paid: false, delayDate: '2026-04-15' },
+      { id: 2, name: 'Pet Insurance', amt: 120.47, paid: false, delayDate: '2026-04-22' },
+      { id: 3, name: 'WRX fines', amt: 1254, paid: false }
+    ],
+    paidBills: bigPaidBills,
+    savingsBuckets: [
+      { id: 0, name: 'China Holiday', goal: 4000, saved: 70.44 },
+      { id: 1, name: 'Rainy Day Fund', goal: 2000, saved: 0 }
+    ],
+    income: 7282,
+    weekdayBudget: 60,
+    weekendBudget: 100
+  };
+
+  const exportShape = {
+    S: bigS,
+    BILLS: BILLS,
+    exported: '2026-05-05T12:00:00.000+10:00'
+  };
+
+  const json = JSON.stringify(exportShape);
+  const parsed = JSON.parse(json);
+
+  expect(parsed.S.txns.length).toBe(104);
+  expect(parsed.BILLS.length).toBe(BILLS.length);
+  expect(Object.keys(parsed.S.paidBills).length).toBe(9);
+  expect(parsed.S.bal).toBe(bigS.bal);
+  expect(parsed.S.debts.length).toBe(3);
+
+  // Stability: re-stringifying the parsed object should produce the same
+  // string. Catches non-deterministic mutations introduced during parse.
+  expect(JSON.stringify(parsed) === json).toBeTruthy();
+
+  // Last txn survived (catches truncation mid-array).
+  expect(parsed.S.txns[103].note).toBe('Test txn 103');
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

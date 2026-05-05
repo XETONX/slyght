@@ -202,7 +202,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .settings-lbl{font-size:14px;color:var(--text2);font-weight:500}
 .settings-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 12px;font-size:14px;font-family:var(--mono);color:var(--text);width:120px;text-align:right;outline:none;transition:border-color .2s}
 .settings-input:focus{border-color:var(--green)}
-.export-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:11px;color:var(--text3);word-break:break-all;line-height:1.6;max-height:100px;overflow-y:auto;margin-bottom:8px}
+.export-box{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:11px;color:var(--text3);word-break:break-all;line-height:1.6;margin-bottom:8px}
 .action-btn{width:100%;padding:13px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:14px;font-weight:600;color:var(--text);cursor:pointer;margin-bottom:8px;transition:border-color .2s}
 .action-btn:hover{border-color:var(--green)}
 .import-area{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:12px;color:var(--text);min-height:80px;outline:none;resize:none;margin-bottom:8px}
@@ -576,6 +576,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <button onclick="importData ? importData() : doImport()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📥 Import</button>
             <button onclick="generateSnapshot()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📋 Snapshot</button>
           </div>
+          <button onclick="exportAsFile()" title="Download full state as a JSON file — bypasses clipboard / paste size caps" style="width:100%;padding:12px;margin-top:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📁 Download Export (file)</button>
         </div>
       </div>
       <div style="margin-bottom:16px">
@@ -5877,7 +5878,10 @@ function updateExport() {
   el.textContent = JSON.stringify({S, BILLS, exported: new Date().toISOString()});
 }
 
-function copyExport() {
+// Fix 7A: comprehensive export with all monitoring data.
+// Factored out so copyExport (clipboard) and exportAsFile (Blob download)
+// share the same shape — single source of truth for what gets exported.
+function buildFullExport() {
   const exportS = Object.assign({}, S);
   delete exportS.apiKey;
   delete exportS._prevState;
@@ -5885,12 +5889,9 @@ function copyExport() {
   delete exportS.pin;
   delete exportS.pinHash;
   const snapshotCount = SNAPSHOTS.load().length;
-  const anomalies = AUDITOR.log.filter(e => !e.ok).length;
   const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
   const activeDebts = S.debts.filter(d => !d.paid);
-  const nw = getNetWorth();
-  // Fix 7A: comprehensive export with all monitoring data
-  const fullExport = {
+  return {
     S: exportS,
     BILLS: BILLS,
     exported: new Date().toISOString(),
@@ -5915,6 +5916,14 @@ function copyExport() {
       paydayIn: daysLeft() + ' days'
     }
   };
+}
+
+function copyExport() {
+  const fullExport = buildFullExport();
+  const slyghtScore = typeof SLYGHT_SCORE !== 'undefined' ? SLYGHT_SCORE.calculate() : null;
+  const activeDebts = S.debts.filter(d => !d.paid);
+  const anomalies = AUDITOR.log.filter(e => !e.ok).length;
+  const snapshotCount = SNAPSHOTS.load().length;
   const summary = '📊 Export Summary:\n' +
     'Balance: $' + S.bal.toFixed(2) + ' · Transactions: ' + S.txns.length + ' · Active debts: ' + activeDebts.length + '\n' +
     'SLYGHT Score: ' + (slyghtScore?.total ?? 'N/A') + ' · Survival mode: ' + getSurvivalMode() + '\n' +
@@ -5929,6 +5938,32 @@ function copyExport() {
     localStorage.setItem('slyght_last_export', Date.now().toString());
   }
 }
+
+// Bypasses clipboard + paste-target size caps entirely. The clipboard
+// path is fine for typical exports, but Messenger / Notes / chat apps
+// have per-message paste limits (~20K chars) that silently truncate
+// large state. Blob download → user shares the file directly.
+// Same pattern capture-state.js uses for the dev workflow.
+function exportAsFile() {
+  const data = buildFullExport();
+  const json = JSON.stringify(data);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'slyght-state-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  try { showToast('📁 Export downloaded — share this file to sync'); } catch (_) {}
+  localStorage.setItem('slyght_last_export', Date.now().toString());
+}
+
+// OPEN-BUGS #24: the settings header "📤 Export" button (L575) onclicks
+// exportData(), which previously didn't exist — silent ReferenceError on
+// every tap. Aliased to copyExport so the button works as users expect.
+function exportData() { copyExport(); }
 
 function generateSnapshot() {
   const today = new Date();
