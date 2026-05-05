@@ -1461,6 +1461,12 @@ function daysLeft(payday) {
 // Average daily discretionary spend — excludes non-spending categories
 // 7-day minimum floor on daySpan; S.weekdayBudget||60 fallback if insufficient data
 const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer','Loan','Car Loan','CC Payment']);
+
+// Mission C: Survival Forecast borrow-card visibility threshold. Hidden
+// when remaining > -SURVIVAL_BORROW_THRESHOLD (i.e., a tiny shortfall
+// is rounding-noise, not a real survival concern). Above this magnitude
+// of negative remaining, show the borrow card. Tunable single-edit.
+const SURVIVAL_BORROW_THRESHOLD = 100;
 function getAvgDailySpend() {
   const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
   if (expTxns.length < 3) return S.weekdayBudget || 60;
@@ -3035,12 +3041,17 @@ function getSurvivalForecast() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Advance paydayDate to next month if payday has already passed this cycle
-  const paydayDate = new Date(today.getFullYear(), today.getMonth(), S.payday);
-  if (paydayDate <= today) paydayDate.setMonth(paydayDate.getMonth() + 1);
+  // Mission C: align paydayDate to MODEL.paydayDate. Same parallel-impl
+  // pattern Mission F consolidated for daysLeft. Local recomputation
+  // omitted the `paydayReceived && now.getDate() <= paydayDay` branch
+  // that MODEL.paydayDate handles, so a user marking pay received early
+  // would see a forecast pinned to the past payday day. See OPEN-BUGS #31.
+  const paydayDate = MODEL.paydayDate;
 
   // Get all upcoming unpaid bills before payday (skip bills covered by a debt
-  // and bills that aren't actually due this calendar month).
+  // and bills that aren't actually due this calendar month). Mission C
+  // frame: end-of-current-cycle. Bills due ON paydayDate are next
+  // cycle's accounting (rent + KIA Loan land same day as salary).
   const upcomingBills = getExpandedBills()
     .filter(b => {
       if (b.recurring === false) return false;
@@ -3049,7 +3060,7 @@ function getSurvivalForecast() {
       // Build the bill's next occurrence date
       let billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
       if (billDate <= today) billDate.setMonth(billDate.getMonth() + 1);
-      if (billDate > paydayDate) return false;
+      if (billDate >= paydayDate) return false;
       // Skip if covered by a health-matching debt on the same date
       const billDateStr = billDate.toISOString().split('T')[0];
       const healthKW = ['health', 'insurance', 'teacher', 'medibank', 'bupa', 'nib'];
@@ -3065,7 +3076,8 @@ function getSurvivalForecast() {
 
   const upcomingBillsTotal = upcomingBills.reduce((s,b) => s+b.amt, 0);
 
-  // Upcoming unpaid debts — use same paydayDate (already advanced if needed)
+  // Upcoming unpaid debts — same end-of-cycle frame as bills above:
+  // strict less-than excludes debts whose delayDate falls on payday day.
   const upcomingDebts = (S.debts || [])
     .filter(d => {
       if (d.paid) return false;
@@ -3073,7 +3085,7 @@ function getSurvivalForecast() {
       if (!d.delayDate) return false;
       try {
         const due = new Date(d.delayDate.includes('T') ? d.delayDate : d.delayDate + 'T00:00');
-        return due >= today && due <= paydayDate;
+        return due >= today && due < paydayDate;
       } catch(e) { return false; }
     })
     .sort((a,b) => new Date(a.delayDate) - new Date(b.delayDate));
@@ -3243,8 +3255,22 @@ function renderSurvivalForecast() {
   html += '</div>';
   html += '</div>';
 
-  // Borrow recommendation
-  if (!f.willSurvive && f.recommendBorrow > 0) {
+  // Mission C: borrow card visibility threshold. Show only when the
+  // shortfall exceeds SURVIVAL_BORROW_THRESHOLD — tiny gaps under that
+  // are rounding noise, not survival concerns. Show reassurance when
+  // remaining is non-negative.
+  if (remaining >= 0) {
+    html += '<div style="background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.25);border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;color:var(--text2)">' +
+      '<strong style="color:var(--green)">✓ No borrow needed.</strong> ' +
+      'Current balance covers bills, debts, and minimum daily spend through to payday.' +
+    '</div>';
+  } else if (remaining > -SURVIVAL_BORROW_THRESHOLD) {
+    html += '<div style="background:rgba(245,166,35,0.06);border:1px solid rgba(245,166,35,0.2);border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;color:var(--text2)">' +
+      '<strong style="color:var(--amber)">Within rounding noise.</strong> ' +
+      'Shortfall is $' + Math.abs(remaining).toFixed(2) + ' — under the $' + SURVIVAL_BORROW_THRESHOLD + ' threshold. ' +
+      'Tighten spending slightly rather than borrow.' +
+    '</div>';
+  } else if (f.recommendBorrow > 0) {
     html += '<div style="background:var(--bg3);border-radius:12px;padding:16px;margin-bottom:12px">';
     html += '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:8px">' +
       '💡 If you need to borrow' +

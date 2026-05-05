@@ -279,22 +279,24 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** Mission B (bill state lifecycle)
 - **Status:** open
 
-## 19. Forecast doesn't net upcoming payday salary
-- **Bug:** Survival forecast tile / borrow recommendation does not
-  appear to fold in upcoming payday salary as a positive cashflow
-  event on its scheduled day. Dashboard math implies "you'll run out"
-  by ignoring the next paycheque.
+## 19. Forecast doesn't net upcoming payday salary — FIXED Mission C
+- **Bug:** Survival forecast tile / borrow recommendation did not
+  fold in upcoming payday salary as a positive cashflow event on its
+  scheduled day. Dashboard math implied "you'll run out" by ignoring
+  the next paycheque.
 - **Source:** John phone walk 2026-05-05 🔴
-- **Coverage:** MI-15 `payday-interpretation-canonical` (Mission D)
-  is partial coverage — it ensures `MODEL.daysToPayday` and
-  `daysLeft(S.payday)` agree, so all consumers see the same payday
-  distance. But the forecast also needs to *credit income on payday*,
-  which is a Mission C concern (forecast payday netting), not gated
-  by MI-15.
-- **Repro needed:** yes — Mission C investigation will produce
-  expected vs. actual forecast trajectory across the payday boundary.
-- **Fix bundle:** Mission C (forecast payday netting)
-- **Status:** open
+- **Resolution (Mission C):** the bug was actually a frame mismatch
+  not an income-credit gap. `getSurvivalForecast` mixed two payday
+  frames: it counted Rent day-15 as outflow (Question B territory)
+  but didn't credit Salary day-15 as income (Question A territory).
+  Mission C committed to **Question A — end-of-current-cycle**:
+  bills/debts due STRICTLY BEFORE paydayDate count as outflows;
+  items on payday day are excluded entirely (they're next cycle's
+  accounting). Income is correctly omitted under Question A.
+  Two-character filter fix in index.html: `>` → `>=` for bills,
+  `<=` → `<` for debts. On John's May 5 state: -$3,191 → -$191
+  remaining; borrow recommendation $3,200 → $200.
+- **Status:** fixed (Mission C, commit pending)
 
 ## 20. Calendar not showing immediate debts on their due dates
 - **Bug:** Calendar view does not render markers for immediate-debt
@@ -450,6 +452,32 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   for any prior mission that touched code paths a Layer 1 rule
   targeted by name.
 - **Status:** open (deferred — foundation hardening, not user-visible)
+
+## 31. paydayDate parallel implementation pattern (second instance)
+- **Bug:** Mission F caught the `daysLeft(...)` parallel-impl pattern
+  (33 inline call sites diverging from MODEL.daysToPayday). Mission C
+  caught the same class of bug at a different surface:
+  `getSurvivalForecast` recomputed `paydayDate` locally (index.html
+  L3038-3040 pre-fix) with logic that omitted the
+  `paydayReceived && now.getDate() <= paydayDay` branch that
+  MODEL.paydayDate's L2271-2274 has. Result: a user marking pay
+  received early would see the forecast pinned to the past payday
+  day rather than advancing to next month.
+- **Source:** Mission C Step 1 investigation 2026-05-05
+- **Fix in Mission C:** aligned `getSurvivalForecast` to read
+  `MODEL.paydayDate` directly. Same-night cleanup of identical
+  pattern Mission F just consolidated (efficient — pattern is fresh
+  in muscle memory).
+- **Future work:** audit other call sites for local paydayDate
+  recomputation. Add Layer 1 rule
+  `no-inline-payday-date-recomputation` analogous to
+  `no-inline-daysleft-outside-canonical`. Lower priority than current
+  bug-fix queue. Likely a 2-3 site cleanup vs Mission F's 33.
+- **Lesson for future missions:** whenever a mission consolidates
+  a parallel-implementation pattern, the next 2-3 missions should
+  actively look for the same pattern elsewhere — fix is fresh in
+  muscle memory.
+- **Status:** open (deferred — foundation hardening)
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
