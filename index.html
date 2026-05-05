@@ -1481,7 +1481,7 @@ function getDailyBudget() {
 // by days to payday, capped at the user's weekday/weekend preference.
 function getDynamicDailyBudget() {
   const bal = getLiveBal();
-  const days = Math.max(1, daysLeft());
+  const days = Math.max(1, MODEL.daysToPayday);
 
   const billsCommitted = getBillsDue().reduce((s,b) => s + b.amt, 0);
   const debtsCommitted = getActiveDebtsDueBeforePayday();
@@ -1506,7 +1506,7 @@ function getSurvivalMode() {
   const debtsCommitted = getActiveDebtsDueBeforePayday();
   const totalCommitted = billsCommitted + debtsCommitted;
   const available = Math.max(0, bal - totalCommitted);
-  const days = Math.max(1, daysLeft());
+  const days = Math.max(1, MODEL.daysToPayday);
   const dailyAvailable = available / days;
 
   if (bal < 100) return 'critical';
@@ -1517,14 +1517,14 @@ function getSurvivalMode() {
 }
 // TODO: deprecate — getDynamicDailyBudget() already returns ≥0
 function getMaxDay() {
-  if (daysLeft(S.payday) <= 0) return 0;
+  if (MODEL.daysToPayday <= 0) return 0;
   return Math.max(0, getDynamicDailyBudget());
 }
 
 // Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
 function getGenuineSurplus() {
   const liveBal = getLiveBal();
-  const days = daysLeft(S.payday);
+  const days = MODEL.daysToPayday;
   const allBillsDue = getBillsDue().reduce((s, b) => s + b.amt, 0);
   const bucketTotal = (S.savingsBuckets||[]).reduce((s, b) => s + (b.saved||0), 0);
   const livingReserve = getAvgDailySpend() * days;
@@ -1759,7 +1759,7 @@ function getScoreRecommendation(rec) {
   const mode = getSurvivalMode();
   const upcomingDebt = (typeof getActiveDebtsDueBeforePayday === 'function')
     ? getActiveDebtsDueBeforePayday() : 0;
-  const minBuffer = upcomingDebt + (daysLeft() * 20) + 200;
+  const minBuffer = upcomingDebt + (MODEL.daysToPayday * 20) + 200;
   const canAfford = (S.bal || 0) > minBuffer + amount;
 
   if (mode !== 'normal' || !canAfford) {
@@ -1830,7 +1830,7 @@ function toggleExpandCard(bodyId, togId) {
 function getMonthPhase() {
   const today = new Date().getDate();
   const payday = S.payday || 15;
-  const days = daysLeft(payday);
+  const days = MODEL.daysToPayday;
   // PAYDAY: it's payday and pay hasn't been marked received yet
   if (today === payday && !S.paydayReceived) return 'PAYDAY';
   // PRE_PAYDAY: 3 days or fewer until payday and not yet received
@@ -2214,7 +2214,7 @@ function getBillsDue() {
     if (isPaid(b)) return false;
     if (!isBillDueThisMonth(b)) return false;
     const diff = b.day >= today ? b.day - today : daysInCurrentMonth() - today + b.day;
-    return diff > 0 && diff < daysLeft(payday);
+    return diff > 0 && diff < MODEL.daysToPayday;
   });
 }
 
@@ -2791,6 +2791,7 @@ const MathInvariants = {
       check() {
         if (typeof daysLeft !== 'function') return null;
         if (!MODEL || typeof MODEL.daysToPayday !== 'number') return null;
+        // guardian-allow: no-inline-daysleft-outside-canonical — MI-15's job IS to compare MODEL.daysToPayday vs daysLeft(S.payday); the call here is the canonical structural-sanity comparison (permanent — invariant validating the canonical helper's parity with MODEL)
         const canonical = daysLeft(S.payday);
         if (MODEL.daysToPayday === canonical) return null;
         return { displayValue: 'MODEL=' + MODEL.daysToPayday + ', daysLeft=' + canonical,
@@ -3029,7 +3030,7 @@ function getMinDailySpend() {
 
 function getSurvivalForecast() {
   const bal = getLiveBal();
-  const days = Math.max(1, daysLeft());
+  const days = Math.max(1, MODEL.daysToPayday);
   const dailyMax = getDynamicDailyBudget();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -3338,7 +3339,7 @@ function renderAnalysisTab() {
   S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
   const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).reduce((s,t) => s+t.amt, 0);
   const income = S.income || 7282;
-  const days = daysLeft(S.payday);
+  const days = MODEL.daysToPayday;
   const liveBal = getLiveBal();
   const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
 
@@ -3636,7 +3637,7 @@ function renderAll() {
   const bucketSafe = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   const immDebtsForSafe = getActiveDebtsDueBeforePayday();
   const safe = liveBal - dueTotal - immDebtsForSafe + bonusTotal - bucketSafe;
-  const days = daysLeft(S.payday);
+  const days = MODEL.daysToPayday;
   const maxDay = getMaxDay();
   const today = new Date().getDate();
   const isPayday = today === (S.payday || 15);
@@ -5249,7 +5250,7 @@ function saveNewBucket() {
 function renderSpendingCoach() {
   const c = $('spending-coach'); if (!c) return;
   const liveBal = getLiveBal();
-  const days = daysLeft(S.payday);
+  const days = MODEL.daysToPayday;
   const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
   const avgDaily = getAvgDailySpend();
 
@@ -5817,7 +5818,7 @@ function checkAfford() {
   const immDebtsAff = getActiveDebtsDueBeforePayday();
   const safe = liveBal - dueTotal - immDebtsAff + bonusTotal - bucketTotalAff;
   const after = safe - amt;
-  const nd = daysLeft(S.payday);
+  const nd = MODEL.daysToPayday;
   // Max/Day after purchase: capped at getDailyBudget()
   const rawNewMaxDay = nd > 0
     ? (liveBal - amt - dueTotal - immDebtsAff - bucketTotalAff - getDynamicBuffer()) / nd
@@ -5913,7 +5914,7 @@ function buildFullExport() {
       survivalMode: getSurvivalMode(),
       slyghtScore: slyghtScore?.total || S._currentSlyghtScore,
       totalTransactions: S.txns.length,
-      paydayIn: daysLeft() + ' days'
+      paydayIn: MODEL.daysToPayday + ' days'
     }
   };
 }
@@ -5987,7 +5988,7 @@ function generateSnapshot() {
     today.toISOString().substring(0,10),
     'BAL:$' + S.bal.toFixed(2),
     'NW:$' + calculateNetWorth().liquidNet.toFixed(0),
-    daysLeft() + 'D-PAYDAY',
+    MODEL.daysToPayday + 'D-PAYDAY',
     getSurvivalMode().toUpperCase(),
     'MAX:$' + getDynamicDailyBudget().toFixed(2),
     'WEEK:$' + weekSpend.toFixed(0),
@@ -6104,7 +6105,7 @@ function buildSystemPrompt() {
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-AU', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
   const liveBal = getLiveBal();
-  const days = daysLeft(S.payday);
+  const days = MODEL.daysToPayday;
   const maxDay = getMaxDay();
   const todaySpent = getTodaySpent();
   const dailyBudget = getDailyBudget();
@@ -6419,7 +6420,7 @@ Never say "I understand" or "Great question". Maximum 4 sentences for simple que
 BALANCE: $${S.bal.toFixed(2)} (Virgin Money)
 LIQUID NET WORTH: ${nwData.liquidNet >= 0 ? '+' : ''}$${Math.abs(Math.round(nwData.liquidNet)).toLocaleString()}
 TOTAL NET WORTH (incl super): ${nwData.net >= 0 ? '+' : ''}$${Math.abs(Math.round(nwData.net)).toLocaleString()}
-PAYDAY: ${S.payday}th — in ${daysLeft()} days
+PAYDAY: ${S.payday}th — in ${MODEL.daysToPayday} days
 MODE: ${getSurvivalMode()} — can spend $${getDynamicDailyBudget().toFixed(2)}/day
 TODAY: ${todayTxns.length > 0
   ? 'spent $' + todaySpent.toFixed(2) + ' (' +
@@ -7206,6 +7207,7 @@ const AUDITOR = {
     const maxDay = getMaxDay();
     const budget = getDailyBudget();
     if (maxDay > budget + 0.01) issues.push('getMaxDay ($' + maxDay.toFixed(2) + ') exceeds getDailyBudget ($' + budget + ')');
+    // guardian-allow: no-inline-daysleft-outside-canonical — HEALTH self-check validates the daysLeft helper itself returns 1-31; migrating to MODEL.daysToPayday changes what is being tested (permanent — invariant validating canonical helper's contract)
     const days = daysLeft();
     if (days < 1 || days > 31) issues.push('daysLeft() returned ' + days + ' — should be 1-31');
     const nonRecurringInDue = getBillsDue().filter(b => b.recurring === false);
@@ -7480,7 +7482,7 @@ const CONSISTENCY = {
       // FIX 8: wrap each check individually; getNetWorth() returns object
       check: () => {
         try {
-          const checks = [getLiveBal(), getDynamicDailyBudget(), daysLeft(), getBucketTotal()];
+          const checks = [getLiveBal(), getDynamicDailyBudget(), MODEL.daysToPayday, getBucketTotal()];
           return checks.every(v => !isNaN(v) && v !== null && v !== undefined);
         } catch(e) { return true; }
       }
@@ -7515,7 +7517,7 @@ const CONSISTENCY = {
           'getGenuineSurplus': getGenuineSurplus(),
           'getMaxDay': getMaxDay(),
           'getDailyBudget': getDailyBudget(),
-          'daysLeft': daysLeft(),
+          'daysLeft': MODEL.daysToPayday,
           'getBucketTotal': getBucketTotal(),
           'getDynamicBuffer': getDynamicBuffer()
         };
@@ -7607,7 +7609,7 @@ const TRACER = {
     const billsDue = getBillsDue(), billsTotal = billsDue.reduce((s,b) => s+b.amt, 0);
     const debtsDue = getActiveDebtsDueBeforePayday();
     const buckets = getBucketTotal();
-    const days = daysLeft(), avgDaily = getAvgDailySpend(), living = avgDaily * days;
+    const days = MODEL.daysToPayday, avgDaily = getAvgDailySpend(), living = avgDaily * days;
     const buffer = getDynamicBuffer();
     const result = Math.max(0, bal - billsTotal - debtsDue - buckets - living - buffer);
     return { result, steps: [
@@ -7623,7 +7625,7 @@ const TRACER = {
   traceMaxDay() {
     const bal = S.bal, billsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
     const debtsDue = getActiveDebtsDueBeforePayday(), buckets = getBucketTotal();
-    const buffer = getDynamicBuffer(), days = Math.max(1, daysLeft()), budget = getDailyBudget();
+    const buffer = getDynamicBuffer(), days = Math.max(1, MODEL.daysToPayday), budget = getDailyBudget();
     const raw = (bal - billsDue - debtsDue - buckets - buffer) / days;
     const capped = Math.min(budget, Math.max(0, raw));
     return { result: capped, steps: [
@@ -7934,7 +7936,7 @@ const PERSONALITY = {
     // Planner: bills paid + savings
     scores['The Planner'] = (Object.keys(S.paidBills||{}).length >= 3 || buckets > 50) && debtPaid > 0 ? 70 : 0;
     // Survivor: low balance + many days to payday
-    const dl = daysLeft(S.payday);
+    const dl = MODEL.daysToPayday;
     scores['The Survivor'] = S.bal < 200 && dl > 4 ? 90 : S.bal < 400 && dl > 6 ? 60 : 0;
     // Spender: disc > 40% income
     scores['The Spender'] = disc > income*0.4 ? 90 : disc > income*0.25 ? 55 : 0;
@@ -8060,7 +8062,7 @@ const NOTIFY = {
       });
     }
     // URGENT: debts overdue/due soon
-    const dl = daysLeft(S.payday);
+    const dl = MODEL.daysToPayday;
     (S.debts||[]).filter(d=>!d.paid&&d.delayDate).forEach(d=>{
       const daysUntil = Math.ceil((new Date(d.delayDate+'T00:00')-now)/(864e5));
       if (daysUntil<=0) add('urgent',d.name+' '+fmt(d.amt)+' is OVERDUE — pay now','Pay');
@@ -8702,7 +8704,8 @@ const PUSH = {
 
       const state = {
         bal:             S.bal,
-        maxDay:          (() => { const raw = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60; return (!raw || isNaN(raw)) ? parseFloat((Math.max(0, S.bal) / Math.max(1, daysLeft())).toFixed(2)) : parseFloat(raw.toFixed(2)); })(),
+        maxDay:          (() => { const raw = typeof getDynamicDailyBudget === 'function' ? getDynamicDailyBudget() : 60; return (!raw || isNaN(raw)) ? parseFloat((Math.max(0, S.bal) / Math.max(1, MODEL.daysToPayday)).toFixed(2)) : parseFloat(raw.toFixed(2)); })(),
+        // guardian-allow: no-inline-daysleft-outside-canonical — diagnostic export field reports the daysLeft helper's current return value; migrating to MODEL.daysToPayday changes what is being diagnosed (permanent — diagnostic export inspects the canonical helper directly)
         daysLeft:        typeof daysLeft === 'function' ? daysLeft() : 0,
         survivalMode:    typeof getSurvivalMode === 'function' ? getSurvivalMode() : 'normal',
         todaySpent,
@@ -9462,7 +9465,7 @@ function diagNaN() {
       getGenuineSurplus: getGenuineSurplus(),
       getMaxDay: getMaxDay(),
       getDailyBudget: getDailyBudget(),
-      daysLeft: daysLeft(),
+      daysLeft: MODEL.daysToPayday,
       getBucketTotal: getBucketTotal(),
       getDynamicBuffer: getDynamicBuffer()
     };
@@ -9515,7 +9518,7 @@ if (typeof WEATHER !== 'undefined') {
 const savedApiKey = localStorage.getItem('slyght_api_key');
 if (savedApiKey) S.apiKey = savedApiKey;
 const obEl = $('ob-days-display');
-if (obEl) { const d = daysLeft(S.payday||15); obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
+if (obEl) { const d = MODEL.daysToPayday; obEl.textContent = d + (d === 1 ? ' day to payday' : ' days to payday'); }
 // Always show splash first — splashTap() handles routing
 function splashTap() {
   const _spl = $('splash-screen'); if (_spl) _spl.style.display = 'none';
@@ -10381,7 +10384,7 @@ function renderPaydayAllocation() {
   const income = PLAN.INCOME_MONTHLY;
   const bonus = S._pendingBonus || 0;
   const total = income + bonus;
-  const daysUntil = daysLeft();
+  const daysUntil = MODEL.daysToPayday;
 
   const fixed = (BILLS||[]).filter(b => b.recurring && ['Fixed','Loan'].includes(b.tag))
     .reduce((s,b) => s + b.amt, 0);
@@ -10570,7 +10573,7 @@ function updateAllocation(id, value) {
   const provisions = PLAN.getTotalProvisions();
   const discretionary = Math.max(0, income - fixed - provisions - 500);
   const living = Math.max(0, discretionary - china - apartment - freedom - darwin);
-  const days = daysLeft();
+  const days = MODEL.daysToPayday;
   const dailyLiving = days > 0 ? living / days : 0;
 
   const livingEl = document.getElementById('alloc-val-living');
@@ -10624,7 +10627,7 @@ function lockPaydayPlan() {
   // Rent ($3,000) already includes the $500 + $2,500 split — no double-count.
   const discretionary = Math.max(0, income - fixedTotal - provisions);
   const living = Math.max(0, discretionary - totalGoalAlloc);
-  const days = daysLeft();
+  const days = MODEL.daysToPayday;
   const perDay = days > 0 ? living / days : 0;
 
   if (perDay < 15) {

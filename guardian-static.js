@@ -11,6 +11,10 @@
  *
  * Catalog: 16 rules. `dom-id-must-exist` deferred to follow-up (post Dead
  * Code Cleanup mission) — see MISSION-GUARDIAN-LAYER-1.md Step 1 findings.
+ * Mission F (2026-05-05) added rule #16 `no-inline-daysleft-outside-canonical`
+ * — bans daysLeft(...) calls outside the function definition itself, MI-15's
+ * canonical comparison, and the HEALTH/diagnostic allow-list. Anchors
+ * OPEN-BUGS #22.
  *
  * See MISSION-GUARDIAN-LAYER-1.md for the full spec.
  */
@@ -697,37 +701,45 @@ const RULES = [
   },
 
   // ─── 11. copy-export-strips-secrets ─────────────────────
+  // Mission EXPORT (commit bb30b86) factored the export-build path out
+  // into buildFullExport(); both copyExport and exportAsFile call it.
+  // This rule now follows the build wherever it lives — checks
+  // buildFullExport's body if present, falls back to copyExport for
+  // backwards compat. Either function must strip apiKey + chatHistory.
   {
     name: 'copy-export-strips-secrets',
     severity: 'fail',
     anchor: 'security',
     check() {
       const violations = [];
+      let buildBody = null;
       let copyExportBody = null;
       walk.simple(ast, {
         FunctionDeclaration(node) {
-          if (node.id && node.id.name === 'copyExport') {
-            copyExportBody = node;
-          }
+          if (!node.id) return;
+          if (node.id.name === 'buildFullExport') buildBody = node;
+          if (node.id.name === 'copyExport') copyExportBody = node;
         },
       });
-      if (!copyExportBody) {
-        violations.push({ line: 0, col: 0, evidence: 'copyExport function not found' });
+      const target = buildBody || copyExportBody;
+      const targetName = buildBody ? 'buildFullExport' : 'copyExport';
+      if (!target) {
+        violations.push({ line: 0, col: 0, evidence: 'neither buildFullExport nor copyExport found' });
         return violations;
       }
-      const src = SCRIPT_SRC.slice(copyExportBody.range[0], copyExportBody.range[1]);
+      const src = SCRIPT_SRC.slice(target.range[0], target.range[1]);
       if (!/delete\s+\w+\.apiKey/.test(src)) {
         violations.push({
-          line: fileLine(copyExportBody.loc.start.line),
+          line: fileLine(target.loc.start.line),
           col: 0,
-          evidence: 'copyExport does not delete apiKey from export payload',
+          evidence: targetName + ' does not delete apiKey from export payload',
         });
       }
       if (!/delete\s+\w+\.chatHistory/.test(src)) {
         violations.push({
-          line: fileLine(copyExportBody.loc.start.line),
+          line: fileLine(target.loc.start.line),
           col: 0,
-          evidence: 'copyExport does not delete chatHistory from export payload',
+          evidence: targetName + ' does not delete chatHistory from export payload',
         });
       }
       return violations;
@@ -856,6 +868,54 @@ const RULES = [
           evidence: 'daysLeft body lacks Math.max(1, ...) guard — division-by-zero risk in getMaxDay',
         });
       }
+      return violations;
+    },
+  },
+
+  // ─── 17. no-inline-daysleft-outside-canonical ───────────
+  // Mission F: after migration, every renderer/helper consumes
+  // MODEL.daysToPayday as the single source of truth for "days until
+  // payday." The only callers of daysLeft(...) post-migration are:
+  //   1. the function definition body (no recursive calls today, but
+  //      scope-allowed for future refactors)
+  //   2. MI-15's canonical comparison (the structural-sanity check)
+  //   3. HEALTH self-check that validates the helper's contract
+  //   4. diagnostic export field that reports the helper's value
+  // Sites 2-4 carry guardian-allow comments. Anything else firing this
+  // rule is a regression to the parallel-implementation pattern that
+  // OPEN-BUGS #22 documents.
+  {
+    name: 'no-inline-daysleft-outside-canonical',
+    severity: 'fail',
+    anchor: 'OPEN-BUGS#22',
+    check() {
+      const violations = [];
+      // Find the daysLeft function body's range so we can exempt internal calls.
+      let daysLeftRange = null;
+      walk.simple(ast, {
+        FunctionDeclaration(node) {
+          if (node.id && node.id.name === 'daysLeft') {
+            daysLeftRange = node.range;
+          }
+        },
+      });
+      walk.simple(ast, {
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'Identifier') return;
+          if (node.callee.name !== 'daysLeft') return;
+          // Exempt calls inside the daysLeft function definition itself.
+          if (daysLeftRange
+              && node.range[0] >= daysLeftRange[0]
+              && node.range[1] <= daysLeftRange[1]) {
+            return;
+          }
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: 'inline daysLeft(...) call — use MODEL.daysToPayday instead (single source of truth)',
+          });
+        },
+      });
       return violations;
     },
   },

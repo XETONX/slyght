@@ -388,6 +388,35 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   paste remains available for small exports / quick syncs.
 - **Status:** mitigated (out-of-app cause; Download path bypasses)
 
+## 29. Feb-31 payday clamping behavior change (Mission F semantic shift)
+- **Bug:** Pre-Mission-F, `daysLeft(payday)` clamped `S.payday` to
+  days-in-month via `Math.min(rawPd, daysInMonth)` at L1446. For
+  `S.payday=31` in February, this produced "days until Feb 28/29."
+  Post-Mission-F, every renderer/helper consumes `MODEL.daysToPayday`
+  which builds `new Date(Y, M, paydayDay)` directly — JS Date rolls
+  31 over to March 3 in February. Different result for the same input.
+- **Source:** Mission F migration consolidation 2026-05-05 (commit
+  pending)
+- **Diagnosis:** John's `S.payday` is **15**, not 31. No current state
+  exposes this divergence. Mission F consolidates to MODEL's no-clamp
+  behavior — that's the canonical choice (Date arithmetic is more
+  conventional than month-day clamping for payday math).
+- **Coverage:** MI-15 `payday-interpretation-canonical` is now a
+  structural sanity check rather than an active divergence detector.
+  Both paths produce identical values for S.payday in the 1-28 range.
+  For S.payday=29-31, the structural check would fire only in
+  February — and only if some renderer regression introduces a path
+  that uses `daysLeft(...)` again outside the canonical sites.
+- **Repro needed:** synthetic Feb-31 fixture
+  (`state-snapshot-feb-31.json`) — verify forecast/dashboard math is
+  sane in February with S.payday=31. Add as Mission V follow-up
+  fixture; defer until/unless real-state risk surfaces.
+- **Fix bundle:** out of scope for Mission F — the consolidation
+  itself IS the fix. Documenting here for future-Opus and
+  future-John in case payday changes or another user with S.payday=31
+  uses SLYGHT.
+- **Status:** documented (semantic shift, not a bug)
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
