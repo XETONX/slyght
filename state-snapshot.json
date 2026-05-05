@@ -1,0 +1,482 @@
+{
+  "capturedAt": "2026-04-15T12:53:47.912Z",
+  "S": {
+    "bal": 2533.99,
+    "txns": [
+      {
+        "id": 0,
+        "amt": 7282.33,
+        "note": "Salary — Manhattan Associates",
+        "cat": "Income",
+        "ts": 1776121201000,
+        "income": true
+      },
+      {
+        "id": 1,
+        "amt": 2500,
+        "note": "CC repayment — Virgin Money (pending)",
+        "cat": "Debt repayment",
+        "ts": 1776121202000,
+        "income": false
+      },
+      {
+        "id": 2,
+        "amt": 1170,
+        "note": "Car Loan Firstmac — regular + missed payment + fees",
+        "cat": "Debt repayment",
+        "ts": 1776121203000,
+        "income": false
+      },
+      {
+        "id": 3,
+        "amt": 250.84,
+        "note": "Afterpay — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776121204000,
+        "income": false
+      },
+      {
+        "id": 4,
+        "amt": 141.76,
+        "note": "Claude Max subscription",
+        "cat": "Subscription",
+        "ts": 1776121205000,
+        "income": false
+      },
+      {
+        "id": 5,
+        "amt": 0.9,
+        "note": "China Holiday round-ups",
+        "cat": "Savings",
+        "ts": 1776121206000,
+        "income": false
+      },
+      {
+        "id": 6,
+        "amt": 100,
+        "note": "Yia yia gift",
+        "cat": "Income",
+        "ts": 1776121207000,
+        "income": true
+      },
+      {
+        "amt": 780,
+        "note": "Car Loan — Firstmac — paid",
+        "cat": "Loan",
+        "ts": 1776174301706,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 32,
+        "note": "Claude API Subscription",
+        "cat": "Subscriptions",
+        "ts": 1776174463253,
+        "flagged": false,
+        "_balAffected": true
+      }
+    ],
+    "bonuses": [],
+    "bid": 0,
+    "seg": "1m",
+    "income": 7282,
+    "payday": 15,
+    "carloan": 23989.7,
+    "carLoanRate": 9.87,
+    "cc": 0,
+    "carloanOriginal": 37400,
+    "ccLimit": 6000,
+    "monthlyHistory": [],
+    "income_log": [],
+    "iid": 0,
+    "debts": [
+      {
+        "id": 0,
+        "name": "Afterpay",
+        "amt": 250.84,
+        "paid": true,
+        "rate": 0,
+        "priority": 0,
+        "notes": "Cleared 14 Apr"
+      },
+      {
+        "id": 1,
+        "name": "Owed to Michael",
+        "amt": 550,
+        "paid": false,
+        "rate": 0,
+        "priority": 1,
+        "delayDate": "2026-04-15",
+        "notes": "$300 borrowed + $50 goodwill + $200 additional borrowing"
+      },
+      {
+        "id": 2,
+        "name": "CC overdue",
+        "amt": 187.35,
+        "paid": true,
+        "rate": 19.99,
+        "priority": 2,
+        "delayed": true,
+        "delayDate": "2026-05-06",
+        "notes": "Cleared — mum paid full CC balance 15 Apr"
+      },
+      {
+        "id": 3,
+        "name": "WRX fines",
+        "amt": 1254,
+        "paid": false,
+        "rate": 0,
+        "priority": 3,
+        "notes": "LIST THE WRX THIS WEEK"
+      },
+      {
+        "id": 4,
+        "name": "Pet Insurance",
+        "amt": 120.47,
+        "paid": false,
+        "rate": 0,
+        "priority": 4,
+        "delayDate": "2026-04-22"
+      },
+      {
+        "id": 5,
+        "name": "Parking Fine",
+        "amt": 140,
+        "paid": false,
+        "rate": 0,
+        "priority": 5,
+        "delayDate": "2026-04-16"
+      },
+      {
+        "id": 7,
+        "name": "Owed to Mum",
+        "amt": 4658.39,
+        "rate": 0,
+        "priority": 1,
+        "paid": false,
+        "monthlyPayment": 500,
+        "viaRent": true,
+        "notes": "CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.",
+        "delayDate": "2027-01-15",
+        "originalAmt": 4658.39
+      }
+    ],
+    "nextDebtId": 8,
+    "savingsBuckets": [
+      {
+        "id": 0,
+        "name": "China Holiday",
+        "goal": 4000,
+        "saved": 67.22,
+        "account": "Virgin Money"
+      },
+      {
+        "id": 1,
+        "name": "Rainy Day Fund",
+        "goal": 2000,
+        "saved": 0,
+        "account": "ING"
+      },
+      {
+        "id": 2,
+        "name": "Rego & Insurance",
+        "goal": 1500,
+        "saved": 0,
+        "account": "Westpac"
+      },
+      {
+        "id": 3,
+        "name": "Gifts & Celebrations",
+        "goal": 500,
+        "saved": 0,
+        "account": "Other"
+      }
+    ],
+    "nextBucketId": 4,
+    "paidBills": {},
+    "paydayReceived": true,
+    "paydayReceivedDate": "2026-04-14",
+    "weekdayBudget": 60,
+    "weekendBudget": 180,
+    "lastOpenDate": "2026-04-15",
+    "wrxValue": 21000,
+    "debtStrategy": "avalanche",
+    "apiAlertThreshold": 15,
+    "_lastSnapMonth": "2026-4",
+    "paydayPlanItems": {},
+    "notifications": [
+      {
+        "id": "urgent_Owed_to_Michael__550",
+        "type": "urgent",
+        "msg": "Owed to Michael $550 is OVERDUE — pay now",
+        "act": "Pay",
+        "ts": 1776257285482,
+        "read": false
+      },
+      {
+        "id": "urgent_Parking_Fine__140_du",
+        "type": "urgent",
+        "msg": "Parking Fine $140 due tomorrow — pay today",
+        "act": "Pay",
+        "ts": 1776257285483,
+        "read": false
+      },
+      {
+        "id": "warning_Optus___Phone___Inte",
+        "type": "warning",
+        "msg": "Optus — Phone + Internet $199 debits tomorrow — ensure funds available",
+        "act": "Check",
+        "ts": 1776257285484,
+        "read": false
+      }
+    ],
+    "_currentSlyghtScore": 491
+  },
+  "BILLS": [
+    {
+      "name": "Rent",
+      "amt": 3000,
+      "day": 15,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Car Loan — Firstmac",
+      "amt": 780,
+      "day": 1,
+      "tag": "Loan",
+      "recurring": true,
+      "freq": "monthly"
+    },
+    {
+      "name": "Health Insurance (qtrly avg)",
+      "amt": 119.04,
+      "day": 1,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Amazon Prime",
+      "amt": 9.99,
+      "day": 3,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Fuel",
+      "amt": 110,
+      "day": 5,
+      "tag": "Variable",
+      "recurring": true
+    },
+    {
+      "name": "Microsoft PC Game Pass",
+      "amt": 19.45,
+      "day": 7,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Pet Insurance — Bowtie",
+      "amt": 60.2,
+      "day": 8,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Claude Plus",
+      "amt": 34,
+      "day": 9,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Netflix",
+      "amt": 28.99,
+      "day": 10,
+      "tag": "Streaming",
+      "recurring": true
+    },
+    {
+      "name": "Afterpay instalment",
+      "amt": 121.16,
+      "day": 16,
+      "tag": "Debt repayment",
+      "recurring": false
+    },
+    {
+      "name": "Optus — Phone + Internet",
+      "amt": 199,
+      "day": 16,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "YouTube Premium",
+      "amt": 16.99,
+      "day": 20,
+      "tag": "Streaming",
+      "recurring": true
+    },
+    {
+      "name": "Parking — CBD Secure",
+      "amt": 32.32,
+      "day": 22,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Pet Food",
+      "amt": 45,
+      "day": 25,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Adobe",
+      "amt": 23.99,
+      "day": 27,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Spotify",
+      "amt": 15.99,
+      "day": 28,
+      "tag": "Streaming",
+      "recurring": true
+    },
+    {
+      "name": "Food at Work",
+      "amt": 200,
+      "day": 28,
+      "tag": "Variable",
+      "recurring": true
+    },
+    {
+      "name": "Claude API Subscription",
+      "amt": 32,
+      "day": 14,
+      "tag": "Subscriptions",
+      "recurring": true
+    }
+  ],
+  "paidBills": {},
+  "notifications": [
+    {
+      "id": "urgent_Owed_to_Michael__550",
+      "type": "urgent",
+      "msg": "Owed to Michael $550 is OVERDUE — pay now",
+      "act": "Pay",
+      "ts": 1776257285482,
+      "read": false
+    },
+    {
+      "id": "urgent_Parking_Fine__140_du",
+      "type": "urgent",
+      "msg": "Parking Fine $140 due tomorrow — pay today",
+      "act": "Pay",
+      "ts": 1776257285483,
+      "read": false
+    },
+    {
+      "id": "warning_Optus___Phone___Inte",
+      "type": "warning",
+      "msg": "Optus — Phone + Internet $199 debits tomorrow — ensure funds available",
+      "act": "Check",
+      "ts": 1776257285484,
+      "read": false
+    }
+  ],
+  "auditLog": [
+    {
+      "ts": "2026-04-15T12:52:05.484Z",
+      "time": "10:52:05 pm",
+      "action": "CONSISTENCY_FAIL",
+      "before": 2533.99,
+      "after": 2533.99,
+      "change": 0,
+      "expected": 0,
+      "ok": true,
+      "notes": "Failed: Active debt count matches tiles | No NaN values in critical calculations"
+    },
+    {
+      "ts": "2026-04-15T12:50:05.490Z",
+      "time": "10:50:05 pm",
+      "action": "CONSISTENCY_FAIL",
+      "before": 2533.99,
+      "after": 2533.99,
+      "change": 0,
+      "expected": 0,
+      "ok": true,
+      "notes": "Failed: Balance display matches S.bal | Active debt count matches tiles | No NaN values in critical calculations"
+    },
+    {
+      "ts": "2026-04-15T12:48:10.496Z",
+      "time": "10:48:10 pm",
+      "action": "CONSISTENCY_FAIL",
+      "before": 2533.99,
+      "after": 2533.99,
+      "change": 0,
+      "expected": 0,
+      "ok": true,
+      "notes": "Failed: Balance display matches S.bal | Active debt count matches tiles | No NaN values in critical calculations"
+    },
+    {
+      "ts": "2026-04-15T12:48:08.480Z",
+      "time": "10:48:08 pm",
+      "action": "CONSISTENCY_FAIL",
+      "before": 2533.99,
+      "after": 2533.99,
+      "change": 0,
+      "expected": 0,
+      "ok": true,
+      "notes": "Failed: Balance display matches S.bal | Active debt count matches tiles | No NaN values in critical calculations"
+    }
+  ],
+  "apiCosts": [],
+  "snapshots": 1,
+  "uxReport": {
+    "ts": "2026-04-15T12:52:05.484Z",
+    "sessionMins": 4,
+    "totalTaps": 3,
+    "missedTapPct": 0,
+    "slowRenders": 0,
+    "modalAbandons": 0,
+    "topFeatures": [
+      [
+        "Yesterday (14/4) these were sc",
+        2
+      ],
+      [
+        "SLYGHT\n  Know your money. Alwa",
+        1
+      ]
+    ],
+    "tabUsage": [],
+    "issues": [],
+    "suggestions": [
+      "Unvisited tabs: dash, cal, chat, spend, settings — content may not be discoverable"
+    ],
+    "score": 95
+  },
+  "chatHistoryCount": 0,
+  "apiKeySet": false,
+  "allLocalStorageKeys": [
+    "slyght_data",
+    "slyght_last_open_date",
+    "slyght_seeded_v15",
+    "slyght_snapshots",
+    "slyght_audit_log",
+    "slyght_v5",
+    "slyght_seeded_v11",
+    "slyght_v2",
+    "slyght_seeded_v13",
+    "slyght_v4",
+    "slyght_bills_reset_month",
+    "slyght_seeded_v12",
+    "slyght_ux_report",
+    "slyght_last_recon",
+    "slyght_seeded_v14"
+  ]
+}
