@@ -3,16 +3,23 @@
 ## ⚠️ Read this before reading the layer files
 
 This is the overarching framing for the Guardian system. It owns the
-*why* and the *how things fit together*. Each of the three layers has
-its own mission file with the *what to build*:
+*why* and the *how things fit together*. Each of the layers has its
+own mission file with the *what to build*:
 
 - `MISSION-GUARDIAN-LAYER-1.md` — Static (AST-based, pre-commit)
 - `MISSION-GUARDIAN-LAYER-2.md` — Runtime (in-browser, every render)
 - `MISSION-GUARDIAN-LAYER-3.md` — Audit (Opus 4.7 reviews diffs pre-deploy)
+- `MISSION-VISUAL-REGRESSION.md` — Visual regression (rendered-pixel
+  diff). Catches layout shifts, copy regressions, and JS-on-tab-load
+  failures that the other three layers can't see. Workflow in
+  `visual/README.md`. Run with `npm run visual`.
 
 Each layer ships as a single commit, single mission. Layers 1 and 2
 ship in **either order or in parallel**. Layer 3 ships **last**.
-Helper-extraction debt is **deferred** to OPEN-BUGS.md #10.
+Visual regression Option A ships once Layer 1 and Layer 2 are stable;
+Options B (action recording) and C (multi-fixture / AI-vision) follow
+in their own missions. Helper-extraction debt is **deferred** to
+OPEN-BUGS.md #10.
 
 This document evolves in place. No version suffix on the filename.
 When the design changes, edit this file. When a layer's spec changes,
