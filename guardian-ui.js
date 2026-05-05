@@ -2,12 +2,12 @@ const fs = require('fs');
 const html = fs.readFileSync('index.html', 'utf8');
 
 const checks = [
-  // All 5 nav tabs present
-  { name: 'Bottom nav has exactly 5 tabs',
+  // All 6 nav tabs present (Settings added to nav so it's reachable from every screen)
+  { name: 'Bottom nav has exactly 6 tabs',
     test: () => {
       const navItems = html.match(/class="nav-btn/g) || [];
       const count = navItems.length;
-      return count === 4 ? 'OK' : 'BROKEN — found ' + count + ' nav-btn items, expected 4 (+ 1 center FAB)';
+      return count === 5 ? 'OK' : 'BROKEN — found ' + count + ' nav-btn items, expected 5 (+ 1 center FAB)';
     }
   },
 
