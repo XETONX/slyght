@@ -104,12 +104,27 @@ of these matters:
    fallback metrics.
 6. **Animations disabled** via Playwright's `animations: 'disabled'`
    plus a belt-and-braces `*` stylesheet override.
-7. **Viewport pinned** to 390 × 844 @ DPR 2 (iPhone 13 logical).
+7. **Viewport pinned** to 412 × 915 @ DPR 3 (Samsung Galaxy S23 Ultra
+   logical — see "Viewport choice" below).
 8. **Mouse off-canvas** (`page.mouse.move(0, 0)`) to neutralize
    `:hover` state.
 9. **Console-error listener** — fold-in #9 from Mission V Step 1.
    Catches "tab loads but JS exploded" regressions that pixel diff
    alone misses if the broken state still renders something.
+
+## Viewport choice
+
+Baselines target John's actual device — Samsung Galaxy S23 Ultra,
+**412 × 915 logical pixels @ devicePixelRatio 3.0**. This is the
+primary surface the app gets used on, so baselines anchor against
+"what John sees" rather than a generic mid-size phone.
+
+Future contributors changing viewport must regenerate **all**
+baselines (`npm run visual:update`) — a viewport change invalidates
+every existing baseline. Don't mix viewports across baselines; that
+would defeat the determinism guarantee. If multi-device coverage is
+ever wanted, that's a follow-up mission (separate `project` configs
+in `playwright.config.js`, separate baseline directories per device).
 
 ## Tolerance
 

@@ -39,6 +39,11 @@ npm test          # Layer 1 + Layer 2 + 35 unit tests
 npm run visual    # Visual regression (requires `npx playwright install chromium` once)
 ```
 
+All three gates (`npm run guardian-static`, `npm test`, `npm run visual`)
+must pass before any mission commits. See `MISSION-GUARDIAN.md` →
+"Mission verify gates" for the rule and how to handle intentional
+visual diffs.
+
 ## Open bugs
 
 Tracked in `OPEN-BUGS.md` with monotonically-increasing IDs. New bugs

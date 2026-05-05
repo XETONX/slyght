@@ -16,8 +16,8 @@ module.exports = defineConfig({
   snapshotPathTemplate: '{testDir}/baselines/{arg}{ext}',
   use: {
     baseURL: 'http://localhost:4567',
-    viewport: { width: 390, height: 844 },     // iPhone 13 logical size
-    deviceScaleFactor: 2,
+    viewport: { width: 412, height: 915 },     // Samsung Galaxy S23 Ultra logical size — John's device
+    deviceScaleFactor: 3,
     serviceWorkers: 'block',                    // app registers /slyght/sw.js — neutralize for tests
     locale: 'en-AU',
     timezoneId: 'Australia/Sydney',

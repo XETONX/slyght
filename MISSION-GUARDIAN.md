@@ -21,6 +21,27 @@ Options B (action recording) and C (multi-fixture / AI-vision) follow
 in their own missions. Helper-extraction debt is **deferred** to
 OPEN-BUGS.md #10.
 
+## Mission verify gates (every mission, every commit)
+
+Before any mission commits, the following gates must all be green:
+
+```bash
+npm run guardian-static    # Layer 1 — exit 0
+npm test                   # Layer 1 + Layer 2 + 35 unit tests
+npm run visual             # Mission V — 4/4 passing, 0 baseline diff
+```
+
+If `npm run visual` reports a diff, it is reviewed inline:
+- **Intentional** (the mission was supposed to change visible output) →
+  run `npm run visual:update`, commit the new baselines in the same
+  commit so the diff is reviewable as one cohesive hunk.
+- **Unintentional** → it's a regression. Investigate before shipping;
+  log to OPEN-BUGS.md if the cause isn't immediately fixable.
+
+This rule applies to all missions added after Mission V. Future
+mission specs' "Step Verify" sections should explicitly call out
+`npm run visual` alongside `npm test` and `npm run guardian-static`.
+
 This document evolves in place. No version suffix on the filename.
 When the design changes, edit this file. When a layer's spec changes,
 edit that layer's file.
