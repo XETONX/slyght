@@ -126,6 +126,35 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** unscheduled (likely overlaps with bug #8)
 - **Status:** open
 
+## 17. Cross-tile "today's spend" coherence — three renderers, three different values
+- **Bug:** Footer persistent strip, dashboard "Over by $X today" alert,
+  and Analysis tab "today's spend" each compute their own number.
+  Drifts because the three filters disagree (some strict, some lax,
+  some unfiltered). Concrete repro from John's phone 2026-05-05:
+  footer "$22 today", dashboard alert "Over by $44 today", Analysis
+  "$74.09" — same concept, three numbers, each presents itself as
+  authoritative. Same root pattern as RC2 / OPEN-BUGS #6 cousins.
+- **Source:** John phone 2026-05-05 (consolidated from OPEN-BUGS
+  #12 and #15 which name the same root cause)
+- **Repro needed:** no (visible)
+- **Fix bundle:** **Two-commit follow-up after Layer 2.** Layer 2's
+  catalog of 9 invariants does NOT cover cross-tile DOM coherence —
+  that's intentionally Layer 1 territory (static rule, not runtime
+  banner) per the design discussion 2026-05-05. Sequence:
+    1. Refactor: consolidate today-spend computation into
+       `MODEL.todaySpent` (already exists in MODEL — verify all
+       three renderers consume it). Update footer
+       `updatePersistentStrip`, dashboard alert renderer's "Over by"
+       computation, and Analysis tab's today-display to all read
+       directly from `MODEL.todaySpent`. Same pattern Bundle B used
+       for `MODEL.cycleSpent` repointing.
+    2. Layer 1 follow-up: add new static rule
+       `today-spend-renderers-consume-MODEL.todaySpent` to the
+       guardian-static.js catalog. Mirrors the existing
+       `nw-renderers-consume-MODEL.liquidNet` rule. After this rule
+       lands, Layer 1 catalog grows from 16 → 17 rules.
+- **Status:** open
+
 ## 11. Plan Mode "Add savings" buttons non-functional on China Holiday and Darwin allocation sliders
 - **Bug:** "Add savings" buttons on the China Holiday and Darwin
   allocation sliders in Plan Mode. **Updated repro detail:** John typed

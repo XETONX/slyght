@@ -395,6 +395,18 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
   <!-- DASHBOARD -->
   <div class="screen active" id="pg-dash">
+    <!-- Layer 2 — MathInvariants banner (warn / first-time fail) -->
+    <div id="math-invariant-banner" style="display:none;background:var(--red-dim);border-bottom:1px solid var(--red-border);color:var(--red);padding:8px 16px;font-size:13px;position:sticky;top:0;z-index:50;line-height:1.5">
+      <span id="mib-msg" style="display:inline-block;padding-right:64px"></span>
+      <button onclick="MathInvariants.dismiss(document.getElementById('math-invariant-banner').dataset.rule)" aria-label="Dismiss" style="position:absolute;right:8px;top:6px;background:none;border:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:4px 8px">×</button>
+      <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="position:absolute;right:36px;top:9px;background:none;border:none;color:inherit;font-size:11px;cursor:pointer;text-decoration:underline;padding:2px 4px">details</button>
+    </div>
+    <!-- Layer 2 — MathInvariants card (critical / escalated fail). NO dismiss. -->
+    <div id="math-invariant-card" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5">
+      <div style="font-weight:700;margin-bottom:6px">⚠️ Math reconciliation failed</div>
+      <div id="mic-msg"></div>
+      <div id="mic-details" style="font-size:11px;color:var(--text2);margin-top:8px;font-family:var(--mono)"></div>
+    </div>
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
       <div class="hdr-right">
@@ -645,6 +657,14 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div class="card-hdr"><div class="card-title">Data Health</div></div>
         <div id="health-content"></div>
         <button onclick="HEALTH.render()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Health Check</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Math Health</div></div>
+        <div id="math-health-content" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button onclick="renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Check Now</button>
+          <button onclick="MathInvariants.resetSession();renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Reset Session Counts</button>
+        </div>
       </div>
       <div class="card">
         <div class="settings-section">
@@ -2308,6 +2328,53 @@ function computeFinancialModel(state, now) {
   // Calendar — built fresh here.
   const calendarEntries = buildCalendarEntries(state, now);
 
+  // Layer 2 Part 2.5 — MODEL fields lifted out of renderers so invariants
+  // can assert against state, not DOM scrape.
+
+  // tomorrowBill: the unpaid non-viaRent debt due exactly tomorrow, or null.
+  // Replaces the inline `_nextDebt` lookup at the dashboard hero context renderer.
+  const tomorrowBill = (() => {
+    const debt = (state.debts || []).find(d => {
+      if (d.paid || d.viaRent || !d.delayDate) return false;
+      try {
+        const due = new Date((d.delayDate + '').split('T')[0] + 'T00:00:00');
+        return Math.round((due - todayMidnight) / 86400000) === 1;
+      } catch (_) { return false; }
+    });
+    return debt ? { name: debt.name, daysOut: 1, delayDate: debt.delayDate } : null;
+  })();
+
+  // shouldShowSpendingAlert: collapses the trajectory-vs-pace decision PLUS
+  // the zero-spend defensive belt PLUS the phase suppression. Two renderer
+  // sites previously inlined the same logic with slight drift.
+  const shouldShowSpendingAlert = (() => {
+    const phase = (typeof getMonthPhase === 'function') ? getMonthPhase() : 'MID_MONTH';
+    if (phase === 'PRE_PAYDAY' || phase === 'PAYDAY') return false; // phase suppression
+    const days = Math.max(1, daysToPayday);
+    const recentPace = (typeof getDiscretionarySpend === 'function')
+      ? getDiscretionarySpend(now.getTime() - 7 * 86400000, now.getTime()) / 7
+      : 0;
+    const minDaily = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
+    const todaySpentLocal = todaySpent;
+    const liveBal = state.bal || 0;
+    const dueTotal = billsTotalCommitted; // bills before payday
+    const balCoversWithMinDaily = liveBal >= dueTotal + (days * minDaily);
+    const zeroSpendSuppresses = todaySpentLocal === 0 && balCoversWithMinDaily;
+    if (zeroSpendSuppresses) return false;
+    const trajectoryUnderfunded = liveBal - (recentPace * days) < dueTotal;
+    if (!trajectoryUnderfunded) return false;
+    // Mirror existing renderers: also require shouldShowAlert (paydayReceived gate).
+    const shouldShowAlert = !(state.paydayReceived &&
+      (typeof getGenuineSurplus === 'function' ? getGenuineSurplus() >= 0 : false));
+    return shouldShowAlert;
+  })();
+
+  // survivalForecast: cache the day-by-day forecast loop so renderers AND
+  // the borrow-recommendation-sane invariant share one computation.
+  const survivalForecast = (typeof getSurvivalForecast === 'function')
+    ? (() => { try { return getSurvivalForecast(); } catch (_) { return null; } })()
+    : null;
+
   return {
     todayISO, todayMonth, todayYear,
     paydayDate, daysToPayday,
@@ -2341,6 +2408,11 @@ function computeFinancialModel(state, now) {
     trips, goals, provisions,
     postWrxSurplus, wrxImpact,
 
+    // Layer 2 Part 2.5 — state-based fields for MathInvariants.
+    tomorrowBill,
+    shouldShowSpendingAlert,
+    survivalForecast,
+
     warnings: []
   };
 }
@@ -2368,6 +2440,7 @@ function _modelStub() {
     calendarEntries: new Map(),
     trips: [], goals: [], provisions: [],
     postWrxSurplus: 0, wrxImpact: null,
+    tomorrowBill: null, shouldShowSpendingAlert: false, survivalForecast: null,
     warnings: ['model failed to compute — using stub']
   };
 }
@@ -2381,6 +2454,361 @@ function refreshModel() {
     try { console.error('[MODEL] refresh failed; using stub:', e); } catch (_) {}
     MODEL = _modelStub();
   }
+}
+
+// ─── GUARDIAN LAYER 2 — MathInvariants ────────────────────────────────────
+// Runtime cross-tile and state-shape invariants. Runs at end of every
+// renderAll(). Surfaces tiered banner/card on violation. NEVER crashes
+// renderAll — every check wrapped in try/catch.
+//
+// Tiers:
+//   warn     — banner, dismissible per session, no escalation
+//   fail     — banner, dismiss once → 2nd violation in same session = card
+//   critical — non-dismissible card immediately
+//
+// Session = continuous app-open, 5-min background timeout, day rollover.
+// Performance budget: ≤ 5ms total per renderAll.
+//
+// See MISSION-GUARDIAN-LAYER-2.md for full spec.
+const MathInvariants = {
+  invariants: [
+    // ─── critical-tier (data corruption) ────────────────────────────
+    {
+      name: 'state-shape-balance',
+      tier: 'critical',
+      anchor: 'data-shape',
+      check() {
+        if (!isFinite(S.bal)) {
+          return { displayValue: String(S.bal), expected: 'finite number',
+            details: 'S.bal is ' + (S.bal === undefined ? 'undefined' : S.bal === null ? 'null' : isNaN(S.bal) ? 'NaN' : 'Infinity') };
+        }
+        return null;
+      },
+      message(v) { return 'Balance corrupted: S.bal is ' + v.displayValue + '. Restore from snapshot in Settings.'; },
+    },
+    {
+      name: 'state-shape-txns',
+      tier: 'critical',
+      anchor: 'data-shape',
+      check() {
+        if (!Array.isArray(S.txns)) {
+          return { displayValue: typeof S.txns, expected: 'array', details: 'S.txns is not an array' };
+        }
+        for (let i = 0; i < S.txns.length; i++) {
+          const t = S.txns[i];
+          if (!t || typeof t.ts !== 'number' || !isFinite(t.ts)) {
+            return { displayValue: 'txn[' + i + '].ts = ' + (t && t.ts), expected: 'finite number',
+              details: 'Transaction at index ' + i + ' has invalid timestamp' };
+          }
+          if (typeof t.amt !== 'number' || !isFinite(t.amt)) {
+            return { displayValue: 'txn[' + i + '].amt = ' + (t && t.amt), expected: 'finite number',
+              details: 'Transaction at index ' + i + ' has invalid amount' };
+          }
+        }
+        return null;
+      },
+      message(v) { return 'Transaction data corrupted: ' + v.details + '.'; },
+    },
+    {
+      name: 'state-shape-paidbills',
+      tier: 'critical',
+      anchor: 'data-shape',
+      check() {
+        if (!S.paidBills) return null;
+        const keys = Object.keys(S.paidBills);
+        for (const k of keys) {
+          // guardian-allow: no-direct-paidbills-access — this invariant's job is to verify the shape of paidBills values; cannot delegate to isThisMonthlyBillPaid which already assumes shape (permanent — invariant validating the canonical helper's input contract)
+          if (S.paidBills[k] !== true) {
+            // guardian-allow: no-direct-paidbills-access — same reason: shape-of-paidBills check must read raw values to report what's wrong (permanent — invariant validating the canonical helper's input contract)
+            return { displayValue: 'paidBills["' + k + '"] = ' + JSON.stringify(S.paidBills[k]),
+              expected: 'true', details: 'paidBills value should always be exactly true' };
+          }
+        }
+        return null;
+      },
+      message(v) { return 'Bills data corrupted: ' + v.details + '.'; },
+    },
+
+    // ─── fail-tier (real bugs, dismissible once) ────────────────────
+    {
+      name: 'cycle-spend-bounded',
+      tier: 'fail',
+      anchor: 'RC1',
+      check() {
+        const cycleSpent = MODEL.cycleSpent || 0;
+        const income = S.income || 0;
+        const debtsBuffer = (typeof getActiveDebtsDueBeforePayday === 'function')
+          ? getActiveDebtsDueBeforePayday() : 0;
+        const cap = income + debtsBuffer;
+        // Note: lax filter via getDiscretionarySpend means Bills/Car Loan/CC counted.
+        // RC1 was orders-of-magnitude (9950 vs 7282) — invariant catches that class.
+        // Margin allows for legitimate post-payday triage scenarios.
+        if (cycleSpent > cap * 1.2) { // 20% headroom for triage
+          return { displayValue: '$' + cycleSpent.toFixed(2),
+            expected: '≤ $' + cap.toFixed(2) + ' (income + debts-due)',
+            details: 'cycleSpent=' + cycleSpent.toFixed(2) + ' exceeds income+debts ' + cap.toFixed(2) };
+        }
+        return null;
+      },
+      message(v) { return 'Cycle spend ' + v.displayValue + ' exceeds ' + v.expected + '. Hero "this cycle" line may be wrong.'; },
+    },
+    {
+      name: 'borrow-recommendation-sane',
+      tier: 'fail',
+      anchor: 'RC8',
+      check() {
+        const f = MODEL.survivalForecast;
+        if (!f) return null; // no forecast available — can't assert
+        if (typeof f.recommendBorrow !== 'number' || !isFinite(f.recommendBorrow)) {
+          return { displayValue: String(f.recommendBorrow), expected: 'finite number ≥ 0',
+            details: 'recommendBorrow is not a finite number' };
+        }
+        if (f.recommendBorrow < 0) {
+          return { displayValue: '$' + f.recommendBorrow.toFixed(2), expected: '≥ 0',
+            details: 'borrow recommendation must be non-negative' };
+        }
+        const balCovers = (S.bal || 0) >= (f.upcomingBillsTotal || 0)
+          + (f.upcomingDebtsTotal || 0) + (f.minLivingCosts || 0);
+        if (balCovers && f.recommendBorrow > 0) {
+          return { displayValue: '$' + f.recommendBorrow.toFixed(2), expected: '$0 (balance covers needs)',
+            details: 'Balance ' + (S.bal || 0).toFixed(2) + ' covers bills+debts+living, no borrow required' };
+        }
+        return null;
+      },
+      message(v) { return 'Borrow recommendation off: ' + v.details + '.'; },
+    },
+    {
+      name: 'roundup-direction',
+      tier: 'fail',
+      anchor: 'data-shape',
+      check() {
+        if (!Array.isArray(S.txns)) return null;
+        for (let i = 0; i < S.txns.length; i++) {
+          const t = S.txns[i];
+          if (t && t._isRoundup && (typeof t.amt !== 'number' || !(t.amt > 0))) {
+            return { displayValue: 'txn[' + i + '].amt = ' + (t && t.amt),
+              expected: '> 0',
+              details: '_isRoundup transaction with non-positive amount — savings contract violated' };
+          }
+        }
+        return null;
+      },
+      message(v) { return 'Round-up transaction malformed: ' + v.details + '.'; },
+    },
+    {
+      name: 'tomorrow-bill-matches-state',
+      tier: 'fail',
+      anchor: 'RC3',
+      check() {
+        const tb = MODEL.tomorrowBill;
+        if (!tb) return null; // no tomorrow bill claimed — vacuously true
+        const dbp = MODEL.debtsBeforePayday || [];
+        const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+        const matchingDebt = dbp.find(d => {
+          if (d.name !== tb.name) return false;
+          if (!d.delayDate) return false;
+          try {
+            const due = new Date((d.delayDate + '').split('T')[0] + 'T00:00:00');
+            return Math.round((due - todayMidnight) / 86400000) === 1;
+          } catch (_) { return false; }
+        });
+        if (!matchingDebt) {
+          return { displayValue: tb.name + ' (per MODEL.tomorrowBill)',
+            expected: 'matching debt in MODEL.debtsBeforePayday due tomorrow',
+            details: 'MODEL.tomorrowBill claims "' + tb.name + '" hits tomorrow but no matching debt found' };
+        }
+        return null;
+      },
+      message(v) { return 'Tomorrow-bill state mismatch: ' + v.details + '.'; },
+    },
+    {
+      name: 'alert-coherence',
+      tier: 'fail',
+      anchor: 'RC4',
+      check() {
+        const todaySpent = (typeof getTodaySpent === 'function') ? getTodaySpent() : MODEL.todaySpent;
+        if (todaySpent !== 0) return null; // only assert the zero-spend suppression case
+        const liveBal = S.bal || 0;
+        const minDaily = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
+        const days = MODEL.daysToPayday || 1;
+        const dueTotal = MODEL.totalCommittedBeforePayday || 0;
+        const balCovers = liveBal >= dueTotal + (days * minDaily);
+        if (balCovers && MODEL.shouldShowSpendingAlert) {
+          return { displayValue: 'true', expected: 'false (zero-spend day with balance covering needs)',
+            details: 'Today spend is $0 and balance covers bills+min-daily, but shouldShowSpendingAlert is true' };
+        }
+        return null;
+      },
+      message(v) { return 'Spending alert firing on zero-spend day with sufficient balance — suppression broken.'; },
+    },
+    {
+      name: 'consistency-fail-not-marked-ok',
+      tier: 'fail',
+      anchor: 'RC10',
+      check() {
+        if (typeof AUDITOR === 'undefined' || !Array.isArray(AUDITOR.log)) return null;
+        const recent = AUDITOR.log.slice(0, 50); // recent N entries (log is reverse-chrono)
+        for (const entry of recent) {
+          if (entry && entry.action === 'CONSISTENCY_FAIL' && entry.ok === true) {
+            return { displayValue: 'ok:true on CONSISTENCY_FAIL @ ' + entry.time,
+              expected: 'ok:false',
+              details: 'CONSISTENCY_FAIL audit entry marked ok:true (RC10 regression)' };
+          }
+        }
+        return null;
+      },
+      message(v) { return 'Audit log lying: ' + v.details + '.'; },
+    },
+  ],
+
+  // Run all invariants. Returns array of violation objects.
+  // Each violation: { name, tier, anchor, message, displayValue, expected, details }
+  check() {
+    const violations = [];
+    for (const inv of this.invariants) {
+      try {
+        const result = inv.check();
+        if (result) {
+          violations.push({
+            name: inv.name,
+            tier: inv.tier,
+            anchor: inv.anchor,
+            message: inv.message ? inv.message(result) : (result.details || inv.name),
+            displayValue: result.displayValue,
+            expected: result.expected,
+            details: result.details,
+          });
+        }
+      } catch (e) {
+        // An invariant throwing is itself a finding — log but don't crash.
+        try { console.warn('[invariants] "' + inv.name + '" threw:', e.message); } catch (_) {}
+      }
+    }
+    return violations;
+  },
+
+  // Session-tracking + reset rules.
+  _shouldResetSession(now) {
+    if (!S._invariantSessionTs) return true;
+    // 5 minutes background → reset
+    if (S._invariantsHiddenAt && (now - S._invariantsHiddenAt) > 5 * 60 * 1000) return true;
+    // Day rollover → reset
+    const lastDay = new Date(S._invariantSessionTs).toDateString();
+    const todayStr = new Date(now).toDateString();
+    if (lastDay !== todayStr) return true;
+    return false;
+  },
+  _ensureSession() {
+    const now = Date.now();
+    if (this._shouldResetSession(now)) {
+      S._invariantViolationCounts = {};
+      S._invariantsDismissedSession = {};
+      S._invariantsHiddenAt = null;
+      S._invariantSessionTs = now;
+    }
+  },
+
+  // Render a banner (warn / first-time fail) or card (critical / escalated fail).
+  // Insertion points: banner at top of dashboard sticky; card inside hero-section.
+  render(violations) {
+    this._ensureSession();
+    if (!S._invariantViolationCounts) S._invariantViolationCounts = {};
+    if (!S._invariantsDismissedSession) S._invariantsDismissedSession = {};
+
+    const banner = document.getElementById('math-invariant-banner');
+    const card = document.getElementById('math-invariant-card');
+
+    // Categorize: critical → card; fail (escalated) → card; warn / fail (first) → banner
+    const cardViolations = [];
+    const bannerViolations = [];
+    for (const v of violations) {
+      // Bump the count on this render pass
+      const counts = S._invariantViolationCounts;
+      if (!counts[v.name]) counts[v.name] = { count: 0, firstSeenTs: Date.now() };
+      counts[v.name].count++;
+      counts[v.name].lastSeenTs = Date.now();
+
+      const dismissed = !!S._invariantsDismissedSession[v.name];
+      if (v.tier === 'critical') {
+        cardViolations.push(v);
+      } else if (v.tier === 'fail' && counts[v.name].count >= 2 && !dismissed) {
+        // Second violation in same session → escalate to non-dismissible card
+        cardViolations.push(v);
+      } else if (!dismissed) {
+        bannerViolations.push(v);
+      }
+    }
+
+    // Render banner (first violation of warn/fail tier)
+    if (banner) {
+      if (bannerViolations.length) {
+        const v = bannerViolations[0];
+        const msg = document.getElementById('mib-msg');
+        if (msg) msg.textContent = '⚠️ ' + v.message;
+        banner.dataset.rule = v.name;
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
+    // Render card (critical or escalated)
+    if (card) {
+      if (cardViolations.length) {
+        const msgEl = document.getElementById('mic-msg');
+        const detEl = document.getElementById('mic-details');
+        if (msgEl) msgEl.innerHTML = cardViolations.map(v => '<div style="margin-bottom:6px">• ' + v.message + '</div>').join('');
+        if (detEl) detEl.textContent = cardViolations.map(v => v.details || '').join(' | ');
+        card.style.display = 'block';
+      } else {
+        card.style.display = 'none';
+      }
+    }
+
+    // Persist session state
+    try { save(); } catch (_) {}
+  },
+
+  dismiss(ruleName) {
+    if (!S._invariantsDismissedSession) S._invariantsDismissedSession = {};
+    S._invariantsDismissedSession[ruleName] = true;
+    const banner = document.getElementById('math-invariant-banner');
+    if (banner) banner.style.display = 'none';
+    try { save(); } catch (_) {}
+  },
+
+  resetSession() {
+    S._invariantViolationCounts = {};
+    S._invariantsDismissedSession = {};
+    S._invariantsHiddenAt = null;
+    S._invariantSessionTs = Date.now();
+    try { save(); } catch (_) {}
+    try { this.render(this.check()); } catch (_) {}
+  },
+
+  showDetails(ruleName) {
+    // Find the most recent violation of this rule and surface its details inline.
+    const v = (this._lastViolations || []).find(x => x.name === ruleName);
+    if (!v) return;
+    alert('Math invariant: ' + v.name +
+          '\n\nTier: ' + v.tier +
+          '\nAnchor: ' + v.anchor +
+          '\n\n' + v.message +
+          '\n\nExpected: ' + (v.expected || 'n/a') +
+          '\nActual: ' + (v.displayValue || 'n/a'));
+  },
+};
+
+// Visibility tracking for the 5-min background-reset rule.
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('visibilitychange', () => {
+    try {
+      if (document.visibilityState === 'hidden') {
+        S._invariantsHiddenAt = Date.now();
+        save();
+      }
+    } catch (_) {}
+  });
 }
 
 // Fix 6A: dynamic debt recommendation
@@ -2772,14 +3200,11 @@ function renderAnalysisTab() {
   const days = daysLeft(S.payday);
   const liveBal = getLiveBal();
   const allBillsDue = getBillsDue().reduce((s,b) => s+b.amt, 0);
-  // RC4: see renderAlerts — last-7-day pace + zero-spend suppression.
-  const recentPace = getDiscretionarySpend(Date.now() - 7*86400000, Date.now()) / 7;
 
   // --- Trajectory warning ---
-  const shouldShowAlert = !(S.paydayReceived && getGenuineSurplus() >= 0);
-  const _minDaily2 = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
-  const _zeroToday2 = getTodaySpent() === 0 && liveBal >= allBillsDue + (days * _minDaily2);
-  if (shouldShowAlert && liveBal - (recentPace * days) < allBillsDue && !_zeroToday2) {
+  // Layer 2 Part 2.5: gate on MODEL.shouldShowSpendingAlert (lifted from
+  // inline pace+suppression logic; same decision lives in MODEL once).
+  if (MODEL && MODEL.shouldShowSpendingAlert) {
     html += '<div class="alert bad" style="margin-bottom:12px"><strong>&#x26A0;&#xFE0F; Spending alert.</strong> At this rate you will not cover bills before payday. Cut discretionary spending now.</div>';
   }
 
@@ -3156,16 +3581,10 @@ function renderAll() {
     if (_maxDayCtx) {
       let ctxText = '', ctxColor = 'var(--text3)';
       if (_ddb < 20) {
-        const _nextDebt = (_m.debtsBeforePayday || [])[0];
-        if (_nextDebt && _nextDebt.delayDate) {
-          const _t0 = new Date(); _t0.setHours(0,0,0,0);
-          const _due = new Date((_nextDebt.delayDate + '').split('T')[0] + 'T00:00:00');
-          const _daysOut = Math.round((_due - _t0) / 86400000);
-          const _when = _daysOut === 1 ? ' hits tomorrow' : _daysOut === 0 ? ' due today' : _daysOut > 0 ? ' due in ' + _daysOut + 'd' : ' due soon';
-          ctxText = 'Tight — ' + _nextDebt.name + _when;
-        } else {
-          ctxText = 'Tight — cover your essentials first';
-        }
+        // Layer 2 Part 2.5: read from MODEL.tomorrowBill (state-based, not inline date math)
+        const _next = _m.tomorrowBill;
+        ctxText = _next ? 'Tight — ' + _next.name + ' hits tomorrow'
+                        : 'Tight — cover your essentials first';
         ctxColor = 'var(--red)';
       } else if (_ddb < 30) {
         ctxText = 'Cautious — cover your essentials first';
@@ -3227,6 +3646,62 @@ function renderAll() {
   renderEmergencyFundStatus();
   if ($('pg-cal') && $('pg-cal').classList.contains('active')) renderCalendar();
   if ($('pg-chat') && $('pg-chat').classList.contains('active') && !_chatRendering) renderChatTab();
+  if ($('pg-settings') && $('pg-settings').classList.contains('active')) {
+    try { renderMathHealth(); } catch (_) {}
+  }
+
+  // Layer 2 — runtime invariants. NEVER crash renderAll: every check is
+  // wrapped in try/catch internally; this outer try/catch is the second belt.
+  try {
+    if (typeof MathInvariants !== 'undefined') {
+      const _violations = MathInvariants.check();
+      MathInvariants._lastViolations = _violations;
+      MathInvariants.render(_violations);
+    }
+  } catch (e) {
+    try { console.warn('[invariants] render failed:', e.message); } catch (_) {}
+  }
+}
+
+// Layer 2 — Settings Math Health panel renderer.
+function renderMathHealth() {
+  const el = document.getElementById('math-health-content');
+  if (!el) return;
+  let violations = [];
+  try { violations = MathInvariants.check(); } catch (e) {
+    el.innerHTML = '<div style="color:var(--red)">Math invariants threw: ' + (e && e.message) + '</div>';
+    return;
+  }
+  const counts = (S._invariantViolationCounts || {});
+  const ts = new Date().toLocaleTimeString('en-AU');
+  let html = '';
+  if (!violations.length) {
+    html += '<div style="color:var(--green);font-weight:600">✅ All ' + MathInvariants.invariants.length + ' invariants passing</div>';
+  } else {
+    const byTier = { critical: [], fail: [], warn: [] };
+    violations.forEach(v => byTier[v.tier].push(v));
+    if (byTier.critical.length) html += '<div style="color:var(--red);font-weight:700;margin-bottom:6px">🚨 ' + byTier.critical.length + ' CRITICAL violation(s)</div>';
+    if (byTier.fail.length)     html += '<div style="color:var(--amber);font-weight:600;margin-bottom:6px">⚠️ ' + byTier.fail.length + ' FAIL violation(s)</div>';
+    if (byTier.warn.length)     html += '<div style="color:var(--text3);margin-bottom:6px">' + byTier.warn.length + ' WARN violation(s)</div>';
+    html += '<div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-top:8px">';
+    violations.forEach(v => {
+      html += '<div style="padding:4px 0">[' + v.tier + '] <strong>' + v.name + '</strong>: ' + (v.details || v.message) + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:10px">Last check: ' + ts + '</div>';
+  // Recent violation history (last 24h via session counts)
+  const trackedRules = Object.keys(counts);
+  if (trackedRules.length) {
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">' +
+      '<div style="margin-bottom:4px;text-transform:uppercase;font-weight:600">Session counts</div>';
+    trackedRules.forEach(rule => {
+      const c = counts[rule];
+      html += '<div style="font-family:var(--mono)">' + rule + ' — ' + c.count + ' occurrence' + (c.count === 1 ? '' : 's') + '</div>';
+    });
+    html += '</div>';
+  }
+  el.innerHTML = html;
 }
 
 function renderEmergencyFundStatus() {
@@ -3419,17 +3894,11 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   if (liveBal < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Overdrawn.</strong> Stop all discretionary spending now.</div>';
   else if (shouldShowAlert && safe < 0) c.innerHTML += '<div class="alert bad fade-up"><strong>Bills won\'t clear.</strong> You\'re ' + fmtS(safe) + ' short before payday.</div>';
   else if (shouldShowAlert && safe < 200) c.innerHTML += '<div class="alert warn fade-up"><strong>Very tight.</strong> Only ' + fmt(safe) + ' left after bills.</div>';
-  // RC4: trajectory alert based on last-7-day pace (was getAvgDailySpend which
-  // weights heavily on post-payday triage and produces stale projections).
-  // Suppressed in PRE_PAYDAY/PAYDAY (existing) and additionally when today's
-  // spend is $0 AND balance already covers bills + days × minDaily — no false
-  // alarm at zero-spend mid-cycle.
-  const days = daysLeft(S.payday);
-  const recentPace = getDiscretionarySpend(Date.now() - 7*86400000, Date.now()) / 7;
-  const alertPhase = getMonthPhase();
-  const _minDaily = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
-  const _zeroToday = getTodaySpent() === 0 && liveBal >= dueTotal + (days * _minDaily);
-  if (shouldShowAlert && dueTotal > 0 && liveBal - (recentPace * days) < dueTotal && alertPhase !== 'PRE_PAYDAY' && alertPhase !== 'PAYDAY' && !_zeroToday) {
+  // Layer 2 Part 2.5: gate on MODEL.shouldShowSpendingAlert. The trajectory
+  // pace + zero-spend suppression + phase-suppression decision now lives in
+  // MODEL.shouldShowSpendingAlert (computeFinancialModel) so renderers
+  // converge and Layer 2's alert-coherence invariant has state to assert on.
+  if (MODEL && MODEL.shouldShowSpendingAlert && dueTotal > 0) {
     c.innerHTML += '<div class="alert bad fade-up"><strong>Spending alert.</strong> At this rate you will not cover bills before payday.</div>';
   }
   // Cap note
