@@ -261,23 +261,33 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   invariant target (it's a single-tile filter scope problem).
 - **Status:** open
 
-## 18. Add A Bill view — May entries appear less populated than April
-- **Bug:** Phone walk on May 5 noted that the Add-A-Bill / current-month
-  bill view surfaces fewer entries in May than were visible in April.
-  Could be: (a) `BILLS` array schema continuity broken between months,
-  (b) `isBillDueThisMonth` filtering too aggressively for May, (c)
-  `getExpandedBills` silently dropping a recurring source bill.
+## 18. Add A Bill view — May entries appear less populated than April — RESOLVED-NO-BUG
+- **Bug (reported):** Phone walk on May 5 noted that the Add-A-Bill /
+  current-month bill view surfaces fewer entries in May than were
+  visible in April.
 - **Source:** John phone walk 2026-05-05 🔴
-- **Coverage:** MI-14 `bill-recurrence-coherent` (Mission D, commit
-  pending) catches case (c) only — fires when `getExpandedBills` drops
-  a recurring source bill from its expansion. MI-14 is a coherence
-  guard for expansion drops, **not a fix for #18**. Cases (a) and (b)
-  need Mission B investigation.
-- **Repro needed:** yes — capture both April and May snapshots, diff
-  the `Add A Bill` rendered list against `S.BILLS` to identify which
-  case applies.
-- **Fix bundle:** Mission B (bill state lifecycle)
-- **Status:** open
+- **Investigation (Mission B follow-up, 2026-05-05):** Empirical probe
+  against the fresh fixture's BILLS schema (14 entries) found:
+  - Bills tab `#bills-grouped` (the most likely view John meant):
+    May = 13 visible, April = 12 visible. **May has MORE, not fewer.**
+  - Settings BILLS editor `#settings-bills`: 14 in both months.
+  - Plan Mode + Add A Bill modal: not month-conditional.
+  - No render-filter bug found in any view.
+  Three cognitive sources for the inverted perception:
+  (1) NRMA was `recurring: false` (Anomaly A in STATE-AUDIT) hiding
+      a yearly bill that *should* have shown in May — fixed in same
+      commit by flipping to `recurring: true, freq: 'yearly', dueMonth: 4`.
+      Post-fix May count = 14 (vs April 12) — the gap widens.
+  (2) May has 3 active calendar debts (Afterpay, Borrowed from Michael,
+      NRMA-as-debt) vs April's 0; visual intensity may have been
+      conflated with bill-count.
+  (3) April's catastrophic events (Property Deposit, debt cleanup)
+      created retrospective felt-intensity.
+- **Resolution:** No code bug. Closing as perception inversion.
+  Schema fix (NRMA recurring) shipped in same commit resolves the
+  Anomaly A issue and makes May's count match the yearly-bill
+  expectation.
+- **Status:** closed (resolved-no-bug)
 
 ## 19. Forecast doesn't net upcoming payday salary — FIXED Mission C
 - **Bug:** Survival forecast tile / borrow recommendation did not
@@ -478,6 +488,34 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   actively look for the same pattern elsewhere — fix is fresh in
   muscle memory.
 - **Status:** open (deferred — foundation hardening)
+
+## 32. Migration auto-delete pattern lacks user-visible surfacing
+- **Bug:** Schema-cleanup migrations (`_billsCleanedV1` at L1271-1272,
+  `seedV16` at L7000-7008) silently remove BILLS entries via
+  hardcoded "ghost" name lists, with no user-visible notification.
+  John's 5 missing bills (Pet Food, Food at Work, Parking — CBD
+  Secure, Afterpay instalment, Fuel) were largely the result of
+  these cleanups: 4 of 5 fall in `seedV16`'s GHOST_NAMES set; the
+  Afterpay instalment is double-targeted by `_billsCleanedV1`'s
+  _DEFUNCT_BILLS list. Only Fuel's removal is plausibly user-driven
+  (via the confirmed `deleteBill()` modal at L4514).
+- **Why this matters:** these migrations run once per device, gated
+  by flags + (in seedV16's case) a `txns.length ≤ 10` check.
+  Intentional one-time cleanup, NOT a regression. But there's a UX
+  gap: a user who actually wanted to keep one of those bills has
+  no recovery path other than re-adding via Add A Bill modal — and
+  may not know the bill was removed in the first place.
+- **Source:** Mission B follow-up investigation 2026-05-05
+- **Pattern for future migrations:** surface a toast like "Cleaned
+  up N outdated bills" with an undo link (mirrors the
+  `showUndoToast` pattern already used by `deleteBill`). Or, more
+  conservative: log to AUDITOR.log with a `MIGRATION` action so the
+  user can audit migrations via Settings → Math Health.
+- **Repro needed:** no — pattern is observable in code.
+- **Fix bundle:** future-only. Past migrations are sticky once flag
+  is set; can't retroactively notify. Lower priority.
+- **Status:** open (deferred — pattern hardening for future
+  migrations)
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies

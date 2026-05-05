@@ -1,1 +1,3322 @@
-{"S":{"bal":381.35,"txns":[{"id":0,"amt":7282.33,"note":"Salary — Manhattan Associates","cat":"Income","ts":1776121201000,"income":true,"_balAffected":true},{"id":1,"amt":2500,"note":"CC repayment — Virgin Money (pending)","cat":"Debt repayment","ts":1776121202000,"income":false,"_balAffected":true},{"id":2,"amt":1170,"note":"Car Loan Firstmac — regular + missed payment + fees","cat":"Debt repayment","ts":1776121203000,"income":false,"_balAffected":true},{"id":3,"amt":250.84,"note":"Afterpay — cleared","cat":"Debt repayment","ts":1776121204000,"income":false,"_balAffected":true},{"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":1776121205000,"income":false,"_balAffected":true},{"id":5,"amt":0.9,"note":"China Holiday round-ups","cat":"Savings","ts":1776121206000,"income":false,"_balAffected":true},{"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":1776121207000,"income":true,"_balAffected":true},{"amt":780,"note":"Car Loan — Firstmac — paid","cat":"Loan","ts":1776176102273,"income":false,"_balAffected":true},{"amt":550,"note":"Owed to Michael — cleared","cat":"Debt repayment","ts":1776178940008,"income":false,"_balAffected":true},{"amt":51,"note":"Car pink slip","cat":"Transport / Fuel","ts":1776214977602,"income":false,"_balAffected":true},{"amt":33.62,"note":"Groceries","cat":"Food / Coffee","ts":1776216510674,"income":false,"_balAffected":true},{"amt":14.73,"note":"Weed accessories","cat":"Shopping","ts":1776217013669,"income":false,"_balAffected":true},{"amt":552.54,"note":"WRX Green Slip — cleared","cat":"Debt repayment","ts":1776243762236,"income":false,"_balAffected":true},{"amt":462,"note":"WRX Rego — cleared","cat":"Debt repayment","ts":1776243907922,"income":false,"_balAffected":true},{"amt":140,"note":"Parking Fine — cleared","cat":"Debt repayment","ts":1776244257389,"income":false,"_balAffected":true},{"amt":10.5,"note":"Lunch","cat":"Food / Coffee","ts":1776303974205,"income":false,"_balAffected":true},{"amt":70,"note":"Vape 😭","cat":"Other","ts":1776303993582,"income":false,"_balAffected":true},{"amt":177.86,"note":"Claude Max upgrade — 20x plan","cat":"Subscription","ts":1776254400000,"income":false,"_balAffected":true},{"amt":33.78,"note":"Aldi Kirrawee — groceries","cat":"Food / Coffee","ts":1776254401000,"income":false,"_balAffected":true},{"amt":194,"note":"Optus — Phone + Internet","cat":"Bills","ts":1776340800000,"income":false,"_balAffected":true},{"amt":32.39,"note":"ZLR Ph Tonkin — pharmacy","cat":"Shopping","ts":1776340802000,"income":false,"_balAffected":true},{"amt":10.5,"note":"KJ Yogurt","cat":"Food / Coffee","ts":1776340803000,"income":false,"_balAffected":true},{"amt":13.11,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776340804000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776340805000,"income":false,"_balAffected":true},{"amt":4.98,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776427200000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776427201000,"income":false,"_balAffected":true},{"amt":21.21,"note":"Lunch","cat":"Food / Coffee","ts":1776398059697,"income":false,"_balAffected":true},{"amt":9,"note":"Snacks","cat":"Food / Coffee","ts":1776398604566,"income":false,"_balAffected":true},{"amt":23.15,"note":"Groceries","cat":"Food / Coffee","ts":1776417089172,"income":false,"_balAffected":true},{"amt":13,"note":"Ice cream","cat":"Food / Coffee","ts":1776422982574,"income":false,"_balAffected":true},{"amt":20,"note":"Sunglasses","cat":"Shopping","ts":1776478615230,"income":false,"_balAffected":true},{"amt":22.7,"note":"Lunch","cat":"Food / Coffee","ts":1776478626297,"income":false,"_balAffected":true},{"amt":8.5,"note":"Cookie","cat":"Food / Coffee","ts":1776487809925,"income":false,"_balAffected":true},{"amt":13,"note":"Chips","cat":"Food / Coffee","ts":1776487862401,"income":false,"_balAffected":true},{"amt":16.99,"note":"YouTube Premium — paid","cat":"Streaming","ts":1776553081015,"income":false,"_balAffected":true},{"amt":20.61,"note":"Coffe date","cat":"Food / Coffee","ts":1776575898806,"income":false,"_balAffected":true},{"amt":30,"note":"Food for party","cat":"Food / Coffee","ts":1776585499142,"income":false,"_balAffected":true},{"amt":14,"note":"Coffee","cat":"Food / Coffee","ts":1776643533810,"income":false,"_balAffected":true},{"amt":6,"note":"Lollies","cat":"Food / Coffee","ts":1776656148210,"income":false,"_balAffected":true},{"amt":116,"note":"FIFA packs","cat":"Entertainment","ts":1776779989164,"income":false,"_balAffected":true},{"amt":120.47,"note":"Pet Insurance — cleared","cat":"Debt repayment","ts":1776819934293,"income":false,"_balAffected":true},{"amt":12.05,"note":"Bank fee","cat":"Adjustment","ts":1776897957264,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":12.1,"note":"Coffe and croissant","cat":"Food / Coffee","ts":1776905373463,"flagged":false,"_balAffected":true},{"amt":0.9,"note":"Round-up → China Holiday","cat":"Savings","ts":1776905373463,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":25.93,"note":"Lunch with gf","cat":"Food / Coffee","ts":1776915804851,"flagged":false,"_balAffected":true},{"amt":0.07,"note":"Round-up → China Holiday","cat":"Savings","ts":1776915804851,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":11.8,"note":"Coles","cat":"Food / Coffee","ts":1776922717338,"flagged":false,"_balAffected":true},{"amt":0.2,"note":"Round-up → China Holiday","cat":"Savings","ts":1776922717338,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":49.34,"note":"Paid for tickets to festival, transfer back in","cat":"Income","ts":1777000900970,"income":true,"_balAffected":true,"_isCorrection":true},{"amt":64.99,"note":"Vape previously was counted twice, removed and it updated balance","cat":"Adjustment","ts":1777001051335,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":19.1,"note":"Groceries","cat":"Food / Coffee","ts":1777020690126,"flagged":false,"_balAffected":true},{"amt":0.9,"note":"Round-up → China Holiday","cat":"Savings","ts":1777020690129,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":11.8,"note":"Groceries","cat":"Food / Coffee","ts":1777030304027,"flagged":false,"_balAffected":true},{"amt":0.2,"note":"Round-up → China Holiday","cat":"Savings","ts":1777030304027,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":23.99,"note":"Adobe — paid","cat":"Subscription","ts":1777067515299,"income":false,"_balAffected":true},{"amt":42,"note":"Lunch","cat":"Food / Coffee","ts":1777116157458,"flagged":false,"_balAffected":true},{"amt":12.75,"note":"Lunch ingredients","cat":"Food / Coffee","ts":1777168377274,"flagged":false,"_balAffected":true},{"amt":0.25,"note":"Round-up → China Holiday","cat":"Savings","ts":1777168377274,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":15.99,"note":"Spotify — paid","cat":"Streaming","ts":1777176167912,"income":false,"_balAffected":true},{"amt":40.83,"note":"Dinner","cat":"Food / Coffee","ts":1777200234570,"flagged":false,"_balAffected":true},{"amt":0.17,"note":"Round-up → China Holiday","cat":"Savings","ts":1777200234570,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":27.97,"note":"Breakfast","cat":"Food / Coffee","ts":1777249831182,"flagged":false,"_balAffected":true},{"amt":0.03,"note":"Round-up → China Holiday","cat":"Savings","ts":1777249831182,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":27.9,"note":"Lunch for gf","cat":"Food / Coffee","ts":1777260999506,"flagged":false,"_balAffected":true},{"amt":0.1,"note":"Round-up → China Holiday","cat":"Savings","ts":1777260999506,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":7.6,"note":"Coffee","cat":"Food / Coffee","ts":1777336190475,"flagged":false,"_balAffected":true},{"amt":0.4,"note":"Round-up → China Holiday","cat":"Savings","ts":1777336190475,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":35.98,"note":"Drinks at Club rose bay","cat":"Adjustment","ts":1777342940897,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":850,"note":"Mums help","cat":"Income","ts":1777372778074,"income":true,"_balAffected":true},{"amt":1023.06,"note":"NRMA KIA INSURANCE — cleared","cat":"Debt repayment","ts":1777416916188,"income":false,"_balAffected":true},{"amt":1017.78,"note":"NRMA INSURANCE COVERED BY MUM","cat":"Income","ts":1777416950956,"income":true,"_balAffected":true,"_isCorrection":true},{"amt":35,"note":"Top up car loan so it clears","cat":"Bills","ts":1777417069740,"flagged":false,"_balAffected":true},{"amt":138.99,"note":"Car sales advertisement for WRX LISTING","cat":"Adjustment","ts":1777429538966,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":31.19,"note":"Payment towards afterpay","cat":"Food / Coffee","ts":1777503101104,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.81,"note":"Round-up → China Holiday","cat":"Savings","ts":1777503101104,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":18.18,"note":"Breakfast","cat":"Food / Coffee","ts":1777505690310,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.82,"note":"Round-up → China Holiday","cat":"Savings","ts":1777505690310,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":149,"note":"Weed pen","cat":"Health","ts":1777526510444,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":10,"note":"Lunch","cat":"Food / Coffee","ts":1777526520902,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":35,"note":"Dinner","cat":"Food / Coffee","ts":1777589199163,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":3,"note":"Google Microsoft — paid","cat":"Fixed","ts":1777589269347,"income":false,"_balAffected":true},{"amt":9.5,"note":"Opal Travel - Train and Tram","cat":"Adjustment","ts":1777589345431,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":259.41,"note":"Teachers Health — cleared","cat":"Debt repayment","ts":1777603902524,"income":false,"_balAffected":true},{"amt":13.18,"note":"Breakfast","cat":"Food / Coffee","ts":1777603947864,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.82,"note":"Round-up → China Holiday","cat":"Savings","ts":1777603947864,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":15,"note":"Breakfast","cat":"Food / Coffee","ts":1777731763059,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":6,"note":"Coffee","cat":"Food / Coffee","ts":1777731783460,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":16,"note":"Pizza","cat":"Food / Coffee","ts":1777731804165,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":30,"note":"Wig","cat":"Shopping","ts":1777731818111,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":47,"note":"Groceries","cat":"Food / Coffee","ts":1777731851796,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":25,"note":"Half cost of groceries","cat":"Income","ts":1777731869409,"income":true,"_balAffected":true},{"amt":26.15,"note":"Dinner last night","cat":"Food / Coffee","ts":1777732059711,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.85,"note":"Round-up → China Holiday","cat":"Savings","ts":1777732059712,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":13.59,"note":"Opal Travel - Train and Tram","cat":"Adjustment","ts":1777732078816,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":19.6,"note":"Coffee","cat":"Food / Coffee","ts":1777771017425,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.4,"note":"Round-up → China Holiday","cat":"Savings","ts":1777771017425,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":73.62,"note":"Unlogged spend","cat":"Adjustment","ts":1777906899384,"income":false,"_balAffected":true,"_isCorrection":true},{"amt":447.97,"note":"Borrowed from Michael","cat":"Income","ts":1777930417250,"income":true,"_balAffected":true,"_isCorrection":true},{"amt":41.95,"note":"FIFA packs","cat":"Entertainment","ts":1777949223407,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.05,"note":"Round-up → China Holiday","cat":"Savings","ts":1777949223407,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":32.14,"note":"Uber eats","cat":"Food / Coffee","ts":1777949238822,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.86,"note":"Round-up → China Holiday","cat":"Savings","ts":1777949238822,"income":false,"_isRoundup":true,"_balAffected":true},{"amt":16.95,"note":"FIFA","cat":"Entertainment","ts":1777971194806,"flagged":false,"_balAffected":true,"_txnType":"expense"},{"amt":0.05,"note":"Round-up → China Holiday","cat":"Savings","ts":1777971194806,"income":false,"_isRoundup":true,"_balAffected":true}],"bonuses":[],"bid":5,"seg":"1m","income":7282,"payday":15,"carloan":23214.32,"carLoanRate":9.87,"cc":0,"carloanOriginal":37400,"ccLimit":6000,"monthlyHistory":[{"month":"2026-4","bal":569.5,"spent":9454.189999999997,"surplus":0,"ts":1777589166757}],"income_log":[],"iid":0,"debts":[{"id":7,"name":"Property Deposit (via Mum)","amt":5681.45,"rate":0,"priority":4,"paid":false,"monthlyPayment":2500,"viaRent":true,"notes":"Managed deposit savings account. $500/month rent + $2,500/month deposit savings. Account has ~$3,000. $5,681 was spent from savings and is being rebuilt at $2,500/month.","delayDate":"2027-01-15","originalAmt":5681.45,"rentComponent":500,"debtComponent":2500,"accountBalance":3000,"accountTarget":50000,"redirectGoal":"apartment"},{"id":8,"name":"Teachers Health","amt":259.41,"rate":0,"priority":1,"paid":true,"delayed":false,"delayDate":"2026-05-01","notes":"Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit","scanned":true,"scanConfidence":0.95,"paymentMethod":"BPay, credit card, online","reference":"9563248"},{"id":10,"name":"Afterpay — Concert Tickets","amt":93.56,"rate":0,"priority":1,"paid":false,"notes":"Concert tickets. $60 received back from friend for their ticket.","delayDate":"2026-05-14"},{"id":11,"name":"Borrowed from Michael","amt":450,"rate":0,"paid":false,"delayed":false,"delayDate":"2026-05-15","notes":"","viaRent":true,"priority":2},{"id":12,"name":"Borrowed from Michael","amt":500,"rate":0,"paid":false,"delayed":false,"delayDate":"2026-05-16","notes":"I borrowed $450, I pay back $500","priority":3}],"nextDebtId":13,"savingsBuckets":[{"id":0,"name":"China Holiday","goal":4000,"saved":75.1,"account":"Virgin Money"},{"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},{"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},{"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}],"nextBucketId":4,"paidBills":{"2026-5-KIA Loan — Firstmac-15":true,"2026-5-Amazon Prime-3":true,"2026-5-YouTube Premium-20":true,"2026-5-Adobe-25":true,"2026-5-Spotify-26":true,"2026-5-Google Microsoft-1":true,"2026-5-Teachers Health-1":true,"2026-5-Microsoft PC Game Pass-7":true,"2026-5-Claude Plus-9":true},"paydayReceived":false,"paydayReceivedDate":null,"paydayBannerDismissed":true,"roundUpsEnabled":true,"weekdayBudget":30,"weekendBudget":100,"lastOpenDate":"2026-05-05","wrxValue":25000,"debtStrategy":"avalanche","apiAlertThreshold":15,"wrxStatus":"listed","wrxListedDate":"2026-04-29","_lastSnapMonth":"2026-5","paydayPlanItems":{},"reconLog":[{"date":"2026-04-14T14:16:26.880Z","bal":3313.99,"reason":"Wasnt accounting for already transferring for car loan"},{"date":"2026-04-14T22:51:28.024Z","bal":2755.34,"reason":"Not sure where the difference is, I think it's the anthropic transaction as it was initially charged as USD"},{"date":"2026-04-15T09:11:54.582Z","bal":1500.34,"reason":"Bank fee"},{"date":"2026-04-17T00:00:00.000Z","bal":1025.89,"reason":"Reconciled against Virgin Money statement — 10 missing transactions added"},{"date":"2026-04-18T00:27:35.159Z","bal":953.44,"reason":"Currency Conversion fee"},{"date":"2026-04-20T08:26:43.184Z","bal":786.91,"reason":"Can't recognise the transaction diff"},{"date":"2026-04-20T15:32:28.553Z","bal":626.91,"reason":"FIFA points"},{"date":"2026-04-22T22:45:57.264Z","bal":378.39,"reason":"Bank fee"},{"date":"2026-04-24T03:21:40.970Z","bal":376.73,"reason":"Paid for tickets to festival, transfer back in"},{"date":"2026-04-24T03:24:11.335Z","bal":376.73,"reason":"Vape previously was counted twice, removed and it updated balance"},{"date":"2026-04-28T02:22:20.897Z","bal":108.77,"reason":"Drinks at Club rose bay"},{"date":"2026-04-28T22:55:50.956Z","bal":953.49,"reason":"NRMA INSURANCE COVERED BY MUM"},{"date":"2026-04-29T02:25:38.965Z","bal":779.5,"reason":"Car sales advertisement for WRX LISTING"},{"date":"2026-04-30T22:49:05.430Z","bal":522,"reason":"Opal Travel - Train and Tram"},{"date":"2026-05-02T14:27:58.816Z","bal":119,"reason":"Opal Travel - Train and Tram"},{"date":"2026-05-04T15:01:39.384Z","bal":25.38,"reason":"Unlogged spend"},{"date":"2026-05-04T21:33:37.250Z","bal":473.35,"reason":"Borrowed from Michael"}],"notifications":[{"id":"urgent_Balance_below__500__","type":"urgent","msg":"Balance below $500 — review spending before next bill","act":"Check bills","ts":1777961557573,"read":true},{"id":"info_Net_worth_up__96_110","type":"info","msg":"Net worth up $96,110 this month — keep going","act":null,"ts":1777961557574,"read":true},{"id":"eod-Tue May 05 2026","type":"warning","msg":"Daily budget exceeded — You spent $74.09 today — $52.53 over your $21.56 limit.","act":null,"ts":1777961643145,"read":true},{"id":"day-alert-Tue May 05 2026","type":"warning","msg":"Over daily budget — You're $71.18 over your $19.86 limit today.","act":null,"ts":1777971194809,"read":true},{"id":"info_Net_worth_up__96_093","type":"info","msg":"Net worth up $96,093 this month — keep going","act":null,"ts":1777971194824,"read":true}],"dismissedNotifications":["urgent_Owed_to_Michael__550","warning_Optus___Phone___Inte","warning_Car_Loan___Firstmac_","urgent_Parking_Fine__140_du","warning_YouTube_Premium__17_","weekly_Week_review__spent__"],"_currentSlyghtScore":491,"_wrxSlider":23500,"_wrxPriceUpdated":true,"_mumReframed":true,"mumAccountBalance":3000,"_billsCleanedV1":true,"_afterpayUpdated":true,"_paidBillsKeyMigrationV1":true,"superBalance":63429.15,"superFund":"Aware Super","superMonthlyContrib":1310.5,"superGrowthRate":0.085,"_superAdded":true,"_billsFreqMetaV1":true,"_debtAuditV1":true,"_notifCleanV1":true,"paydayPlanAutoExpanded":false,"_invariantsHiddenAt":1777978727927,"_invariantViolationCounts":{"paidbills-key-not-future":{"count":7,"firstSeenTs":1777976394990,"lastSeenTs":1777978739244}},"_invariantsDismissedSession":{},"_invariantSessionTs":1777976391855},"BILLS":[{"name":"Rent + Deposit Savings","amt":3000,"day":15,"tag":"Fixed","recurring":true,"breakdown":{"rent":500,"depositSavings":2500},"note":"$500 rent to Mum + $2,500 to property deposit account"},{"name":"KIA Loan — Firstmac","amt":780,"day":15,"tag":"Loan","recurring":true,"freq":"monthly"},{"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},{"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},{"name":"Pet Insurance — Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},{"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},{"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},{"name":"Optus — Phone + Internet","amt":194,"day":16,"tag":"Fixed","recurring":true},{"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},{"name":"Adobe","amt":23.99,"day":25,"tag":"Subscription","recurring":true,"freq":"monthly"},{"name":"Spotify","amt":15.99,"day":26,"tag":"Streaming","recurring":true,"freq":"monthly"},{"name":"NRMA KIA Insurance","amt":1023.06,"day":2,"tag":"insurance","recurring":false,"scanned":true},{"name":"Teachers Health","amt":259.41,"day":1,"tag":"Health","recurring":true,"freq":"quarterly","dueMonths":[1,4,7,10]},{"name":"Google Microsoft","amt":3,"day":1,"tag":"Fixed","recurring":true,"freq":"monthly"}],"exported":"2026-05-05T10:59:02.915Z","auditLog":{"entries":[{"ts":"2026-05-05T08:53:14.830Z","time":"6:53:14 pm","action":"LOG_EXPENSE_$16.95","before":398.35,"after":381.35,"change":-17,"expected":-17,"ok":true,"notes":"Surplus: $0.00 → $0.00"},{"ts":"2026-05-05T06:49:50.874Z","time":"4:49:50 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"},{"ts":"2026-05-05T06:10:19.650Z","time":"4:10:19 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"},{"ts":"2026-05-05T02:48:16.509Z","time":"12:48:16 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"},{"ts":"2026-05-05T02:47:18.841Z","time":"12:47:18 pm","action":"LOG_EXPENSE_$32.14","before":431.35,"after":398.35,"change":-33,"expected":-33,"ok":true,"notes":"Surplus: $0.00 → $0.00"},{"ts":"2026-05-05T02:47:03.428Z","time":"12:47:03 pm","action":"LOG_EXPENSE_$41.95","before":473.35,"after":431.35,"change":-42,"expected":-42,"ok":true,"notes":"Surplus: $0.00 → $0.00"},{"ts":"2026-05-04T21:33:37.250Z","time":"7:33:37 am","action":"BALANCE_CORRECTION_UP","before":25.38,"after":473.35,"change":447.97,"expected":447.97,"ok":true,"notes":"Correction: Borrowed from Michael | diff: $447.97"},{"ts":"2026-05-04T15:01:39.385Z","time":"1:01:39 am","action":"BALANCE_CORRECTION_DOWN","before":99,"after":25.38,"change":-73.62,"expected":-73.62,"ok":true,"notes":"Correction: Unlogged spend | diff: $-73.62"},{"ts":"2026-05-03T01:16:57.458Z","time":"11:16:57 am","action":"LOG_EXPENSE_$19.6","before":119,"after":99,"change":-20,"expected":-20,"ok":true,"notes":"Surplus: $0.00 → $0.00"}],"totalCount":9,"anomalies":[],"jsErrors":[{"ts":"2026-05-05T06:49:50.874Z","time":"4:49:50 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"},{"ts":"2026-05-05T06:10:19.650Z","time":"4:10:19 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"},{"ts":"2026-05-05T02:48:16.509Z","time":"12:48:16 pm","action":"JS_ERROR","before":398.35,"after":398.35,"change":0,"expected":0,"ok":true,"notes":"Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"}],"consistencyFails":[]},"uxReport":{"ts":"2026-05-05T10:58:52.987Z","sessionMins":0,"totalTaps":1,"missedTapPct":0,"slowRenders":0,"modalAbandons":0,"topFeatures":[["SLYGHT\n  Know your money. Alwa",1]],"tabUsage":[],"issues":[],"suggestions":["Unvisited tabs: dash, cal, chat, spend, settings — content may not be discoverable"],"score":95,"sessionStats":{"sessionMins":0,"totalTaps":3,"missedTapPct":167,"slowRenders":0,"modalAbandons":0,"topFeatures":[["SLYGHT\n  Know your money. Alwa",1],["Settings",1],["📊 My Financial Data▲",1]],"tabUsage":[["pg-settings",1]],"issues":["HIGH missed tap rate (167%) — tap targets may be too small"],"suggestions":["Unvisited tabs: dash, cal, chat, spend — content may not be discoverable","Low scroll on pg-settings (1%) — key info may need moving higher"],"score":75}},"snapshots":{"count":10,"latest":[{"ts":"2026-04-22T17:11:41.641Z","time":"3:11:41 am","date":"23/04/2026","reason":"end-of-day","bal":390.44,"cc":0,"carloan":23214.32,"debts":[{"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0,"notes":"Cleared 14 Apr"},{"id":1,"name":"Owed to Michael","amt":550,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},{"id":2,"name":"CC overdue","amt":187.35,"paid":true,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Cleared — mum paid full CC balance 15 Apr"},{"id":3,"name":"WRX Rego","amt":462,"paid":true,"rate":0,"priority":1,"notes":"LIST THE WRX THIS WEEK","delayDate":"2026-04-15"},{"id":4,"name":"Pet Insurance","amt":120.47,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-22"},{"id":5,"name":"Parking Fine","amt":140,"paid":true,"rate":0,"priority":3,"delayDate":"2026-04-16"},{"id":6,"name":"WRX Green Slip","amt":552.54,"rate":0,"paid":true,"delayed":false,"delayDate":"2026-04-15","notes":"","priority":4},{"id":7,"name":"Owed to Mum","amt":4658.39,"rate":0,"priority":1,"paid":false,"monthlyPayment":500,"viaRent":true,"notes":"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.","delayDate":"2027-01-15","originalAmt":4658.39},{"id":8,"name":"Teachers Health","amt":259.41,"rate":0,"priority":1,"paid":false,"delayed":false,"delayDate":"2026-05-01","notes":"Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit","scanned":true,"scanConfidence":0.95,"paymentMethod":"BPay, credit card, online","reference":"9563248"}],"txns":[{"id":0,"amt":7282.33,"note":"Salary — Manhattan Associates","cat":"Income","ts":1776121201000,"income":true,"_balAffected":true},{"id":1,"amt":2500,"note":"CC repayment — Virgin Money (pending)","cat":"Debt repayment","ts":1776121202000,"income":false,"_balAffected":true},{"id":2,"amt":1170,"note":"Car Loan Firstmac — regular + missed payment + fees","cat":"Debt repayment","ts":1776121203000,"income":false,"_balAffected":true},{"id":3,"amt":250.84,"note":"Afterpay — cleared","cat":"Debt repayment","ts":1776121204000,"income":false,"_balAffected":true},{"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":1776121205000,"income":false,"_balAffected":true},{"id":5,"amt":0.9,"note":"China Holiday round-ups","cat":"Savings","ts":1776121206000,"income":false,"_balAffected":true},{"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":1776121207000,"income":true,"_balAffected":true},{"amt":780,"note":"Car Loan — Firstmac — paid","cat":"Loan","ts":1776176102273,"income":false,"_balAffected":true},{"amt":550,"note":"Owed to Michael — cleared","cat":"Debt repayment","ts":1776178940008,"income":false,"_balAffected":true},{"amt":51,"note":"Car pink slip","cat":"Transport / Fuel","ts":1776214977602,"income":false,"_balAffected":true},{"amt":33.62,"note":"Groceries","cat":"Food / Coffee","ts":1776216510674,"income":false,"_balAffected":true},{"amt":14.73,"note":"Weed accessories","cat":"Shopping","ts":1776217013669,"income":false,"_balAffected":true},{"amt":552.54,"note":"WRX Green Slip — cleared","cat":"Debt repayment","ts":1776243762236,"income":false,"_balAffected":true},{"amt":462,"note":"WRX Rego — cleared","cat":"Debt repayment","ts":1776243907922,"income":false,"_balAffected":true},{"amt":140,"note":"Parking Fine — cleared","cat":"Debt repayment","ts":1776244257389,"income":false,"_balAffected":true},{"amt":10.5,"note":"Lunch","cat":"Food / Coffee","ts":1776303974205,"income":false,"_balAffected":true},{"amt":70,"note":"Vape 😭","cat":"Other","ts":1776303993582,"income":false,"_balAffected":true},{"amt":177.86,"note":"Claude Max upgrade — 20x plan","cat":"Subscription","ts":1776254400000,"income":false,"_balAffected":true},{"amt":33.78,"note":"Aldi Kirrawee — groceries","cat":"Food / Coffee","ts":1776254401000,"income":false,"_balAffected":true},{"amt":194,"note":"Optus — Phone + Internet","cat":"Bills","ts":1776340800000,"income":false,"_balAffected":true},{"amt":64.99,"note":"Vape","cat":"Other","ts":1776340801000,"income":false,"_balAffected":true},{"amt":32.39,"note":"ZLR Ph Tonkin — pharmacy","cat":"Shopping","ts":1776340802000,"income":false,"_balAffected":true},{"amt":10.5,"note":"KJ Yogurt","cat":"Food / Coffee","ts":1776340803000,"income":false,"_balAffected":true},{"amt":13.11,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776340804000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776340805000,"income":false,"_balAffected":true},{"amt":4.98,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776427200000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776427201000,"income":false,"_balAffected":true},{"amt":21.21,"note":"Lunch","cat":"Food / Coffee","ts":1776398059697,"income":false,"_balAffected":true},{"amt":9,"note":"Snacks","cat":"Food / Coffee","ts":1776398604566,"income":false,"_balAffected":true},{"amt":23.15,"note":"Groceries","cat":"Food / Coffee","ts":1776417089172,"income":false,"_balAffected":true},{"amt":13,"note":"Ice cream","cat":"Food / Coffee","ts":1776422982574,"income":false,"_balAffected":true},{"amt":20,"note":"Sunglasses","cat":"Shopping","ts":1776478615230,"income":false,"_balAffected":true},{"amt":22.7,"note":"Lunch","cat":"Food / Coffee","ts":1776478626297,"income":false,"_balAffected":true},{"amt":8.5,"note":"Cookie","cat":"Food / Coffee","ts":1776487809925,"income":false,"_balAffected":true},{"amt":13,"note":"Chips","cat":"Food / Coffee","ts":1776487862401,"income":false,"_balAffected":true},{"amt":16.99,"note":"YouTube Premium — paid","cat":"Streaming","ts":1776553081015,"income":false,"_balAffected":true},{"amt":20.61,"note":"Coffe date","cat":"Food / Coffee","ts":1776575898806,"income":false,"_balAffected":true},{"amt":30,"note":"Food for party","cat":"Food / Coffee","ts":1776585499142,"income":false,"_balAffected":true},{"amt":14,"note":"Coffee","cat":"Food / Coffee","ts":1776643533810,"income":false,"_balAffected":true},{"amt":6,"note":"Lollies","cat":"Food / Coffee","ts":1776656148210,"income":false,"_balAffected":true},{"amt":116,"note":"FIFA packs","cat":"Entertainment","ts":1776779989164,"income":false,"_balAffected":true},{"amt":120.47,"note":"Pet Insurance — cleared","cat":"Debt repayment","ts":1776819934293,"income":false,"_balAffected":true}],"savingsBuckets":[{"id":0,"name":"China Holiday","goal":4000,"saved":67.22,"account":"Virgin Money"},{"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},{"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},{"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}],"bills":[{"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},{"name":"Car Loan — Firstmac","amt":780,"day":16,"tag":"Loan","recurring":true,"freq":"monthly"},{"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},{"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},{"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},{"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},{"name":"Pet Insurance — Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},{"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},{"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},{"name":"Optus — Phone + Internet","amt":194,"day":16,"tag":"Fixed","recurring":true},{"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},{"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},{"name":"Spotify","amt":15.99,"day":28,"tag":"Streaming","recurring":true}],"surplus":0,"netWorth":{"assets":21457.66,"liabilities":23473.73,"net":-2016.0699999999997},"paydayReceived":true},{"ts":"2026-04-22T17:11:35.906Z","time":"3:11:35 am","date":"23/04/2026","reason":"app_open","bal":390.44,"cc":0,"carloan":23214.32,"debts":[{"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0,"notes":"Cleared 14 Apr"},{"id":1,"name":"Owed to Michael","amt":550,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},{"id":2,"name":"CC overdue","amt":187.35,"paid":true,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Cleared — mum paid full CC balance 15 Apr"},{"id":3,"name":"WRX Rego","amt":462,"paid":true,"rate":0,"priority":1,"notes":"LIST THE WRX THIS WEEK","delayDate":"2026-04-15"},{"id":4,"name":"Pet Insurance","amt":120.47,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-22"},{"id":5,"name":"Parking Fine","amt":140,"paid":true,"rate":0,"priority":3,"delayDate":"2026-04-16"},{"id":6,"name":"WRX Green Slip","amt":552.54,"rate":0,"paid":true,"delayed":false,"delayDate":"2026-04-15","notes":"","priority":4},{"id":7,"name":"Owed to Mum","amt":4658.39,"rate":0,"priority":1,"paid":false,"monthlyPayment":500,"viaRent":true,"notes":"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.","delayDate":"2027-01-15","originalAmt":4658.39},{"id":8,"name":"Teachers Health","amt":259.41,"rate":0,"priority":1,"paid":false,"delayed":false,"delayDate":"2026-05-01","notes":"Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit","scanned":true,"scanConfidence":0.95,"paymentMethod":"BPay, credit card, online","reference":"9563248"}],"txns":[{"id":0,"amt":7282.33,"note":"Salary — Manhattan Associates","cat":"Income","ts":1776121201000,"income":true,"_balAffected":true},{"id":1,"amt":2500,"note":"CC repayment — Virgin Money (pending)","cat":"Debt repayment","ts":1776121202000,"income":false,"_balAffected":true},{"id":2,"amt":1170,"note":"Car Loan Firstmac — regular + missed payment + fees","cat":"Debt repayment","ts":1776121203000,"income":false,"_balAffected":true},{"id":3,"amt":250.84,"note":"Afterpay — cleared","cat":"Debt repayment","ts":1776121204000,"income":false,"_balAffected":true},{"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":1776121205000,"income":false,"_balAffected":true},{"id":5,"amt":0.9,"note":"China Holiday round-ups","cat":"Savings","ts":1776121206000,"income":false,"_balAffected":true},{"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":1776121207000,"income":true,"_balAffected":true},{"amt":780,"note":"Car Loan — Firstmac — paid","cat":"Loan","ts":1776176102273,"income":false,"_balAffected":true},{"amt":550,"note":"Owed to Michael — cleared","cat":"Debt repayment","ts":1776178940008,"income":false,"_balAffected":true},{"amt":51,"note":"Car pink slip","cat":"Transport / Fuel","ts":1776214977602,"income":false,"_balAffected":true},{"amt":33.62,"note":"Groceries","cat":"Food / Coffee","ts":1776216510674,"income":false,"_balAffected":true},{"amt":14.73,"note":"Weed accessories","cat":"Shopping","ts":1776217013669,"income":false,"_balAffected":true},{"amt":552.54,"note":"WRX Green Slip — cleared","cat":"Debt repayment","ts":1776243762236,"income":false,"_balAffected":true},{"amt":462,"note":"WRX Rego — cleared","cat":"Debt repayment","ts":1776243907922,"income":false,"_balAffected":true},{"amt":140,"note":"Parking Fine — cleared","cat":"Debt repayment","ts":1776244257389,"income":false,"_balAffected":true},{"amt":10.5,"note":"Lunch","cat":"Food / Coffee","ts":1776303974205,"income":false,"_balAffected":true},{"amt":70,"note":"Vape 😭","cat":"Other","ts":1776303993582,"income":false,"_balAffected":true},{"amt":177.86,"note":"Claude Max upgrade — 20x plan","cat":"Subscription","ts":1776254400000,"income":false,"_balAffected":true},{"amt":33.78,"note":"Aldi Kirrawee — groceries","cat":"Food / Coffee","ts":1776254401000,"income":false,"_balAffected":true},{"amt":194,"note":"Optus — Phone + Internet","cat":"Bills","ts":1776340800000,"income":false,"_balAffected":true},{"amt":64.99,"note":"Vape","cat":"Other","ts":1776340801000,"income":false,"_balAffected":true},{"amt":32.39,"note":"ZLR Ph Tonkin — pharmacy","cat":"Shopping","ts":1776340802000,"income":false,"_balAffected":true},{"amt":10.5,"note":"KJ Yogurt","cat":"Food / Coffee","ts":1776340803000,"income":false,"_balAffected":true},{"amt":13.11,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776340804000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776340805000,"income":false,"_balAffected":true},{"amt":4.98,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776427200000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776427201000,"income":false,"_balAffected":true},{"amt":21.21,"note":"Lunch","cat":"Food / Coffee","ts":1776398059697,"income":false,"_balAffected":true},{"amt":9,"note":"Snacks","cat":"Food / Coffee","ts":1776398604566,"income":false,"_balAffected":true},{"amt":23.15,"note":"Groceries","cat":"Food / Coffee","ts":1776417089172,"income":false,"_balAffected":true},{"amt":13,"note":"Ice cream","cat":"Food / Coffee","ts":1776422982574,"income":false,"_balAffected":true},{"amt":20,"note":"Sunglasses","cat":"Shopping","ts":1776478615230,"income":false,"_balAffected":true},{"amt":22.7,"note":"Lunch","cat":"Food / Coffee","ts":1776478626297,"income":false,"_balAffected":true},{"amt":8.5,"note":"Cookie","cat":"Food / Coffee","ts":1776487809925,"income":false,"_balAffected":true},{"amt":13,"note":"Chips","cat":"Food / Coffee","ts":1776487862401,"income":false,"_balAffected":true},{"amt":16.99,"note":"YouTube Premium — paid","cat":"Streaming","ts":1776553081015,"income":false,"_balAffected":true},{"amt":20.61,"note":"Coffe date","cat":"Food / Coffee","ts":1776575898806,"income":false,"_balAffected":true},{"amt":30,"note":"Food for party","cat":"Food / Coffee","ts":1776585499142,"income":false,"_balAffected":true},{"amt":14,"note":"Coffee","cat":"Food / Coffee","ts":1776643533810,"income":false,"_balAffected":true},{"amt":6,"note":"Lollies","cat":"Food / Coffee","ts":1776656148210,"income":false,"_balAffected":true},{"amt":116,"note":"FIFA packs","cat":"Entertainment","ts":1776779989164,"income":false,"_balAffected":true},{"amt":120.47,"note":"Pet Insurance — cleared","cat":"Debt repayment","ts":1776819934293,"income":false,"_balAffected":true}],"savingsBuckets":[{"id":0,"name":"China Holiday","goal":4000,"saved":67.22,"account":"Virgin Money"},{"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},{"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},{"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}],"bills":[{"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},{"name":"Car Loan — Firstmac","amt":780,"day":16,"tag":"Loan","recurring":true,"freq":"monthly"},{"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},{"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},{"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},{"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},{"name":"Pet Insurance — Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},{"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},{"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},{"name":"Optus — Phone + Internet","amt":194,"day":16,"tag":"Fixed","recurring":true},{"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},{"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},{"name":"Spotify","amt":15.99,"day":28,"tag":"Streaming","recurring":true}],"surplus":0,"netWorth":{"assets":21457.66,"liabilities":23473.73,"net":-2016.0699999999997},"paydayReceived":true},{"ts":"2026-04-22T17:10:27.492Z","time":"3:10:27 am","date":"23/04/2026","reason":"end-of-day","bal":390.44,"cc":0,"carloan":23214.32,"debts":[{"id":0,"name":"Afterpay","amt":250.84,"paid":true,"rate":0,"priority":0,"notes":"Cleared 14 Apr"},{"id":1,"name":"Owed to Michael","amt":550,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-15","notes":"$300 borrowed + $50 goodwill + $200 additional borrowing"},{"id":2,"name":"CC overdue","amt":187.35,"paid":true,"rate":19.99,"priority":2,"delayed":true,"delayDate":"2026-05-06","notes":"Cleared — mum paid full CC balance 15 Apr"},{"id":3,"name":"WRX Rego","amt":462,"paid":true,"rate":0,"priority":1,"notes":"LIST THE WRX THIS WEEK","delayDate":"2026-04-15"},{"id":4,"name":"Pet Insurance","amt":120.47,"paid":true,"rate":0,"priority":1,"delayDate":"2026-04-22"},{"id":5,"name":"Parking Fine","amt":140,"paid":true,"rate":0,"priority":3,"delayDate":"2026-04-16"},{"id":6,"name":"WRX Green Slip","amt":552.54,"rate":0,"paid":true,"delayed":false,"delayDate":"2026-04-15","notes":"","priority":4},{"id":7,"name":"Owed to Mum","amt":4658.39,"rate":0,"priority":1,"paid":false,"monthlyPayment":500,"viaRent":true,"notes":"CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.","delayDate":"2027-01-15","originalAmt":4658.39},{"id":8,"name":"Teachers Health","amt":259.41,"rate":0,"priority":1,"paid":false,"delayed":false,"delayDate":"2026-05-01","notes":"Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit","scanned":true,"scanConfidence":0.95,"paymentMethod":"BPay, credit card, online","reference":"9563248"}],"txns":[{"id":0,"amt":7282.33,"note":"Salary — Manhattan Associates","cat":"Income","ts":1776121201000,"income":true,"_balAffected":true},{"id":1,"amt":2500,"note":"CC repayment — Virgin Money (pending)","cat":"Debt repayment","ts":1776121202000,"income":false,"_balAffected":true},{"id":2,"amt":1170,"note":"Car Loan Firstmac — regular + missed payment + fees","cat":"Debt repayment","ts":1776121203000,"income":false,"_balAffected":true},{"id":3,"amt":250.84,"note":"Afterpay — cleared","cat":"Debt repayment","ts":1776121204000,"income":false,"_balAffected":true},{"id":4,"amt":141.76,"note":"Claude Max subscription","cat":"Subscription","ts":1776121205000,"income":false,"_balAffected":true},{"id":5,"amt":0.9,"note":"China Holiday round-ups","cat":"Savings","ts":1776121206000,"income":false,"_balAffected":true},{"id":6,"amt":100,"note":"Yia yia gift","cat":"Income","ts":1776121207000,"income":true,"_balAffected":true},{"amt":780,"note":"Car Loan — Firstmac — paid","cat":"Loan","ts":1776176102273,"income":false,"_balAffected":true},{"amt":550,"note":"Owed to Michael — cleared","cat":"Debt repayment","ts":1776178940008,"income":false,"_balAffected":true},{"amt":51,"note":"Car pink slip","cat":"Transport / Fuel","ts":1776214977602,"income":false,"_balAffected":true},{"amt":33.62,"note":"Groceries","cat":"Food / Coffee","ts":1776216510674,"income":false,"_balAffected":true},{"amt":14.73,"note":"Weed accessories","cat":"Shopping","ts":1776217013669,"income":false,"_balAffected":true},{"amt":552.54,"note":"WRX Green Slip — cleared","cat":"Debt repayment","ts":1776243762236,"income":false,"_balAffected":true},{"amt":462,"note":"WRX Rego — cleared","cat":"Debt repayment","ts":1776243907922,"income":false,"_balAffected":true},{"amt":140,"note":"Parking Fine — cleared","cat":"Debt repayment","ts":1776244257389,"income":false,"_balAffected":true},{"amt":10.5,"note":"Lunch","cat":"Food / Coffee","ts":1776303974205,"income":false,"_balAffected":true},{"amt":70,"note":"Vape 😭","cat":"Other","ts":1776303993582,"income":false,"_balAffected":true},{"amt":177.86,"note":"Claude Max upgrade — 20x plan","cat":"Subscription","ts":1776254400000,"income":false,"_balAffected":true},{"amt":33.78,"note":"Aldi Kirrawee — groceries","cat":"Food / Coffee","ts":1776254401000,"income":false,"_balAffected":true},{"amt":194,"note":"Optus — Phone + Internet","cat":"Bills","ts":1776340800000,"income":false,"_balAffected":true},{"amt":64.99,"note":"Vape","cat":"Other","ts":1776340801000,"income":false,"_balAffected":true},{"amt":32.39,"note":"ZLR Ph Tonkin — pharmacy","cat":"Shopping","ts":1776340802000,"income":false,"_balAffected":true},{"amt":10.5,"note":"KJ Yogurt","cat":"Food / Coffee","ts":1776340803000,"income":false,"_balAffected":true},{"amt":13.11,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776340804000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776340805000,"income":false,"_balAffected":true},{"amt":4.98,"note":"Batch Espresso","cat":"Food / Coffee","ts":1776427200000,"income":false,"_balAffected":true},{"amt":1,"note":"Opal fare","cat":"Transport / Fuel","ts":1776427201000,"income":false,"_balAffected":true},{"amt":21.21,"note":"Lunch","cat":"Food / Coffee","ts":1776398059697,"income":false,"_balAffected":true},{"amt":9,"note":"Snacks","cat":"Food / Coffee","ts":1776398604566,"income":false,"_balAffected":true},{"amt":23.15,"note":"Groceries","cat":"Food / Coffee","ts":1776417089172,"income":false,"_balAffected":true},{"amt":13,"note":"Ice cream","cat":"Food / Coffee","ts":1776422982574,"income":false,"_balAffected":true},{"amt":20,"note":"Sunglasses","cat":"Shopping","ts":1776478615230,"income":false,"_balAffected":true},{"amt":22.7,"note":"Lunch","cat":"Food / Coffee","ts":1776478626297,"income":false,"_balAffected":true},{"amt":8.5,"note":"Cookie","cat":"Food / Coffee","ts":1776487809925,"income":false,"_balAffected":true},{"amt":13,"note":"Chips","cat":"Food / Coffee","ts":1776487862401,"income":false,"_balAffected":true},{"amt":16.99,"note":"YouTube Premium — paid","cat":"Streaming","ts":1776553081015,"income":false,"_balAffected":true},{"amt":20.61,"note":"Coffe date","cat":"Food / Coffee","ts":1776575898806,"income":false,"_balAffected":true},{"amt":30,"note":"Food for party","cat":"Food / Coffee","ts":1776585499142,"income":false,"_balAffected":true},{"amt":14,"note":"Coffee","cat":"Food / Coffee","ts":1776643533810,"income":false,"_balAffected":true},{"amt":6,"note":"Lollies","cat":"Food / Coffee","ts":1776656148210,"income":false,"_balAffected":true},{"amt":116,"note":"FIFA packs","cat":"Entertainment","ts":1776779989164,"income":false,"_balAffected":true},{"amt":120.47,"note":"Pet Insurance — cleared","cat":"Debt repayment","ts":1776819934293,"income":false,"_balAffected":true}],"savingsBuckets":[{"id":0,"name":"China Holiday","goal":4000,"saved":67.22,"account":"Virgin Money"},{"id":1,"name":"Rainy Day Fund","goal":2000,"saved":0,"account":"ING"},{"id":2,"name":"Rego & Insurance","goal":1500,"saved":0,"account":"Westpac"},{"id":3,"name":"Gifts & Celebrations","goal":500,"saved":0,"account":"Other"}],"bills":[{"name":"Rent","amt":3000,"day":15,"tag":"Fixed","recurring":true},{"name":"Car Loan — Firstmac","amt":780,"day":16,"tag":"Loan","recurring":true,"freq":"monthly"},{"name":"Health Insurance (qtrly avg)","amt":119.04,"day":1,"tag":"Fixed","recurring":true},{"name":"Amazon Prime","amt":9.99,"day":3,"tag":"Subscription","recurring":true},{"name":"Fuel","amt":110,"day":5,"tag":"Variable","recurring":true},{"name":"Microsoft PC Game Pass","amt":19.45,"day":7,"tag":"Subscription","recurring":true},{"name":"Pet Insurance — Bowtie","amt":60.2,"day":8,"tag":"Fixed","recurring":true},{"name":"Claude Plus","amt":34,"day":9,"tag":"Subscription","recurring":true},{"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},{"name":"Optus — Phone + Internet","amt":194,"day":16,"tag":"Fixed","recurring":true},{"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},{"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},{"name":"Spotify","amt":15.99,"day":28,"tag":"Streaming","recurring":true}],"surplus":0,"netWorth":{"assets":21457.66,"liabilities":23473.73,"net":-2016.0699999999997},"paydayReceived":true}]},"apiCosts":{"allTime":0.4133,"thisMonth":0.4133,"today":0,"chatCalls":20,"scanCalls":3,"totalCalls":23,"avgPerCall":0.01797,"projectedMonthly":1.02,"projectedYearly":12.36,"daysTracked":12},"guardianLastRun":null,"summary":{"balance":381.35,"activeDebts":[{"name":"Property Deposit (via Mum)","amt":5681.45},{"name":"Afterpay — Concert Tickets","amt":93.56},{"name":"Borrowed from Michael","amt":450},{"name":"Borrowed from Michael","amt":500}],"paidThisMonth":["2026-5-KIA Loan — Firstmac-15","2026-5-Amazon Prime-3","2026-5-YouTube Premium-20","2026-5-Adobe-25","2026-5-Spotify-26","2026-5-Google Microsoft-1","2026-5-Teachers Health-1","2026-5-Microsoft PC Game Pass-7","2026-5-Claude Plus-9"],"survivalMode":"cautious","slyghtScore":404,"totalTransactions":104,"paydayIn":"10 days"}}
+{
+  "S": {
+    "bal": 381.35,
+    "txns": [
+      {
+        "id": 0,
+        "amt": 7282.33,
+        "note": "Salary — Manhattan Associates",
+        "cat": "Income",
+        "ts": 1776121201000,
+        "income": true,
+        "_balAffected": true
+      },
+      {
+        "id": 1,
+        "amt": 2500,
+        "note": "CC repayment — Virgin Money (pending)",
+        "cat": "Debt repayment",
+        "ts": 1776121202000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "id": 2,
+        "amt": 1170,
+        "note": "Car Loan Firstmac — regular + missed payment + fees",
+        "cat": "Debt repayment",
+        "ts": 1776121203000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "id": 3,
+        "amt": 250.84,
+        "note": "Afterpay — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776121204000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "id": 4,
+        "amt": 141.76,
+        "note": "Claude Max subscription",
+        "cat": "Subscription",
+        "ts": 1776121205000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "id": 5,
+        "amt": 0.9,
+        "note": "China Holiday round-ups",
+        "cat": "Savings",
+        "ts": 1776121206000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "id": 6,
+        "amt": 100,
+        "note": "Yia yia gift",
+        "cat": "Income",
+        "ts": 1776121207000,
+        "income": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 780,
+        "note": "Car Loan — Firstmac — paid",
+        "cat": "Loan",
+        "ts": 1776176102273,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 550,
+        "note": "Owed to Michael — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776178940008,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 51,
+        "note": "Car pink slip",
+        "cat": "Transport / Fuel",
+        "ts": 1776214977602,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 33.62,
+        "note": "Groceries",
+        "cat": "Food / Coffee",
+        "ts": 1776216510674,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 14.73,
+        "note": "Weed accessories",
+        "cat": "Shopping",
+        "ts": 1776217013669,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 552.54,
+        "note": "WRX Green Slip — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776243762236,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 462,
+        "note": "WRX Rego — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776243907922,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 140,
+        "note": "Parking Fine — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776244257389,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 10.5,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1776303974205,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 70,
+        "note": "Vape 😭",
+        "cat": "Other",
+        "ts": 1776303993582,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 177.86,
+        "note": "Claude Max upgrade — 20x plan",
+        "cat": "Subscription",
+        "ts": 1776254400000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 33.78,
+        "note": "Aldi Kirrawee — groceries",
+        "cat": "Food / Coffee",
+        "ts": 1776254401000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 194,
+        "note": "Optus — Phone + Internet",
+        "cat": "Bills",
+        "ts": 1776340800000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 32.39,
+        "note": "ZLR Ph Tonkin — pharmacy",
+        "cat": "Shopping",
+        "ts": 1776340802000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 10.5,
+        "note": "KJ Yogurt",
+        "cat": "Food / Coffee",
+        "ts": 1776340803000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 13.11,
+        "note": "Batch Espresso",
+        "cat": "Food / Coffee",
+        "ts": 1776340804000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 1,
+        "note": "Opal fare",
+        "cat": "Transport / Fuel",
+        "ts": 1776340805000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 4.98,
+        "note": "Batch Espresso",
+        "cat": "Food / Coffee",
+        "ts": 1776427200000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 1,
+        "note": "Opal fare",
+        "cat": "Transport / Fuel",
+        "ts": 1776427201000,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 21.21,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1776398059697,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 9,
+        "note": "Snacks",
+        "cat": "Food / Coffee",
+        "ts": 1776398604566,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 23.15,
+        "note": "Groceries",
+        "cat": "Food / Coffee",
+        "ts": 1776417089172,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 13,
+        "note": "Ice cream",
+        "cat": "Food / Coffee",
+        "ts": 1776422982574,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 20,
+        "note": "Sunglasses",
+        "cat": "Shopping",
+        "ts": 1776478615230,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 22.7,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1776478626297,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 8.5,
+        "note": "Cookie",
+        "cat": "Food / Coffee",
+        "ts": 1776487809925,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 13,
+        "note": "Chips",
+        "cat": "Food / Coffee",
+        "ts": 1776487862401,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 16.99,
+        "note": "YouTube Premium — paid",
+        "cat": "Streaming",
+        "ts": 1776553081015,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 20.61,
+        "note": "Coffe date",
+        "cat": "Food / Coffee",
+        "ts": 1776575898806,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 30,
+        "note": "Food for party",
+        "cat": "Food / Coffee",
+        "ts": 1776585499142,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 14,
+        "note": "Coffee",
+        "cat": "Food / Coffee",
+        "ts": 1776643533810,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 6,
+        "note": "Lollies",
+        "cat": "Food / Coffee",
+        "ts": 1776656148210,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 116,
+        "note": "FIFA packs",
+        "cat": "Entertainment",
+        "ts": 1776779989164,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 120.47,
+        "note": "Pet Insurance — cleared",
+        "cat": "Debt repayment",
+        "ts": 1776819934293,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 12.05,
+        "note": "Bank fee",
+        "cat": "Adjustment",
+        "ts": 1776897957264,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 12.1,
+        "note": "Coffe and croissant",
+        "cat": "Food / Coffee",
+        "ts": 1776905373463,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.9,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1776905373463,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 25.93,
+        "note": "Lunch with gf",
+        "cat": "Food / Coffee",
+        "ts": 1776915804851,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.07,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1776915804851,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 11.8,
+        "note": "Coles",
+        "cat": "Food / Coffee",
+        "ts": 1776922717338,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.2,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1776922717338,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 49.34,
+        "note": "Paid for tickets to festival, transfer back in",
+        "cat": "Income",
+        "ts": 1777000900970,
+        "income": true,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 64.99,
+        "note": "Vape previously was counted twice, removed and it updated balance",
+        "cat": "Adjustment",
+        "ts": 1777001051335,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 19.1,
+        "note": "Groceries",
+        "cat": "Food / Coffee",
+        "ts": 1777020690126,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.9,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777020690129,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 11.8,
+        "note": "Groceries",
+        "cat": "Food / Coffee",
+        "ts": 1777030304027,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.2,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777030304027,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 23.99,
+        "note": "Adobe — paid",
+        "cat": "Subscription",
+        "ts": 1777067515299,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 42,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1777116157458,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 12.75,
+        "note": "Lunch ingredients",
+        "cat": "Food / Coffee",
+        "ts": 1777168377274,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.25,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777168377274,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 15.99,
+        "note": "Spotify — paid",
+        "cat": "Streaming",
+        "ts": 1777176167912,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 40.83,
+        "note": "Dinner",
+        "cat": "Food / Coffee",
+        "ts": 1777200234570,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.17,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777200234570,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 27.97,
+        "note": "Breakfast",
+        "cat": "Food / Coffee",
+        "ts": 1777249831182,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.03,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777249831182,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 27.9,
+        "note": "Lunch for gf",
+        "cat": "Food / Coffee",
+        "ts": 1777260999506,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.1,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777260999506,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 7.6,
+        "note": "Coffee",
+        "cat": "Food / Coffee",
+        "ts": 1777336190475,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.4,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777336190475,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 35.98,
+        "note": "Drinks at Club rose bay",
+        "cat": "Adjustment",
+        "ts": 1777342940897,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 850,
+        "note": "Mums help",
+        "cat": "Income",
+        "ts": 1777372778074,
+        "income": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 1023.06,
+        "note": "NRMA KIA INSURANCE — cleared",
+        "cat": "Debt repayment",
+        "ts": 1777416916188,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 1017.78,
+        "note": "NRMA INSURANCE COVERED BY MUM",
+        "cat": "Income",
+        "ts": 1777416950956,
+        "income": true,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 35,
+        "note": "Top up car loan so it clears",
+        "cat": "Bills",
+        "ts": 1777417069740,
+        "flagged": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 138.99,
+        "note": "Car sales advertisement for WRX LISTING",
+        "cat": "Adjustment",
+        "ts": 1777429538966,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 31.19,
+        "note": "Payment towards afterpay",
+        "cat": "Food / Coffee",
+        "ts": 1777503101104,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.81,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777503101104,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 18.18,
+        "note": "Breakfast",
+        "cat": "Food / Coffee",
+        "ts": 1777505690310,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.82,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777505690310,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 149,
+        "note": "Weed pen",
+        "cat": "Health",
+        "ts": 1777526510444,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 10,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1777526520902,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 35,
+        "note": "Dinner",
+        "cat": "Food / Coffee",
+        "ts": 1777589199163,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 3,
+        "note": "Google Microsoft — paid",
+        "cat": "Fixed",
+        "ts": 1777589269347,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 9.5,
+        "note": "Opal Travel - Train and Tram",
+        "cat": "Adjustment",
+        "ts": 1777589345431,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 259.41,
+        "note": "Teachers Health — cleared",
+        "cat": "Debt repayment",
+        "ts": 1777603902524,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 13.18,
+        "note": "Breakfast",
+        "cat": "Food / Coffee",
+        "ts": 1777603947864,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.82,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777603947864,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 15,
+        "note": "Breakfast",
+        "cat": "Food / Coffee",
+        "ts": 1777731763059,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 6,
+        "note": "Coffee",
+        "cat": "Food / Coffee",
+        "ts": 1777731783460,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 16,
+        "note": "Pizza",
+        "cat": "Food / Coffee",
+        "ts": 1777731804165,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 30,
+        "note": "Wig",
+        "cat": "Shopping",
+        "ts": 1777731818111,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 47,
+        "note": "Groceries",
+        "cat": "Food / Coffee",
+        "ts": 1777731851796,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 25,
+        "note": "Half cost of groceries",
+        "cat": "Income",
+        "ts": 1777731869409,
+        "income": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 26.15,
+        "note": "Dinner last night",
+        "cat": "Food / Coffee",
+        "ts": 1777732059711,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.85,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777732059712,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 13.59,
+        "note": "Opal Travel - Train and Tram",
+        "cat": "Adjustment",
+        "ts": 1777732078816,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 19.6,
+        "note": "Coffee",
+        "cat": "Food / Coffee",
+        "ts": 1777771017425,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.4,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777771017425,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 73.62,
+        "note": "Unlogged spend",
+        "cat": "Adjustment",
+        "ts": 1777906899384,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 447.97,
+        "note": "Borrowed from Michael",
+        "cat": "Income",
+        "ts": 1777930417250,
+        "income": true,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 41.95,
+        "note": "FIFA packs",
+        "cat": "Entertainment",
+        "ts": 1777949223407,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.05,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777949223407,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 32.14,
+        "note": "Uber eats",
+        "cat": "Food / Coffee",
+        "ts": 1777949238822,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.86,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777949238822,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 16.95,
+        "note": "FIFA",
+        "cat": "Entertainment",
+        "ts": 1777971194806,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.05,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1777971194806,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      }
+    ],
+    "bonuses": [],
+    "bid": 5,
+    "seg": "1m",
+    "income": 7282,
+    "payday": 15,
+    "carloan": 23214.32,
+    "carLoanRate": 9.87,
+    "cc": 0,
+    "carloanOriginal": 37400,
+    "ccLimit": 6000,
+    "monthlyHistory": [
+      {
+        "month": "2026-4",
+        "bal": 569.5,
+        "spent": 9454.189999999997,
+        "surplus": 0,
+        "ts": 1777589166757
+      }
+    ],
+    "income_log": [],
+    "iid": 0,
+    "debts": [
+      {
+        "id": 7,
+        "name": "Property Deposit (via Mum)",
+        "amt": 5681.45,
+        "rate": 0,
+        "priority": 4,
+        "paid": false,
+        "monthlyPayment": 2500,
+        "viaRent": true,
+        "notes": "Managed deposit savings account. $500/month rent + $2,500/month deposit savings. Account has ~$3,000. $5,681 was spent from savings and is being rebuilt at $2,500/month.",
+        "delayDate": "2027-01-15",
+        "originalAmt": 5681.45,
+        "rentComponent": 500,
+        "debtComponent": 2500,
+        "accountBalance": 3000,
+        "accountTarget": 50000,
+        "redirectGoal": "apartment"
+      },
+      {
+        "id": 8,
+        "name": "Teachers Health",
+        "amt": 259.41,
+        "rate": 0,
+        "priority": 1,
+        "paid": true,
+        "delayed": false,
+        "delayDate": "2026-05-01",
+        "notes": "Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit",
+        "scanned": true,
+        "scanConfidence": 0.95,
+        "paymentMethod": "BPay, credit card, online",
+        "reference": "9563248"
+      },
+      {
+        "id": 10,
+        "name": "Afterpay — Concert Tickets",
+        "amt": 93.56,
+        "rate": 0,
+        "priority": 1,
+        "paid": false,
+        "notes": "Concert tickets. $60 received back from friend for their ticket.",
+        "delayDate": "2026-05-14"
+      },
+      {
+        "id": 11,
+        "name": "Borrowed from Michael",
+        "amt": 450,
+        "rate": 0,
+        "paid": false,
+        "delayed": false,
+        "delayDate": "2026-05-15",
+        "notes": "",
+        "viaRent": true,
+        "priority": 2
+      },
+      {
+        "id": 12,
+        "name": "Borrowed from Michael",
+        "amt": 500,
+        "rate": 0,
+        "paid": false,
+        "delayed": false,
+        "delayDate": "2026-05-16",
+        "notes": "I borrowed $450, I pay back $500",
+        "priority": 3
+      }
+    ],
+    "nextDebtId": 13,
+    "savingsBuckets": [
+      {
+        "id": 0,
+        "name": "China Holiday",
+        "goal": 4000,
+        "saved": 75.1,
+        "account": "Virgin Money"
+      },
+      {
+        "id": 1,
+        "name": "Rainy Day Fund",
+        "goal": 2000,
+        "saved": 0,
+        "account": "ING"
+      },
+      {
+        "id": 2,
+        "name": "Rego & Insurance",
+        "goal": 1500,
+        "saved": 0,
+        "account": "Westpac"
+      },
+      {
+        "id": 3,
+        "name": "Gifts & Celebrations",
+        "goal": 500,
+        "saved": 0,
+        "account": "Other"
+      }
+    ],
+    "nextBucketId": 4,
+    "paidBills": {
+      "2026-5-KIA Loan — Firstmac-15": true,
+      "2026-5-Amazon Prime-3": true,
+      "2026-5-YouTube Premium-20": true,
+      "2026-5-Adobe-25": true,
+      "2026-5-Spotify-26": true,
+      "2026-5-Google Microsoft-1": true,
+      "2026-5-Teachers Health-1": true,
+      "2026-5-Microsoft PC Game Pass-7": true,
+      "2026-5-Claude Plus-9": true
+    },
+    "paydayReceived": false,
+    "paydayReceivedDate": null,
+    "paydayBannerDismissed": true,
+    "roundUpsEnabled": true,
+    "weekdayBudget": 30,
+    "weekendBudget": 100,
+    "lastOpenDate": "2026-05-05",
+    "wrxValue": 25000,
+    "debtStrategy": "avalanche",
+    "apiAlertThreshold": 15,
+    "wrxStatus": "listed",
+    "wrxListedDate": "2026-04-29",
+    "_lastSnapMonth": "2026-5",
+    "paydayPlanItems": {},
+    "reconLog": [
+      {
+        "date": "2026-04-14T14:16:26.880Z",
+        "bal": 3313.99,
+        "reason": "Wasnt accounting for already transferring for car loan"
+      },
+      {
+        "date": "2026-04-14T22:51:28.024Z",
+        "bal": 2755.34,
+        "reason": "Not sure where the difference is, I think it's the anthropic transaction as it was initially charged as USD"
+      },
+      {
+        "date": "2026-04-15T09:11:54.582Z",
+        "bal": 1500.34,
+        "reason": "Bank fee"
+      },
+      {
+        "date": "2026-04-17T00:00:00.000Z",
+        "bal": 1025.89,
+        "reason": "Reconciled against Virgin Money statement — 10 missing transactions added"
+      },
+      {
+        "date": "2026-04-18T00:27:35.159Z",
+        "bal": 953.44,
+        "reason": "Currency Conversion fee"
+      },
+      {
+        "date": "2026-04-20T08:26:43.184Z",
+        "bal": 786.91,
+        "reason": "Can't recognise the transaction diff"
+      },
+      {
+        "date": "2026-04-20T15:32:28.553Z",
+        "bal": 626.91,
+        "reason": "FIFA points"
+      },
+      {
+        "date": "2026-04-22T22:45:57.264Z",
+        "bal": 378.39,
+        "reason": "Bank fee"
+      },
+      {
+        "date": "2026-04-24T03:21:40.970Z",
+        "bal": 376.73,
+        "reason": "Paid for tickets to festival, transfer back in"
+      },
+      {
+        "date": "2026-04-24T03:24:11.335Z",
+        "bal": 376.73,
+        "reason": "Vape previously was counted twice, removed and it updated balance"
+      },
+      {
+        "date": "2026-04-28T02:22:20.897Z",
+        "bal": 108.77,
+        "reason": "Drinks at Club rose bay"
+      },
+      {
+        "date": "2026-04-28T22:55:50.956Z",
+        "bal": 953.49,
+        "reason": "NRMA INSURANCE COVERED BY MUM"
+      },
+      {
+        "date": "2026-04-29T02:25:38.965Z",
+        "bal": 779.5,
+        "reason": "Car sales advertisement for WRX LISTING"
+      },
+      {
+        "date": "2026-04-30T22:49:05.430Z",
+        "bal": 522,
+        "reason": "Opal Travel - Train and Tram"
+      },
+      {
+        "date": "2026-05-02T14:27:58.816Z",
+        "bal": 119,
+        "reason": "Opal Travel - Train and Tram"
+      },
+      {
+        "date": "2026-05-04T15:01:39.384Z",
+        "bal": 25.38,
+        "reason": "Unlogged spend"
+      },
+      {
+        "date": "2026-05-04T21:33:37.250Z",
+        "bal": 473.35,
+        "reason": "Borrowed from Michael"
+      }
+    ],
+    "notifications": [
+      {
+        "id": "urgent_Balance_below__500__",
+        "type": "urgent",
+        "msg": "Balance below $500 — review spending before next bill",
+        "act": "Check bills",
+        "ts": 1777961557573,
+        "read": true
+      },
+      {
+        "id": "info_Net_worth_up__96_110",
+        "type": "info",
+        "msg": "Net worth up $96,110 this month — keep going",
+        "act": null,
+        "ts": 1777961557574,
+        "read": true
+      },
+      {
+        "id": "eod-Tue May 05 2026",
+        "type": "warning",
+        "msg": "Daily budget exceeded — You spent $74.09 today — $52.53 over your $21.56 limit.",
+        "act": null,
+        "ts": 1777961643145,
+        "read": true
+      },
+      {
+        "id": "day-alert-Tue May 05 2026",
+        "type": "warning",
+        "msg": "Over daily budget — You're $71.18 over your $19.86 limit today.",
+        "act": null,
+        "ts": 1777971194809,
+        "read": true
+      },
+      {
+        "id": "info_Net_worth_up__96_093",
+        "type": "info",
+        "msg": "Net worth up $96,093 this month — keep going",
+        "act": null,
+        "ts": 1777971194824,
+        "read": true
+      }
+    ],
+    "dismissedNotifications": [
+      "urgent_Owed_to_Michael__550",
+      "warning_Optus___Phone___Inte",
+      "warning_Car_Loan___Firstmac_",
+      "urgent_Parking_Fine__140_du",
+      "warning_YouTube_Premium__17_",
+      "weekly_Week_review__spent__"
+    ],
+    "_currentSlyghtScore": 491,
+    "_wrxSlider": 23500,
+    "_wrxPriceUpdated": true,
+    "_mumReframed": true,
+    "mumAccountBalance": 3000,
+    "_billsCleanedV1": true,
+    "_afterpayUpdated": true,
+    "_paidBillsKeyMigrationV1": true,
+    "superBalance": 63429.15,
+    "superFund": "Aware Super",
+    "superMonthlyContrib": 1310.5,
+    "superGrowthRate": 0.085,
+    "_superAdded": true,
+    "_billsFreqMetaV1": true,
+    "_debtAuditV1": true,
+    "_notifCleanV1": true,
+    "paydayPlanAutoExpanded": false,
+    "_invariantsHiddenAt": 1777978727927,
+    "_invariantViolationCounts": {
+      "paidbills-key-not-future": {
+        "count": 7,
+        "firstSeenTs": 1777976394990,
+        "lastSeenTs": 1777978739244
+      }
+    },
+    "_invariantsDismissedSession": {},
+    "_invariantSessionTs": 1777976391855
+  },
+  "BILLS": [
+    {
+      "name": "Rent + Deposit Savings",
+      "amt": 3000,
+      "day": 15,
+      "tag": "Fixed",
+      "recurring": true,
+      "breakdown": {
+        "rent": 500,
+        "depositSavings": 2500
+      },
+      "note": "$500 rent to Mum + $2,500 to property deposit account"
+    },
+    {
+      "name": "KIA Loan — Firstmac",
+      "amt": 780,
+      "day": 15,
+      "tag": "Loan",
+      "recurring": true,
+      "freq": "monthly"
+    },
+    {
+      "name": "Amazon Prime",
+      "amt": 9.99,
+      "day": 3,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Microsoft PC Game Pass",
+      "amt": 19.45,
+      "day": 7,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Pet Insurance — Bowtie",
+      "amt": 60.2,
+      "day": 8,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "Claude Plus",
+      "amt": 34,
+      "day": 9,
+      "tag": "Subscription",
+      "recurring": true
+    },
+    {
+      "name": "Netflix",
+      "amt": 28.99,
+      "day": 10,
+      "tag": "Streaming",
+      "recurring": true
+    },
+    {
+      "name": "Optus — Phone + Internet",
+      "amt": 194,
+      "day": 16,
+      "tag": "Fixed",
+      "recurring": true
+    },
+    {
+      "name": "YouTube Premium",
+      "amt": 16.99,
+      "day": 20,
+      "tag": "Streaming",
+      "recurring": true
+    },
+    {
+      "name": "Adobe",
+      "amt": 23.99,
+      "day": 25,
+      "tag": "Subscription",
+      "recurring": true,
+      "freq": "monthly"
+    },
+    {
+      "name": "Spotify",
+      "amt": 15.99,
+      "day": 26,
+      "tag": "Streaming",
+      "recurring": true,
+      "freq": "monthly"
+    },
+    {
+      "name": "NRMA KIA Insurance",
+      "amt": 1023.06,
+      "day": 2,
+      "tag": "insurance",
+      "recurring": true,
+      "scanned": true,
+      "freq": "yearly",
+      "dueMonth": 4
+    },
+    {
+      "name": "Teachers Health",
+      "amt": 259.41,
+      "day": 1,
+      "tag": "Health",
+      "recurring": true,
+      "freq": "quarterly",
+      "dueMonths": [
+        1,
+        4,
+        7,
+        10
+      ]
+    },
+    {
+      "name": "Google Microsoft",
+      "amt": 3,
+      "day": 1,
+      "tag": "Fixed",
+      "recurring": true,
+      "freq": "monthly"
+    }
+  ],
+  "exported": "2026-05-05T10:59:02.915Z",
+  "auditLog": {
+    "entries": [
+      {
+        "ts": "2026-05-05T08:53:14.830Z",
+        "time": "6:53:14 pm",
+        "action": "LOG_EXPENSE_$16.95",
+        "before": 398.35,
+        "after": 381.35,
+        "change": -17,
+        "expected": -17,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-05T06:49:50.874Z",
+        "time": "4:49:50 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T06:10:19.650Z",
+        "time": "4:10:19 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T02:48:16.509Z",
+        "time": "12:48:16 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T02:47:18.841Z",
+        "time": "12:47:18 pm",
+        "action": "LOG_EXPENSE_$32.14",
+        "before": 431.35,
+        "after": 398.35,
+        "change": -33,
+        "expected": -33,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-05T02:47:03.428Z",
+        "time": "12:47:03 pm",
+        "action": "LOG_EXPENSE_$41.95",
+        "before": 473.35,
+        "after": 431.35,
+        "change": -42,
+        "expected": -42,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-04T21:33:37.250Z",
+        "time": "7:33:37 am",
+        "action": "BALANCE_CORRECTION_UP",
+        "before": 25.38,
+        "after": 473.35,
+        "change": 447.97,
+        "expected": 447.97,
+        "ok": true,
+        "notes": "Correction: Borrowed from Michael | diff: $447.97"
+      },
+      {
+        "ts": "2026-05-04T15:01:39.385Z",
+        "time": "1:01:39 am",
+        "action": "BALANCE_CORRECTION_DOWN",
+        "before": 99,
+        "after": 25.38,
+        "change": -73.62,
+        "expected": -73.62,
+        "ok": true,
+        "notes": "Correction: Unlogged spend | diff: $-73.62"
+      },
+      {
+        "ts": "2026-05-03T01:16:57.458Z",
+        "time": "11:16:57 am",
+        "action": "LOG_EXPENSE_$19.6",
+        "before": 119,
+        "after": 99,
+        "change": -20,
+        "expected": -20,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      }
+    ],
+    "totalCount": 9,
+    "anomalies": [],
+    "jsErrors": [
+      {
+        "ts": "2026-05-05T06:49:50.874Z",
+        "time": "4:49:50 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T06:10:19.650Z",
+        "time": "4:10:19 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T02:48:16.509Z",
+        "time": "12:48:16 pm",
+        "action": "JS_ERROR",
+        "before": 398.35,
+        "after": 398.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      }
+    ],
+    "consistencyFails": []
+  },
+  "uxReport": {
+    "ts": "2026-05-05T10:58:52.987Z",
+    "sessionMins": 0,
+    "totalTaps": 1,
+    "missedTapPct": 0,
+    "slowRenders": 0,
+    "modalAbandons": 0,
+    "topFeatures": [
+      [
+        "SLYGHT\n  Know your money. Alwa",
+        1
+      ]
+    ],
+    "tabUsage": [],
+    "issues": [],
+    "suggestions": [
+      "Unvisited tabs: dash, cal, chat, spend, settings — content may not be discoverable"
+    ],
+    "score": 95,
+    "sessionStats": {
+      "sessionMins": 0,
+      "totalTaps": 3,
+      "missedTapPct": 167,
+      "slowRenders": 0,
+      "modalAbandons": 0,
+      "topFeatures": [
+        [
+          "SLYGHT\n  Know your money. Alwa",
+          1
+        ],
+        [
+          "Settings",
+          1
+        ],
+        [
+          "📊 My Financial Data▲",
+          1
+        ]
+      ],
+      "tabUsage": [
+        [
+          "pg-settings",
+          1
+        ]
+      ],
+      "issues": [
+        "HIGH missed tap rate (167%) — tap targets may be too small"
+      ],
+      "suggestions": [
+        "Unvisited tabs: dash, cal, chat, spend — content may not be discoverable",
+        "Low scroll on pg-settings (1%) — key info may need moving higher"
+      ],
+      "score": 75
+    }
+  },
+  "snapshots": {
+    "count": 10,
+    "latest": [
+      {
+        "ts": "2026-04-22T17:11:41.641Z",
+        "time": "3:11:41 am",
+        "date": "23/04/2026",
+        "reason": "end-of-day",
+        "bal": 390.44,
+        "cc": 0,
+        "carloan": 23214.32,
+        "debts": [
+          {
+            "id": 0,
+            "name": "Afterpay",
+            "amt": 250.84,
+            "paid": true,
+            "rate": 0,
+            "priority": 0,
+            "notes": "Cleared 14 Apr"
+          },
+          {
+            "id": 1,
+            "name": "Owed to Michael",
+            "amt": 550,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-15",
+            "notes": "$300 borrowed + $50 goodwill + $200 additional borrowing"
+          },
+          {
+            "id": 2,
+            "name": "CC overdue",
+            "amt": 187.35,
+            "paid": true,
+            "rate": 19.99,
+            "priority": 2,
+            "delayed": true,
+            "delayDate": "2026-05-06",
+            "notes": "Cleared — mum paid full CC balance 15 Apr"
+          },
+          {
+            "id": 3,
+            "name": "WRX Rego",
+            "amt": 462,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "notes": "LIST THE WRX THIS WEEK",
+            "delayDate": "2026-04-15"
+          },
+          {
+            "id": 4,
+            "name": "Pet Insurance",
+            "amt": 120.47,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-22"
+          },
+          {
+            "id": 5,
+            "name": "Parking Fine",
+            "amt": 140,
+            "paid": true,
+            "rate": 0,
+            "priority": 3,
+            "delayDate": "2026-04-16"
+          },
+          {
+            "id": 6,
+            "name": "WRX Green Slip",
+            "amt": 552.54,
+            "rate": 0,
+            "paid": true,
+            "delayed": false,
+            "delayDate": "2026-04-15",
+            "notes": "",
+            "priority": 4
+          },
+          {
+            "id": 7,
+            "name": "Owed to Mum",
+            "amt": 4658.39,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "monthlyPayment": 500,
+            "viaRent": true,
+            "notes": "CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.",
+            "delayDate": "2027-01-15",
+            "originalAmt": 4658.39
+          },
+          {
+            "id": 8,
+            "name": "Teachers Health",
+            "amt": 259.41,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "delayed": false,
+            "delayDate": "2026-05-01",
+            "notes": "Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit",
+            "scanned": true,
+            "scanConfidence": 0.95,
+            "paymentMethod": "BPay, credit card, online",
+            "reference": "9563248"
+          }
+        ],
+        "txns": [
+          {
+            "id": 0,
+            "amt": 7282.33,
+            "note": "Salary — Manhattan Associates",
+            "cat": "Income",
+            "ts": 1776121201000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "id": 1,
+            "amt": 2500,
+            "note": "CC repayment — Virgin Money (pending)",
+            "cat": "Debt repayment",
+            "ts": 1776121202000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 2,
+            "amt": 1170,
+            "note": "Car Loan Firstmac — regular + missed payment + fees",
+            "cat": "Debt repayment",
+            "ts": 1776121203000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 3,
+            "amt": 250.84,
+            "note": "Afterpay — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776121204000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 4,
+            "amt": 141.76,
+            "note": "Claude Max subscription",
+            "cat": "Subscription",
+            "ts": 1776121205000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 5,
+            "amt": 0.9,
+            "note": "China Holiday round-ups",
+            "cat": "Savings",
+            "ts": 1776121206000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 6,
+            "amt": 100,
+            "note": "Yia yia gift",
+            "cat": "Income",
+            "ts": 1776121207000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "amt": 780,
+            "note": "Car Loan — Firstmac — paid",
+            "cat": "Loan",
+            "ts": 1776176102273,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 550,
+            "note": "Owed to Michael — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776178940008,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 51,
+            "note": "Car pink slip",
+            "cat": "Transport / Fuel",
+            "ts": 1776214977602,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.62,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776216510674,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14.73,
+            "note": "Weed accessories",
+            "cat": "Shopping",
+            "ts": 1776217013669,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 552.54,
+            "note": "WRX Green Slip — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243762236,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 462,
+            "note": "WRX Rego — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243907922,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 140,
+            "note": "Parking Fine — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776244257389,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776303974205,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 70,
+            "note": "Vape 😭",
+            "cat": "Other",
+            "ts": 1776303993582,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 177.86,
+            "note": "Claude Max upgrade — 20x plan",
+            "cat": "Subscription",
+            "ts": 1776254400000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.78,
+            "note": "Aldi Kirrawee — groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776254401000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 194,
+            "note": "Optus — Phone + Internet",
+            "cat": "Bills",
+            "ts": 1776340800000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 64.99,
+            "note": "Vape",
+            "cat": "Other",
+            "ts": 1776340801000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 32.39,
+            "note": "ZLR Ph Tonkin — pharmacy",
+            "cat": "Shopping",
+            "ts": 1776340802000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "KJ Yogurt",
+            "cat": "Food / Coffee",
+            "ts": 1776340803000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13.11,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776340804000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776340805000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 4.98,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776427200000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776427201000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 21.21,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776398059697,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 9,
+            "note": "Snacks",
+            "cat": "Food / Coffee",
+            "ts": 1776398604566,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 23.15,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776417089172,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Ice cream",
+            "cat": "Food / Coffee",
+            "ts": 1776422982574,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20,
+            "note": "Sunglasses",
+            "cat": "Shopping",
+            "ts": 1776478615230,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 22.7,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776478626297,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 8.5,
+            "note": "Cookie",
+            "cat": "Food / Coffee",
+            "ts": 1776487809925,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Chips",
+            "cat": "Food / Coffee",
+            "ts": 1776487862401,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 16.99,
+            "note": "YouTube Premium — paid",
+            "cat": "Streaming",
+            "ts": 1776553081015,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20.61,
+            "note": "Coffe date",
+            "cat": "Food / Coffee",
+            "ts": 1776575898806,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 30,
+            "note": "Food for party",
+            "cat": "Food / Coffee",
+            "ts": 1776585499142,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14,
+            "note": "Coffee",
+            "cat": "Food / Coffee",
+            "ts": 1776643533810,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 6,
+            "note": "Lollies",
+            "cat": "Food / Coffee",
+            "ts": 1776656148210,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 116,
+            "note": "FIFA packs",
+            "cat": "Entertainment",
+            "ts": 1776779989164,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 120.47,
+            "note": "Pet Insurance — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776819934293,
+            "income": false,
+            "_balAffected": true
+          }
+        ],
+        "savingsBuckets": [
+          {
+            "id": 0,
+            "name": "China Holiday",
+            "goal": 4000,
+            "saved": 67.22,
+            "account": "Virgin Money"
+          },
+          {
+            "id": 1,
+            "name": "Rainy Day Fund",
+            "goal": 2000,
+            "saved": 0,
+            "account": "ING"
+          },
+          {
+            "id": 2,
+            "name": "Rego & Insurance",
+            "goal": 1500,
+            "saved": 0,
+            "account": "Westpac"
+          },
+          {
+            "id": 3,
+            "name": "Gifts & Celebrations",
+            "goal": 500,
+            "saved": 0,
+            "account": "Other"
+          }
+        ],
+        "bills": [
+          {
+            "name": "Rent",
+            "amt": 3000,
+            "day": 15,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Car Loan — Firstmac",
+            "amt": 780,
+            "day": 16,
+            "tag": "Loan",
+            "recurring": true,
+            "freq": "monthly"
+          },
+          {
+            "name": "Health Insurance (qtrly avg)",
+            "amt": 119.04,
+            "day": 1,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Amazon Prime",
+            "amt": 9.99,
+            "day": 3,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Fuel",
+            "amt": 110,
+            "day": 5,
+            "tag": "Variable",
+            "recurring": true
+          },
+          {
+            "name": "Microsoft PC Game Pass",
+            "amt": 19.45,
+            "day": 7,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Pet Insurance — Bowtie",
+            "amt": 60.2,
+            "day": 8,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Claude Plus",
+            "amt": 34,
+            "day": 9,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Netflix",
+            "amt": 28.99,
+            "day": 10,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Optus — Phone + Internet",
+            "amt": 194,
+            "day": 16,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "YouTube Premium",
+            "amt": 16.99,
+            "day": 20,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Adobe",
+            "amt": 23.99,
+            "day": 27,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Spotify",
+            "amt": 15.99,
+            "day": 28,
+            "tag": "Streaming",
+            "recurring": true
+          }
+        ],
+        "surplus": 0,
+        "netWorth": {
+          "assets": 21457.66,
+          "liabilities": 23473.73,
+          "net": -2016.0699999999997
+        },
+        "paydayReceived": true
+      },
+      {
+        "ts": "2026-04-22T17:11:35.906Z",
+        "time": "3:11:35 am",
+        "date": "23/04/2026",
+        "reason": "app_open",
+        "bal": 390.44,
+        "cc": 0,
+        "carloan": 23214.32,
+        "debts": [
+          {
+            "id": 0,
+            "name": "Afterpay",
+            "amt": 250.84,
+            "paid": true,
+            "rate": 0,
+            "priority": 0,
+            "notes": "Cleared 14 Apr"
+          },
+          {
+            "id": 1,
+            "name": "Owed to Michael",
+            "amt": 550,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-15",
+            "notes": "$300 borrowed + $50 goodwill + $200 additional borrowing"
+          },
+          {
+            "id": 2,
+            "name": "CC overdue",
+            "amt": 187.35,
+            "paid": true,
+            "rate": 19.99,
+            "priority": 2,
+            "delayed": true,
+            "delayDate": "2026-05-06",
+            "notes": "Cleared — mum paid full CC balance 15 Apr"
+          },
+          {
+            "id": 3,
+            "name": "WRX Rego",
+            "amt": 462,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "notes": "LIST THE WRX THIS WEEK",
+            "delayDate": "2026-04-15"
+          },
+          {
+            "id": 4,
+            "name": "Pet Insurance",
+            "amt": 120.47,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-22"
+          },
+          {
+            "id": 5,
+            "name": "Parking Fine",
+            "amt": 140,
+            "paid": true,
+            "rate": 0,
+            "priority": 3,
+            "delayDate": "2026-04-16"
+          },
+          {
+            "id": 6,
+            "name": "WRX Green Slip",
+            "amt": 552.54,
+            "rate": 0,
+            "paid": true,
+            "delayed": false,
+            "delayDate": "2026-04-15",
+            "notes": "",
+            "priority": 4
+          },
+          {
+            "id": 7,
+            "name": "Owed to Mum",
+            "amt": 4658.39,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "monthlyPayment": 500,
+            "viaRent": true,
+            "notes": "CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.",
+            "delayDate": "2027-01-15",
+            "originalAmt": 4658.39
+          },
+          {
+            "id": 8,
+            "name": "Teachers Health",
+            "amt": 259.41,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "delayed": false,
+            "delayDate": "2026-05-01",
+            "notes": "Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit",
+            "scanned": true,
+            "scanConfidence": 0.95,
+            "paymentMethod": "BPay, credit card, online",
+            "reference": "9563248"
+          }
+        ],
+        "txns": [
+          {
+            "id": 0,
+            "amt": 7282.33,
+            "note": "Salary — Manhattan Associates",
+            "cat": "Income",
+            "ts": 1776121201000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "id": 1,
+            "amt": 2500,
+            "note": "CC repayment — Virgin Money (pending)",
+            "cat": "Debt repayment",
+            "ts": 1776121202000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 2,
+            "amt": 1170,
+            "note": "Car Loan Firstmac — regular + missed payment + fees",
+            "cat": "Debt repayment",
+            "ts": 1776121203000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 3,
+            "amt": 250.84,
+            "note": "Afterpay — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776121204000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 4,
+            "amt": 141.76,
+            "note": "Claude Max subscription",
+            "cat": "Subscription",
+            "ts": 1776121205000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 5,
+            "amt": 0.9,
+            "note": "China Holiday round-ups",
+            "cat": "Savings",
+            "ts": 1776121206000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 6,
+            "amt": 100,
+            "note": "Yia yia gift",
+            "cat": "Income",
+            "ts": 1776121207000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "amt": 780,
+            "note": "Car Loan — Firstmac — paid",
+            "cat": "Loan",
+            "ts": 1776176102273,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 550,
+            "note": "Owed to Michael — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776178940008,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 51,
+            "note": "Car pink slip",
+            "cat": "Transport / Fuel",
+            "ts": 1776214977602,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.62,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776216510674,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14.73,
+            "note": "Weed accessories",
+            "cat": "Shopping",
+            "ts": 1776217013669,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 552.54,
+            "note": "WRX Green Slip — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243762236,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 462,
+            "note": "WRX Rego — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243907922,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 140,
+            "note": "Parking Fine — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776244257389,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776303974205,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 70,
+            "note": "Vape 😭",
+            "cat": "Other",
+            "ts": 1776303993582,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 177.86,
+            "note": "Claude Max upgrade — 20x plan",
+            "cat": "Subscription",
+            "ts": 1776254400000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.78,
+            "note": "Aldi Kirrawee — groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776254401000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 194,
+            "note": "Optus — Phone + Internet",
+            "cat": "Bills",
+            "ts": 1776340800000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 64.99,
+            "note": "Vape",
+            "cat": "Other",
+            "ts": 1776340801000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 32.39,
+            "note": "ZLR Ph Tonkin — pharmacy",
+            "cat": "Shopping",
+            "ts": 1776340802000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "KJ Yogurt",
+            "cat": "Food / Coffee",
+            "ts": 1776340803000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13.11,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776340804000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776340805000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 4.98,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776427200000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776427201000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 21.21,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776398059697,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 9,
+            "note": "Snacks",
+            "cat": "Food / Coffee",
+            "ts": 1776398604566,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 23.15,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776417089172,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Ice cream",
+            "cat": "Food / Coffee",
+            "ts": 1776422982574,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20,
+            "note": "Sunglasses",
+            "cat": "Shopping",
+            "ts": 1776478615230,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 22.7,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776478626297,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 8.5,
+            "note": "Cookie",
+            "cat": "Food / Coffee",
+            "ts": 1776487809925,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Chips",
+            "cat": "Food / Coffee",
+            "ts": 1776487862401,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 16.99,
+            "note": "YouTube Premium — paid",
+            "cat": "Streaming",
+            "ts": 1776553081015,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20.61,
+            "note": "Coffe date",
+            "cat": "Food / Coffee",
+            "ts": 1776575898806,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 30,
+            "note": "Food for party",
+            "cat": "Food / Coffee",
+            "ts": 1776585499142,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14,
+            "note": "Coffee",
+            "cat": "Food / Coffee",
+            "ts": 1776643533810,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 6,
+            "note": "Lollies",
+            "cat": "Food / Coffee",
+            "ts": 1776656148210,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 116,
+            "note": "FIFA packs",
+            "cat": "Entertainment",
+            "ts": 1776779989164,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 120.47,
+            "note": "Pet Insurance — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776819934293,
+            "income": false,
+            "_balAffected": true
+          }
+        ],
+        "savingsBuckets": [
+          {
+            "id": 0,
+            "name": "China Holiday",
+            "goal": 4000,
+            "saved": 67.22,
+            "account": "Virgin Money"
+          },
+          {
+            "id": 1,
+            "name": "Rainy Day Fund",
+            "goal": 2000,
+            "saved": 0,
+            "account": "ING"
+          },
+          {
+            "id": 2,
+            "name": "Rego & Insurance",
+            "goal": 1500,
+            "saved": 0,
+            "account": "Westpac"
+          },
+          {
+            "id": 3,
+            "name": "Gifts & Celebrations",
+            "goal": 500,
+            "saved": 0,
+            "account": "Other"
+          }
+        ],
+        "bills": [
+          {
+            "name": "Rent",
+            "amt": 3000,
+            "day": 15,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Car Loan — Firstmac",
+            "amt": 780,
+            "day": 16,
+            "tag": "Loan",
+            "recurring": true,
+            "freq": "monthly"
+          },
+          {
+            "name": "Health Insurance (qtrly avg)",
+            "amt": 119.04,
+            "day": 1,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Amazon Prime",
+            "amt": 9.99,
+            "day": 3,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Fuel",
+            "amt": 110,
+            "day": 5,
+            "tag": "Variable",
+            "recurring": true
+          },
+          {
+            "name": "Microsoft PC Game Pass",
+            "amt": 19.45,
+            "day": 7,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Pet Insurance — Bowtie",
+            "amt": 60.2,
+            "day": 8,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Claude Plus",
+            "amt": 34,
+            "day": 9,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Netflix",
+            "amt": 28.99,
+            "day": 10,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Optus — Phone + Internet",
+            "amt": 194,
+            "day": 16,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "YouTube Premium",
+            "amt": 16.99,
+            "day": 20,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Adobe",
+            "amt": 23.99,
+            "day": 27,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Spotify",
+            "amt": 15.99,
+            "day": 28,
+            "tag": "Streaming",
+            "recurring": true
+          }
+        ],
+        "surplus": 0,
+        "netWorth": {
+          "assets": 21457.66,
+          "liabilities": 23473.73,
+          "net": -2016.0699999999997
+        },
+        "paydayReceived": true
+      },
+      {
+        "ts": "2026-04-22T17:10:27.492Z",
+        "time": "3:10:27 am",
+        "date": "23/04/2026",
+        "reason": "end-of-day",
+        "bal": 390.44,
+        "cc": 0,
+        "carloan": 23214.32,
+        "debts": [
+          {
+            "id": 0,
+            "name": "Afterpay",
+            "amt": 250.84,
+            "paid": true,
+            "rate": 0,
+            "priority": 0,
+            "notes": "Cleared 14 Apr"
+          },
+          {
+            "id": 1,
+            "name": "Owed to Michael",
+            "amt": 550,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-15",
+            "notes": "$300 borrowed + $50 goodwill + $200 additional borrowing"
+          },
+          {
+            "id": 2,
+            "name": "CC overdue",
+            "amt": 187.35,
+            "paid": true,
+            "rate": 19.99,
+            "priority": 2,
+            "delayed": true,
+            "delayDate": "2026-05-06",
+            "notes": "Cleared — mum paid full CC balance 15 Apr"
+          },
+          {
+            "id": 3,
+            "name": "WRX Rego",
+            "amt": 462,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "notes": "LIST THE WRX THIS WEEK",
+            "delayDate": "2026-04-15"
+          },
+          {
+            "id": 4,
+            "name": "Pet Insurance",
+            "amt": 120.47,
+            "paid": true,
+            "rate": 0,
+            "priority": 1,
+            "delayDate": "2026-04-22"
+          },
+          {
+            "id": 5,
+            "name": "Parking Fine",
+            "amt": 140,
+            "paid": true,
+            "rate": 0,
+            "priority": 3,
+            "delayDate": "2026-04-16"
+          },
+          {
+            "id": 6,
+            "name": "WRX Green Slip",
+            "amt": 552.54,
+            "rate": 0,
+            "paid": true,
+            "delayed": false,
+            "delayDate": "2026-04-15",
+            "notes": "",
+            "priority": 4
+          },
+          {
+            "id": 7,
+            "name": "Owed to Mum",
+            "amt": 4658.39,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "monthlyPayment": 500,
+            "viaRent": true,
+            "notes": "CC payoff $2,158 + missed rent $2,500. $500/month via rent. ~9 months.",
+            "delayDate": "2027-01-15",
+            "originalAmt": 4658.39
+          },
+          {
+            "id": 8,
+            "name": "Teachers Health",
+            "amt": 259.41,
+            "rate": 0,
+            "priority": 1,
+            "paid": false,
+            "delayed": false,
+            "delayDate": "2026-05-01",
+            "notes": "Ref: 9563248 Pay $259.41 within 5 days to avoid automatic account debit",
+            "scanned": true,
+            "scanConfidence": 0.95,
+            "paymentMethod": "BPay, credit card, online",
+            "reference": "9563248"
+          }
+        ],
+        "txns": [
+          {
+            "id": 0,
+            "amt": 7282.33,
+            "note": "Salary — Manhattan Associates",
+            "cat": "Income",
+            "ts": 1776121201000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "id": 1,
+            "amt": 2500,
+            "note": "CC repayment — Virgin Money (pending)",
+            "cat": "Debt repayment",
+            "ts": 1776121202000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 2,
+            "amt": 1170,
+            "note": "Car Loan Firstmac — regular + missed payment + fees",
+            "cat": "Debt repayment",
+            "ts": 1776121203000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 3,
+            "amt": 250.84,
+            "note": "Afterpay — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776121204000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 4,
+            "amt": 141.76,
+            "note": "Claude Max subscription",
+            "cat": "Subscription",
+            "ts": 1776121205000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 5,
+            "amt": 0.9,
+            "note": "China Holiday round-ups",
+            "cat": "Savings",
+            "ts": 1776121206000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "id": 6,
+            "amt": 100,
+            "note": "Yia yia gift",
+            "cat": "Income",
+            "ts": 1776121207000,
+            "income": true,
+            "_balAffected": true
+          },
+          {
+            "amt": 780,
+            "note": "Car Loan — Firstmac — paid",
+            "cat": "Loan",
+            "ts": 1776176102273,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 550,
+            "note": "Owed to Michael — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776178940008,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 51,
+            "note": "Car pink slip",
+            "cat": "Transport / Fuel",
+            "ts": 1776214977602,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.62,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776216510674,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14.73,
+            "note": "Weed accessories",
+            "cat": "Shopping",
+            "ts": 1776217013669,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 552.54,
+            "note": "WRX Green Slip — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243762236,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 462,
+            "note": "WRX Rego — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776243907922,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 140,
+            "note": "Parking Fine — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776244257389,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776303974205,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 70,
+            "note": "Vape 😭",
+            "cat": "Other",
+            "ts": 1776303993582,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 177.86,
+            "note": "Claude Max upgrade — 20x plan",
+            "cat": "Subscription",
+            "ts": 1776254400000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 33.78,
+            "note": "Aldi Kirrawee — groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776254401000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 194,
+            "note": "Optus — Phone + Internet",
+            "cat": "Bills",
+            "ts": 1776340800000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 64.99,
+            "note": "Vape",
+            "cat": "Other",
+            "ts": 1776340801000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 32.39,
+            "note": "ZLR Ph Tonkin — pharmacy",
+            "cat": "Shopping",
+            "ts": 1776340802000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 10.5,
+            "note": "KJ Yogurt",
+            "cat": "Food / Coffee",
+            "ts": 1776340803000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13.11,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776340804000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776340805000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 4.98,
+            "note": "Batch Espresso",
+            "cat": "Food / Coffee",
+            "ts": 1776427200000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 1,
+            "note": "Opal fare",
+            "cat": "Transport / Fuel",
+            "ts": 1776427201000,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 21.21,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776398059697,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 9,
+            "note": "Snacks",
+            "cat": "Food / Coffee",
+            "ts": 1776398604566,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 23.15,
+            "note": "Groceries",
+            "cat": "Food / Coffee",
+            "ts": 1776417089172,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Ice cream",
+            "cat": "Food / Coffee",
+            "ts": 1776422982574,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20,
+            "note": "Sunglasses",
+            "cat": "Shopping",
+            "ts": 1776478615230,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 22.7,
+            "note": "Lunch",
+            "cat": "Food / Coffee",
+            "ts": 1776478626297,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 8.5,
+            "note": "Cookie",
+            "cat": "Food / Coffee",
+            "ts": 1776487809925,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 13,
+            "note": "Chips",
+            "cat": "Food / Coffee",
+            "ts": 1776487862401,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 16.99,
+            "note": "YouTube Premium — paid",
+            "cat": "Streaming",
+            "ts": 1776553081015,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 20.61,
+            "note": "Coffe date",
+            "cat": "Food / Coffee",
+            "ts": 1776575898806,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 30,
+            "note": "Food for party",
+            "cat": "Food / Coffee",
+            "ts": 1776585499142,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 14,
+            "note": "Coffee",
+            "cat": "Food / Coffee",
+            "ts": 1776643533810,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 6,
+            "note": "Lollies",
+            "cat": "Food / Coffee",
+            "ts": 1776656148210,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 116,
+            "note": "FIFA packs",
+            "cat": "Entertainment",
+            "ts": 1776779989164,
+            "income": false,
+            "_balAffected": true
+          },
+          {
+            "amt": 120.47,
+            "note": "Pet Insurance — cleared",
+            "cat": "Debt repayment",
+            "ts": 1776819934293,
+            "income": false,
+            "_balAffected": true
+          }
+        ],
+        "savingsBuckets": [
+          {
+            "id": 0,
+            "name": "China Holiday",
+            "goal": 4000,
+            "saved": 67.22,
+            "account": "Virgin Money"
+          },
+          {
+            "id": 1,
+            "name": "Rainy Day Fund",
+            "goal": 2000,
+            "saved": 0,
+            "account": "ING"
+          },
+          {
+            "id": 2,
+            "name": "Rego & Insurance",
+            "goal": 1500,
+            "saved": 0,
+            "account": "Westpac"
+          },
+          {
+            "id": 3,
+            "name": "Gifts & Celebrations",
+            "goal": 500,
+            "saved": 0,
+            "account": "Other"
+          }
+        ],
+        "bills": [
+          {
+            "name": "Rent",
+            "amt": 3000,
+            "day": 15,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Car Loan — Firstmac",
+            "amt": 780,
+            "day": 16,
+            "tag": "Loan",
+            "recurring": true,
+            "freq": "monthly"
+          },
+          {
+            "name": "Health Insurance (qtrly avg)",
+            "amt": 119.04,
+            "day": 1,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Amazon Prime",
+            "amt": 9.99,
+            "day": 3,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Fuel",
+            "amt": 110,
+            "day": 5,
+            "tag": "Variable",
+            "recurring": true
+          },
+          {
+            "name": "Microsoft PC Game Pass",
+            "amt": 19.45,
+            "day": 7,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Pet Insurance — Bowtie",
+            "amt": 60.2,
+            "day": 8,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "Claude Plus",
+            "amt": 34,
+            "day": 9,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Netflix",
+            "amt": 28.99,
+            "day": 10,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Optus — Phone + Internet",
+            "amt": 194,
+            "day": 16,
+            "tag": "Fixed",
+            "recurring": true
+          },
+          {
+            "name": "YouTube Premium",
+            "amt": 16.99,
+            "day": 20,
+            "tag": "Streaming",
+            "recurring": true
+          },
+          {
+            "name": "Adobe",
+            "amt": 23.99,
+            "day": 27,
+            "tag": "Subscription",
+            "recurring": true
+          },
+          {
+            "name": "Spotify",
+            "amt": 15.99,
+            "day": 28,
+            "tag": "Streaming",
+            "recurring": true
+          }
+        ],
+        "surplus": 0,
+        "netWorth": {
+          "assets": 21457.66,
+          "liabilities": 23473.73,
+          "net": -2016.0699999999997
+        },
+        "paydayReceived": true
+      }
+    ]
+  },
+  "apiCosts": {
+    "allTime": 0.4133,
+    "thisMonth": 0.4133,
+    "today": 0,
+    "chatCalls": 20,
+    "scanCalls": 3,
+    "totalCalls": 23,
+    "avgPerCall": 0.01797,
+    "projectedMonthly": 1.02,
+    "projectedYearly": 12.36,
+    "daysTracked": 12
+  },
+  "guardianLastRun": null,
+  "summary": {
+    "balance": 381.35,
+    "activeDebts": [
+      {
+        "name": "Property Deposit (via Mum)",
+        "amt": 5681.45
+      },
+      {
+        "name": "Afterpay — Concert Tickets",
+        "amt": 93.56
+      },
+      {
+        "name": "Borrowed from Michael",
+        "amt": 450
+      },
+      {
+        "name": "Borrowed from Michael",
+        "amt": 500
+      }
+    ],
+    "paidThisMonth": [
+      "2026-5-KIA Loan — Firstmac-15",
+      "2026-5-Amazon Prime-3",
+      "2026-5-YouTube Premium-20",
+      "2026-5-Adobe-25",
+      "2026-5-Spotify-26",
+      "2026-5-Google Microsoft-1",
+      "2026-5-Teachers Health-1",
+      "2026-5-Microsoft PC Game Pass-7",
+      "2026-5-Claude Plus-9"
+    ],
+    "survivalMode": "cautious",
+    "slyghtScore": 404,
+    "totalTransactions": 104,
+    "paydayIn": "10 days"
+  }
+}
