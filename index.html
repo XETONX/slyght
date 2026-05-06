@@ -228,6 +228,12 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r) var(--r) 0 0;padding:24px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto}
 .modal-title{font-size:18px;font-weight:600;margin-bottom:4px;color:var(--text)}
 .modal-sub{font-size:13px;color:var(--text2);margin-bottom:20px}
+/* MI-13 details modal — row-removal animation (Mission #42 HF#1).
+   Rows visually collapse before the underlying state mutates so users
+   see the change before any next tap can land on a position-shifted row. */
+#mi13-details-list>div{transition:max-height 200ms ease-out,opacity 200ms ease-out,padding 200ms ease-out,border-color 200ms ease-out;overflow:hidden}
+.mi13-row-removing{max-height:0 !important;opacity:0;padding-top:0 !important;padding-bottom:0 !important;border-bottom-color:transparent !important;pointer-events:none}
+@media (prefers-reduced-motion:reduce){#mi13-details-list>div{transition:opacity 50ms ease-out}}
 .modal-field{margin-bottom:14px}
 .modal-field label{font-size:12px;color:var(--text2);font-weight:500;display:block;margin-bottom:6px}
 .modal-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 14px;font-size:15px;color:var(--text);outline:none;transition:border-color .2s}
@@ -403,7 +409,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
     </div>
     <!-- Layer 2 — MathInvariants card (critical / escalated fail). NO dismiss. -->
     <div id="math-invariant-card" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5">
-      <div style="font-weight:700;margin-bottom:6px">⚠️ Math reconciliation failed</div>
+      <div id="mic-title" style="font-weight:700;margin-bottom:6px">⚠️ Math reconciliation failed</div>
       <div id="mic-msg"></div>
       <div id="mic-details" style="font-size:11px;color:var(--text2);margin-top:8px;font-family:var(--mono)"></div>
     </div>
@@ -813,8 +819,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 <!-- MI-13 paid-early bills detail modal (OPEN-BUGS #39) -->
 <div class="modal-overlay" id="mi13-details-modal" onclick="handleOverlayClick(event,'mi13-details-modal')">
   <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">Bills marked paid before due date</div>
-    <div class="modal-sub">These were marked paid but their due date is in the future. Tap Undo on any that were a mistake.</div>
+    <div class="modal-title">Bills tracked as paid before due date</div>
+    <div class="modal-sub">These bills are flagged as paid in your tracking, but money hasn't moved yet (their due date is in the future). Tap Undo on any that were a mistake.</div>
     <div id="mi13-details-list" style="margin:12px 0"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('mi13-details-modal')">Close</button>
@@ -2775,10 +2781,10 @@ const MathInvariants = {
         if (future.length === 0) return null;
         return { displayValue: future.length + ' bill(s)',
           expected: 'paidBills key day ≤ today',
-          details: future.length + ' bill(s) marked paid before due date: ' + future.slice(0, 3).join(', '),
+          details: future.length + ' bill(s) tracked as paid before due date: ' + future.slice(0, 3).join(', '),
           keys: future };
       },
-      message(v) { return 'Bills marked paid before due date: ' + v.details + '.'; },
+      message(v) { return 'Bills tracked as paid before due date: ' + v.details + '.'; },
     },
     {
       // Anchor: OPEN-BUGS #4 (narrow). Catches "expansion silently drops
@@ -2875,6 +2881,13 @@ const MathInvariants = {
     }
   },
 
+  // Mission #42 adjacent — invariants whose corresponding "resolve me"
+  // modal is currently open should NOT bump their per-render count. The
+  // user is actively resolving the violation; counting their continued
+  // attention as evidence of a worsening problem wrongly escalated
+  // legitimate single-undo flows to the alarmist card.
+  _RELATED_MODAL_BY_INVARIANT: { 'paidbills-key-not-future': 'mi13-details-modal' },
+
   // Render a banner (warn / first-time fail) or card (critical / escalated fail).
   // Insertion points: banner at top of dashboard sticky; card inside hero-section.
   render(violations) {
@@ -2889,10 +2902,13 @@ const MathInvariants = {
     const cardViolations = [];
     const bannerViolations = [];
     for (const v of violations) {
-      // Bump the count on this render pass
       const counts = S._invariantViolationCounts;
       if (!counts[v.name]) counts[v.name] = { count: 0, firstSeenTs: Date.now() };
-      counts[v.name].count++;
+      // Suppress count-bumps while the related "resolve me" modal is open.
+      const relatedModalId = this._RELATED_MODAL_BY_INVARIANT[v.name];
+      const relatedModalOpen = !!(relatedModalId && document.getElementById(relatedModalId)
+        && document.getElementById(relatedModalId).classList.contains('open'));
+      if (!relatedModalOpen) counts[v.name].count++;
       counts[v.name].lastSeenTs = Date.now();
 
       const dismissed = !!S._invariantsDismissedSession[v.name];
@@ -2922,8 +2938,22 @@ const MathInvariants = {
     // Render card (critical or escalated)
     if (card) {
       if (cardViolations.length) {
+        const titleEl = document.getElementById('mic-title');
         const msgEl = document.getElementById('mic-msg');
         const detEl = document.getElementById('mic-details');
+        // Mission #42 adjacent — pick a specific card title when the
+        // primary violation has accurate dedicated copy. Otherwise the
+        // generic "Math reconciliation failed" was firing on legitimate
+        // single-undo flows of the paidbills-key-not-future invariant.
+        if (titleEl) {
+          if (cardViolations.length === 1 && cardViolations[0].name === 'paidbills-key-not-future') {
+            const v = cardViolations[0];
+            const n = (v.keys && v.keys.length) || ((v.displayValue || '').match(/\d+/) || [''])[0] || 'Some';
+            titleEl.textContent = '⚠️ Bills tracked as paid early — ' + n + ' still need a transaction';
+          } else {
+            titleEl.textContent = '⚠️ Math reconciliation failed';
+          }
+        }
         if (msgEl) msgEl.innerHTML = cardViolations.map(v => '<div style="margin-bottom:6px">• ' + v.message + '</div>').join('');
         if (detEl) detEl.textContent = cardViolations.map(v => v.details || '').join(' | ');
         card.style.display = 'block';
@@ -4596,10 +4626,27 @@ function parseMI13Key(key) {
   return { year: m[1], month: m[2], name: m[3], day: m[4] };
 }
 
+// Mission #42 HF#1 — soft input lockout for the MI-13 modal's per-row
+// Undo buttons. Combined with the row-removal CSS animation, this prevents
+// rapid clicks from landing on a position-shifted button and undoing a
+// different bill than the user intended. 100ms drops the rapid case
+// without blocking deliberate multi-bill undo flows (each row's own
+// animation is ~220ms; lockout simply gates the click-trigger window).
+let _mi13ClickLockUntil = 0;
+
 function undoPaidBillByKey(key) {
   if (!S.paidBills || !S.paidBills[key]) return false;
   const name = parseMI13Key(key).name || key;
   delete S.paidBills[key];
+  // Mission #42 adjacent — reset the violation count when the user
+  // actively resolves an entry. Otherwise the previous count (which
+  // may have already escalated to the alarmist card via banner→card
+  // promotion on a re-render) stays high and re-fires on the next
+  // unrelated render. After this reset, any remaining future-paid
+  // keys will re-banner at count=1 (banner, not card).
+  if (S._invariantViolationCounts) {
+    S._invariantViolationCounts['paidbills-key-not-future'] = { count: 0, firstSeenTs: Date.now() };
+  }
   try { save(); } catch (_) {}
   // Re-render the modal against the new state — close if no rows left.
   try {
@@ -4639,7 +4686,22 @@ function renderMI13DetailsModal(keys) {
     const btn = document.createElement('button');
     btn.textContent = 'Undo';
     btn.style.cssText = 'background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer';
-    btn.addEventListener('click', () => undoPaidBillByKey(k));
+    btn.addEventListener('click', () => {
+      // Mission #42 HF#1 — soft 100ms input lockout + row-removal animation.
+      // Drops rapid taps that would otherwise land on the position-shifted
+      // button after the modal rebuilds (Pat's misread mechanism).
+      const now = Date.now();
+      if (now < _mi13ClickLockUntil) return;
+      _mi13ClickLockUntil = now + 100;
+      btn.disabled = true;
+      // Capture current height so the max-height transition has a from-value
+      row.style.maxHeight = row.offsetHeight + 'px';
+      // Force layout to commit the from-value before adding the class
+      void row.offsetHeight;
+      row.classList.add('mi13-row-removing');
+      // After animation, run the mutation (which rebuilds the modal)
+      setTimeout(() => undoPaidBillByKey(k), 220);
+    });
     row.appendChild(info);
     row.appendChild(btn);
     list.appendChild(row);
@@ -4900,7 +4962,7 @@ function renderBillsGrouped() {
       const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
       const _myb = _billRenderedMY(b);
       const isPaid = isThisMonthlyBillPaid(b.name, b.day, _myb.m, _myb.y);
-      const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">PAID</span>' : '';
+      const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">TRACKED</span>' : '';
       // Suppress TODAY badge when paid — never show PAID + TODAY simultaneously (#13)
       const todayBadge = (b.diff === 0 && !isPaid) ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
       // Variable bills (Fuel, Food at Work) are estimates, not fixed obligations (#2)
@@ -5082,7 +5144,7 @@ function calDayClick(day) {
     if (bPaid) {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.6">' +
         '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px">$'+b.amt.toFixed(2)+'</div></div>' +
-        '<div style="background:var(--green);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">PAID</div></div>';
+        '<div style="background:var(--green);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div></div>';
     } else {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px">' +
         '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
@@ -7967,8 +8029,8 @@ const UX = {
       const billName = nameEl.textContent?.replace(/\(same as debt.*?\)/,'').trim();
       const bill = (typeof BILLS !== 'undefined' ? BILLS : []).find(b => b.name === billName);
       if (bill && typeof isThisMonthlyBillPaid === 'function' && isThisMonthlyBillPaid(bill.name, bill.day)) {
-        const hasPaidBadge = !!nameEl.querySelector('[class*="paid"], span[style*="green"]') || nameEl.innerHTML.includes('PAID');
-        if (!hasPaidBadge) issues.push('Paid bill showing without PAID badge: ' + billName);
+        const hasPaidBadge = !!nameEl.querySelector('[class*="paid"], span[style*="green"]') || nameEl.innerHTML.includes('PAID') || nameEl.innerHTML.includes('TRACKED');
+        if (!hasPaidBadge) issues.push('Paid bill showing without paid/tracked badge: ' + billName);
       }
     });
     if (issues.length > 0) {
