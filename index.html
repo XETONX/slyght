@@ -413,8 +413,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <span id="mib-msg" style="display:inline-block;padding-right:40px"></span>
       <!-- Mission #45a — promote action affordance from underlined link to small button.
            Same destination (Mission #39 modal at 3602b8d), clearer "what tapping does" cue. -->
-      <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);color:inherit;font-size:11px;cursor:pointer;padding:3px 9px;border-radius:4px;font-weight:600;margin-left:6px">Show me these bills</button>
-      <button onclick="MathInvariants.dismiss(document.getElementById('math-invariant-banner').dataset.rule)" aria-label="Dismiss" style="position:absolute;right:8px;top:6px;background:none;border:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:4px 8px">×</button>
+      <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:rgba(255,255,255,0.95);font-size:11px;cursor:pointer;padding:3px 9px;border-radius:4px;font-weight:600;margin-left:6px">Show me these bills</button>
+      <button onclick="MathInvariants.dismiss(document.getElementById('math-invariant-banner').dataset.rule)" aria-label="Dismiss" style="position:absolute;right:8px;top:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.95);font-size:16px;line-height:1;cursor:pointer;padding:4px 10px;border-radius:4px">×</button>
     </div>
     <!-- Layer 2 — MathInvariants card (critical / escalated fail). NO dismiss. -->
     <div id="math-invariant-card" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5">
@@ -3421,6 +3421,7 @@ function renderSurvivalForecast() {
       .filter(t => {
         const d = new Date(t.ts);
         const weekAgo = new Date(Date.now() - 7*86400000);
+        // guardian-allow: no-third-discretionary-filter-array — renderSurvivalForecast inline 5-cat filter feeds the meal-prep cut-suggestion figure; matches divergence-map A9 (removable when survival-forecast cuts logic migrates to consume getDiscretionaryByCategory(weekAgo, now) per BILLS_VM integration)
         const NON_DISC = ['Debt repayment','Savings','Loan','Income','Bills'];
         return d >= weekAgo && !t.income && !NON_DISC.includes(t.cat);
       });
@@ -5725,6 +5726,7 @@ function openQuickLogModal() {
   if (overlay) overlay.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
   // UX 6: Render category chips
+  // guardian-allow: no-third-discretionary-filter-array - QUICK_CATS is the user-facing transaction-category picker chip list, not a discretionary-spend filter. Overlap with canonical NON_SPEND_CATS is incidental (UI shows 'Bills', 'Savings' etc. as logging options) (removable when rule is refined to distinguish UI category lists from inline filter arrays)
   const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Income / Refund \u2191','Other'];
   const lastCat = localStorage.getItem('slyght_last_cat') || 'Food / Coffee';
   const chipsEl = document.getElementById('cat-chips');
@@ -9853,7 +9855,7 @@ function renderSpendingPivot() {
         row.txns.slice(0,10).forEach((t,idx) => {
           const dateStr = new Date(t.ts).toLocaleDateString('en-AU',{day:'numeric',month:'short'});
           const txnIdx = S.txns.indexOf(t);
-          html += '<div onclick="openEditTxnModal('+txnIdx+')" style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;min-height:44px;border-bottom:'+(idx<row.txns.length-1?'1px solid var(--border)':'none')+'">';
+          html += '<div onclick="editTransaction('+txnIdx+')" style="display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;min-height:44px;border-bottom:'+(idx<row.txns.length-1?'1px solid var(--border)':'none')+'">';
           html += '<div style="display:flex">'+renderTxnAvatar(t.note, t.cat)+'</div>';
           html += '<div style="flex:1;min-width:0"><div style="color:var(--text);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(t.note||'Transaction')+'</div><div style="color:var(--text3);font-size:11px">'+dateStr+'</div></div>';
           html += '<div style="color:var(--red);font-size:14px;font-weight:600">-$'+t.amt.toFixed(2)+'</div></div>';

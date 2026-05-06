@@ -750,7 +750,7 @@ const RULES = [
   // ─── 12. no-third-discretionary-filter-array ────────────
   {
     name: 'no-third-discretionary-filter-array',
-    severity: 'warn',
+    severity: 'fail',
     anchor: 'RC2',
     check() {
       // Walk for ArrayExpression literals containing 3+ category strings that
