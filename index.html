@@ -234,6 +234,13 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 #mi13-details-list>div{transition:max-height 200ms ease-out,opacity 200ms ease-out,padding 200ms ease-out,border-color 200ms ease-out;overflow:hidden}
 .mi13-row-removing{max-height:0 !important;opacity:0;padding-top:0 !important;padding-bottom:0 !important;border-bottom-color:transparent !important;pointer-events:none}
 @media (prefers-reduced-motion:reduce){#mi13-details-list>div{transition:opacity 50ms ease-out}}
+/* Mission #43 — sticky-top Close × on Net Worth modal (4-persona trap from
+   Mission I sweep). The original Close lived at the bottom of a long scrollable
+   list; 3 of 4 personas couldn't find it. Scoped to nw-modal only. */
+#nw-modal .modal{position:relative;padding:0;display:flex;flex-direction:column}
+#nw-modal-scroll{padding:24px;overflow-y:auto;max-height:85vh}
+#nw-modal-close-x{position:absolute;top:12px;right:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:50%;width:32px;height:32px;color:var(--text2);font-size:20px;line-height:1;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;z-index:5}
+#nw-modal-close-x:hover{background:var(--bg2);color:var(--text)}
 .modal-field{margin-bottom:14px}
 .modal-field label{font-size:12px;color:var(--text2);font-weight:500;display:block;margin-bottom:6px}
 .modal-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 14px;font-size:15px;color:var(--text);outline:none;transition:border-color .2s}
@@ -997,11 +1004,14 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 <!-- NET WORTH MODAL (FIX 7) -->
 <div class="modal-overlay" id="nw-modal" onclick="handleOverlayClick(event,'nw-modal')">
   <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">Net Worth</div>
-    <div class="modal-sub">Assets minus liabilities</div>
-    <div id="nw-modal-content"></div>
-    <div class="modal-actions" style="margin-top:16px">
-      <button class="modal-btn modal-btn-cancel" onclick="closeModal('nw-modal')">Close</button>
+    <button id="nw-modal-close-x" onclick="closeModal('nw-modal')" aria-label="Close">×</button>
+    <div id="nw-modal-scroll">
+      <div class="modal-title">Net Worth</div>
+      <div class="modal-sub">Assets minus liabilities</div>
+      <div id="nw-modal-content"></div>
+      <div class="modal-actions" style="margin-top:16px">
+        <button class="modal-btn modal-btn-cancel" onclick="closeModal('nw-modal')">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2061,6 +2071,11 @@ function pinDel() { pinEntry = pinEntry.slice(0, -1); updatePinDots(); const _pe
 function updatePinDots() { for (let i = 0; i < 4; i++) { const _pdi = $('pd'+i); if (_pdi) _pdi.classList.toggle('filled', i < pinEntry.length); } }
 
 function goPage(id) {
+  // Mission #43 — close any open modal-overlay on tab navigation.
+  // Pat's soft_finding: nw-modal persisted when he switched tabs.
+  // Step 1 pre-check confirmed no flow intentionally keeps a modal open
+  // across goPage; all goPage callers are nav buttons or settings cog.
+  document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   $(id).classList.add('active');
@@ -3976,12 +3991,14 @@ function openNetWorthModal() {
     ...activeDebts.map(d => ({label:d.name, val:d.amt})),
   ];
   html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Liquid Assets</div>';
-  html += liquidAssetRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">+'+fmt(r.val)+'</span></div>').join('');
-  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liquid assets</span><span style="font-family:var(--mono);font-size:13px;color:var(--green)">+'+fmt(nw.liquidAssets)+'</span></div>';
+  // Mission #43 — fmtC (full $X.XX) instead of fmt (rounded). Nora flagged
+  // that the breakdown rows showed "$381" while dashboard showed "$381.35".
+  html += liquidAssetRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">+'+fmtC(r.val)+'</span></div>').join('');
+  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liquid assets</span><span style="font-family:var(--mono);font-size:13px;color:var(--green)">+'+fmtC(nw.liquidAssets)+'</span></div>';
 
   html += '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin:12px 0 8px">Liabilities</div>';
-  html += liabRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">-'+fmt(r.val)+'</span></div>').join('');
-  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liabilities</span><span style="font-family:var(--mono);font-size:13px;color:var(--red)">-'+fmt(nw.liabilities)+'</span></div>';
+  html += liabRows.map(r => '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text2)">'+r.label+'</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--red)">-'+fmtC(r.val)+'</span></div>').join('');
+  html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span style="font-size:12px;color:var(--text2)">Total liabilities</span><span style="font-family:var(--mono);font-size:13px;color:var(--red)">-'+fmtC(nw.liabilities)+'</span></div>';
 
   html += '<div style="display:flex;justify-content:space-between;padding:12px 0 4px;margin-top:4px;border-top:2px solid var(--border2)"><span style="font-size:14px;font-weight:600;color:var(--text)">Liquid Net Worth</span><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:'+(nw.liquidNet>=0?'var(--green)':'var(--red)')+'">'+fmtC(nw.liquidNet)+'</span></div>';
 
@@ -3991,7 +4008,7 @@ function openNetWorthModal() {
     '<div style="font-family:var(--mono);font-size:24px;font-weight:800;color:'+(nw.net>=0?'var(--green)':'var(--red)')+'">' +
       (nw.net>=0?'+':'-') + '$' + Math.abs(Math.round(nw.net)).toLocaleString() +
     '</div>' +
-    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;margin-top:6px"><span style="color:var(--text2)">Aware Super (illiquid until ~60)</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+'+fmt(nw.breakdown.superBalance)+'</span></div>' +
+    '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;margin-top:6px"><span style="color:var(--text2)">Aware Super (illiquid until ~60)</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+'+fmtC(nw.breakdown.superBalance)+'</span></div>' +
     '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:4px">This number matters for your long-term picture but not for today\'s spending decisions.</div>' +
   '</div>';
   // Debt freedom estimate
