@@ -51,7 +51,10 @@ function loadPersonaSystemPrompt(name) {
   const persona = fs.readFileSync(path.join(__dirname, 'personas', name + '.md'), 'utf8');
   // Persona file ends with "Common preamble follows"; replace that section by appending the actual common preamble.
   const trimmed = persona.replace(/## Common preamble follows[\s\S]*$/m, '').trimEnd();
-  return trimmed + '\n\n---\n\n' + common;
+  // Optional factual state-context block — additive, no behavior change when absent.
+  let stateCtx = '';
+  try { stateCtx = fs.readFileSync(path.join(__dirname, 'persona-state-context.md'), 'utf8'); } catch (_) {}
+  return trimmed + '\n\n---\n\n' + common + (stateCtx ? '\n\n---\n\n' + stateCtx : '');
 }
 
 function loadScenario(name) {
@@ -116,11 +119,15 @@ async function main() {
     console.log('[mission-i] static server up');
   }
 
-  // Run cap: $12 hard limit (per John's credit-conscious constraint).
-  // Soft abort at $11.50 — leaves margin for the in-flight call to finish.
-  // Per-persona $1, super-brain $5 (allowed within remaining budget).
-  const ct = new CostTracker({ runCap: 12, personaCap: 1, superBrainCap: 5 });
-  const SOFT_ABORT_USD = 11.5;
+  // Caps overridable via env vars (defaults preserve original credit-
+  // conscious behavior). MISSION_I_RUN_CAP / MISSION_I_SOFT_ABORT /
+  // MISSION_I_PERSONA_CAP / MISSION_I_SUPER_BRAIN_CAP.
+  const RUN_CAP = parseFloat(process.env.MISSION_I_RUN_CAP) || 12;
+  const PERSONA_CAP = parseFloat(process.env.MISSION_I_PERSONA_CAP) || 1;
+  const SUPER_BRAIN_CAP = parseFloat(process.env.MISSION_I_SUPER_BRAIN_CAP) || 5;
+  const SOFT_ABORT_USD = parseFloat(process.env.MISSION_I_SOFT_ABORT) || 11.5;
+  const ct = new CostTracker({ runCap: RUN_CAP, personaCap: PERSONA_CAP, superBrainCap: SUPER_BRAIN_CAP });
+  console.log('[mission-i] caps: run=$' + RUN_CAP + ' soft=$' + SOFT_ABORT_USD + ' persona=$' + PERSONA_CAP + ' superBrain=$' + SUPER_BRAIN_CAP);
   const personaResults = [];
   let aborted = false;
   try {

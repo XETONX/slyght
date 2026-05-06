@@ -88,6 +88,11 @@ async function runSuperBrain({ personaResultsDir, costTracker, dryRun = false, v
   const gitLog = readGitLog();
   const openBugs = readFileSafe(path.join(REPO_ROOT, 'OPEN-BUGS.md'), 60000);
   const stateAudit = readFileSafe(path.join(REPO_ROOT, 'STATE-AUDIT-2026-05-05.md'), 30000);
+  // Optional run-time orchestration context (run framing, known-broken list,
+  // explicit report-section asks). Additive — empty string when absent.
+  const extraContext = (() => {
+    try { return fs.readFileSync(path.join(__dirname, 'extra-context.md'), 'utf8'); } catch (_) { return ''; }
+  })();
 
   const userMessage = [
     '# Mission I run — your inputs',
@@ -111,6 +116,7 @@ async function runSuperBrain({ personaResultsDir, costTracker, dryRun = false, v
     '## STATE-AUDIT-2026-05-05.md',
     stateAudit,
     '',
+    extraContext ? '## RUN-TIME ORCHESTRATION CONTEXT (run framing + explicit asks)\n' + extraContext + '\n' : '',
     '## Persona transcripts (' + transcripts.length + ' runs)',
     '```json',
     JSON.stringify(transcripts, null, 2),
