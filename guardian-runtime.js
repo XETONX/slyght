@@ -524,13 +524,19 @@ test('SCENARIO: WRX sale at $21k → clears all active debts', () => {
 // ─── SECTION 9: AUDIT LOG ANALYSIS ──────────────────────────
 startSection('SECTION 9 — AUDIT LOG ANALYSIS');
 
+// Tolerate both shapes the fixture has shipped with: a plain array, or the
+// post-export wrapper object {entries: [...]}. (`x || []` did not catch the
+// object form because the object is truthy; .filter then threw.)
+const _auditEntries = Array.isArray(realState.auditLog)
+  ? realState.auditLog
+  : (realState.auditLog?.entries || []);
+
 test('Audit log loaded from real state', () => {
-  const count = (realState.auditLog || []).length;
-  return {pass: true, detail: count + ' audit entries loaded'};
+  return {pass: true, detail: _auditEntries.length + ' audit entries loaded'};
 });
 
 test('No unresolved JS_ERRORs in audit log', () => {
-  const errors = (realState.auditLog || []).filter(e => e.action === 'JS_ERROR' && !e.ok);
+  const errors = _auditEntries.filter(e => e.action === 'JS_ERROR' && !e.ok);
   return {
     pass: errors.length === 0,
     detail: errors.length === 0 ? 'No JS errors' : errors.length + ' JS errors: ' + errors.slice(0,3).map(e=>e.notes||e.action).join(' | ')
@@ -538,7 +544,7 @@ test('No unresolved JS_ERRORs in audit log', () => {
 });
 
 test('No unresolved CONSISTENCY_FAILs in audit log', () => {
-  const fails = (realState.auditLog || []).filter(e => e.action === 'CONSISTENCY_FAIL' && !e.ok);
+  const fails = _auditEntries.filter(e => e.action === 'CONSISTENCY_FAIL' && !e.ok);
   return {
     pass: fails.length === 0,
     detail: fails.length === 0 ? 'No consistency failures' : fails.length + ' failures: ' + fails.slice(0,2).map(e=>e.notes).join(' | ')
