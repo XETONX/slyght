@@ -124,7 +124,9 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Repro needed:** yes — John to confirm exactly which tile shows
   the broken pace text
 - **Fix bundle:** unscheduled (likely overlaps with bug #8)
-- **Status:** open
+- **Status:** merged-into-#8 (2026-05-06 — same dashboard pace tile
+  surface; #8's strict-filter fix covers this. Trail kept per project
+  precedent; no separate fix planned.)
 
 ## 17. Cross-tile "today's spend" coherence — three renderers, three different values
 - **Bug:** Footer persistent strip, dashboard "Over by $X today" alert,
@@ -178,6 +180,12 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   v1 work (which rebuilds the slider interaction model from scratch);
   not blocking dead code cleanup or Layer 2
 - **Status:** investigating
+- **2026-05-06 sweep echo:** Sam attempted to reach Plan Mode allocation
+  sliders (turn 8-12 of 2026-05-06-1231 sweep) but couldn't navigate to
+  them — clicked "See Breakdown" expecting allocations, got Net Worth
+  modal instead. Sweep observations AA.2.3 (savings bucket editing
+  untested) and AA.3.6 (allocation editing surface in Plan Mode)
+  merged into this entry as same surface gap.
 
 ## 12. Cross-tile coherence — "today's spend" disagrees across three tiles
 - **Bug:** Footer persistent strip says one value for "today's spend",
@@ -196,7 +204,9 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   this. Building Layer 2 forces the renderers to consume
   `MODEL.todaySpent` as single source of truth; the invariant gates
   future drift. Don't fix in a separate mission — Layer 2 is the fix.
-- **Status:** open (calibration target for Layer 2)
+- **Status:** merged-into-#17 (2026-05-06 — consolidated entry; #17
+  is the canonical record for this bug class with the two-step
+  refactor + Layer 1 rule plan. Trail kept per project precedent.)
 
 ## 13. Net Worth trend "+$90,739 vs last month" — math source unclear
 - **Bug:** Plan Mode (or dashboard NW tile, location TBD) shows
@@ -229,7 +239,10 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   math. Notification dedup is a separate concern but this bug surfaces
   when NW math is fixed; if it persists post-Layer-2, file as #14b in
   a follow-up mission.
-- **Status:** open (calibration target for Layer 2)
+- **Status:** open — verify-after-#13-fix tracker (2026-05-06: this
+  is downstream of the broken NW math in #13; if notification spam
+  persists after #13's fix lands, escalate to its own fix mission as
+  #14b. Stays open as the explicit verification step.)
 
 ## 15. Three different daily-cost figures across forecast tiles
 - **Bug:** Survival/forecast section presents three different daily
@@ -306,7 +319,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   Two-character filter fix in index.html: `>` → `>=` for bills,
   `<=` → `<` for debts. On John's May 5 state: -$3,191 → -$191
   remaining; borrow recommendation $3,200 → $200.
-- **Status:** fixed (Mission C, commit pending)
+- **Status:** fixed (Mission C — commit 4b382f6)
 
 ## 20. Calendar not showing immediate debts on their due dates
 - **Bug:** Calendar view does not render markers for immediate-debt
@@ -381,7 +394,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Source:** Mission EXPORT Step 1 investigation 2026-05-05
 - **Fix bundle:** Mission EXPORT (this commit). `exportData` is now
   aliased to `copyExport()` so the button works as users expect.
-- **Status:** fixed in this commit
+- **Status:** fixed (Mission EXPORT — commit bb30b86)
 
 ## 25. Copy-paste of large export to Messenger (and similar apps) truncates
 - **Bug:** John pasted a `copyExport()` clipboard payload into
@@ -703,7 +716,13 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   5. #30 gate verification hardening
   6. #2 runOutDays off-by-one
   7. Other queued items
-- **Status:** open (deferred — net-new capability, queue lead)
+- **Status:** closed — Layer I AI agent as test user — **shipped
+  Mission I 1c20186**; validated by 2026-05-06 sweep producing 5
+  confirmed findings (3 hard_fail + 2 soft_finding); 3 of those
+  shipped fixes by end of same session (Missions #39 commit 3602b8d,
+  #42 commit f1b8d29, #43 commit 419ca04). Operational. See salvage
+  report MISSION-I-2026-05-06-SALVAGE.md (commit 666db5d) for first
+  comprehensive run output.
 
 ## 38. Export-box JSON preview removed from Settings (Option A cleanup)
 - **Bug (UX):** The `#export-box` div in the Settings card showed a
@@ -729,7 +748,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   export-box lived below the 412×915 viewport cutoff (Layer V
   fullPage truncation, OPEN-BUGS #33). DOM change is real; visual
   baseline limitation is orthogonal.
-- **Status:** fixed in this commit
+- **Status:** fixed (Option A cleanup — commit f59612d)
 
 ## 39. MI-13 banner "details" button does nothing
 - **Bug:** When the MI-13 paidbills-key-not-future invariant fires
@@ -767,7 +786,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   new modal (`mi13-details-modal`) that renders per-bill rows with an
   Undo button each. Undo uses `undoPaidBillByKey(key)` (immediate, with
   toast — matching the existing `undoBillPaid` precedent).
-- **Status:** fixed in this commit
+- **Status:** fixed (Mission MI-13 — commit 3602b8d)
 
 ## 40. Bill modal "Already paid" button does nothing
 - **Bug:** From the Bills tab, tap a bill in the calendar to open
@@ -799,7 +818,9 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Repro needed:** no — Layer I evidence is clean
 - **Fix bundle:** small follow-up — bundle with #40 (same modal,
   same surface, likely same root cause).
-- **Status:** open
+- **Status:** merged-into-#40 (2026-05-06 — same bill modal action row
+  per OPEN-BUGS' own framing; #40's wiring fix covers this. Trail kept
+  per project precedent.)
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
