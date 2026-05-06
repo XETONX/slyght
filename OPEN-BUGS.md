@@ -769,6 +769,38 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   toast — matching the existing `undoBillPaid` precedent).
 - **Status:** fixed in this commit
 
+## 40. Bill modal "Already paid" button does nothing
+- **Bug:** From the Bills tab, tap a bill in the calendar to open
+  its modal — tap the "Already paid" button — no state mutation,
+  modal stays open, calendar still shows the bill as unpaid. Same
+  shape as #39 (button rendered, handler missing or wired wrong).
+- **Source:** **Layer I run 2026-05-06-1132 (cycle 2 — post-#39 fix
+  re-run).** Nora persona × free-explore scenario. Reproduction:
+  Bills tab → tap May 15 → tap $3000 (Rent + Deposit Savings) →
+  tap "Already paid". Evidence: shot-006 vs shot-007 are
+  pixel-identical post-click. `read_state("paidBills")` confirms no
+  mutation. **Second bug found by Layer I — surfaced after the
+  regression-loop closure on #39 freed Nora to explore further.**
+- **Repro needed:** no — Layer I evidence is clean
+- **Fix bundle:** small follow-up. Likely shares root cause shape
+  with #41 ("Pay now" — same modal, same surface) — investigate
+  together; one wiring fix may close both.
+- **Status:** open
+
+## 41. Bill modal "Pay now" button does nothing
+- **Bug:** Same modal as #40 — tap a bill in the calendar → modal
+  opens → tap "Pay now" → no payment flow initiated, modal stays
+  open, no visible state change. Likely shares root cause with #40
+  (handlers missing or both pointing at a broken delegate on the
+  modal's action row).
+- **Source:** **Layer I run 2026-05-06-1132 (cycle 2 — post-#39 fix
+  re-run).** Same Nora session as #40. Reproduction: Bills tab →
+  tap May 15 → tap $3000 → tap "Pay now". Evidence: shot-008.
+- **Repro needed:** no — Layer I evidence is clean
+- **Fix bundle:** small follow-up — bundle with #40 (same modal,
+  same surface, likely same root cause).
+- **Status:** open
+
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
   of canonical helpers (`daysLeft`, `isThisMonthlyBillPaid`,
