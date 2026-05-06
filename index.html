@@ -410,9 +410,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   <div class="screen active" id="pg-dash">
     <!-- Layer 2 — MathInvariants banner (warn / first-time fail) -->
     <div id="math-invariant-banner" style="display:none;background:var(--red-dim);border-bottom:1px solid var(--red-border);color:var(--red);padding:8px 16px;font-size:13px;position:sticky;top:0;z-index:50;line-height:1.5">
-      <span id="mib-msg" style="display:inline-block;padding-right:64px"></span>
+      <span id="mib-msg" style="display:inline-block;padding-right:40px"></span>
+      <!-- Mission #45a — promote action affordance from underlined link to small button.
+           Same destination (Mission #39 modal at 3602b8d), clearer "what tapping does" cue. -->
+      <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="display:inline-block;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);color:inherit;font-size:11px;cursor:pointer;padding:3px 9px;border-radius:4px;font-weight:600;margin-left:6px">Show me these bills</button>
       <button onclick="MathInvariants.dismiss(document.getElementById('math-invariant-banner').dataset.rule)" aria-label="Dismiss" style="position:absolute;right:8px;top:6px;background:none;border:none;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:4px 8px">×</button>
-      <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="position:absolute;right:36px;top:9px;background:none;border:none;color:inherit;font-size:11px;cursor:pointer;text-decoration:underline;padding:2px 4px">details</button>
     </div>
     <!-- Layer 2 — MathInvariants card (critical / escalated fail). NO dismiss. -->
     <div id="math-invariant-card" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5">
@@ -826,7 +828,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 <!-- MI-13 paid-early bills detail modal (OPEN-BUGS #39) -->
 <div class="modal-overlay" id="mi13-details-modal" onclick="handleOverlayClick(event,'mi13-details-modal')">
   <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title">Bills tracked as paid before due date</div>
+    <div class="modal-title">Bills tracked as paid early</div>
     <div class="modal-sub">These bills are flagged as paid in your tracking, but money hasn't moved yet (their due date is in the future). Tap Undo on any that were a mistake.</div>
     <div id="mi13-details-list" style="margin:12px 0"></div>
     <div class="modal-actions">
@@ -2778,6 +2780,12 @@ const MathInvariants = {
       name: 'paidbills-key-not-future',
       tier: 'fail',
       anchor: 'OPEN-BUGS#1',
+      // Mission #45a — per-rule dismiss policy. 'persistent' = once dismissed,
+      // stays dismissed across session/day-rollover resets unless v.keys count
+      // grows beyond the count at last dismiss. Right framing for John's
+      // pre-mark workflow (#23): a daily re-banner of the same set is nagging,
+      // but a NEW pre-mark added to the set should still surface.
+      dismissPolicy: 'persistent',
       check() {
         if (!S.paidBills) return null;
         const today = new Date();
@@ -2796,10 +2804,10 @@ const MathInvariants = {
         if (future.length === 0) return null;
         return { displayValue: future.length + ' bill(s)',
           expected: 'paidBills key day ≤ today',
-          details: future.length + ' bill(s) tracked as paid before due date: ' + future.slice(0, 3).join(', '),
+          details: future.length + ' bill(s) tracked as paid early: ' + future.slice(0, 3).join(', '),
           keys: future };
       },
-      message(v) { return 'Bills tracked as paid before due date: ' + v.details + '.'; },
+      message(v) { return 'Bills tracked as paid early — tap to review'; },
     },
     {
       // Anchor: OPEN-BUGS #4 (narrow). Catches "expansion silently drops
@@ -2859,12 +2867,21 @@ const MathInvariants = {
             name: inv.name,
             tier: inv.tier,
             anchor: inv.anchor,
+            dismissPolicy: inv.dismissPolicy || 'session',
             message: inv.message ? inv.message(result) : (result.details || inv.name),
             displayValue: result.displayValue,
             expected: result.expected,
             details: result.details,
             keys: result.keys,
           });
+        } else {
+          // Mission #45a — invariant resolved (no longer firing). Clear any
+          // persistent dismiss so a fresh future violation re-banners cleanly
+          // (otherwise stored count from old dismissal would suppress new
+          // smaller-but-fresh violations).
+          if (S._invariantsDismissedAlways && S._invariantsDismissedAlways[inv.name]) {
+            delete S._invariantsDismissedAlways[inv.name];
+          }
         }
       } catch (e) {
         // An invariant throwing is itself a finding — log but don't crash.
@@ -2926,7 +2943,20 @@ const MathInvariants = {
       if (!relatedModalOpen) counts[v.name].count++;
       counts[v.name].lastSeenTs = Date.now();
 
-      const dismissed = !!S._invariantsDismissedSession[v.name];
+      // Mission #45a — dismissed check honors both session map (default) and
+      // persistent map (for invariants with dismissPolicy: 'persistent').
+      // Persistent dismiss suppresses re-banner across session/day-rollover
+      // resets UNTIL violation count grows beyond stored count.
+      const sessionDismissed = !!(S._invariantsDismissedSession && S._invariantsDismissedSession[v.name]);
+      let dismissed = sessionDismissed;
+      if (!dismissed && v.dismissPolicy === 'persistent') {
+        const persist = S._invariantsDismissedAlways && S._invariantsDismissedAlways[v.name];
+        if (persist) {
+          const currCount = (v.keys && v.keys.length) || 0;
+          dismissed = currCount <= (persist.count || 0);
+        }
+      }
+
       if (v.tier === 'critical') {
         cardViolations.push(v);
       } else if (v.tier === 'fail' && counts[v.name].count >= 2 && !dismissed) {
@@ -2984,6 +3014,19 @@ const MathInvariants = {
   dismiss(ruleName) {
     if (!S._invariantsDismissedSession) S._invariantsDismissedSession = {};
     S._invariantsDismissedSession[ruleName] = true;
+    // Mission #45a — for invariants with dismissPolicy: 'persistent',
+    // also write to _invariantsDismissedAlways with the current key count.
+    // The persistent map survives session/day-rollover resets; only a
+    // violation count > stored count re-banners. Right framing for
+    // legitimate workflows (#23) where a daily re-banner of the same
+    // entries is nagging but a NEW pre-mark should still surface.
+    const inv = this.invariants.find(i => i.name === ruleName);
+    if (inv && inv.dismissPolicy === 'persistent') {
+      if (!S._invariantsDismissedAlways) S._invariantsDismissedAlways = {};
+      const lastViolation = (this._lastViolations || []).find(x => x.name === ruleName);
+      const currCount = (lastViolation && lastViolation.keys && lastViolation.keys.length) || 0;
+      S._invariantsDismissedAlways[ruleName] = { count: currCount, ts: Date.now() };
+    }
     const banner = document.getElementById('math-invariant-banner');
     if (banner) banner.style.display = 'none';
     try { save(); } catch (_) {}
