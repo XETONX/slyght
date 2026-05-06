@@ -40,8 +40,9 @@ const TXNS_FILTER_HELPERS = new Set([
   'getDiscretionarySpend', 'getNoSpendStreak', 'getAvgDailySpend',
   'getMinDailySpend',
 ]);
-// Functions where reading S.paidBills directly is sanctioned (migrations).
-const PAIDBILLS_MIGRATION_FNS = new Set(['load']);
+// Functions where reading S.paidBills directly is sanctioned (migrations or
+// operate on existing keys handed in by callers — no key construction).
+const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey']);
 // Survival-mode strings (rule no-hardcoded-survival-mode-string).
 const SURVIVAL_MODE_STRINGS = new Set(['critical', 'survival', 'tight', 'cautious', 'normal']);
 // Debt strategy strings.

@@ -756,7 +756,18 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   `alert(...)` is broken in current deployment context — replace with
   modal-based detail view, OR (b) add explicit modal UI for invariant
   details (more user-friendly than alert anyway).
-- **Status:** open
+- **Resolution:** Step 1 surfaced this was three coordinated bugs, not
+  one. (1) `_lastViolations` was never written — the handler always
+  read `undefined` and returned silently. (2) The invariant's `details`
+  field only carried the first 3 keys joined as a comma string; no
+  per-bill structure to drive an undo UX. (3) The surface was a system
+  `alert()` blob — can't host actionable controls. Fix wires all three:
+  invariant now exposes `keys: future` (full list); `MathInvariants.check()`
+  now persists `this._lastViolations`; `showDetails` routes MI-13 to a
+  new modal (`mi13-details-modal`) that renders per-bill rows with an
+  Undo button each. Undo uses `undoPaidBillByKey(key)` (immediate, with
+  toast — matching the existing `undoBillPaid` precedent).
+- **Status:** fixed in this commit
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies

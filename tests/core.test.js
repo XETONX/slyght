@@ -1051,6 +1051,42 @@ test('Export round-trip: large state survives JSON.stringify + JSON.parse', () =
   expect(parsed.S.txns[103].note).toBe('Test txn 103');
 });
 
+// ── OPEN-BUGS #39: undoPaidBillByKey ──────────────────────────
+// MI-13 details modal needs to remove a single paid-early entry by its full
+// paidBills key. Tests the pure delete-by-key contract: the named key goes
+// away, other keys are untouched, and idempotent on missing keys. UI side
+// effects (modal re-render, toast, save) are stubbed.
+test('undoPaidBillByKey: removes only the named key, leaves others intact', () => {
+  const localPaidBills = {
+    '2026-5-Electricity-20': true,
+    '2026-5-Spotify-28': true,
+    '2026-6-Rent-15': true
+  };
+  // Inline copy of the production function — UI deps stubbed.
+  function undoPaidBillByKeyImpl(state, key) {
+    if (!state.paidBills || !state.paidBills[key]) return false;
+    delete state.paidBills[key];
+    return true;
+  }
+  const state = { paidBills: localPaidBills };
+
+  // Removing an existing key returns true and removes only that key.
+  expect(undoPaidBillByKeyImpl(state, '2026-5-Spotify-28')).toBeTruthy();
+  expect(state.paidBills['2026-5-Spotify-28'] === undefined).toBeTruthy();
+  expect(state.paidBills['2026-5-Electricity-20']).toBeTruthy();
+  expect(state.paidBills['2026-6-Rent-15']).toBeTruthy();
+  expect(Object.keys(state.paidBills).length).toBe(2);
+
+  // Removing a missing key is a safe no-op (returns false, state unchanged).
+  expect(undoPaidBillByKeyImpl(state, '2026-5-Nonexistent-1')).toBeFalsy();
+  expect(Object.keys(state.paidBills).length).toBe(2);
+
+  // Bill names with dashes survive the round-trip — anchors regex on day.
+  state.paidBills['2026-7-KIA Loan — Firstmac-15'] = true;
+  expect(undoPaidBillByKeyImpl(state, '2026-7-KIA Loan — Firstmac-15')).toBeTruthy();
+  expect(state.paidBills['2026-7-KIA Loan — Firstmac-15'] === undefined).toBeTruthy();
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

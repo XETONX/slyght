@@ -810,6 +810,18 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   </div>
 </div>
 
+<!-- MI-13 paid-early bills detail modal (OPEN-BUGS #39) -->
+<div class="modal-overlay" id="mi13-details-modal" onclick="handleOverlayClick(event,'mi13-details-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">Bills marked paid before due date</div>
+    <div class="modal-sub">These were marked paid but their due date is in the future. Tap Undo on any that were a mistake.</div>
+    <div id="mi13-details-list" style="margin:12px 0"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('mi13-details-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ADD DEBT MODAL -->
 <div class="modal-overlay" id="add-debt-modal" onclick="handleOverlayClick(event,'add-debt-modal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -2763,7 +2775,8 @@ const MathInvariants = {
         if (future.length === 0) return null;
         return { displayValue: future.length + ' bill(s)',
           expected: 'paidBills key day ≤ today',
-          details: future.length + ' bill(s) marked paid before due date: ' + future.slice(0, 3).join(', ') };
+          details: future.length + ' bill(s) marked paid before due date: ' + future.slice(0, 3).join(', '),
+          keys: future };
       },
       message(v) { return 'Bills marked paid before due date: ' + v.details + '.'; },
     },
@@ -2829,6 +2842,7 @@ const MathInvariants = {
             displayValue: result.displayValue,
             expected: result.expected,
             details: result.details,
+            keys: result.keys,
           });
         }
       } catch (e) {
@@ -2836,6 +2850,7 @@ const MathInvariants = {
         try { console.warn('[invariants] "' + inv.name + '" threw:', e.message); } catch (_) {}
       }
     }
+    this._lastViolations = violations;
     return violations;
   },
 
@@ -2939,9 +2954,14 @@ const MathInvariants = {
   },
 
   showDetails(ruleName) {
-    // Find the most recent violation of this rule and surface its details inline.
     const v = (this._lastViolations || []).find(x => x.name === ruleName);
     if (!v) return;
+    if (ruleName === 'paidbills-key-not-future' && v.keys && v.keys.length) {
+      if (typeof renderMI13DetailsModal === 'function') {
+        renderMI13DetailsModal(v.keys);
+        return;
+      }
+    }
     alert('Math invariant: ' + v.name +
           '\n\nTier: ' + v.tier +
           '\nAnchor: ' + v.anchor +
@@ -4564,6 +4584,68 @@ function undoBillPaid() {
   const b = BILLS[activeBillIdx];
   if (S.paidBills) delete S.paidBills[paidBillKey(b.name, b.day)];
   save(); closeModal('bill-modal', true); renderAll();
+}
+
+// OPEN-BUGS #39 — undo a single paid-early entry by full paidBills key.
+// Used by the MI-13 details modal where each row carries its own key.
+// Bill names can contain dashes (e.g. "KIA Loan — Firstmac"), but the
+// trailing -day anchors the regex so .* captures the full name.
+function parseMI13Key(key) {
+  const m = key && key.match(/^(\d{4})-(\d{1,2})-(.*)-(\d{1,2})$/);
+  if (!m) return { name: key, day: '', month: '', year: '' };
+  return { year: m[1], month: m[2], name: m[3], day: m[4] };
+}
+
+function undoPaidBillByKey(key) {
+  if (!S.paidBills || !S.paidBills[key]) return false;
+  const name = parseMI13Key(key).name || key;
+  delete S.paidBills[key];
+  try { save(); } catch (_) {}
+  // Re-render the modal against the new state — close if no rows left.
+  try {
+    const inv = MathInvariants.invariants.find(i => i.name === 'paidbills-key-not-future');
+    const result = inv && inv.check();
+    if (result && result.keys && result.keys.length) {
+      renderMI13DetailsModal(result.keys);
+    } else {
+      closeModal('mi13-details-modal', true);
+    }
+  } catch (_) {}
+  if (typeof renderAll === 'function') renderAll();
+  try { showToast('Undid: ' + name); } catch (_) {}
+  return true;
+}
+
+function renderMI13DetailsModal(keys) {
+  const modal = document.getElementById('mi13-details-modal');
+  const list = document.getElementById('mi13-details-list');
+  if (!modal || !list) return;
+  const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  list.innerHTML = '';
+  keys.forEach(k => {
+    const p = parseMI13Key(k);
+    const moName = monthNames[(+p.month) - 1] || p.month;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)';
+    const info = document.createElement('div');
+    const nameEl = document.createElement('div');
+    nameEl.style.fontWeight = '600';
+    nameEl.textContent = p.name;
+    const subEl = document.createElement('div');
+    subEl.style.cssText = 'font-size:11px;color:var(--text3);font-family:var(--mono)';
+    subEl.textContent = 'Day ' + p.day + ' · ' + moName + ' ' + p.year;
+    info.appendChild(nameEl);
+    info.appendChild(subEl);
+    const btn = document.createElement('button');
+    btn.textContent = 'Undo';
+    btn.style.cssText = 'background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:var(--r-sm);padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer';
+    btn.addEventListener('click', () => undoPaidBillByKey(k));
+    row.appendChild(info);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+  modal.classList.add('open');
+  if (typeof UX !== 'undefined' && UX.trackModalOpen) UX.trackModalOpen('mi13-details-modal');
 }
 
 function handleOverlayClick(e, id) { if (e.target.classList.contains('modal-overlay')) closeModal(id); }
