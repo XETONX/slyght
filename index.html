@@ -1612,7 +1612,7 @@ function renderSurvivalBanner(safe) {
   } else if (mode === 'tight') {
     el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max' + buffer + '</strong></div>';
   } else if (mode === 'cautious') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Cautious Mode — Watch Your Spending' + buffer + '</div>';
+    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:12px">Cautious Mode' + buffer + '</div>';
   } else {
     // 'normal' — no banner; everything is fine.
     el.innerHTML = '';
@@ -4028,7 +4028,7 @@ function openNetWorthModal() {
   let html = '<div style="text-align:center;padding:8px 0 14px;border-bottom:1px solid var(--border);margin-bottom:14px">' +
     '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Liquid Net Worth</div>' +
     '<div style="font-family:var(--mono);font-size:30px;font-weight:800;color:'+(nw.liquidNet>=0?'var(--green)':'var(--red)')+'">' +
-      (nw.liquidNet>=0?'+':'-') + '$' + Math.abs(Math.round(nw.liquidNet)).toLocaleString() +
+      (nw.liquidNet>=0?'+':'') + fmtC(nw.liquidNet) +
     '</div>' +
     '<div style="font-size:12px;color:var(--text3);margin-top:4px">What you could access today</div>' +
   '</div>';
@@ -4581,11 +4581,17 @@ function openBillModal(idx) {
     if (nextDue < now) nextDue.setMonth(nextDue.getMonth() + 1);
     const nextDueStr = nextDue.getDate() + '/' + (nextDue.getMonth()+1) + '/' + nextDue.getFullYear();
 
+    // Bundle 6: green only when actually paid (lastPaidStr is a
+    // m/yyyy date). 'Not yet this month' is the un-paid state and
+    // should render amber to match other "action needed" cues.
+    const lastPaidColor = (lastPaidStr === 'Not yet this month')
+      ? 'var(--amber)'
+      : 'var(--green)';
     extraInfo.innerHTML =
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
       '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase">Last Paid</div>' +
-        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">' + lastPaidStr + '</div>' +
+        '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:' + lastPaidColor + '">' + lastPaidStr + '</div>' +
       '</div>' +
       '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);margin-bottom:3px;text-transform:uppercase">Next Due</div>' +
@@ -5034,7 +5040,7 @@ function renderBillsGrouped() {
       const rec = b.recurring !== false ? '<span class="bill-recurring">'+freqLabel+'</span>' : '';
       const _myb = _billRenderedMY(b);
       const isPaid = isThisMonthlyBillPaid(b.name, b.day, _myb.m, _myb.y);
-      const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:3px;padding:1px 5px;margin-left:4px">TRACKED</span>' : '';
+      const paidBadge = isPaid ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);border-radius:3px;padding:1px 5px;margin-left:4px">TRACKED</span>' : '';
       // Suppress TODAY badge when paid — never show PAID + TODAY simultaneously (#13)
       const todayBadge = (b.diff === 0 && !isPaid) ? '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:4px">TODAY</span>' : '';
       // Variable bills (Fuel, Food at Work) are estimates, not fixed obligations (#2)
@@ -5220,7 +5226,7 @@ function calDayClick(day) {
     if (bPaid) {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.6">' +
         '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px">$'+b.amt.toFixed(2)+'</div></div>' +
-        '<div style="background:var(--green);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div></div>';
+        '<div style="background:var(--amber);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div></div>';
     } else {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px">' +
         '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
@@ -5687,7 +5693,11 @@ function renderDashTxns() {
   const c = $('dash-txns');
   // FIX 3: last 5 transactions, tappable to edit
   const totalCount = S.txns.length;
-  const recent = S.txns.slice(-5).reverse();
+  // Bundle 6: filter round-ups out of Recent Spending (they appeared
+  // 3-of-5 in dashboard list, dominating real spend visibility).
+  // Round-ups still tracked elsewhere (Plan goals, Spending Pivot
+  // under Savings).
+  const recent = (S.txns||[]).filter(t => !t._isRoundup).slice(-5).reverse();
   if (!recent.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   c.innerHTML = recent.map((t, revIdx) => {
     const realIdx = totalCount - 1 - revIdx;
@@ -5737,6 +5747,10 @@ function openQuickLogModal() {
   const _qlrec = $('ql-recurring'); if (_qlrec) _qlrec.checked = false;
   const _qlrf = $('ql-recurring-fields'); if (_qlrf) _qlrf.style.display = 'none';
   if ($('ql-day')) $('ql-day').value = '';
+  // Bundle 6: ensure round-up preview is hidden at modal open
+  // (defensive against stale display:flex from prior session)
+  const _ruPreview = document.getElementById('ql-roundup-preview');
+  if (_ruPreview) _ruPreview.style.display = 'none';
   const overlay = $('quick-log-modal');
   if (overlay) overlay.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
@@ -9863,7 +9877,7 @@ function renderSpendingPivot() {
       html += '<span style="font-size:18px">'+(icons[row.cat]||'💳')+'</span>';
       html += '<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--text);font-size:13px;font-weight:600">'+row.cat+'</span><span style="color:var(--text);font-size:14px;font-weight:700">$'+row.total.toFixed(2)+'</span></div>';
       html += '<div style="background:var(--bg2);border-radius:4px;height:4px;margin-bottom:4px"><div style="background:var(--green);width:'+Math.min(100,row.pct)+'%;height:100%;border-radius:4px"></div></div>';
-      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:11px">'+row.count+' transactions · '+row.pct+'%</span><span style="color:var(--text3);font-size:11px">$'+row.daily+'/day</span></div></div>';
+      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:11px">'+row.count+' transaction'+(row.count===1?'':'s')+' · '+row.pct+'%</span><span style="color:var(--text3);font-size:11px">$'+row.daily+'/day</span></div></div>';
       html += '<span style="color:var(--text3);font-size:14px">'+(isExpanded?'▲':'▼')+'</span></div>';
       if (isExpanded) {
         html += '<div style="border-top:1px solid var(--border);padding:8px 12px">';
@@ -10877,7 +10891,7 @@ function renderPaydayAllocation() {
             style="width:100%;accent-color:${item.colour};height:4px;margin-bottom:4px"
             oninput="updateAllocation('${item.id}', this.value)">
           <div style="display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,0.3)">
-            <span>Saved: $${Math.round(saved).toLocaleString()} Of $${target.toLocaleString()}</span>
+            <span>Saved: $${Math.round(saved).toLocaleString()} of $${target.toLocaleString()}</span>
             <span>${pct.toFixed(0)}% There</span>
           </div>
         </div>`;
