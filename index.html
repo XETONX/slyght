@@ -142,6 +142,8 @@ button,input,select,textarea{font-family:var(--sans)}
 .cal-day{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px 2px;cursor:pointer;border:1px solid transparent;transition:background .1s}
 .cal-day.today{border-color:var(--green);background:var(--green-dim);box-shadow:0 0 0 2px var(--green)}
 .cal-day.has-bill{background:var(--red-dim);border-color:var(--red-border)}
+.cal-day.paid-only{opacity:0.5}
+.cal-day.paid-only .cal-day-amt{text-decoration:line-through;color:var(--text3)}
 .cal-day.has-multi{background:var(--amber-dim);border-color:var(--amber-border)}
 .cal-day.payday{background:var(--green-dim);border-color:var(--green-border)}
 .cal-day.other-month{opacity:.25}
@@ -2340,12 +2342,13 @@ function buildCalendarEntries(state, now) {
       // RC11: read from injected `paidBills` (state-pure for testability) but
       // build the key via canonical paidBillKey so format stays unified.
       const paidKey = paidBillKey(b.name, b.day, m, y);
-      if (paidBills[paidKey] === true) return;
+      const isPaid = paidBills[paidKey] === true;
       const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
       if (covered) return;
       _add(dateISO, {
         type: 'bill', name: b.name, amt: b.amt,
         color: 'var(--amber)',
+        paid: isPaid,
         bill: b, ref: b, source: 'bills'
       });
     });
@@ -5037,7 +5040,7 @@ function renderBillsGrouped() {
     }).join('');
 
     // Running balance after this group (M5: today = liveBal - todayTotal; week = liveBal - weekTotal; M10: deduct buckets)
-    const runningAfter = (cls === 'today' ? liveBal - todayTotal : liveBal - weekTotal) - bucketTotal;
+    const runningAfter = cls === 'today' ? liveBal - todayTotal : liveBal - weekTotal;
     const afterNote = isWeekSection ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 4px;border-top:1px solid var(--border);margin-top:4px"><span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Balance after</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(runningAfter<0?'var(--red)':runningAfter<200?'var(--amber)':'var(--green)')+'">'+fmtC(runningAfter)+'</span></div>' : '';
 
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
@@ -5141,9 +5144,12 @@ function renderCalendar() {
     const isToday = isThis && calYear === today.getFullYear() && calMonth === today.getMonth() && d === today.getDate();
     const isPayday = isThis && d === payday;
     const items = isThis ? getCalendarDayItems(d, calMonth, calYear) : [];
-    const hasDebt = items.some(it => it.type === 'debt');
-    const billCount = items.filter(it => it.type === 'bill').length;
-    const itemTotal = items.reduce((s, it) => s + (it.amt || 0), 0);
+    const hasDebt = items.some(it => it.type === 'debt' && !it.paid);
+    const unpaidBills = items.filter(it => it.type === 'bill' && !it.paid);
+    const paidOnly = items.length > 0 && items.every(it => it.paid);
+    const billCount = unpaidBills.length;
+    const itemTotal = unpaidBills.reduce((s, it) => s + (it.amt || 0), 0)
+                      + items.filter(it => it.type === 'debt' && !it.paid).reduce((s, it) => s + (it.amt || 0), 0);
     let cls = 'cal-day';
     if (!isThis) cls += ' other-month';
     if (isPayday && items.length > 1) cls += ' payday has-multi';
@@ -5152,6 +5158,7 @@ function renderCalendar() {
     else if (hasDebt) cls += ' has-bill'; // debt uses same has-bill styling
     else if (billCount > 1) cls += ' has-multi';
     else if (billCount === 1) cls += ' has-bill';
+    else if (paidOnly) cls += ' paid-only';
     if (isToday) cls += ' today';
     const dotColor = isPayday && items.length ? 'var(--amber)' : isPayday ? 'var(--green)' : hasDebt ? 'var(--red)' : billCount > 1 ? 'var(--amber)' : billCount === 1 ? 'var(--red)' : 'transparent';
     // OPEN-BUGS #5/#20: distinguish debt days from bill days at-a-glance.
