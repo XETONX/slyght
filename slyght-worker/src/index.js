@@ -354,18 +354,21 @@ async function handleSchedule(cron, env) {
     if (!lunchLogged) {
       let title = '🍱 Lunch time';
       let body;
-      const lunchBudget = isGfDay && isWeekend ? 30 : 20;
+      // Bundle 5: lunch budget is the actual remaining-for-today
+      // value, not a hardcoded $20/$30 cap. maxDay already reflects
+      // today-aware Max Per Day from app state.
+      const remainingToday = Math.max(0, maxDay - todaySpent);
 
       if (survivalMode === 'critical') {
         body = 'Balance: $' + bal.toFixed(2) + '. Skip buying lunch today. ' +
                'Payday in ' + daysLeft + ' days. Every $20 matters right now.';
       } else if (survivalMode === 'survival') {
-        body = 'Keep lunch under $15 today. You have $' + maxDay.toFixed(2) +
-               ' for the day. Average lunch is eating $20-25 of that.';
+        body = 'You have $' + remainingToday.toFixed(2) + ' left today. ' +
+               'A $15 lunch leaves $' + Math.max(0, remainingToday - 15).toFixed(2) +
+               ' for the rest of the day.';
       } else {
-        body = 'Aim for under $' + lunchBudget + ' today. ' +
-               'You\'ve spent $' + todaySpent.toFixed(2) + ' so far. ' +
-               '$' + Math.max(0, maxDay - todaySpent).toFixed(2) + ' remaining today.';
+        body = '$' + remainingToday.toFixed(2) + ' remaining today. ' +
+               'You\'ve spent $' + todaySpent.toFixed(2) + ' so far.';
       }
 
       await sendPush(sub, env, {

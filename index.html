@@ -1527,7 +1527,14 @@ function getDynamicDailyBudget() {
     ? (S.weekendBudget || 180)
     : (S.weekdayBudget || 60);
 
-  return Math.min(dailyAvailable, userCap);
+  // Bundle 5: subtract what's already been spent today so the
+  // displayed Max Per Day answers "what's left for the rest of
+  // today" not "what's the rolling daily average." Resets at
+  // midnight because getTodaySpent() filters by today's date.
+  const cap = Math.min(dailyAvailable, userCap);
+  const todaySpent = (typeof getTodaySpent === 'function')
+    ? getTodaySpent() : 0;
+  return Math.max(0, parseFloat((cap - todaySpent).toFixed(2)));
 }
 // Detect survival mode from real available cash — no circular dependency
 // on getDynamicDailyBudget(). Safe to call from anywhere.
@@ -3221,7 +3228,12 @@ function getSurvivalForecast() {
   let runOutDays = null;
   let tempBal = bal;
 
-  for (let i = 0; i < days; i++) {
+  // Bundle 5: i represents "days from today." i=1 means tomorrow.
+  // Date and day-count now derive from same i without off-by-one.
+  // i=0 (today) is excluded because today's bills/debts are already
+  // counted in upcomingBills/upcomingDebts and today's spend is
+  // tracked via getTodaySpent — including i=0 would double-count.
+  for (let i = 1; i <= days; i++) {
     const checkDate = new Date(today);
     checkDate.setDate(today.getDate() + i);
 
@@ -3239,7 +3251,7 @@ function getSurvivalForecast() {
 
     if (tempBal < 0 && !runOutDate) {
       runOutDate = checkDate;
-      runOutDays = i + 1;
+      runOutDays = i;  // i is days-from-today, matches the date
     }
   }
 
@@ -3300,14 +3312,14 @@ function renderSurvivalForecast() {
       ' (' + runOutStr + ')' +
     '</div>';
     html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">' +
-      'At minimum spending ($15/day) your balance runs out before payday on the ' + S.payday + 'th.' +
+      'At minimum spending ($' + f.minDailyNeeded.toFixed(0) + '/day) your balance runs out before payday on the ' + S.payday + 'th.' +
     '</div>';
   } else {
     html += '<div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">' +
       '✅ You can make it to payday' +
     '</div>';
     html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">' +
-      'At minimum spending you have enough to reach the ' + S.payday + 'th. Stay disciplined.' +
+      'At minimum spending ($' + f.minDailyNeeded.toFixed(0) + '/day) you have enough to reach the ' + S.payday + 'th. Stay disciplined.' +
     '</div>';
   }
 
