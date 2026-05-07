@@ -762,10 +762,6 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 6v4l3 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       <span class="nav-lbl">Analysis</span>
     </button>
-    <button class="nav-btn" id="nav-settings" onclick="goPage('pg-settings')">
-      <svg width="22" height="22" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-      <span class="nav-lbl">Settings</span>
-    </button>
   </div>
 </div>
 
@@ -10002,6 +9998,72 @@ function closePlanMode() {
 
 // ─── PLAN ENGINE — single source of truth for future planning ───────────────
 const PLAN = {
+  // Single source of truth: which bucket each plan item syncs to.
+  // Returns { type: 'bucket', name: <bucket name> } for normal items,
+  // { type: 'mumAccount' } for the apartment goal (special — uses
+  // S.mumAccountBalance), or null if no sync (item should be excluded
+  // from the source-of-truth flip).
+  bucketForPlanItem(id) {
+    const map = {
+      'china': { type: 'bucket', name: 'China Holiday' },
+      'china-2026': { type: 'bucket', name: 'China Holiday' },
+      'freedom-buffer': { type: 'bucket', name: 'Rainy Day Fund' },
+      'apartment': { type: 'mumAccount' },
+      'darwin-2026': { type: 'bucket', name: 'Darwin Trip' },
+    };
+    if (map[id]) return map[id];
+    // For user-added goals/trips (id starts with 'goal-' or 'trip-'),
+    // bucket name derives from the item itself when available; resolved
+    // by readSavedFromSource / writeSavedToSource using the item's name.
+    if (id && (id.startsWith('goal-') || id.startsWith('trip-'))) {
+      return { type: 'auto-bucket' };  // resolved at call site
+    }
+    return null;
+  },
+
+  // Read canonical saved value for a plan item from its bucket.
+  // Falls back to the supplied default if no bucket exists yet.
+  readSavedFromSource(item, fallback) {
+    const ref = this.bucketForPlanItem(item.id);
+    if (!ref) return fallback;
+    if (ref.type === 'mumAccount') {
+      return (typeof S !== 'undefined' && typeof S.mumAccountBalance === 'number')
+        ? S.mumAccountBalance
+        : fallback;
+    }
+    const bucketName = ref.name || item.name;
+    const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
+    return bucket ? (bucket.saved || 0) : fallback;
+  },
+
+  // Write a saved value through to the bucket (or mumAccountBalance).
+  // Auto-creates the bucket for user-added items if missing.
+  writeSavedToSource(item, savedValue) {
+    const ref = this.bucketForPlanItem(item.id);
+    if (!ref) return;
+    if (ref.type === 'mumAccount') {
+      S.mumAccountBalance = savedValue;
+      try { save(); } catch(e) {}
+      return;
+    }
+    const bucketName = ref.name || item.name;
+    if (!S.savingsBuckets) S.savingsBuckets = [];
+    let bucket = S.savingsBuckets.find(b => b.name === bucketName);
+    if (!bucket) {
+      bucket = {
+        id: (S.nextBucketId || S.savingsBuckets.length) + 1,
+        name: bucketName,
+        goal: item.target || item.budget || 0,
+        saved: 0,
+        account: 'ING'
+      };
+      S.savingsBuckets.push(bucket);
+      S.nextBucketId = (S.nextBucketId || S.savingsBuckets.length) + 1;
+    }
+    bucket.saved = parseFloat(savedValue.toFixed(2));
+    try { save(); } catch(e) {}
+  },
+
   get INCOME_MONTHLY() { return S.income || 7282; },
   BONUS_QUARTERLY: 2000,
   INCOME_GROSS: 117500,
@@ -10068,10 +10130,17 @@ const PLAN = {
         notes: 'Staying with her family and friends. Budget excludes flights.'
       }
     ];
-    return defaults.map(def => {
+    const merged = defaults.map(def => {
       const stored_trip = stored.find(t => t.id === def.id);
-      return stored_trip || def;
+      return stored_trip ? { ...def, ...stored_trip } : def;
     }).concat(stored.filter(t => !defaults.find(d => d.id === t.id)));
+    // Source-of-truth flip: saved is always derived from S.savingsBuckets
+    // (or S.mumAccountBalance for apartment), not from stored localStorage.
+    // Stored saved values from old data still merge for non-mappable items.
+    return merged.map(t => {
+      const canonical = this.readSavedFromSource(t, t.saved || 0);
+      return { ...t, saved: canonical };
+    });
   },
 
   saveTrip(trip) {
@@ -10110,10 +10179,16 @@ const PLAN = {
         notes: 'Her estimate $5k excluding flights. Flights additional ~$1,200 return.'
       }
     ];
-    return defaults.map(def => {
+    const merged = defaults.map(def => {
       const stored_goal = stored.find(g => g.id === def.id);
       return stored_goal ? { ...def, ...stored_goal } : def;
     }).concat(stored.filter(g => !defaults.find(d => d.id === g.id)));
+    // Source-of-truth flip: saved is always derived from
+    // S.savingsBuckets (or S.mumAccountBalance for apartment).
+    return merged.map(g => {
+      const canonical = this.readSavedFromSource(g, g.saved || 0);
+      return { ...g, saved: canonical };
+    });
   },
 
   saveGoal(goal) {
@@ -11295,12 +11370,15 @@ function confirmNewTrip() {
     ? Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1
     : 7;
 
-  PLAN.saveTrip({
+  const newTrip = {
     id: 'trip-' + Date.now(),
     name, emoji, startDate: start, endDate: end,
     days, budget, saved: 0, covered: [], notes,
     gfSplitting: false
-  });
+  };
+  PLAN.saveTrip(newTrip);
+  // Auto-create a bucket for this trip so future savings flow correctly.
+  PLAN.writeSavedToSource(newTrip, 0);
   PLAN_MODAL.close();
   renderPlanMode();
   showToast('✅ ' + emoji + ' ' + name + ' Added');
@@ -11341,7 +11419,11 @@ function confirmTripSavings(tripId) {
   const trips = PLAN.getTrips();
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
-  trip.saved = (trip.saved || 0) + amt;
+  const newSaved = (trip.saved || 0) + amt;
+  trip.saved = newSaved;
+  PLAN.writeSavedToSource(trip, newSaved);
+  // Stored trip retains everything except canonical saved (which is
+  // re-derived from bucket on next read via readSavedFromSource).
   PLAN.saveTrip(trip);
   PLAN_MODAL.close();
   renderPlanMode();
@@ -11509,16 +11591,13 @@ function confirmGoalSavings(goalId) {
   const goals = PLAN.getGoals();
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
-  goal.saved = (goal.saved || 0) + amt;
+  const newSaved = (goal.saved || 0) + amt;
+  goal.saved = newSaved;
+  // Single source of truth — write through to bucket / mum account
+  // for all goals. Replaces old special-case if (goalId === 'china')
+  // and if (goalId === 'apartment') blocks.
+  PLAN.writeSavedToSource(goal, newSaved);
   PLAN.saveGoal(goal);
-  if (goalId === 'china') {
-    const bucket = (S.savingsBuckets||[]).find(b => b.name === 'China Holiday');
-    if (bucket) { bucket.saved = goal.saved; save(); }
-  }
-  if (goalId === 'apartment') {
-    S.mumAccountBalance = goal.saved;
-    save();
-  }
   PLAN_MODAL.close();
   renderPlanMode();
   showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
@@ -11555,11 +11634,14 @@ function confirmNewGoal() {
     showToast('Please Enter A Target Amount');
     return;
   }
-  PLAN.saveGoal({
+  const newGoal = {
     id: 'goal-' + Date.now(),
     name, emoji, target, saved: 0, monthly,
     description: desc, colour: '#4ECDC4', priority: 99
-  });
+  };
+  PLAN.saveGoal(newGoal);
+  // Auto-create a bucket for this goal so future savings flow correctly.
+  PLAN.writeSavedToSource(newGoal, 0);
   PLAN_MODAL.close();
   renderPlanMode();
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
