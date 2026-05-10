@@ -9950,9 +9950,10 @@ function updatePersistentStrip() {
   if (!nw || !md || !pd) return;
   const _m = MODEL || computeFinancialModel();
   const nwLiquid = _m.liquidNet !== undefined ? _m.liquidNet : (_m.totalNet || 0);
+  // Bundle 6.5: use fmtC for consistency with Net Worth modal.
+  // Was rounding to nearest dollar; modal shows full precision.
   nw.textContent = 'NW: ' +
-    (nwLiquid >= 0 ? '+' : '-') + '$' +
-    Math.abs(Math.round(nwLiquid)).toLocaleString();
+    (nwLiquid >= 0 ? '+' : '') + fmtC(nwLiquid);
   nw.style.color = nwLiquid >= 0 ? 'var(--green)' : 'var(--red)';
   md.textContent = '$' + _m.safeToSpendToday.toFixed(0) + ' today';
   pd.textContent = _m.daysToPayday + 'd to payday';
@@ -11560,6 +11561,7 @@ function editGoal(goalId) {
     PLAN_MODAL.textarea('Description', 'goal-desc', goal.description || '',
       'What is this goal for? Being specific keeps you motivated when it gets hard.') +
     PLAN_MODAL.btn('Save Goal', 'confirmEditGoal("' + goalId + '")', true) +
+    PLAN_MODAL.btn('Delete Goal', 'confirmDeleteGoal("' + goalId + '")', false, true) +
     PLAN_MODAL.btn('Cancel', 'PLAN_MODAL.close()', false)
   );
 }
@@ -11580,6 +11582,48 @@ function confirmEditGoal(goalId) {
   PLAN_MODAL.close();
   renderPlanMode();
   showToast('✅ ' + name + ' Updated');
+}
+
+function confirmDeleteGoal(goalId) {
+  // Bundle 6.5: allow user to delete user-added goals (or any goal).
+  // Default goals (china, freedom-buffer, apartment) can also be
+  // deleted from the visible list — they'll regenerate from defaults
+  // on next render UNLESS user explicitly creates a stored override.
+  // We only delete from slyght_goals localStorage + clean up auto-
+  // created bucket if it was created for this goal specifically.
+  const goals = PLAN.getGoals();
+  const goal = goals.find(g => g.id === goalId);
+  if (!goal) return;
+
+  if (!confirm('Delete "' + goal.name + '"? This removes the goal but ' +
+               'leaves any savings in the bucket untouched. You can ' +
+               're-create the goal later if needed.')) {
+    return;
+  }
+
+  // Remove from stored slyght_goals (defaults regenerate naturally).
+  const stored = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
+  const filtered = stored.filter(g => g.id !== goalId);
+  localStorage.setItem('slyght_goals', JSON.stringify(filtered));
+
+  // For user-added goals (id starts with 'goal-'), remove the auto-
+  // created bucket too — UNLESS it has saved > 0, in which case keep
+  // it (don't lose money).
+  if (goalId.startsWith('goal-')) {
+    const ref = PLAN.bucketForPlanItem(goalId);
+    if (ref && ref.type === 'auto-bucket') {
+      const bucketName = goal.name;
+      const bucketIdx = (S.savingsBuckets || []).findIndex(b => b.name === bucketName);
+      if (bucketIdx >= 0 && (S.savingsBuckets[bucketIdx].saved || 0) === 0) {
+        S.savingsBuckets.splice(bucketIdx, 1);
+        save();
+      }
+    }
+  }
+
+  PLAN_MODAL.close();
+  renderPlanMode();
+  showToast('🗑 Goal deleted');
 }
 
 function addGoalSavings(goalId) {
@@ -12028,8 +12072,15 @@ const PLAN_MODAL = {
     const border = danger ? '1px solid rgba(231,76,60,0.5)' :
       primary ? 'none' : '1px solid rgba(255,255,255,0.12)';
     const color = primary ? '#000' : danger ? '#E74C3C' : '#fff';
+    // Bundle 6.5: escape inner double-quotes in onclick. Without this,
+    // any onclick containing " (e.g. confirmTripSavings("china-2026"))
+    // breaks the HTML parser and the actual onclick handler becomes a
+    // truncated SyntaxError that throws silently. This bug pre-dates
+    // Bundle 4 and is why Plan mode buttons "did nothing" despite
+    // Bundle 4's persistence layer being correct.
+    const safeOnclick = String(onclick).replace(/"/g, '&quot;');
     return `
-    <button onclick="${onclick}" style="width:100%;padding:14px;margin-bottom:8px;background:${bg};border:${border};border-radius:12px;color:${color};font-weight:${primary ? '800' : '500'};font-size:15px;cursor:pointer;font-family:inherit">${label}</button>`;
+    <button onclick="${safeOnclick}" style="width:100%;padding:14px;margin-bottom:8px;background:${bg};border:${border};border-radius:12px;color:${color};font-weight:${primary ? '800' : '500'};font-size:15px;cursor:pointer;font-family:inherit">${label}</button>`;
   }
 };
 

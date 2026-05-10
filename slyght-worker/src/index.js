@@ -363,9 +363,18 @@ async function handleSchedule(cron, env) {
         body = 'Balance: $' + bal.toFixed(2) + '. Skip buying lunch today. ' +
                'Payday in ' + daysLeft + ' days. Every $20 matters right now.';
       } else if (survivalMode === 'survival') {
-        body = 'You have $' + remainingToday.toFixed(2) + ' left today. ' +
-               'A $15 lunch leaves $' + Math.max(0, remainingToday - 15).toFixed(2) +
-               ' for the rest of the day.';
+        // Bundle 6.5: honest math — when $15 lunch exceeds remaining,
+        // tell the user how much over they'd be, not "leaves $0.00".
+        const lunchOverage = 15 - remainingToday;
+        if (lunchOverage > 0) {
+          body = 'You have $' + remainingToday.toFixed(2) + ' left today. ' +
+                 'A $15 lunch puts you $' + lunchOverage.toFixed(2) + ' over budget. ' +
+                 'Eat from home or aim for under $' + remainingToday.toFixed(2) + '.';
+        } else {
+          body = 'You have $' + remainingToday.toFixed(2) + ' left today. ' +
+                 'A $15 lunch leaves $' + (remainingToday - 15).toFixed(2) +
+                 ' for the rest of the day.';
+        }
       } else {
         body = '$' + remainingToday.toFixed(2) + ' remaining today. ' +
                'You\'ve spent $' + todaySpent.toFixed(2) + ' so far.';
