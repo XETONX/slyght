@@ -29,7 +29,8 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   If the symptom is "I edit bucket goal, Plan mode shows old target",
   fix is a parallel write to the linked trip/goal target. Awaiting
   John's specific repro before patching. Inline TODO at saveBucketModal.
-- **Status:** open (Bundle 7 — investigated, repro still needed)
+- **Bundle 7.1 phone-verify:** John re-tested 2026-05-10 ("no issues probs fixed") — bucket edit appears to work. Either the original failure was transient, the Bundle 7 investigation comment surfaced something, or the issue was orthogonal to saveBucketModal proper.
+- **Status:** cannot-reproduce (Bundle 7.1 — closed pending fresh repro; reopen if it surfaces again)
 
 ## 2. "Projected to run out 2 days (Tue 5 May)" — banner points at today
 - **Bug:** Survival banner says "in 2 days" but the date rendered next
@@ -248,6 +249,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   when NW math is fixed; if it persists post-Layer-2, file as #14b in
   a follow-up mission.
 - **Status:** fixed (Bundle 7 — three-rule dedupe before NW-up notification push: skip if last NW notif within 2h, skip if absolute delta < $50, skip if last txn was a manual correction. Inline guards in `NOTIFY.generate()`. Independent of #13's NW-math fix — this controls *firing*, not the math.)
+- **Bundle 7.1 follow-up — open question on semantics:** John tested by logging a $100 expense and expected an NW notification to fire; none did. Investigation surfaced that the existing `delta` is **month-over-month NW** (`getNetWorth().net - prevMonthNW`), NOT per-txn. A $100 spend can leave nwDelta < 0 or < $50 (the floor), in which case the dedupe correctly suppresses. **This is not a bug — semantics never matched the user's expectation.** Also flagged: `prevNW` uses a hardcoded liability constant `28584.70` at index.html ~L8490 that will go stale when debts change. **Open product question:** is the "Net worth up" notification still useful? Three options for a future bundle: (a1) document semantics, no code change; (a2) repurpose to per-txn-NW-change; (a3) add a separate per-txn notification class. Replacing `28584.70` with computed liabilities is tangential but recommended.
 
 ## 15. Three different daily-cost figures across forecast tiles
 - **Bug:** Survival/forecast section presents three different daily

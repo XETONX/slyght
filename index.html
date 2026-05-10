@@ -1221,7 +1221,7 @@ let BILLS = [
   {name:'Claude Plus', amt:34, day:9, tag:'Subscription', recurring:true},
   {name:'Netflix', amt:28.99, day:10, tag:'Streaming', recurring:true},
   {name:'Optus — Phone + Internet', amt:199, day:16, tag:'Fixed', recurring:true},
-  {name:'YouTube Premium', amt:16.99, day:20, tag:'Streaming', recurring:true},
+  {name:'YouTube Premium', amt:16.99, day:18, tag:'Streaming', recurring:true},
   {name:'Food at Work', amt:100, day:28, tag:'Variable', recurring:true},
   {name:'Adobe', amt:23.99, day:27, tag:'Subscription', recurring:true},
   {name:'Spotify', amt:15.99, day:28, tag:'Streaming', recurring:true},
@@ -1360,6 +1360,26 @@ function load() {
       });
     }
     S._paidBillsKeyMigrationV1 = true;
+    save();
+  }
+  // Bundle 7.1: YouTube Premium day correction migration. The bill was
+  // incorrectly stored as day:20 in BILLS array; actual debit is day:18.
+  // Existing paidBills entries with day-20 suffix get rewritten to
+  // day-18 to maintain continuity (preserves auto-debit flags and ts).
+  if (!S._youtubeDayMigrationV1) {
+    if (S.paidBills && typeof S.paidBills === 'object') {
+      Object.keys(S.paidBills).forEach(oldKey => {
+        const m = oldKey.match(/^(\d{4}-\d{1,2})-YouTube Premium-20$/);
+        if (m) {
+          const newKey = m[1] + '-YouTube Premium-18';
+          // guardian-allow: no-direct-paidbills-access — migration sweep over Object.keys(); each oldKey is a structurally-valid key from existing storage (permanent — one-time migration)
+          S.paidBills[newKey] = S.paidBills[oldKey];
+          // guardian-allow: no-direct-paidbills-access — migration delete (permanent — one-time migration)
+          delete S.paidBills[oldKey];
+        }
+      });
+    }
+    S._youtubeDayMigrationV1 = true;
     save();
   }
   // Stale notification cleanup — remove pings for debts the audit closed
@@ -2712,12 +2732,23 @@ const MathInvariants = {
       check() {
         if (!S.paidBills) return null;
         const keys = Object.keys(S.paidBills);
+        // Bundle 7.1: paidBills entries can be `true` (legacy) or
+        // {paid: true, _scheduledAutoDebit?: bool, ts?: number} (structured).
+        // Bundle 7 introduced the structured shape via the auto-debit flag.
+        // Pre-Bundle-7.1, this invariant strictly required `=== true` and
+        // fired the red Math-reconciliation banner on every render after
+        // any user marked a bill as auto-debit. Reject anything that
+        // matches NEITHER the legacy nor the structured shape.
         for (const k of keys) {
-          // guardian-allow: no-direct-paidbills-access — this invariant's job is to verify the shape of paidBills values; cannot delegate to isThisMonthlyBillPaid which already assumes shape (permanent — invariant validating the canonical helper's input contract)
-          if (S.paidBills[k] !== true) {
+          // guardian-allow: no-direct-paidbills-access — this invariant's job is to verify the shape of paidBills values; cannot delegate to isPaidBillKeyTruthy which assumes the shape is already valid (permanent — invariant validating the canonical helper's input contract)
+          const v = S.paidBills[k];
+          const isLegacy = v === true;
+          const isStructured = v && typeof v === 'object' && v.paid === true;
+          if (!isLegacy && !isStructured) {
             // guardian-allow: no-direct-paidbills-access — same reason: shape-of-paidBills check must read raw values to report what's wrong (permanent — invariant validating the canonical helper's input contract)
-            return { displayValue: 'paidBills["' + k + '"] = ' + JSON.stringify(S.paidBills[k]),
-              expected: 'true', details: 'paidBills value should always be exactly true' };
+            return { displayValue: 'paidBills["' + k + '"] = ' + JSON.stringify(v),
+              expected: 'true OR {paid:true, _scheduledAutoDebit?, ts?}',
+              details: 'paidBills entry has unexpected shape' };
           }
         }
         return null;
@@ -7259,7 +7290,7 @@ if ('serviceWorker' in navigator) {
       {"name":"Netflix","amt":28.99,"day":10,"tag":"Streaming","recurring":true},
       {"name":"Afterpay instalment","amt":121.16,"day":16,"tag":"Debt repayment","recurring":false},
       {"name":"Optus \u2014 Phone + Internet","amt":199,"day":16,"tag":"Fixed","recurring":true},
-      {"name":"YouTube Premium","amt":16.99,"day":20,"tag":"Streaming","recurring":true},
+      {"name":"YouTube Premium","amt":16.99,"day":18,"tag":"Streaming","recurring":true},
       {"name":"Parking \u2014 CBD Secure","amt":32.32,"day":22,"tag":"Fixed","recurring":true},
       {"name":"Pet Food","amt":45,"day":25,"tag":"Fixed","recurring":true},
       {"name":"Adobe","amt":23.99,"day":27,"tag":"Subscription","recurring":true},
@@ -7458,7 +7489,7 @@ const REAL_STATE_V17 = {
     {name:"Netflix", amt:28.99, day:10, tag:"Streaming", recurring:true},
     {name:"Afterpay instalment", amt:121.16, day:16, tag:"Debt repayment", recurring:false},
     {name:"Optus \u2014 Phone + Internet", amt:199, day:16, tag:"Fixed", recurring:true},
-    {name:"YouTube Premium", amt:16.99, day:20, tag:"Streaming", recurring:true},
+    {name:"YouTube Premium", amt:16.99, day:18, tag:"Streaming", recurring:true},
     {name:"Adobe", amt:23.99, day:27, tag:"Subscription", recurring:true},
     {name:"Spotify", amt:15.99, day:28, tag:"Streaming", recurring:true}
   ]
