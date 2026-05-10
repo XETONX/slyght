@@ -823,6 +823,26 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   </div>
 </div>
 
+<!-- Bundle 7: Mark Paid 3-way modal (OPEN-BUGS #23, #40, #41) — replaces native confirm() -->
+<div class="modal-overlay" id="mark-paid-modal" onclick="handleOverlayClick(event,'mark-paid-modal')">
+  <div class="modal" onclick="event.stopPropagation()" style="border-radius:var(--r);padding-bottom:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="modal-title" id="mark-paid-title" style="margin-bottom:0">Mark as paid</div>
+      <button onclick="closeModal('mark-paid-modal')" aria-label="Close" style="min-width:44px;min-height:44px;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center">×</button>
+    </div>
+    <div id="mark-paid-subtitle" style="color:var(--text2);font-size:13px;margin-bottom:18px;line-height:1.5"></div>
+    <button id="mark-paid-manual-btn" style="width:100%;padding:14px;margin-bottom:10px;background:var(--green);border:none;border-radius:var(--r-sm);color:#000;font-weight:700;font-size:15px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left">
+      <span style="font-size:15px;font-weight:700">✅ Paid manually</span>
+      <span style="font-size:12px;font-weight:400;opacity:0.75">I just paid this — log it as a real transaction today</span>
+    </button>
+    <button id="mark-paid-autodebit-btn" style="width:100%;padding:14px;margin-bottom:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);font-weight:700;font-size:15px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left">
+      <span style="font-size:15px;font-weight:700">🔄 Auto-debits monthly</span>
+      <span style="font-size:12px;font-weight:400;opacity:0.65">This bill auto-debits — count it as paid for this cycle (no banner)</span>
+    </button>
+    <button onclick="closeModal('mark-paid-modal')" style="width:100%;padding:12px;background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-size:14px;cursor:pointer">Cancel</button>
+  </div>
+</div>
+
 <!-- MI-13 paid-early bills detail modal (OPEN-BUGS #39) -->
 <div class="modal-overlay" id="mi13-details-modal" onclick="handleOverlayClick(event,'mi13-details-modal')">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1608,7 +1628,20 @@ function renderSurvivalBanner(safe) {
   if (mode === 'critical') {
     el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
   } else if (mode === 'survival') {
-    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending. No discretionary.</div>';
+    // Bundle 7: when dailyMax = $0 the "$0.00/day max" + "Cut weekend
+    // spending" copy is meaningless — there's nothing to cut. Surface
+    // actionable "Tight before payday — $X needed" instead, computed
+    // from committed (bills + debts before payday) minus bal.
+    if (dailyMax < 1) {
+      const _billsDue = getBillsDue().reduce((s,b) => s + (b.amt || 0), 0);
+      const _debtsDue = getActiveDebtsDueBeforePayday();
+      const _needed = Math.max(0, (_billsDue + _debtsDue) - bal);
+      el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Tight before payday' +
+        (_needed > 0 ? ' — ' + fmtC(_needed) + ' needed' : '') +
+        '</strong><br>Skip non-essentials.</div>';
+    } else {
+      el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending. No discretionary.</div>';
+    }
   } else if (mode === 'tight') {
     el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max' + buffer + '</strong></div>';
   } else if (mode === 'cautious') {
@@ -2132,6 +2165,25 @@ function paidBillKey(billName, billDay, month, year) {
   return y + '-' + m + '-' + billName + '-' + billDay;
 }
 
+// Bundle 7: paidBills entries are either `true` (legacy markers from before
+// Bundle 7) or `{ paid: true, _scheduledAutoDebit?: bool, ts?: number }`
+// (Bundle 7+ structured entries — required to distinguish a manual paid-early
+// click from a legitimate "this auto-debits monthly" pre-mark, see #23).
+// Treat both shapes as truthy "paid" markers everywhere except in the MI-13
+// future-key invariant, which uses isPaidBillAutoDebit() to skip auto-debits.
+function isPaidBillKeyTruthy(key) {
+  if (!S.paidBills) return false;
+  // guardian-allow: no-direct-paidbills-access — this IS the canonical reader for paidBills values; callers pass keys derived from paidBillKey() or Object.keys(S.paidBills) (permanent — helper IS the canonical access surface)
+  const v = S.paidBills[key];
+  return v === true || (v && v.paid === true);
+}
+function isPaidBillAutoDebit(key) {
+  if (!S.paidBills) return false;
+  // guardian-allow: no-direct-paidbills-access — this IS the canonical reader for the Bundle 7 auto-debit flag; callers pass keys derived from paidBillKey() or Object.keys(S.paidBills) (permanent — helper IS the canonical access surface)
+  const v = S.paidBills[key];
+  return !!(v && typeof v === 'object' && v._scheduledAutoDebit);
+}
+
 // month/year are optional. When omitted, defaults to today's month/year — preserves
 // existing default callers. When provided (month is 0-indexed, matching JS Date),
 // the lookup key is built for that rendered month so callers rendering future
@@ -2144,7 +2196,7 @@ function isThisMonthlyBillPaid(billName, billDay, month, year) {
 
   const key1 = paidBillKey(billName, billDay, (month !== undefined ? month : now.getMonth()), y);
   const key2 = y+'-'+m+'-'+billName;
-  if (S.paidBills[key1] === true || S.paidBills[key2] === true) return true;
+  if (isPaidBillKeyTruthy(key1) || isPaidBillKeyTruthy(key2)) return true;
 
   // Legacy keys for renamed bills — keep paid state honest after renames.
   const legacyNames = {
@@ -2155,7 +2207,7 @@ function isThisMonthlyBillPaid(billName, billDay, month, year) {
   if (legacyName) {
     const legacyKey1 = paidBillKey(legacyName, billDay, (month !== undefined ? month : now.getMonth()), y);
     const legacyKey2 = y+'-'+m+'-'+legacyName;
-    if (S.paidBills[legacyKey1] === true || S.paidBills[legacyKey2] === true) return true;
+    if (isPaidBillKeyTruthy(legacyKey1) || isPaidBillKeyTruthy(legacyKey2)) return true;
   }
 
   return false;
@@ -2231,16 +2283,55 @@ function canMarkBillPaid(bill, now) {
   return true; // unknown freq — degrade to allow
 }
 
-// OPEN-BUGS #1: confirm-dialog gate. Wraps any mark-paid action so
-// that future-dated calls require explicit user confirmation.
-// Three legitimate flavors all funnel through the confirm:
-//   1. Accidental tap (user picks No)
-//   2. Recording an early payment (user picks Yes)
-//   3. Pre-marking a scheduled auto-debit (user picks Yes)
-// See OPEN-BUGS #23 for the future "scheduled auto-debit" distinction.
+// OPEN-BUGS #1, #23, #40, #41: mark-paid gate. Wraps any mark-paid
+// action so that future-dated calls open the 3-way modal instead of
+// a native confirm. Bundle 7: native confirm() was unreliable on
+// mobile/Playwright when invoked from inside an already-open modal,
+// AND it couldn't distinguish "paid manually now" from "this auto-
+// debits monthly" — the latter is a legitimate forward-marker that
+// shouldn't fire MI-13. The 3-way modal flags auto-debit entries
+// with _scheduledAutoDebit so MI-13 ignores them.
 function withMarkPaidGate(bill, action) {
   if (!bill || canMarkBillPaid(bill)) { action(); return; }
-  if (confirm(bill.name + " isn't due until day " + bill.day + ". Mark as paid anyway?")) action();
+
+  const titleEl = document.getElementById('mark-paid-title');
+  const subEl = document.getElementById('mark-paid-subtitle');
+  const manualBtn = document.getElementById('mark-paid-manual-btn');
+  const autodebitBtn = document.getElementById('mark-paid-autodebit-btn');
+  const modal = document.getElementById('mark-paid-modal');
+  if (!titleEl || !subEl || !manualBtn || !autodebitBtn || !modal) {
+    // Defensive fallback if modal HTML is missing for any reason.
+    if (confirm(bill.name + " isn't due until day " + bill.day + ". Mark as paid anyway?")) action();
+    return;
+  }
+
+  const daysAway = bill.day - new Date().getDate();
+  titleEl.textContent = bill.name;
+  subEl.textContent = "Due day " + bill.day + " — " + daysAway + " day" +
+    (Math.abs(daysAway) === 1 ? '' : 's') + " away. How is this paid?";
+
+  // Wire fresh handlers on each open so prior bills don't leak.
+  manualBtn.onclick = function() {
+    closeModal('mark-paid-modal');
+    action();
+  };
+  autodebitBtn.onclick = function() {
+    closeModal('mark-paid-modal');
+    // Run action() first so the key is created, then upgrade the
+    // entry shape to mark it as a scheduled auto-debit.
+    action();
+    try {
+      const key = paidBillKey(bill.name, bill.day);
+      // guardian-allow: no-direct-paidbills-access — key built immediately above via canonical paidBillKey() helper; this is the upgrade-legacy-true-to-structured-entry write that ONLY needs to fire on true-shape (permanent — Bundle 7 mark-paid auto-debit upgrade write)
+      if (S.paidBills && S.paidBills[key] === true) {
+        // guardian-allow: no-direct-paidbills-access — same paidBillKey()-derived key; structured-entry assignment for the auto-debit flag (permanent — Bundle 7 mark-paid auto-debit upgrade write)
+        S.paidBills[key] = { paid: true, _scheduledAutoDebit: true, ts: Date.now() };
+        save();
+      }
+    } catch(e) { console.warn('[Bundle 7] auto-debit flag write failed:', e); }
+  };
+
+  modal.classList.add('open');
 }
 
 function getBillsDue() {
@@ -2345,7 +2436,12 @@ function buildCalendarEntries(state, now) {
       // RC11: read from injected `paidBills` (state-pure for testability) but
       // build the key via canonical paidBillKey so format stays unified.
       const paidKey = paidBillKey(b.name, b.day, m, y);
-      const isPaid = paidBills[paidKey] === true;
+      // Bundle 7: paidBills entries are either `true` (legacy) or
+      // `{ paid: true, _scheduledAutoDebit?: bool }` (Bundle 7+).
+      // This is the state-pure path (uses injected paidBills, not
+      // S.paidBills), so isPaidBillKeyTruthy doesn't apply.
+      const _entry = paidBills[paidKey];
+      const isPaid = _entry === true || (_entry && _entry.paid === true);
       const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
       if (covered) return;
       _add(dateISO, {
@@ -2799,6 +2895,10 @@ const MathInvariants = {
         const todayM = today.getMonth() + 1;
         const todayD = today.getDate();
         const future = Object.keys(S.paidBills).filter(key => {
+          // Bundle 7 (#23): auto-debit entries are legitimate forward-
+          // dated markers — user explicitly chose "this auto-debits"
+          // in the mark-paid modal. Excluded from MI-13 detection.
+          if (isPaidBillAutoDebit(key)) return false;
           const m = key.match(/^(\d{4})-(\d{1,2})-.*-(\d{1,2})$/);
           if (!m) return false; // malformed handled by state-shape-paidbills
           const y = +m[1], mo = +m[2], d = +m[3];
@@ -2810,7 +2910,12 @@ const MathInvariants = {
         if (future.length === 0) return null;
         return { displayValue: future.length + ' bill(s)',
           expected: 'paidBills key day ≤ today',
-          details: future.length + ' bill(s) tracked as paid early: ' + future.slice(0, 3).join(', '),
+          // Bundle 7 (#23 follow-up): show bill names only, not full keys.
+          // Key format: "${y}-${m+1}-${name}-${day}". Extract name segment.
+          details: future.slice(0, 3).map(k => {
+            const m2 = k.match(/^\d{4}-\d{1,2}-(.*)-\d{1,2}$/);
+            return m2 ? m2[1] : k;
+          }).join(', ') + (future.length > 3 ? ' +' + (future.length - 3) + ' more' : ''),
           keys: future };
       },
       message(v) { return 'Bills tracked as paid early — tap to review'; },
@@ -3000,7 +3105,10 @@ const MathInvariants = {
           if (cardViolations.length === 1 && cardViolations[0].name === 'paidbills-key-not-future') {
             const v = cardViolations[0];
             const n = (v.keys && v.keys.length) || ((v.displayValue || '').match(/\d+/) || [''])[0] || 'Some';
-            titleEl.textContent = '⚠️ Bills tracked as paid early — ' + n + ' still need a transaction';
+            // Bundle 7 (#23 follow-up): tighten copy. Was 3 redundant
+            // lines saying the same thing; now headline is the count
+            // and the details line shows the bill names.
+            titleEl.textContent = '⚠️ ' + n + ' bill' + (n === 1 ? '' : 's') + ' marked paid before due date';
           } else {
             titleEl.textContent = '⚠️ Math reconciliation failed';
           }
@@ -5464,6 +5572,13 @@ function openBucketModal(i) {
 }
 
 function saveBucketModal() {
+  // Bundle 7 (#1): TODO confirm bucket edit fix — needs phone verification.
+  // Read-and-write flow looks correct (form → b reference → save → render).
+  // Hypothesis: bucket.goal does NOT propagate to a linked plan item's
+  // .target field (PLAN.readSavedFromSource only mirrors `saved`, not
+  // `goal`). If the user-visible failure is "edited goal doesn't show in
+  // Plan mode", that's the bug — needs a parallel write to the linked
+  // trip.target / goal.target. Awaiting John's specific repro.
   if (activeBucketIdx < 0) return;
   const b = S.savingsBuckets[activeBucketIdx];
   const _bkn2 = $('bkt-name'); if (_bkn2) b.name = _bkn2.value.trim() || b.name;
@@ -8363,11 +8478,27 @@ const NOTIFY = {
     const ns=getNoSpendStreak();
     if (ns>=3) add('info','You\'ve been under budget for '+ns+' days straight 🔥',null);
     // INFO: net worth up
+    // Bundle 7: dedupe NW notifications (#14) — three guards before push
+    //   1. Skip if a prior NW-up notification fired within the last 2h
+    //   2. Skip if absolute delta < $50 (trivial churn / round-trip noise)
+    //   3. Skip if last txn was a manual correction (delta likely from
+    //      reconciliation, not real net-worth movement)
+    // Inline guards (cannot `return` here — generate() builds many
+    // categories of notifications, returning would skip the rest).
     const history=S.monthlyHistory||[];
     if (history.length>=1) {
       const prev=history[history.length-1]; const prevNW=(prev.bal||0)-28584.70;
       const nw=getNetWorth();
-      if (nw.net>prevNW+100) add('info','Net worth up '+fmt(nw.net-prevNW)+' this month — keep going',null);
+      const nwDelta = nw.net - prevNW;
+      const lastNwNotif = (S.notifications || [])
+        .filter(n => n.id && n.id.indexOf('info_Net_worth_up') === 0)
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+      const recentNwNotif = lastNwNotif && lastNwNotif.ts > Date.now() - 2 * 60 * 60 * 1000;
+      const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
+      const lastWasCorrection = !!(lastTxn && lastTxn._isCorrection);
+      if (nwDelta > 0 && Math.abs(nwDelta) >= 50 && !recentNwNotif && !lastWasCorrection) {
+        add('info','Net worth up '+fmt(nwDelta)+' this month — keep going',null);
+      }
     }
     // WEEKLY: Sunday evening
     if (dow===0&&now.getHours()>=17) {
@@ -11356,8 +11487,12 @@ function confirmEditTrip(tripId) {
   }
 
   PLAN.saveTrip(trip);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('✅ ' + trip.name + ' Updated');
 }
 
@@ -11406,8 +11541,12 @@ function confirmNewTrip() {
   PLAN.saveTrip(newTrip);
   // Auto-create a bucket for this trip so future savings flow correctly.
   PLAN.writeSavedToSource(newTrip, 0);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('✅ ' + emoji + ' ' + name + ' Added');
 }
 
@@ -11452,8 +11591,12 @@ function confirmTripSavings(tripId) {
   // Stored trip retains everything except canonical saved (which is
   // re-derived from bucket on next read via readSavedFromSource).
   PLAN.saveTrip(trip);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('✅ $' + amt.toLocaleString() + ' Added To ' + trip.name + ' Fund');
 }
 
@@ -11579,8 +11722,12 @@ function confirmEditGoal(goalId) {
   if (!isNaN(monthly)) goal.monthly = monthly;
   goal.description = desc;
   PLAN.saveGoal(goal);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('✅ ' + name + ' Updated');
 }
 
@@ -11621,8 +11768,12 @@ function confirmDeleteGoal(goalId) {
     }
   }
 
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('🗑 Goal deleted');
 }
 
@@ -11668,8 +11819,12 @@ function confirmGoalSavings(goalId) {
   // and if (goalId === 'apartment') blocks.
   PLAN.writeSavedToSource(goal, newSaved);
   PLAN.saveGoal(goal);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
 }
 
@@ -11712,8 +11867,12 @@ function confirmNewGoal() {
   PLAN.saveGoal(newGoal);
   // Auto-create a bucket for this goal so future savings flow correctly.
   PLAN.writeSavedToSource(newGoal, 0);
+  // Bundle 7: preserve scroll position across re-render
+  const _planEl = document.getElementById('plan-mode');
+  const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
+  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
 

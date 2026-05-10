@@ -21,7 +21,15 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Repro needed:** yes — which bucket, which field, what user-visible
   failure (silent no-op vs. error vs. wrong value persisted)
 - **Fix bundle:** unscheduled (awaiting repro)
-- **Status:** open
+- **Bundle 7 investigation:** read `saveBucketModal` flow end-to-end —
+  read-and-write logic looks correct (form values → `b` reference →
+  `save()` → `renderAll`). Likely user-visible failure is that
+  `bucket.goal` does NOT propagate to a linked plan item's `target`
+  field (`PLAN.readSavedFromSource` only mirrors `saved`, not `goal`).
+  If the symptom is "I edit bucket goal, Plan mode shows old target",
+  fix is a parallel write to the linked trip/goal target. Awaiting
+  John's specific repro before patching. Inline TODO at saveBucketModal.
+- **Status:** open (Bundle 7 — investigated, repro still needed)
 
 ## 2. "Projected to run out 2 days (Tue 5 May)" — banner points at today
 - **Bug:** Survival banner says "in 2 days" but the date rendered next
@@ -34,7 +42,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Repro needed:** no (visible on dashboard right now)
 - **Fix bundle:** unscheduled (date-math investigation needed before
   scoping; suspect a small fix once confirmed)
-- **Status:** open
+- **Status:** fixed (Bundle 5 — commit 2ce9765, today-aware MAX PER DAY + survival forecast trust)
 
 ## 3. Round-up cents display in Recent Spending — post-Bundle A retest
 - **Bug:** Round-up txns showed as `-$0` in Recent Spending. Bundle A
@@ -179,7 +187,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** unscheduled — likely fold into Allocation Playground
   v1 work (which rebuilds the slider interaction model from scratch);
   not blocking dead code cleanup or Layer 2
-- **Status:** investigating
+- **Status:** fixed (Bundle 6.5 — commit 35b425b — root cause: PLAN_MODAL.btn() nested-quote escape bug; HTML attribute parser truncated onclick at first inner `"`, leaving handlers as silent SyntaxErrors. Phone-verified A=PASS 2026-05-10.)
 - **2026-05-06 sweep echo:** Sam attempted to reach Plan Mode allocation
   sliders (turn 8-12 of 2026-05-06-1231 sweep) but couldn't navigate to
   them — clicked "See Breakdown" expecting allocations, got Net Worth
@@ -239,10 +247,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   math. Notification dedup is a separate concern but this bug surfaces
   when NW math is fixed; if it persists post-Layer-2, file as #14b in
   a follow-up mission.
-- **Status:** open — verify-after-#13-fix tracker (2026-05-06: this
-  is downstream of the broken NW math in #13; if notification spam
-  persists after #13's fix lands, escalate to its own fix mission as
-  #14b. Stays open as the explicit verification step.)
+- **Status:** fixed (Bundle 7 — three-rule dedupe before NW-up notification push: skip if last NW notif within 2h, skip if absolute delta < $50, skip if last txn was a manual correction. Inline guards in `NOTIFY.generate()`. Independent of #13's NW-math fix — this controls *firing*, not the math.)
 
 ## 15. Three different daily-cost figures across forecast tiles
 - **Bug:** Survival/forecast section presents three different daily
@@ -384,7 +389,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   a future-dated bill, suppressing MI-13 for that specific entry.
   Out of scope for Mission B — consider when/if John decides the
   noise is too high.
-- **Status:** open (deferred — calibration question, not a bug)
+- **Status:** fixed (Bundle 7 — `_scheduledAutoDebit: true` flag on paidBills entries via the new 3-way Mark-Paid modal. MI-13 invariant filter calls `isPaidBillAutoDebit(key)` and excludes flagged keys. Legacy `paidBills[key] === true` markers stay treated as accidental paid-early until the user marks them via the new flow.)
 
 ## 24. Settings header `📤 Export` button calls undefined `exportData()`
 - **Bug:** The button at index.html:575 has `onclick="exportData()"`
@@ -804,7 +809,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** small follow-up. Likely shares root cause shape
   with #41 ("Pay now" — same modal, same surface) — investigate
   together; one wiring fix may close both.
-- **Status:** open
+- **Status:** fixed (Bundle 7 — root cause: native `confirm()` inside `withMarkPaidGate` was unreliable on mobile when invoked from inside an already-open modal. Replaced with custom 3-way `mark-paid-modal` (Paid manually / Auto-debits monthly / Cancel). Same fix closes #41.)
 
 ## 41. Bill modal "Pay now" button does nothing
 - **Bug:** Same modal as #40 — tap a bill in the calendar → modal
