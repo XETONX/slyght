@@ -2348,8 +2348,17 @@ function withMarkPaidGate(bill, action) {
   };
   autodebitBtn.onclick = function() {
     closeModal('mark-paid-modal');
-    // Run action() first so the key is created, then upgrade the
-    // entry shape to mark it as a scheduled auto-debit.
+    // Bundle 7.2.3 fix-forward: action() can now do one of two things:
+    //   (a) Set S.paidBills[key] = true synchronously (legacy callers
+    //       that don't route through Quick Log).
+    //   (b) Open Quick Log and stash _pendingBillPayKey for later commit
+    //       via _consumePendingBillPay (markBillAlreadyPaid,
+    //       _markBillPaidViaQuickLog — added in 7.2.2).
+    // For (a) we upgrade the entry shape inline like before. For (b)
+    // we set _pendingBillPayAutoDebit so the consumer writes the
+    // structured shape on Quick Log save. Without this branch, 7.2.2
+    // silently dropped the auto-debit flag — MI-13 then fired on the
+    // future-dated key.
     action();
     try {
       const key = paidBillKey(bill.name, bill.day);
@@ -2358,6 +2367,10 @@ function withMarkPaidGate(bill, action) {
         // guardian-allow: no-direct-paidbills-access — same paidBillKey()-derived key; structured-entry assignment for the auto-debit flag (permanent — Bundle 7 mark-paid auto-debit upgrade write)
         S.paidBills[key] = { paid: true, _scheduledAutoDebit: true, ts: Date.now() };
         save();
+      } else if (window._pendingBillPayKey === key) {
+        // Path (b) — Quick Log stash is live; tag it so _consumePendingBillPay
+        // writes the structured shape instead of legacy true on save.
+        window._pendingBillPayAutoDebit = true;
       }
     } catch(e) { console.warn('[Bundle 7] auto-debit flag write failed:', e); }
   };
@@ -4935,6 +4948,14 @@ function unmarkBillFromCal(key, day) {
 function undoPaidBillByKey(key) {
   if (!S.paidBills || !S.paidBills[key]) return false;
   const name = parseMI13Key(key).name || key;
+  // Bundle 7.2.3 fix-forward: record the un-mark so autoDetect /
+  // autoMatch skip this bill for 30 days. Without this, the next render
+  // (refresh, tab switch, any state change) re-runs auto-detection
+  // against the same pre-existing txns and re-flags the bill — which
+  // is exactly what was happening to YouTube Premium / Spotify on every
+  // refresh after the user un-flagged them.
+  if (!S._billUnmarkLog) S._billUnmarkLog = {};
+  S._billUnmarkLog[key] = Date.now();
   delete S.paidBills[key];
   // Mission #42 adjacent — reset the violation count when the user
   // actively resolves an entry. Otherwise the previous count (which
@@ -6004,7 +6025,12 @@ function openQuickLogModal() {
   // cancelled "Already paid" flow. Callers that want to set the stash
   // (markBillAlreadyPaid, _markBillPaidViaQuickLog) re-set it AFTER
   // calling openQuickLogModal, so this clear-at-start doesn't fight them.
+  // Bundle 7.2.3 fix-forward: also clear the auto-debit shape flag so
+  // a cancelled auto-debit-marked flow can't leak into the next log.
+  // The withMarkPaidGate autodebitBtn handler re-sets this AFTER action()
+  // (which calls openQuickLogModal), so the order works out.
   delete window._pendingBillPayKey;
+  delete window._pendingBillPayAutoDebit;
   const _qla2 = $('ql-amt'); if (_qla2) _qla2.value = '';
   const _qln2 = $('ql-note'); if (_qln2) _qln2.value = '';
   const _qlc = $('ql-cat'); if (_qlc) _qlc.value = '';
@@ -6087,7 +6113,9 @@ function quickLogTxn() {
     if (typeof checkForBonusInterception === 'function') checkForBonusInterception(incomeTxn);
     // Bundle 7.2.2 fix-forward: user pivoted to Income — drop the bill-pay
     // stash without applying. They're not paying a bill anymore.
+    // Bundle 7.2.3: also drop the auto-debit shape flag.
     delete window._pendingBillPayKey;
+    delete window._pendingBillPayAutoDebit;
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-income');
@@ -6110,7 +6138,9 @@ function quickLogTxn() {
     }
     // Bundle 7.2.2 fix-forward: user pivoted to From-person — drop the
     // bill-pay stash without applying. Not a bill payment.
+    // Bundle 7.2.3: also drop the auto-debit shape flag.
     delete window._pendingBillPayKey;
+    delete window._pendingBillPayAutoDebit;
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-from-person');
@@ -6152,20 +6182,69 @@ function quickLogTxn() {
 }
 
 // Auto-match logged transaction to bills
+// Bundle 7.2.3 fix-forward: shared strict matcher. Pre-7.2.3 the auto-detect
+// path used OR (amount OR name) with \u00b1$1 tolerance, which constantly
+// false-positive'd small streaming bills \u2014 YouTube ($16.99) matched
+// anything $15.99\u2013$17.99 OR any txn note containing 'youtube'.
+// Combined with autoDetect firing on every state-change (refresh), bills
+// re-flagged themselves after the user un-flagged them, and the MI-13
+// banner came back endlessly. New rule: BOTH amount AND name must match;
+// amount tolerance is $0.50 for small bills (\u2264$20) where coincidental
+// matches are common, $1.00 for larger.
+function _txnMatchesBillStrict(t, b) {
+  if (t.income || t._isRoundup || t._isCorrection) return false;
+  const amt = b.amt || 0;
+  const tolerance = amt <= 20 ? 0.50 : 1.00;
+  if (Math.abs((t.amt || 0) - amt) > tolerance) return false;
+  // Name keyword: longest word \u22654 chars after splitting on
+  // whitespace/dash. "YouTube Premium" -> "youtube"; "Teachers Health
+  // Annual" -> "teachers". Bills with no usable keyword fail the match
+  // deliberately rather than accept a weak match.
+  const keyword = (b.name || '').toLowerCase().split(/[\s\-\u2014]+/)
+    .filter(w => w.length >= 4)
+    .sort((a, x) => x.length - a.length)[0];
+  if (!keyword) return false;
+  return ((t.note || '').toLowerCase()).indexOf(keyword) >= 0;
+}
+
+// Bundle 7.2.3 fix-forward: respect user intent. When a user un-marks a
+// paid bill via undoPaidBillByKey, record the key + timestamp. autoDetect
+// and autoMatch skip bills on this list so we don't undo the un-do on
+// next render. 30-day TTL lets next billing cycle re-evaluate cleanly.
+function _isBillRecentlyUnmarked(billName, billDay, m, y) {
+  const log = S._billUnmarkLog;
+  if (!log) return false;
+  const key = paidBillKey(billName, billDay, m, y);
+  const ts = log[key];
+  if (!ts) return false;
+  if (Date.now() - ts > 30 * 86400000) {
+    delete log[key];
+    return false;
+  }
+  return true;
+}
+
 function autoMatchBillsToTxns(silent) {
   const now = new Date();
   const todayStr = now.toDateString();
+  const todayM = now.getMonth(), todayY = now.getFullYear(), todayD = now.getDate();
   const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === todayStr);
   let matched = [];
   (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
     if (isThisMonthlyBillPaid(b.name, b.day)) return; // already paid
-    const amtMatch = todayTxns.some(t => !t.income && Math.abs(t.amt - b.amt) <= 1.00);
-    const nameMatch = todayTxns.some(t => !t.income && (t.note || '').toLowerCase().includes(b.name.toLowerCase().split(' ')[0]));
-    if (amtMatch || nameMatch) {
-      if (!S.paidBills) S.paidBills = {};
-      S.paidBills[paidBillKey(b.name, b.day)] = true;
-      matched.push(b.name);
-    }
+    if (_isBillRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
+    if (!todayTxns.some(t => _txnMatchesBillStrict(t, b))) return;
+    if (!S.paidBills) S.paidBills = {};
+    const key = paidBillKey(b.name, b.day, todayM, todayY);
+    const isBillFuture = b.day > todayD;
+    // Bundle 7.2.3 fix-forward: future-dated keys need the structured
+    // shape so MI-13 doesn't fire on them \u2014 a matching txn before
+    // the due date implies the user paid early or set up an auto-debit.
+    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper one line above; structured Bundle 7 shape write for future-dated bills (permanent - auto-mark writes the auto-debit shape so MI-13 ignores future-dated entries)
+    S.paidBills[key] = isBillFuture
+      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
+      : true;
+    matched.push(b.name);
   });
   if (matched.length && !silent) {
     showUndoToast('\u2713 ' + matched.join(', ') + ' marked as paid \u2014 matched transaction');
@@ -6175,18 +6254,24 @@ function autoMatchBillsToTxns(silent) {
 
 function autoDetectBillPayments() {
   const now = new Date();
+  const todayM = now.getMonth(), todayY = now.getFullYear(), todayD = now.getDate();
   const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
   const recentTxns = (S.txns || []).filter(t => !t.income && t.ts >= sevenDaysAgo);
   const detected = [];
   (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
     if (isThisMonthlyBillPaid(b.name, b.day)) return;
-    const amtMatch = recentTxns.some(t => Math.abs(t.amt - b.amt) <= 1.00);
-    const nameMatch = recentTxns.some(t => (t.note || '').toLowerCase().includes(b.name.toLowerCase().split(' ')[0]));
-    if (amtMatch || nameMatch) {
-      if (!S.paidBills) S.paidBills = {};
-      S.paidBills[paidBillKey(b.name, b.day)] = true;
-      detected.push(b.name);
-    }
+    if (_isBillRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
+    if (!recentTxns.some(t => _txnMatchesBillStrict(t, b))) return;
+    if (!S.paidBills) S.paidBills = {};
+    const key = paidBillKey(b.name, b.day, todayM, todayY);
+    const isBillFuture = b.day > todayD;
+    // Bundle 7.2.3 fix-forward: see autoMatchBillsToTxns above for the
+    // strict matcher + un-mark log + future-key shape rationale.
+    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper one line above; structured Bundle 7 shape write for future-dated bills (permanent - auto-detect writes the auto-debit shape so MI-13 ignores future-dated entries)
+    S.paidBills[key] = isBillFuture
+      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
+      : true;
+    detected.push(b.name);
   });
   if (detected.length) {
     save();
@@ -10221,9 +10306,16 @@ function payBillNow(billName, billDay, billAmt) {
 function _consumePendingBillPay() {
   if (window._pendingBillPayKey) {
     if (!S.paidBills) S.paidBills = {};
+    // Bundle 7.2.3 fix-forward: honor _pendingBillPayAutoDebit (set by
+    // withMarkPaidGate when the user picked "this auto-debits" in the
+    // 3-way modal). Writes the structured Bundle 7 shape so MI-13
+    // ignores the future-dated entry.
     // guardian-allow: no-direct-paidbills-access — window._pendingBillPayKey is always set via canonical paidBillKey() in markBillAlreadyPaid / _markBillPaidViaQuickLog; the stash is intermediate transport, not a parallel key format (permanent — Bundle 7.2.2 bill-pay stash consumer)
-    S.paidBills[window._pendingBillPayKey] = true;
+    S.paidBills[window._pendingBillPayKey] = window._pendingBillPayAutoDebit
+      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
+      : true;
     delete window._pendingBillPayKey;
+    delete window._pendingBillPayAutoDebit;
   }
 }
 
