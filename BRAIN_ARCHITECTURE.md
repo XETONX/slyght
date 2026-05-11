@@ -148,42 +148,57 @@ defaults (0, empty array, `undefined`) without wrapping.
 
 ---
 
-## Multi-Bubble Composition — Two-Phase Allocation (v1.4)
+## Multi-Bubble Phased Composition (v1.4 — Bundle 15.1)
 
-When a single canonical method composes across three or more bubbles
-in a single user action (the WRX sale-proceeds allocation is the
-prototype), the composition follows a **two-phase** pattern that
-generalizes the abort-on-inner-failure rule:
+A sub-pattern of the Composition Contract. When a single canonical
+method composes across three or more bubbles in a single user action
+(the WRX sale-proceeds allocation is the prototype), structure the
+work as **three explicit phases**: Validate, Execute, Audit.
 
-**Phase 1 — Validate every step BEFORE any mutation.** Walk the
-allocation set, check each unit's preconditions (existence, validity,
-not-already-applied). If any fails, return `{ ok: false, reason: ... }`
-WITHOUT touching state. Phase-1 abort = clean state preserved.
+**Phase 1 — Validate.** Walk every step. Check each unit's
+preconditions (existence, validity, not-already-applied). If any
+fails, return `{ ok: false, reason, allocation }` WITHOUT touching
+state. Phase-1 abort = clean state preserved. This is where 90% of
+"this would fail" cases get caught — debt-not-found, already-paid,
+invalid-amounts, etc.
 
-**Phase 2 — Apply each step. STRICT abort on first inner failure.**
+**Phase 2 — Execute.** Apply each step in order. STRICT abort on
+first inner failure (`{ ok: false }` from any inner canonical writer).
 Phase-1 caught the predictable failures; phase-2 failures are racy
 state changes (transaction layer broken, inner canonical writer
-unexpectedly rejecting). When phase-2 aborts mid-allocation, partial
-earlier-in-batch mutations REMAIN visible. The caller surfaces the
-error; the user can review what cleared vs what didn't via
-BRAIN.audit. JS has no transactions; this is the honest contract.
+unexpectedly rejecting). When phase-2 aborts mid-batch, partial
+earlier-in-batch mutations REMAIN visible — JS has no transactions,
+this is the honest contract. The caller surfaces the error and the
+user can review what cleared vs what didn't via `BRAIN.audit`.
+Phase-2 also covers the orchestration-level non-bubble writes (e.g.,
+the WRX_proceeds path writes `S.bal += saleNet`, `S.wrxStatus = 'sold'`
+as the final step of Execute, only if all earlier per-step writes
+succeeded).
 
-**Phase 3 — Wrap-up writes (domain side effects).** After all
-allocations succeed, write the orchestration-level state (e.g.,
-WRX_proceeds: `S.bal += saleNet`, `S.wrxStatus = 'sold'`). Phase-3
-writes are NOT skipped by phase-2 failure — but phase-3 only runs if
-phase-2 completed cleanly.
+**Phase 3 — Audit.** A single `BRAIN.audit.append` entry covers the
+whole multi-bubble write with the originating source tag (e.g.,
+`WRX_ALLOCATE`). Future readers (or the AI agent) see one event in
+the ledger, not N scattered entries. Per-step inner writes still
+emit their own audit lines (BRAIN.debts.markPaid logs each
+`debt_mark_paid`); phase-3 adds the orchestration-level event on top.
 
-**Current example:** `BRAIN.debts.allocateWrxProceeds(allocations, saleNet, source)`
+**Prototype:** `BRAIN.debts.allocateWrxProceeds(allocations, saleNet, source)`
 composes BRAIN.debts.markPaid (per debt) + BRAIN.transaction.record
 (per carloan paydown) + direct S.bal/S.carloan/S.wrxStatus writes.
+Locked by composition tests in `tests/brain.test.js`:
+phase-1-validates-before-any-mutation + phase-2-STRICT-abort-on-inner-failure.
 
 **Why this lives in BRAIN.debts and not BRAIN.transaction:** the
 allocation's primary domain is debt clearance. Vehicle-finance fields
-(S.carloan / S.wrxStatus) are not yet bubble-owned; when a future
-bundle seeds BRAIN.vehicleFinance, the carloan branch migrates there
-and the orchestration coordinator moves up to a higher layer
-(possibly BRAIN itself).
+(`S.carloan` / `S.wrxStatus`) are not yet bubble-owned; when Bundle
+16.5 seeds `BRAIN.vehicle` (or `BRAIN.assets`), the carloan branch
+migrates there and the orchestration coordinator either stays in
+BRAIN.debts or moves up to BRAIN itself — re-evaluate at bundle time.
+
+**When to use the phased pattern:** any canonical method that writes
+across ≥3 bubbles in a single user action. Two-bubble compositions
+(BRAIN.bills.markPaid → BRAIN.transaction.record) use the simpler
+strict-abort contract without explicit phase separation.
 
 ---
 
@@ -333,6 +348,39 @@ writer:
 Without these tests the envelope contract drifts silently as new
 bubbles seed. Locking it at the surface-area-still-small moment
 (3 bubbles after Bundle 13) makes future migration safer.
+
+---
+
+## Forward Roadmap (post-Bundle-15.1 — converged 2026-05-12)
+
+Architectural lift is complete. What follows is application work on a
+stable substrate: wire bubble pattern through remaining UI surfaces,
+extract test-source to a real module, seed remaining domains, then
+build the AI agent layer.
+
+| Bundle | Scope | Effort |
+|---|---|---|
+| 16 | autoDebit schema correction (drafted at `CLAUDE-CODE-SHIP-PROMPT-16.md`) | ~60 min |
+| 16.5 | Vehicle-finance bubble (BRAIN.vehicle or BRAIN.assets) — S.carloan / S.wrx* canonical writers | ~30 min |
+| 17 | BRAIN.plan bubble (PLAN engine fold-in as its own bubble — not sub-domain of dashboard) | ~75 min |
+| 17.5 | **Test-source extraction** — BRAIN to ES module loadable from both index.html and tests | ~45 min |
+| 18 | BRAIN.dashboard render orchestration (sub-commits: 18a tile contracts / 18b hero copy readers / 18c calendar render orchestration as `BRAIN.dashboard.calendar.*` — calendar stays INSIDE dashboard, not extracted) | ~90 min |
+| 18.5 | BRAIN.reconcile + snapshot audit emission (Known Gap since Bundle 13) | ~45 min |
+| 19 | BRAIN.analysis + BRAIN.settings + BRAIN.chat (last three UI bubbles) | ~90 min |
+| 20+ | AI agent layer — phased: 20a tool defs, 20b intent routing, 20c safety rails, 20d confirmation flows, 20e UX polish | chapter |
+
+**Design decisions locked (post-convergence):**
+
+- **PLAN is its own bubble (Bundle 17).** It's heavyweight (source-of-truth flip, payday allocation, trips/goals/provisions, WRX surplus math) — too much for a sub-domain. Dashboard reads from BRAIN.plan like it reads from bills/debts/savings/transaction.
+- **Calendar stays inside BRAIN.dashboard (Bundle 18c).** Calendar is pure render orchestration of state owned by bills/debts/paidBills — it doesn't OWN state. Extracting it would create a parallel reader path, not separation.
+- **CHARACTER + MODEL stay standalone.** Both are stateless derivation utilities consumed by multiple bubbles. May rename to `BRAIN.derive.*` in a polish bundle for naming consistency, but architecturally they don't become bubbles.
+- **AI agent is Bundle 20+, not 20.** It's a chapter (5 sub-bundles), not a single ship.
+
+**Discipline carried forward:**
+
+- Bubbles inherit the envelope contract (v1.2) + composition exceptions (v1.3) + phased composition where applicable (v1.4).
+- Every new canonical writer lands with brain.test.js coverage per spec Test Coverage Requirement (v1.2).
+- Strangler antibiotic stays passive — bundles touch their domain, surface adjacent debt, don't sweep.
 
 ---
 

@@ -103,26 +103,13 @@ calDayClick on future bill             Pay Now / Already paid btns  If bill.auto
 
 ### 2a — Add to BILLS schema
 
-```js
-// In BILLS array literal (search: const BILLS = [):
-// Add autoDebit:true to bills John has confirmed auto-debit via the
-// existing 3-way modal flow. Audit S.paidBills entries with
-// _scheduledAutoDebit:true at boot to determine which bills.
-//
-// EXPECT (per John's bank reality as of 2026-05-12):
-//   YouTube Premium  — autoDebit:true
-//   Spotify          — autoDebit:true
-//   Rent             — autoDebit:false (manual / via Mum account)
-//   KIA Loan         — autoDebit:true (Firstmac direct debit)
-//   NRMA insurance   — autoDebit:true
-//   ... etc.
-//
-// Surface the final list before editing — John confirms which bills
-// actually auto-debit. Don't infer from paidBills alone (might have
-// noise from accidental "auto-debit" choices in the 3-way modal).
+Surface the current `BILLS` array contents to John. **Do NOT pre-fill an autoDebit:true/false guess per bill** — that anchors expectations to the wrong answer. John confirms each bill's `autoDebit` value against actual bank reality. Don't infer from paidBills alone (might have noise from accidental "auto-debit" choices in the legacy 3-way modal).
+
+```
+grep -n "^  {name:'" index.html | head -30  # surface the BILLS array
 ```
 
-**STOP after surfacing the proposed `autoDebit:true/false` list per bill. John confirms which bills auto-debit before any BILLS edit.**
+**STOP for confirmation.** John walks the bill list with bank-app open, marks each `autoDebit: true | false`. The migration in 2b backfills from `_scheduledAutoDebit:true` paidBills entries as a SECONDARY signal, but John's bank reality is the canonical source.
 
 ### 2b — One-time migration in `load()`
 
@@ -264,6 +251,9 @@ The `autodebitBtn.onclick` handler block deletes entirely. The `BRAIN.bills._pen
 
 ## Step 6 — `BRAIN.bills.markPaid` — drop the autoDebit option
 
+**Placement rule (explicit):** the autoDebit-future-no-premark check fires at the TOP of `markPaid`, BEFORE mode resolution (before the `opts.txnTs` branch, before any `BRAIN.transaction.record` call). All three modes (default / autoDebit-opts-removed / txnTs link) hit this gate first. Link mode (autoDetect / autoMatch calls) gets refused for future autoDebit bills the same as user-initiated marks. The refusal returns `{ ok: false, reason: 'autoDebit-future-no-premark', billName, day }` so callers can surface a meaningful message (see Step 7.5 charged-early notification flow).
+
+
 ```js
 markPaid(bill, source, options) {
   if (!source || !BRAIN._SOURCE_SET.has(source)) {
@@ -355,6 +345,49 @@ Add a helper `_isInFuture(day, month, year)` that compares against today.
 
 ---
 
+## Step 7.5 — Charged-early notification surface
+
+When `autoMatch` or `autoDetect` finds a txn that matches an autoDebit bill on a day BEFORE the bill's scheduled `day` (e.g., bank charged YouTube on day 17 when the bill metadata says day 18), `markPaid` returns `{ ok: false, reason: 'autoDebit-future-no-premark' }`. The auto-detection caller MUST surface a notification rather than silently overriding the schedule.
+
+Why no auto-override: Option A (a `{ chargedEarly: true }` opts flag that bypasses the autoDebit-future check) recreates the "calendar lies" failure mode through a different surface — auto-detection would silently override the user's bill schedule. Option B (notification surface) preserves user agency: the user decides whether the early charge means the bill schedule needs updating (day:17 going forward) OR it's a one-off early debit they want to accept.
+
+**Implementation:**
+
+In `BRAIN.bills.autoMatch` and `BRAIN.bills.autoDetect`, when `markPaid` returns `{ ok: false, reason: 'autoDebit-future-no-premark' }`, emit a notification:
+
+```js
+const r = this.markPaid(b, BRAIN.SOURCES.AUTO_DETECT, { txnTs: matchTxn.ts });
+if (!r.ok) {
+  if (r.reason === 'autoDebit-future-no-premark') {
+    // Charged-early: bill metadata says day X but bank charged earlier.
+    // Surface a notification so the user reviews — do NOT silently
+    // override (would recreate the "calendar lies" failure mode).
+    try {
+      NOTIFY.add({
+        type: 'warning',
+        title: 'Unexpected early charge — review',
+        message: b.name + ' charged on day ' + new Date(matchTxn.ts).getDate() + ' but scheduled day ' + b.day + '. Tap to review.',
+        id: 'early-charge-' + paidBillKey(b.name, b.day),
+        ts: Date.now(),
+        action: 'review-early-charge',
+        meta: { billName: b.name, scheduledDay: b.day, actualTs: matchTxn.ts }
+      });
+    } catch(e) {}
+  }
+  // Other failure modes — silent skip (no point spamming for validation errors).
+  return;
+}
+```
+
+When user taps the notification, open a review modal: *"YouTube charged day 17 — bill says day 18. What now?"* Options:
+- "Update bill to day 17 going forward" → `BRAIN.bills.update` (or wherever bill-edit lives) sets `b.day = 17`, then retry `markPaid` (which now succeeds because day 17 ≤ today).
+- "Accept this one charge as is" → `markPaid` with explicit `{ override: 'user-confirmed-early-charge' }` opts that bypasses the future check FOR THIS CALL ONLY. Markpaid logs to BRAIN.audit with the override flag visible.
+- "Dismiss for now" → leave bill unflagged, user can revisit.
+
+The review-modal UI work is small and stays free-fn (UI flow). The override path in `markPaid` is the discipline: there IS an escape hatch, but it requires explicit user confirmation captured at call time. No silent overrides.
+
+---
+
 ## Step 8 — `autoMatch` / `autoDetect` — no longer set per-instance flag
 
 ```js
@@ -374,19 +407,44 @@ Same edit for `autoDetect`. The `bill.autoDebit` check inside `markPaid` (Step 6
 
 ## Step 9 — Bill edit modal: add "Auto-debits" checkbox
 
-Search for the bill edit modal HTML (the one that lets you edit a bill's name/amount/day/recurring):
+### 9a — Trace ALL bill-save paths first (before any edit)
 
 ```
-grep -n "id=\"bill-modal\"" index.html
-grep -n "id=\"bm-recurring\"" index.html  (or similar)
+grep -n "id=\"bill-modal\"\|id='bill-modal'" index.html
+grep -n "function saveBill\|function openAddBillModal\|function editBill\|function deleteBill" index.html
+grep -n "BILLS\.push\|BILLS\[.*\]\.amt\s*=\|BILLS\[.*\]\.recurring\s*=" index.html
+grep -n "recurring.*checkbox\|bm-recurring\|id=\"bm-" index.html
 ```
 
-Add a checkbox alongside Recurring. CSS may need a small tweak to keep the layout clean. **Surface the proposed HTML before applying** so John can confirm placement.
+**Surface findings as a table** before editing the modal HTML:
 
-Wire it to the bill object on save (mark-paid or edit flow):
+```
+SURFACE                       LINE   CURRENT BEHAVIOR              BUNDLE 16 TARGET
+saveBill (modal save)         L<N>   reads bm-name, bm-amt, ...    ADD: reads bm-autodebit
+openAddBillModal (new bill)   L<N>   resets bm-* fields            ADD: resets bm-autodebit checkbox
+deleteBill                    L<N>   splices BILLS                 (no change)
+Bill HTML modal               L<N>   has Recurring checkbox        ADD: Auto-debits checkbox alongside
+BILLS.push sites              L<N>   (in load() seed migrations)   (no change — load exempt)
+```
+
+The save handler is the load-bearing one — if it doesn't pick up `b.autoDebit = !!_bmad.checked`, the new field never persists. Trace BOTH handlers (new bill save AND edit existing bill save) — they may be the same function or two separate ones depending on how the modal flow is wired.
+
+### 9b — Add checkbox to modal HTML
+
+After confirming Step 9a's trace, add a checkbox alongside Recurring. CSS may need a small tweak to keep the layout clean. **Surface the proposed HTML before applying** so John can confirm placement.
+
+### 9c — Wire to all save paths surfaced in 9a
+
+For each save handler that captures other bill fields, add the autoDebit read:
 ```js
 const _bmad = $('bm-autodebit');
 if (_bmad) b.autoDebit = !!_bmad.checked;
+```
+
+For openAddBillModal (and any reset path), add:
+```js
+const _bmadReset = $('bm-autodebit');
+if (_bmadReset) _bmadReset.checked = false;
 ```
 
 ---
