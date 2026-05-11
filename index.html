@@ -142,7 +142,9 @@ button,input,select,textarea{font-family:var(--sans)}
 .cal-day{min-height:40px;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:4px 2px;cursor:pointer;border:1px solid transparent;transition:background .1s}
 .cal-day.today{border-color:var(--green);background:var(--green-dim);box-shadow:0 0 0 2px var(--green)}
 .cal-day.has-bill{background:var(--red-dim);border-color:var(--red-border)}
-.cal-day.paid-only{opacity:0.5}
+.cal-day.paid-only{opacity:0.78;background:rgba(255,255,255,0.02);border-color:rgba(255,255,255,0.08)}
+.cal-day.paid-only .cal-day-num{color:var(--text2)}
+.cal-day.paid-only .cal-day-paid-tick{font-size:8px;color:var(--green);margin-top:1px;line-height:1;font-family:var(--mono)}
 .cal-day.paid-only .cal-day-amt{text-decoration:line-through;color:var(--text3)}
 .cal-day.has-multi{background:var(--amber-dim);border-color:var(--amber-border)}
 .cal-day.payday{background:var(--green-dim);border-color:var(--green-border)}
@@ -5303,6 +5305,12 @@ function renderCalendar() {
     const billCount = unpaidBills.length;
     const itemTotal = unpaidBills.reduce((s, it) => s + (it.amt || 0), 0)
                       + items.filter(it => it.type === 'debt' && !it.paid).reduce((s, it) => s + (it.amt || 0), 0);
+    // Bundle 7.2: paid-only cells render paid sum with strikethrough
+    // (CSS .cal-day.paid-only .cal-day-amt is already wired). Before
+    // this, paidOnly cells had empty amtStr and looked invisible.
+    const paidTotal = paidOnly
+      ? items.filter(it => it.type === 'bill' && it.paid).reduce((s, it) => s + (it.amt || 0), 0)
+      : 0;
     let cls = 'cal-day';
     if (!isThis) cls += ' other-month';
     if (isPayday && items.length > 1) cls += ' payday has-multi';
@@ -5313,16 +5321,20 @@ function renderCalendar() {
     else if (billCount === 1) cls += ' has-bill';
     else if (paidOnly) cls += ' paid-only';
     if (isToday) cls += ' today';
-    const dotColor = isPayday && items.length ? 'var(--amber)' : isPayday ? 'var(--green)' : hasDebt ? 'var(--red)' : billCount > 1 ? 'var(--amber)' : billCount === 1 ? 'var(--red)' : 'transparent';
+    const dotColor = isPayday && items.length ? 'var(--amber)' : isPayday ? 'var(--green)' : hasDebt ? 'var(--red)' : billCount > 1 ? 'var(--amber)' : billCount === 1 ? 'var(--red)' : paidOnly ? 'var(--text3)' : 'transparent';
     // OPEN-BUGS #5/#20: distinguish debt days from bill days at-a-glance.
     // Diamond shape (45° rotated square) instead of circle. Color stays red.
     const dotCls = hasDebt ? 'cal-day-dot is-debt' : 'cal-day-dot';
-    const amtStr = itemTotal > 0 ? '$' + Math.round(itemTotal) : '';
+    // Bundle 7.2: show paid sum when there are no unpaid amounts so the
+    // user sees what auto-debited rather than an empty cell.
+    const amtStr = itemTotal > 0 ? '$' + Math.round(itemTotal) :
+                   paidTotal > 0 ? '$' + Math.round(paidTotal) : '';
     const clickFn = isThis ? 'calDayClick(' + d + ')' : '';
     html += '<div class="'+cls+'" onclick="'+clickFn+'">' +
       '<div class="cal-day-num">'+d+'</div>' +
       (items.length || isPayday ? '<div class="'+dotCls+'" style="background:'+dotColor+'"></div>' : '') +
       (amtStr ? '<div class="cal-day-amt">'+amtStr+'</div>' : '') +
+      (paidOnly ? '<div class="cal-day-paid-tick">✓</div>' : '') +
       '</div>';
   }
   grid.innerHTML = html;
@@ -8508,29 +8520,12 @@ const NOTIFY = {
     if (dl<=2&&!S.paydayReceived) add('info','Payday in '+dl+' day'+(dl!==1?'s':'')+' — allocation plan ready','View plan');
     const ns=getNoSpendStreak();
     if (ns>=3) add('info','You\'ve been under budget for '+ns+' days straight 🔥',null);
-    // INFO: net worth up
-    // Bundle 7: dedupe NW notifications (#14) — three guards before push
-    //   1. Skip if a prior NW-up notification fired within the last 2h
-    //   2. Skip if absolute delta < $50 (trivial churn / round-trip noise)
-    //   3. Skip if last txn was a manual correction (delta likely from
-    //      reconciliation, not real net-worth movement)
-    // Inline guards (cannot `return` here — generate() builds many
-    // categories of notifications, returning would skip the rest).
-    const history=S.monthlyHistory||[];
-    if (history.length>=1) {
-      const prev=history[history.length-1]; const prevNW=(prev.bal||0)-28584.70;
-      const nw=getNetWorth();
-      const nwDelta = nw.net - prevNW;
-      const lastNwNotif = (S.notifications || [])
-        .filter(n => n.id && n.id.indexOf('info_Net_worth_up') === 0)
-        .sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
-      const recentNwNotif = lastNwNotif && lastNwNotif.ts > Date.now() - 2 * 60 * 60 * 1000;
-      const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
-      const lastWasCorrection = !!(lastTxn && lastTxn._isCorrection);
-      if (nwDelta > 0 && Math.abs(nwDelta) >= 50 && !recentNwNotif && !lastWasCorrection) {
-        add('info','Net worth up '+fmt(nwDelta)+' this month — keep going',null);
-      }
-    }
+    // Bundle 7.2: "Net worth up" notification removed — semantics
+    // (month-over-month comparison against hardcoded liability constant)
+    // never matched user expectation, and the constant was stale.
+    // Bundle 7's dedupe guards (recentNwNotif, $50 threshold,
+    // lastWasCorrection) removed alongside since they only existed
+    // to gate this notification.
     // WEEKLY: Sunday evening
     if (dow===0&&now.getHours()>=17) {
       const ws=new Date(now); ws.setDate(today-6); ws.setHours(0,0,0,0);
@@ -9380,7 +9375,14 @@ const SLYGHT_SCORE = {
     // Net worth trend 0-200
     let nwScore = 100;
     if (history.length>=1) {
-      const prev=history[history.length-1]; const prevNW=(prev.bal||0)-28584.70;
+      const prev=history[history.length-1];
+      // Bundle 7.2: replace hardcoded liability constant with computed
+      // sum of all unpaid non-viaRent debts. Previously used 28584.70
+      // which was stale and would drift further as debts change.
+      const computedLiabs = (S.debts||[])
+        .filter(d => !d.paid && !d.viaRent)
+        .reduce((s,d) => s + (d.amt||0), 0);
+      const prevNW = (prev.bal||0) - computedLiabs;
       nwScore = nw.net>prevNW ? Math.min(200,100+Math.round(((nw.net-prevNW)/income)*200)) : Math.max(0,100-Math.round(((prevNW-nw.net)/income)*100));
     }
     return { total:debtScore+savingsScore+disciplineScore+emergencyScore+nwScore,
@@ -11518,12 +11520,18 @@ function confirmEditTrip(tripId) {
   }
 
   PLAN.saveTrip(trip);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('✅ ' + trip.name + ' Updated');
 }
 
@@ -11572,12 +11580,18 @@ function confirmNewTrip() {
   PLAN.saveTrip(newTrip);
   // Auto-create a bucket for this trip so future savings flow correctly.
   PLAN.writeSavedToSource(newTrip, 0);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('✅ ' + emoji + ' ' + name + ' Added');
 }
 
@@ -11622,12 +11636,18 @@ function confirmTripSavings(tripId) {
   // Stored trip retains everything except canonical saved (which is
   // re-derived from bucket on next read via readSavedFromSource).
   PLAN.saveTrip(trip);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('✅ $' + amt.toLocaleString() + ' Added To ' + trip.name + ' Fund');
 }
 
@@ -11753,12 +11773,18 @@ function confirmEditGoal(goalId) {
   if (!isNaN(monthly)) goal.monthly = monthly;
   goal.description = desc;
   PLAN.saveGoal(goal);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('✅ ' + name + ' Updated');
 }
 
@@ -11799,12 +11825,18 @@ function confirmDeleteGoal(goalId) {
     }
   }
 
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('🗑 Goal deleted');
 }
 
@@ -11850,12 +11882,18 @@ function confirmGoalSavings(goalId) {
   // and if (goalId === 'apartment') blocks.
   PLAN.writeSavedToSource(goal, newSaved);
   PLAN.saveGoal(goal);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
 }
 
@@ -11898,12 +11936,18 @@ function confirmNewGoal() {
   PLAN.saveGoal(newGoal);
   // Auto-create a bucket for this goal so future savings flow correctly.
   PLAN.writeSavedToSource(newGoal, 0);
-  // Bundle 7: preserve scroll position across re-render
+  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
+  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
+  // leading to partial scroll restoration.
   const _planEl = document.getElementById('plan-mode');
   const _scrollY = _planEl?.scrollTop || 0;
   PLAN_MODAL.close();
   renderPlanMode();
-  if (_planEl) requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+  if (_planEl) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+    });
+  }
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
 
