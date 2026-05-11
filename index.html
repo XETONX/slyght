@@ -424,10 +424,16 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <button onclick="MathInvariants.dismiss(document.getElementById('math-invariant-banner').dataset.rule)" aria-label="Dismiss" style="position:absolute;right:8px;top:6px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.95);font-size:16px;line-height:1;cursor:pointer;padding:4px 10px;border-radius:4px">×</button>
     </div>
     <!-- Layer 2 — MathInvariants card (critical / escalated fail). NO dismiss. -->
-    <div id="math-invariant-card" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5">
+    <!-- Bundle 7.2.2 fix-forward: tappable card. Pre-7.2.2 the card was a
+         dead text block — once the banner escalated to card (which used to
+         happen on the second render = first refresh), there was no action
+         affordance. Now: same onclick + "Show me these bills" button as the
+         banner. dataset.rule is wired by MathInvariants.render. -->
+    <div id="math-invariant-card" onclick="(function(e){if(e.target.tagName==='BUTTON')return;var r=document.getElementById('math-invariant-card').dataset.rule;if(r)MathInvariants.showDetails(r);})(event)" style="display:none;background:var(--red-dim);border:1px solid var(--red-border);border-radius:var(--r-sm);padding:16px;margin:12px 16px;color:var(--red);font-size:13px;line-height:1.5;cursor:pointer">
       <div id="mic-title" style="font-weight:700;margin-bottom:6px">⚠️ Math reconciliation failed</div>
       <div id="mic-msg"></div>
       <div id="mic-details" style="font-size:11px;color:var(--text2);margin-top:8px;font-family:var(--mono)"></div>
+      <button id="mic-action" onclick="event.stopPropagation();MathInvariants.showDetails(document.getElementById('math-invariant-card').dataset.rule)" style="margin-top:10px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:rgba(255,255,255,0.95);font-size:11px;cursor:pointer;padding:4px 10px;border-radius:4px;font-weight:600">Show me these bills</button>
     </div>
     <div class="hdr">
       <div class="hdr-logo">SLYGHT</div>
@@ -2445,12 +2451,44 @@ function buildCalendarEntries(state, now) {
     });
   });
 
-  // 2. Bills — walk a 13-month window centred on `now`. Skip months where
+  // 2. Bills — walk a 24-month window centred on `now`. Skip months where
   //    freq says the bill isn't due. Skip if a debt covers the bill in
   //    THIS rendered month (the May 1 fix, structurally).
+  //    Bundle 7.2.2 fix-forward: window extended backwards from -1 to -12
+  //    so the user can scroll back a full year of history in the calendar.
+  //    Past-month paid status falls back to txn matching when no explicit
+  //    paidBills key — see _isPaidByMatchingTxn below.
   const baseY = now.getFullYear(), baseM = now.getMonth();
   const debtsForCoverage = debts.filter(d => !d.paid);
-  for (let offset = -1; offset < 12; offset++) {
+  const nowTs = now.getTime();
+  const txns = (state && state.txns) || [];
+
+  // Bundle 7.2.2 fix-forward: derive paid status for past-month bills from
+  // S.txns when no explicit paidBills key exists. Catches the case where
+  // the user reconciled their bank-side payment without ever clicking "Pay"
+  // in the app — calendar should still reflect that history. Match: date
+  // within ±5 days, amount within ±$2, and the txn note contains the bill
+  // name's first 4+ char word (case-insensitive). Future months skip this
+  // (no txn exists yet for a future-dated bill).
+  const _isPaidByMatchingTxn = (bill, billDate) => {
+    if (billDate.getTime() > nowTs) return false;
+    if (!txns.length) return false;
+    const window = 5 * 86400000;
+    const billTs = billDate.getTime();
+    const targetAmt = bill.amt || 0;
+    const billKeyword = (bill.name || '').toLowerCase()
+      .split(/[\s\-—]+/).find(w => w.length >= 4) || '';
+    if (!billKeyword) return false;
+    return txns.some(t => {
+      if (t.income || t._isRoundup || t._isCorrection) return false;
+      if (Math.abs((t.ts || 0) - billTs) > window) return false;
+      if (Math.abs((t.amt || 0) - targetAmt) > 2) return false;
+      const note = (t.note || '').toLowerCase();
+      return note.indexOf(billKeyword) >= 0;
+    });
+  };
+
+  for (let offset = -12; offset < 12; offset++) {
     const m = ((baseM + offset) % 12 + 12) % 12;
     const y = baseY + Math.floor((baseM + offset) / 12);
     billsArr.forEach(b => {
@@ -2466,7 +2504,9 @@ function buildCalendarEntries(state, now) {
       // This is the state-pure path (uses injected paidBills, not
       // S.paidBills), so isPaidBillKeyTruthy doesn't apply.
       const _entry = paidBills[paidKey];
-      const isPaid = _entry === true || (_entry && _entry.paid === true);
+      const isPaidByKey = _entry === true || (_entry && _entry.paid === true);
+      // Bundle 7.2.2 fix-forward: past-month fallback (see above).
+      const isPaid = isPaidByKey || _isPaidByMatchingTxn(b, billDate);
       const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
       if (covered) return;
       _add(dateISO, {
@@ -3087,7 +3127,19 @@ const MathInvariants = {
       const relatedModalId = this._RELATED_MODAL_BY_INVARIANT[v.name];
       const relatedModalOpen = !!(relatedModalId && document.getElementById(relatedModalId)
         && document.getElementById(relatedModalId).classList.contains('open'));
-      if (!relatedModalOpen) counts[v.name].count++;
+      // Bundle 7.2.2 fix-forward: bump count ONCE per session, not on every
+      // render. Previously the count climbed on every tab-switch / re-render
+      // and on the second hit the banner escalated to the (un-actionable)
+      // card — so a single refresh visibly swapped banner→card. Sessions
+      // already reset on day-rollover / 5min-background, so this still
+      // escalates legitimate persistent violations across sessions while
+      // sparing within-session re-renders.
+      const sessionTs = S._invariantSessionTs;
+      const alreadyCountedThisSession = counts[v.name].sessionTs === sessionTs;
+      if (!relatedModalOpen && !alreadyCountedThisSession) {
+        counts[v.name].count++;
+        counts[v.name].sessionTs = sessionTs;
+      }
       counts[v.name].lastSeenTs = Date.now();
 
       // Mission #45a — dismissed check honors both session map (default) and
@@ -3133,6 +3185,7 @@ const MathInvariants = {
         const titleEl = document.getElementById('mic-title');
         const msgEl = document.getElementById('mic-msg');
         const detEl = document.getElementById('mic-details');
+        const actionBtn = document.getElementById('mic-action');
         // Mission #42 adjacent — pick a specific card title when the
         // primary violation has accurate dedicated copy. Otherwise the
         // generic "Math reconciliation failed" was firing on legitimate
@@ -3151,9 +3204,22 @@ const MathInvariants = {
         }
         if (msgEl) msgEl.innerHTML = cardViolations.map(v => '<div style="margin-bottom:6px">• ' + v.message + '</div>').join('');
         if (detEl) detEl.textContent = cardViolations.map(v => v.details || '').join(' | ');
+        // Bundle 7.2.2 fix-forward: wire dataset.rule so the card's onclick
+        // and Show-me-these-bills button know which invariant to drill into.
+        // Only show the action button when the primary violation has a
+        // dedicated modal (paidbills-key-not-future → mi13-details-modal);
+        // for other violations a tap would fall through to the alert() path
+        // in showDetails which is no worse than the pre-7.2.2 dead card.
+        const primary = cardViolations[0];
+        card.dataset.rule = primary.name;
+        if (actionBtn) {
+          const hasDedicatedModal = !!this._RELATED_MODAL_BY_INVARIANT[primary.name];
+          actionBtn.style.display = hasDedicatedModal ? 'inline-block' : 'none';
+        }
         card.style.display = 'block';
       } else {
         card.style.display = 'none';
+        card.dataset.rule = '';
       }
     }
 
@@ -5258,28 +5324,41 @@ function renderBillsGrouped() {
   c.innerHTML = warn + renderGroup('Due Today', grouped.today, 'today') + renderGroup('This Week', grouped.week, 'week') + monthlyHtml;
 }
 
+// Bundle 7.2.2 fix-forward: bills-tab paid affordance now routes through
+// Quick Log too. Both surfaces (calendar + bills tab) share one canonical
+// "Already paid" flow: open Quick Log prefilled → user verifies → save
+// creates the txn AND flips paidBills via _consumePendingBillPay.
+function _markBillPaidViaQuickLog(name, day) {
+  const bill = findBillByNameDay(name, day) || { name, day };
+  const billAmt = (bill && typeof bill.amt === 'number') ? bill.amt : 0;
+  withMarkPaidGate(bill, () => {
+    if (typeof openQuickLogModal !== 'function') {
+      if (!S.paidBills) S.paidBills = {};
+      S.paidBills[paidBillKey(name, day)] = true;
+      onStateChange('bill-paid');
+      return;
+    }
+    openQuickLogModal();
+    window._pendingBillPayKey = paidBillKey(name, day);
+    const _a = document.getElementById('ql-amt');
+    const _n = document.getElementById('ql-note');
+    const _c = document.getElementById('ql-cat-hidden');
+    if (_a && billAmt > 0) _a.value = billAmt.toFixed(2);
+    if (_n) _n.value = name + ' — paid';
+    if (_c) _c.value = (bill.tag === 'Loan' || bill.tag === 'Fixed') ? 'Bills' : (bill.tag || 'Bills');
+  });
+}
+
 function markBillPaid(event, name, day) {
   event.stopPropagation();
-  const bill = findBillByNameDay(name, day) || { name, day };
-  withMarkPaidGate(bill, () => {
-    if (!S.paidBills) S.paidBills = {};
-    S.paidBills[paidBillKey(name, day)] = true;
-    onStateChange('bill-paid');
-  });
+  _markBillPaidViaQuickLog(name, day);
 }
 
 document.addEventListener('click', function(e) {
   const btn = e.target.closest('.paid-btn');
   if (!btn) return;
   e.stopPropagation();
-  const name = btn.dataset.name;
-  const day = parseInt(btn.dataset.day);
-  const bill = findBillByNameDay(name, day) || { name, day };
-  withMarkPaidGate(bill, () => {
-    if (!S.paidBills) S.paidBills = {};
-    S.paidBills[paidBillKey(name, day)] = true;
-    onStateChange('bill-paid');
-  });
+  _markBillPaidViaQuickLog(btn.dataset.name, parseInt(btn.dataset.day));
 });
 
 function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } renderCalendar(); }
@@ -5921,6 +6000,11 @@ function getHabitFlag(note, amt) {
 }
 
 function openQuickLogModal() {
+  // Bundle 7.2.2 fix-forward: clear any stale bill-pay stash from a
+  // cancelled "Already paid" flow. Callers that want to set the stash
+  // (markBillAlreadyPaid, _markBillPaidViaQuickLog) re-set it AFTER
+  // calling openQuickLogModal, so this clear-at-start doesn't fight them.
+  delete window._pendingBillPayKey;
   const _qla2 = $('ql-amt'); if (_qla2) _qla2.value = '';
   const _qln2 = $('ql-note'); if (_qln2) _qln2.value = '';
   const _qlc = $('ql-cat'); if (_qlc) _qlc.value = '';
@@ -6001,6 +6085,9 @@ function quickLogTxn() {
     const incomeTxn = {amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true};
     S.txns.push(incomeTxn);
     if (typeof checkForBonusInterception === 'function') checkForBonusInterception(incomeTxn);
+    // Bundle 7.2.2 fix-forward: user pivoted to Income — drop the bill-pay
+    // stash without applying. They're not paying a bill anymore.
+    delete window._pendingBillPayKey;
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-income');
@@ -6021,6 +6108,9 @@ function quickLogTxn() {
         mumDebt.amt = parseFloat((mumDebt.amt + amt).toFixed(2));
       }
     }
+    // Bundle 7.2.2 fix-forward: user pivoted to From-person — drop the
+    // bill-pay stash without applying. Not a bill payment.
+    delete window._pendingBillPayKey;
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-from-person');
@@ -6049,6 +6139,10 @@ function quickLogTxn() {
     if (chinaHol) chinaHol.saved = parseFloat(((chinaHol.saved||0) + roundUp).toFixed(2));
   }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
+  // Bundle 7.2.2 fix-forward: if this expense came from an "Already paid"
+  // flow, flip the paidBills key for the bill we just logged. Pairs txn
+  // with paidBills atomically so MI-13 doesn't fire on the just-paid bill.
+  _consumePendingBillPay();
   closeModal('quick-log-modal');
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
   onStateChange('log-expense');
@@ -10119,14 +10213,45 @@ function payBillNow(billName, billDay, billAmt) {
   });
 }
 
+// Bundle 7.2.2 fix-forward: stash + consume pattern lets "Already paid"
+// flows route through Quick Log so the user confirms the txn details,
+// then on save we also flip paidBills. Previously markBillAlreadyPaid
+// silently flipped paidBills without creating a txn — S.txns and
+// S.paidBills drifted apart, MI-13 would later flag the missing spend.
+function _consumePendingBillPay() {
+  if (window._pendingBillPayKey) {
+    if (!S.paidBills) S.paidBills = {};
+    // guardian-allow: no-direct-paidbills-access — window._pendingBillPayKey is always set via canonical paidBillKey() in markBillAlreadyPaid / _markBillPaidViaQuickLog; the stash is intermediate transport, not a parallel key format (permanent — Bundle 7.2.2 bill-pay stash consumer)
+    S.paidBills[window._pendingBillPayKey] = true;
+    delete window._pendingBillPayKey;
+  }
+}
+
 function markBillAlreadyPaid(billName, billDay) {
   const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
+  const billAmt = (bill && typeof bill.amt === 'number') ? bill.amt : 0;
   withMarkPaidGate(bill, () => {
-    if (!S.paidBills) S.paidBills = {};
-    S.paidBills[paidBillKey(billName, billDay)] = true;
-    onStateChange('bill_already_paid');
-    showToast('✅ ' + billName + ' marked as paid');
-    document.getElementById('cal-day-detail').style.display = 'none';
+    // Bundle 7.2.2 fix-forward: route through Quick Log so the user
+    // logs the txn. quickLogTxn consumes _pendingBillPayKey on save.
+    if (typeof openQuickLogModal !== 'function') {
+      if (!S.paidBills) S.paidBills = {};
+      S.paidBills[paidBillKey(billName, billDay)] = true;
+      onStateChange('bill_already_paid');
+      showToast('✅ ' + billName + ' marked as paid');
+      document.getElementById('cal-day-detail').style.display = 'none';
+      return;
+    }
+    const detail = document.getElementById('cal-day-detail');
+    if (detail) detail.style.display = 'none';
+    openQuickLogModal();
+    // Stash AFTER open (openQuickLogModal clears any stale stash at start).
+    window._pendingBillPayKey = paidBillKey(billName, billDay);
+    const _a = document.getElementById('ql-amt');
+    const _n = document.getElementById('ql-note');
+    const _c = document.getElementById('ql-cat-hidden');
+    if (_a && billAmt > 0) _a.value = billAmt.toFixed(2);
+    if (_n) _n.value = billName + ' — paid';
+    if (_c) _c.value = (bill.tag === 'Loan' || bill.tag === 'Fixed') ? 'Bills' : (bill.tag || 'Bills');
   });
 }
 
