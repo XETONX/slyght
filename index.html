@@ -414,7 +414,10 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   <div class="screen active" id="pg-dash">
     <!-- Layer 2 — MathInvariants banner (warn / first-time fail) -->
     <div id="math-invariant-banner" style="display:none;background:var(--red-dim);border-bottom:1px solid var(--red-border);color:var(--red);padding:8px 16px;font-size:13px;position:sticky;top:0;z-index:50;line-height:1.5">
-      <span id="mib-msg" style="display:inline-block;padding-right:40px"></span>
+      <!-- Bundle 7.2 fix-forward: copy ends with "tap to review", so the
+           message span itself must be the tap target. The separate "Show me
+           these bills" button stays as a redundant explicit affordance. -->
+      <span id="mib-msg" onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="display:inline-block;padding-right:40px;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px"></span>
       <!-- Mission #45a — promote action affordance from underlined link to small button.
            Same destination (Mission #39 modal at 3602b8d), clearer "what tapping does" cue. -->
       <button onclick="MathInvariants.showDetails(document.getElementById('math-invariant-banner').dataset.rule)" style="display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);color:rgba(255,255,255,0.95);font-size:11px;cursor:pointer;padding:3px 9px;border-radius:4px;font-weight:600;margin-left:6px">Show me these bills</button>
@@ -4853,6 +4856,16 @@ function parseMI13Key(key) {
 // animation is ~220ms; lockout simply gates the click-trigger window).
 let _mi13ClickLockUntil = 0;
 
+// Bundle 7.2 fix-forward: thin wrapper used by the calendar day detail
+// modal's Unmark button. undoPaidBillByKey already saves + renderAll's,
+// but the cal-day modal stays open and shows stale rows — re-running
+// calDayClick reflows it with the new paid state.
+function unmarkBillFromCal(key, day) {
+  if (undoPaidBillByKey(key)) {
+    try { calDayClick(day); } catch (_) {}
+  }
+}
+
 function undoPaidBillByKey(key) {
   if (!S.paidBills || !S.paidBills[key]) return false;
   const name = parseMI13Key(key).name || key;
@@ -5375,9 +5388,19 @@ function calDayClick(day) {
     const b = it.bill;
     const bPaid = isThisMonthlyBillPaid(b.name, b.day, calMonth, calYear);
     if (bPaid) {
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.6">' +
-        '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px">$'+b.amt.toFixed(2)+'</div></div>' +
-        '<div style="background:var(--amber);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div></div>';
+      // Bundle 7.2 fix-forward: paid bills (including MI-13 auto-debit pre-marks
+      // for future dates) need an Unmark affordance. Without this, users seeing
+      // a future auto-debit bill flagged paid have no way to undo it. Key is
+      // built canonically via paidBillKey() so it targets the exact entry that
+      // undoPaidBillByKey() will delete.
+      const _paidKey = paidBillKey(b.name, b.day, calMonth, calYear);
+      const _safeKey = _paidKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;opacity:0.85">' +
+        '<div><div style="color:var(--text);font-size:14px">'+esc(b.name)+'</div><div style="color:var(--text3);font-size:12px;text-decoration:line-through">$'+b.amt.toFixed(2)+'</div></div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+        '<div style="background:var(--amber);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div>' +
+        '<button onclick="unmarkBillFromCal(\''+_safeKey+'\','+day+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:11px;padding:6px 10px;cursor:pointer;min-height:32px">Unmark</button>' +
+        '</div></div>';
     } else {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px">' +
         '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
@@ -11520,16 +11543,17 @@ function confirmEditTrip(tripId) {
   }
 
   PLAN.saveTrip(trip);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('✅ ' + trip.name + ' Updated');
@@ -11580,16 +11604,17 @@ function confirmNewTrip() {
   PLAN.saveTrip(newTrip);
   // Auto-create a bucket for this trip so future savings flow correctly.
   PLAN.writeSavedToSource(newTrip, 0);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('✅ ' + emoji + ' ' + name + ' Added');
@@ -11636,16 +11661,17 @@ function confirmTripSavings(tripId) {
   // Stored trip retains everything except canonical saved (which is
   // re-derived from bucket on next read via readSavedFromSource).
   PLAN.saveTrip(trip);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('✅ $' + amt.toLocaleString() + ' Added To ' + trip.name + ' Fund');
@@ -11773,16 +11799,17 @@ function confirmEditGoal(goalId) {
   if (!isNaN(monthly)) goal.monthly = monthly;
   goal.description = desc;
   PLAN.saveGoal(goal);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('✅ ' + name + ' Updated');
@@ -11825,16 +11852,17 @@ function confirmDeleteGoal(goalId) {
     }
   }
 
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('🗑 Goal deleted');
@@ -11882,16 +11910,17 @@ function confirmGoalSavings(goalId) {
   // and if (goalId === 'apartment') blocks.
   PLAN.writeSavedToSource(goal, newSaved);
   PLAN.saveGoal(goal);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
@@ -11936,16 +11965,17 @@ function confirmNewGoal() {
   PLAN.saveGoal(newGoal);
   // Auto-create a bucket for this goal so future savings flow correctly.
   PLAN.writeSavedToSource(newGoal, 0);
-  // Bundle 7.2: double-rAF restores scroll AFTER render completes.
-  // Single rAF fires before renderPlanMode's DOM rebuild finishes,
-  // leading to partial scroll restoration.
-  const _planEl = document.getElementById('plan-mode');
-  const _scrollY = _planEl?.scrollTop || 0;
+  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
+  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
+  // + double-rAF: sync handles the no-relayout case; rAFs handle the
+  // case where renderPlanMode's innerHTML reset scrollTop to 0.
   PLAN_MODAL.close();
   renderPlanMode();
+  const _planEl = document.getElementById('plan-mode');
   if (_planEl) {
+    _planEl.scrollTop = _planScrollSavedY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _scrollY; });
+      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
     });
   }
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
@@ -12217,11 +12247,19 @@ function checkForWrxSaleInterception() {
 }
 
 // ─── PLAN MODAL CONTROLLER ──────────────────────────────────────────────────
+// Bundle 7.2 fix-forward: capture plan-mode scrollTop on every modal open.
+// Confirm handlers restore from this snapshot rather than reading scrollTop
+// at confirm time — by then the mobile keyboard has shifted scroll position
+// (input focus auto-scrolls into view on iOS), so a confirm-time read
+// returns the wrong value. Captured BEFORE first input focus fires.
+let _planScrollSavedY = 0;
 const PLAN_MODAL = {
   open(html) {
     const overlay = document.getElementById('plan-modal-overlay');
     const content = document.getElementById('plan-modal-content');
     if (!overlay || !content) return;
+    const planEl = document.getElementById('plan-mode');
+    _planScrollSavedY = planEl ? planEl.scrollTop : 0;
     content.innerHTML = html;
     overlay.style.display = 'flex';
     setTimeout(() => {
