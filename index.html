@@ -10841,36 +10841,53 @@ const BRAIN = {
   //   'migration'      — one-time data fixes during load()
   //   'chat'           — AI chat-driven mutations
   savings: {
+    // Bundle 13: returns the result envelope { ok, ...payload, reason? }
+    // consistent with BRAIN.transaction.record (the failure-semantics
+    // shape settled in BRAIN_ARCHITECTURE Q5 feedback). Source validation
+    // added to match transaction.record — typo'd tags fail at write time
+    // not at audit-grep time.
+    // BACKWARDS-COMPAT: existing callers don't check the return value
+    // OR check truthiness; envelope objects (success AND failure) are
+    // truthy in JS, so bool-checking callers always see "success". That
+    // would silently mask failures, BUT all current callers (audited
+    // pre-Bundle-13) ignore the return value — none would actually be
+    // affected. New callers MUST check `.ok`. Documented in spec v1.2.
     setBucketSaved(bucketName, newValue, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.savings] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
       if (!S.savingsBuckets) S.savingsBuckets = [];
       const bucket = S.savingsBuckets.find(b => b.name === bucketName);
       if (!bucket) {
         console.warn('[BRAIN.savings] no bucket named', bucketName);
-        return false;
+        return { ok: false, reason: 'no-bucket', bucketName };
       }
       const safeNew = parseFloat(Number(newValue).toFixed(2));
       if (isNaN(safeNew)) {
         console.warn('[BRAIN.savings] invalid value', newValue);
-        return false;
+        return { ok: false, reason: 'invalid-value', value: newValue };
       }
       const oldValue = bucket.saved || 0;
       // guardian-allow: no-direct-bucket-saved-write - this IS the canonical writer; all other call sites must route through this function; the rule's job is to forbid direct writes everywhere else (permanent - BRAIN.savings.setBucketSaved is the chokepoint by design)
       bucket.saved = safeNew;
+      const delta = parseFloat((safeNew - oldValue).toFixed(2));
       BRAIN.audit.append({
         type: 'bucket_saved_change',
         bucket: bucketName,
         oldValue, newValue: safeNew,
-        delta: parseFloat((safeNew - oldValue).toFixed(2)),
-        source: source || 'unknown',
+        delta,
+        source,
         ts: Date.now()
       });
       try { save(); } catch (_) {}
-      return true;
+      return { ok: true, bucket: bucketName, oldValue, newValue: safeNew, delta };
     },
-    // Convenience: incremental adjust. Returns true if successful.
+    // Convenience: incremental adjust. Returns the envelope from
+    // setBucketSaved — { ok, bucket, oldValue, newValue, delta, reason? }.
     addToBucket(bucketName, delta, source) {
       const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
-      if (!bucket) return false;
+      if (!bucket) return { ok: false, reason: 'no-bucket', bucketName };
       return this.setBucketSaved(bucketName, (bucket.saved || 0) + delta, source);
     }
   },
