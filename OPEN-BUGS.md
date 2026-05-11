@@ -67,7 +67,17 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Repro needed:** yes — does the modal open at all? Does it open
   but save fail? Does it open but values not persist after reload?
 - **Fix bundle:** unscheduled (awaiting repro)
-- **Status:** open
+- **Bundle 9 verification (2026-05-11):** John confirmed working — he
+  added a new "Borrowed-from-Michael" debt within the last week and it
+  persists. CC re-read `openAddDebtModal` + `saveNewDebt` end-to-end:
+  validation guards correct, ID-collision guard present (Mission #42
+  era), linked-liability detection (car/CC) intact, `S.debts.push` +
+  `save()` + `onStateChange('debt_added')` all fire. No bug visible
+  in code. Likely original failure was a modal-stack regression
+  resolved organically by the Bundle 7.2.x PLAN_MODAL hardening cycle.
+  Direct `S.debts.push` is expected pre-Bundle-11 (BRAIN.debts not
+  yet seeded; routes through canonical writer when that bubble lands).
+- **Status:** cannot-reproduce (Bundle 9 — confirmed working in John's recent use; closed pending fresh repro)
 
 ## 5. Auto-sort dialog — verify apply + persist
 - **Bug:** Auto-sort dialog opens (per Image 1) but unverified whether
@@ -248,7 +258,8 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   math. Notification dedup is a separate concern but this bug surfaces
   when NW math is fixed; if it persists post-Layer-2, file as #14b in
   a follow-up mission.
-- **Status:** fixed (Bundle 7 — three-rule dedupe before NW-up notification push: skip if last NW notif within 2h, skip if absolute delta < $50, skip if last txn was a manual correction. Inline guards in `NOTIFY.generate()`. Independent of #13's NW-math fix — this controls *firing*, not the math.)
+- **Status:** fixed (Bundle 7.2 — notification removed entirely; commit 95cdcac. Earlier Bundle 7 dedupe guards removed alongside since they only existed to gate this notification. Hardcoded `28584.70` liability constant in SLYGHT Score's nwScore replaced with computed sum of unpaid non-viaRent debts so the score doesn't drift as real debts change.)
+- **Bundle 7 history (superseded):** three-rule dedupe before NW-up notification push: skip if last NW notif within 2h, skip if absolute delta < $50, skip if last txn was a manual correction. Inline guards in `NOTIFY.generate()`. Independent of #13's NW-math fix — this controlled *firing*, not the math. Bundle 7.2 closed the product question (a3 above) by removing the notification entirely — semantics never matched user expectation.
 - **Bundle 7.1 follow-up — open question on semantics:** John tested by logging a $100 expense and expected an NW notification to fire; none did. Investigation surfaced that the existing `delta` is **month-over-month NW** (`getNetWorth().net - prevMonthNW`), NOT per-txn. A $100 spend can leave nwDelta < 0 or < $50 (the floor), in which case the dedupe correctly suppresses. **This is not a bug — semantics never matched the user's expectation.** Also flagged: `prevNW` uses a hardcoded liability constant `28584.70` at index.html ~L8490 that will go stale when debts change. **Open product question:** is the "Net worth up" notification still useful? Three options for a future bundle: (a1) document semantics, no code change; (a2) repurpose to per-txn-NW-change; (a3) add a separate per-txn notification class. Replacing `28584.70` with computed liabilities is tangential but recommended.
 
 ## 15. Three different daily-cost figures across forecast tiles
@@ -391,7 +402,8 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   a future-dated bill, suppressing MI-13 for that specific entry.
   Out of scope for Mission B — consider when/if John decides the
   noise is too high.
-- **Status:** fixed (Bundle 7 — `_scheduledAutoDebit: true` flag on paidBills entries via the new 3-way Mark-Paid modal. MI-13 invariant filter calls `isPaidBillAutoDebit(key)` and excludes flagged keys. Legacy `paidBills[key] === true` markers stay treated as accidental paid-early until the user marks them via the new flow.)
+- **Status:** fixed (Bundle 7 commit b28c631 — `_scheduledAutoDebit: true` flag on paidBills entries via the new 3-way Mark-Paid modal. MI-13 invariant filter calls `isPaidBillAutoDebit(key)` and excludes flagged keys. Legacy `paidBills[key] === true` markers stay treated as accidental paid-early until the user marks them via the new flow.)
+- **Bundle 7.2.3 strengthening (commit 1f53832):** the auto-mark / auto-detect paths (autoMatchBillsToTxns, autoDetectBillPayments) that previously used OR-matching with ±$1 tolerance were tightening the YouTube/Spotify false-positive loop — small streaming bills matched any txn around \$15-\$17 OR any note containing 'youtube'. New `_txnMatchesBillStrict` requires AND (amt within \$0.50 for ≤\$20 bills + name keyword in note). New `S._billUnmarkLog` (30-day TTL) makes the user's un-mark intent stick — autoDetect skips bills the user explicitly cleared. Future-dated auto-detected bills now get `{ _scheduledAutoDebit: true }` shape automatically so MI-13 ignores them (matching the contract from b28c631). The 3-way modal's auto-debit pathway also re-wired to handle Quick Log's async timing (broken in 7.2.2 transient state, restored 7.2.3).
 
 ## 24. Settings header `📤 Export` button calls undefined `exportData()`
 - **Bug:** The button at index.html:575 has `onclick="exportData()"`
@@ -812,6 +824,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   with #41 ("Pay now" — same modal, same surface) — investigate
   together; one wiring fix may close both.
 - **Status:** fixed (Bundle 7 — root cause: native `confirm()` inside `withMarkPaidGate` was unreliable on mobile when invoked from inside an already-open modal. Replaced with custom 3-way `mark-paid-modal` (Paid manually / Auto-debits monthly / Cancel). Same fix closes #41.)
+- **Bundle 7.2.2 follow-up (commit 6c133f2):** "Already paid" no longer just flips `S.paidBills[key] = true` silently — it routes through the Quick Log modal so the user logs an actual transaction. `_markBillPaidViaQuickLog` opens Quick Log prefilled with amt + name + 'Bills' category; on save, `_consumePendingBillPay` flips the paidBills flag atomically with the txn push. Prevents the previous drift where paidBills said "paid" but S.txns had no corresponding spend. Bundle 7.2.4 added `_txnTs` back-reference on the paidBills entry so undo reverses both the flag AND the txn (restore balance, splice from S.txns).
 
 ## 41. Bill modal "Pay now" button does nothing
 - **Bug:** Same modal as #40 — tap a bill in the calendar → modal

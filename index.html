@@ -1,5 +1,15 @@
 
 <!DOCTYPE html>
+<!--
+  SLYGHT Architecture: see BRAIN_ARCHITECTURE.md in repo root.
+  Each main app tab is its own bubble (Dashboard / Bills / Transaction /
+  Chat / Analysis / Settings) that reports to BRAIN — the single source
+  of truth. Bubbles talk to each other through BRAIN, never directly.
+  All S mutations must go through canonical BRAIN.<bubble>.<verb>(...)
+  helpers. Guardian rules enforce this at lint-time (see e.g. Bundle 8's
+  no-direct-bucket-saved-write). New bubbles follow the strangler-fig
+  migration shape documented in the spec.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -2257,12 +2267,51 @@ function paidBillKey(billName, billDay, month, year) {
   return y + '-' + m + '-' + billName + '-' + billDay;
 }
 
-// Bundle 7: paidBills entries are either `true` (legacy markers from before
-// Bundle 7) or `{ paid: true, _scheduledAutoDebit?: bool, ts?: number }`
-// (Bundle 7+ structured entries — required to distinguish a manual paid-early
-// click from a legitimate "this auto-debits monthly" pre-mark, see #23).
-// Treat both shapes as truthy "paid" markers everywhere except in the MI-13
-// future-key invariant, which uses isPaidBillAutoDebit() to skip auto-debits.
+// ─── paidBills entry shape contract (post Bundle 7.2.4) ─────────────────────
+// S.paidBills is a flat map keyed by paidBillKey(name, day, m, y) results
+// like '2026-5-YouTube Premium-18'. Values follow one of two shapes:
+//
+//   LEGACY SHAPE (pre-Bundle 7):
+//     S.paidBills[key] === true
+//   Still tolerated everywhere via isPaidBillKeyTruthy. autoMatch/autoDetect
+//   write this shape when the bill is for a CURRENT-or-past day this cycle
+//   (no need for the future-paid auto-debit flag).
+//
+//   STRUCTURED SHAPE (Bundle 7+):
+//     S.paidBills[key] === {
+//       paid: true,
+//       ts: number,                  // when the paid-mark was created
+//       _txnTs?: number,             // back-ref to paired S.txns entry, used
+//                                    // by _reversePaidBillTxn (Bundle 7.2.4)
+//                                    // to reverse balance + remove txn on
+//                                    // undo. Present when payBillNow /
+//                                    // markBillPaidMonth / Quick Log-via-
+//                                    // Already-Paid created the entry.
+//                                    // Absent for autoMatch/autoDetect
+//                                    // entries (no txn was created — there
+//                                    // was nothing to reverse).
+//       _scheduledAutoDebit?: true   // marks legitimate future-dated paid-
+//                                    // mark from the 3-way modal or auto-
+//                                    // detected by autoMatch/autoDetect on
+//                                    // a future day. MI-13 invariant
+//                                    // (paidbills-key-not-future) filters
+//                                    // these out so they don't fire as
+//                                    // "marked paid before due date".
+//     }
+//
+// Canonical access:
+//   - isPaidBillKeyTruthy(key)   — accepts both shapes
+//   - isPaidBillAutoDebit(key)   — true only for {_scheduledAutoDebit: true}
+//   - undoPaidBillByKey(key)     — reverses txn via _txnTs, deletes entry,
+//                                  records to S._billUnmarkLog (Bundle 7.2.3
+//                                  30-day TTL so autoDetect respects intent)
+//
+// Schema invariants:
+//   - state-shape-paidbills (Bundle 7.1) — every value is either `true` or
+//     an object with paid:true. Rejects garbage values from old/buggy code.
+//   - paidbills-key-not-future (MI-13) — keys whose day is in the future
+//     must carry _scheduledAutoDebit:true or they fire as a violation.
+// ──────────────────────────────────────────────────────────────────────────
 function isPaidBillKeyTruthy(key) {
   if (!S.paidBills) return false;
   // guardian-allow: no-direct-paidbills-access — this IS the canonical reader for paidBills values; callers pass keys derived from paidBillKey() or Object.keys(S.paidBills) (permanent — helper IS the canonical access surface)
@@ -6587,7 +6636,10 @@ function saveMumAccountBalance() {
       const goals = PLAN.getGoals();
       const apGoal = goals.find(g => g.id === 'apartment');
       if (apGoal) {
-        apGoal.saved = v;
+        // Bundle 9: apGoal.saved local assignment removed (dead write — PLAN.saveGoal
+        // strips 'saved' post-Bundle-8). Apartment goal's saved value is derived from
+        // S.mumAccountBalance via PLAN.readSavedFromSource — S.mumAccountBalance was
+        // already updated above, so the goal will render the new value on next read.
         PLAN.saveGoal(apGoal);
       }
     }
@@ -12208,7 +12260,10 @@ function confirmTripSavings(tripId) {
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   const newSaved = (trip.saved || 0) + amt;
-  trip.saved = newSaved;
+  // Bundle 9: trip.saved local assignment removed. PLAN.saveTrip strips
+  // 'saved' at the storage boundary (Bundle 8), so the assignment was a
+  // dead write that only existed to confuse future grep audits. Bucket
+  // sync happens via PLAN.writeSavedToSource → BRAIN.savings.setBucketSaved.
   PLAN.writeSavedToSource(trip, newSaved);
   // Stored trip retains everything except canonical saved (which is
   // re-derived from bucket on next read via readSavedFromSource).
@@ -12461,7 +12516,9 @@ function confirmGoalSavings(goalId) {
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
   const newSaved = (goal.saved || 0) + amt;
-  goal.saved = newSaved;
+  // Bundle 9: goal.saved local assignment removed (dead write — PLAN.saveGoal
+  // strips 'saved' at storage boundary post-Bundle-8). Bucket / mumAccount
+  // sync happens via PLAN.writeSavedToSource → BRAIN.savings.setBucketSaved.
   // Single source of truth — write through to bucket / mum account
   // for all goals. Replaces old special-case if (goalId === 'china')
   // and if (goalId === 'apartment') blocks.
