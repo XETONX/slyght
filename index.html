@@ -5025,9 +5025,14 @@ function markBillPaidMonth() {
     // Deduct from S.bal and log to history
     // Bundle 7.2.4 fix-forward: record _txnTs on the paidBills entry so
     // undoBillPaid can reverse the paired txn (restore S.bal, splice).
-    const txnTs = Date.now();
+    // Bundle 11: route txn push through BRAIN.transaction; use its
+    // returned ts as the back-ref (single source of truth).
     S.bal -= b.amt;
-    S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: txnTs, income: false, _balAffected: true});
+    const _mbpRes = BRAIN.transaction.record(
+      { amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', income: false, _balAffected: true },
+      BRAIN.SOURCES.MARK_BILL_PAID
+    );
+    const txnTs = _mbpRes.ok ? _mbpRes.ts : Date.now();
     if (!S.paidBills) S.paidBills = {};
     // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - markBillPaidMonth writes the structured shape so undo can reverse the paired txn)
     S.paidBills[paidBillKey(b.name, b.day)] = { paid: true, ts: txnTs, _txnTs: txnTs };
@@ -5075,7 +5080,7 @@ function _reversePaidBillTxn(entry) {
         BRAIN.savings.setBucketSaved(
           bucket.name,
           Math.max(0, bucket.saved - (next.amt || 0)),
-          'undo-roundup'
+          BRAIN.SOURCES.UNDO_ROUNDUP
         );
       }
     }
@@ -5883,9 +5888,14 @@ function quickAddToBucket(i, amt) {
   // Bundle 8: route bucket write through BRAIN.savings.
   const bucket = S.savingsBuckets[i];
   if (!bucket) return;
-  BRAIN.savings.addToBucket(bucket.name, amt, 'manual');
+  BRAIN.savings.addToBucket(bucket.name, amt, BRAIN.SOURCES.MANUAL);
   S.bal -= amt;
-  S.txns.push({amt, note: bucket.name+' — quick add', cat:'Savings', ts:Date.now(), income:false});
+  // Bundle 11: route txn push through BRAIN.transaction with the
+  // dedicated bucket-quick-add source tag.
+  BRAIN.transaction.record(
+    { amt, note: bucket.name+' — quick add', cat:'Savings', income:false },
+    BRAIN.SOURCES.BUCKET_QUICK_ADD
+  );
   onStateChange('bucket-add');
   showUndoToast(fmtC(amt)+' added to '+bucket.name);
 }
@@ -5959,7 +5969,7 @@ function saveBucketModal() {
   const _bkn2 = $('bkt-name'); if (_bkn2) b.name = _bkn2.value.trim() || b.name;
   const _bkg2 = $('bkt-goal'); if (_bkg2) { const _gv = parseFloat(_bkg2.value); if (!isNaN(_gv) && _gv > 0) b.goal = _gv; }
   // Bundle 8: route bucket write through BRAIN.savings.
-  const _bksv2 = $('bkt-saved'); if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, 'manual');
+  const _bksv2 = $('bkt-saved'); if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, BRAIN.SOURCES.MANUAL);
   const _bkac2 = $('bkt-account'); if (_bkac2) b.account = _bkac2.value || b.account;
   const _bkno2 = $('bkt-notes'); if (_bkno2) b.notes = _bkno2.value.trim();
   save(); closeModal('bucket-modal', true); renderAll();
@@ -5972,7 +5982,7 @@ function addFundsBucketModal() {
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
   // Bundle 8: route through BRAIN.savings.
   const _b = S.savingsBuckets[activeBucketIdx];
-  if (_b) BRAIN.savings.addToBucket(_b.name, v, 'manual');
+  if (_b) BRAIN.savings.addToBucket(_b.name, v, BRAIN.SOURCES.MANUAL);
   closeModal('bucket-modal', true); renderAll();
 }
 
@@ -5992,7 +6002,7 @@ function addToBucket(i) {
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
   if (!S.savingsBuckets[i]) return;
   // Bundle 8: route through BRAIN.savings.
-  BRAIN.savings.addToBucket(S.savingsBuckets[i].name, v, 'plan-add');
+  BRAIN.savings.addToBucket(S.savingsBuckets[i].name, v, BRAIN.SOURCES.PLAN_ADD);
   onStateChange('bucket-add');
 }
 
@@ -6329,9 +6339,14 @@ function quickLogTxn() {
   // Income: add to balance
   if (cat === 'Income' || cat === 'Income / Refund \u2191') {
     S.bal += amt;
-    const incomeTxn = {amt, note: note||'Income', cat: 'Income', ts: Date.now(), income: true, _balAffected: true};
-    S.txns.push(incomeTxn);
-    if (typeof checkForBonusInterception === 'function') checkForBonusInterception(incomeTxn);
+    // Bundle 11: route through BRAIN.transaction.record (validates source,
+    // logs to BRAIN.audit, returns ts for any back-ref needs).
+    const _incomeRes = BRAIN.transaction.record(
+      { amt, note: note||'Income', cat: 'Income', income: true, _balAffected: true },
+      BRAIN.SOURCES.LOG_INCOME
+    );
+    const incomeTxn = _incomeRes.ok ? _incomeRes.txn : null;
+    if (incomeTxn && typeof checkForBonusInterception === 'function') checkForBonusInterception(incomeTxn);
     // Bundle 7.2.2 fix-forward: user pivoted to Income — drop the bill-pay
     // stash without applying. They're not paying a bill anymore.
     // Bundle 7.2.3: also drop the auto-debit shape flag.
@@ -6350,7 +6365,11 @@ function quickLogTxn() {
   // From-person: adds to balance, prompts to log against Owed to Mum if significant
   if (txnType === 'from-person') {
     S.bal = parseFloat((S.bal + amt).toFixed(2));
-    S.txns.push({amt, note: note||'From person', cat: cat||'Other', ts: Date.now(), _balAffected: true, _txnType: 'from-person'});
+    // Bundle 11: route through BRAIN.transaction.
+    BRAIN.transaction.record(
+      { amt, note: note||'From person', cat: cat||'Other', _balAffected: true, _txnType: 'from-person' },
+      BRAIN.SOURCES.LOG_FROM_PERSON
+    );
     if (amt >= 100) {
       const mumDebt = findMumDebt();
       if (mumDebt && confirm('Add $' + amt.toFixed(2) + ' to ' + mumDebt.name + '?')) {
@@ -6372,7 +6391,16 @@ function quickLogTxn() {
   // Expense / Transfer / One-off: deduct from balance immediately
   S.bal -= amt;
   const flag = getHabitFlag(note, amt);
-  S.txns.push({amt, note: note||'Spend', cat: cat||'Other', ts: Date.now(), flagged: !!flag, _balAffected: true, _txnType: txnType});
+  // Bundle 11: route through BRAIN.transaction. Capture the ts so the
+  // bill-pay stash consume below can use it as the canonical back-ref
+  // (pre-Bundle-11 the consume read "lastTxn" which broke when round-up
+  // pushed AFTER the expense — _txnTs pointed to the round-up, not the
+  // bill payment, and undo reversed the wrong txn).
+  const _expRes = BRAIN.transaction.record(
+    { amt, note: note||'Spend', cat: cat||'Other', flagged: !!flag, _balAffected: true, _txnType: txnType, income: false },
+    BRAIN.SOURCES.LOG_EXPENSE
+  );
+  const _expenseTs = _expRes.ok ? _expRes.ts : null;
   if (flag) {
     const bal = fmtC(getLiveBal());
     const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
@@ -6385,16 +6413,21 @@ function quickLogTxn() {
   const roundUpOn = ruToggle ? ruToggle.checked : false;
   if (roundUp > 0 && roundUp < 1 && roundUpOn && S.roundUpsEnabled !== false) {
     S.bal = parseFloat((S.bal - roundUp).toFixed(2));
-    S.txns.push({amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', ts: Date.now(), income: false, _isRoundup: true, _balAffected: true});
+    BRAIN.transaction.record(
+      { amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
+      BRAIN.SOURCES.ROUNDUP
+    );
     // Bundle 8: route round-up bucket write through BRAIN.savings.
     const chinaHol = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('china'));
-    if (chinaHol) BRAIN.savings.addToBucket(chinaHol.name, roundUp, 'roundup');
+    if (chinaHol) BRAIN.savings.addToBucket(chinaHol.name, roundUp, BRAIN.SOURCES.ROUNDUP);
   }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
   // Bundle 7.2.2 fix-forward: if this expense came from an "Already paid"
   // flow, flip the paidBills key for the bill we just logged. Pairs txn
   // with paidBills atomically so MI-13 doesn't fire on the just-paid bill.
-  _consumePendingBillPay();
+  // Bundle 11: pass the captured expense ts so the back-ref is correct
+  // even when a round-up was recorded after the expense.
+  _consumePendingBillPay(_expenseTs);
   closeModal('quick-log-modal');
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
   onStateChange('log-expense');
@@ -7461,30 +7494,29 @@ function executeChatAction(action) {
     case 'log_txn':
       if (action.amt > 0) {
         const roundUp = parseFloat((Math.ceil(action.amt) - action.amt).toFixed(2));
-        S.txns.push({
-          amt: parseFloat(action.amt.toFixed(2)),
-          note: action.note || 'Chat logged',
-          cat: action.cat || 'Other',
-          ts: Date.now(),
-          income: false,
-          _balAffected: true,
-          _chatLogged: true
-        });
+        // Bundle 11: route through BRAIN.transaction. Source tag CHAT
+        // so audit log distinguishes AI-driven logs from manual ones.
+        BRAIN.transaction.record(
+          {
+            amt: parseFloat(action.amt.toFixed(2)),
+            note: action.note || 'Chat logged',
+            cat: action.cat || 'Other',
+            income: false,
+            _balAffected: true,
+            _chatLogged: true
+          },
+          BRAIN.SOURCES.CHAT
+        );
         S.bal = parseFloat((S.bal - action.amt).toFixed(2));
         if (roundUp > 0 && roundUp < 1 && S.roundUpsEnabled) {
-          S.txns.push({
-            amt: roundUp,
-            note: 'Round-up → China Holiday',
-            cat: 'Savings',
-            ts: Date.now(),
-            income: false,
-            _isRoundup: true,
-            _balAffected: true
-          });
+          BRAIN.transaction.record(
+            { amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
+            BRAIN.SOURCES.ROUNDUP
+          );
           S.bal = parseFloat((S.bal - roundUp).toFixed(2));
           // Bundle 8: route through BRAIN.savings.
           const bucket = S.savingsBuckets?.find(b => b.name === 'China Holiday');
-          if (bucket) BRAIN.savings.addToBucket(bucket.name, roundUp, 'chat');
+          if (bucket) BRAIN.savings.addToBucket(bucket.name, roundUp, BRAIN.SOURCES.CHAT);
         }
         onStateChange('chat_logged_txn');
         showToast('✅ Logged: ' + action.note + ' $' + action.amt);
@@ -7523,8 +7555,15 @@ function executeChatAction(action) {
         const trips = PLAN.getTrips();
         const trip = trips.find(t => t.id === action.tripId);
         if (trip) {
-          trip.saved = (trip.saved||0) + action.amt;
-          PLAN.saveTrip(trip);
+          // Bundle 11 dead-flow fix: pre-Bundle-11 this only mutated
+          // trip.saved in memory then called PLAN.saveTrip, which strips
+          // 'saved' at the storage boundary (Bundle 8). The bucket was
+          // never updated — the toast lied about the result. Route
+          // through PLAN.writeSavedToSource (which calls BRAIN.savings.
+          // setBucketSaved with the CHAT source tag) so the bucket
+          // actually receives the savings.
+          const newSaved = (trip.saved || 0) + action.amt;
+          PLAN.writeSavedToSource(trip, newSaved, BRAIN.SOURCES.CHAT);
           showToast('✅ $' + action.amt + ' Added To ' + trip.name);
         }
       }
@@ -9777,6 +9816,7 @@ if (navigator.serviceWorker) {
     if (!msg) return;
     if (msg.type === 'NO_SPEND') {
       // Log a zero-amount no-spend event (does not affect balance)
+      // guardian-allow: no-direct-txns-push - service-worker NO_SPEND channel writes a behavioral-marker txn with amt:0 and _noSpend:true; anonymous arrow inside addEventListener can't carry enclosing-fn exemption; migrating to BRAIN.transaction would require a dedicated source tag for one rare event class (permanent - service-worker -> app message bridge edge case, narrow surface)
       S.txns.push({ amt: 0, note: 'No spend — ' + (msg.tag || 'check-in'), cat: 'Other',
         ts: msg.ts || Date.now(), income: false, _noSpend: true, _balAffected: false });
       save();
@@ -10524,20 +10564,15 @@ function pivotToggle(cat) {
 function payBillNow(billName, billDay, billAmt) {
   const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
   withMarkPaidGate(bill, () => {
-    // Bundle 7.2.4 fix-forward: record _txnTs on the paidBills entry so
-    // undoPaidBillByKey can find and reverse this exact txn (restoring
-    // S.bal and removing from S.txns). Pre-7.2.4, undo only deleted the
-    // paidBills key — txn stayed, balance stayed off — user had to
-    // reconcile manually which polluted the data.
-    const txnTs = Date.now();
-    S.txns.push({
-      amt: billAmt,
-      note: billName + ' — paid',
-      cat: 'Bills',
-      ts: txnTs,
-      income: false,
-      _balAffected: true
-    });
+    // Bundle 11: route txn push through BRAIN.transaction. Capture ts
+    // for the paidBills _txnTs back-ref so undoPaidBillByKey can reverse
+    // both balance and txn atomically (Bundle 7.2.4's reversible-undo
+    // contract, now sourced from the canonical writer's return value).
+    const _r = BRAIN.transaction.record(
+      { amt: billAmt, note: billName + ' — paid', cat: 'Bills', income: false, _balAffected: true },
+      BRAIN.SOURCES.PAY_BILL_NOW
+    );
+    const txnTs = _r.ok ? _r.ts : Date.now();
     S.bal = parseFloat((S.bal - billAmt).toFixed(2));
     if (!S.paidBills) S.paidBills = {};
     // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - payBillNow writes the structured shape so undo can find and reverse the paired txn)
@@ -10553,17 +10588,24 @@ function payBillNow(billName, billDay, billAmt) {
 // then on save we also flip paidBills. Previously markBillAlreadyPaid
 // silently flipped paidBills without creating a txn — S.txns and
 // S.paidBills drifted apart, MI-13 would later flag the missing spend.
-function _consumePendingBillPay() {
+function _consumePendingBillPay(txnTsOverride) {
   if (window._pendingBillPayKey) {
     if (!S.paidBills) S.paidBills = {};
     // Bundle 7.2.4 fix-forward: record _txnTs so undoPaidBillByKey can
-    // reverse the txn + balance the user just logged. The last entry in
-    // S.txns is the txn quickLogTxn just pushed for this bill-pay flow.
-    // Both autoDebit and manual paths now use structured shape (was: legacy
-    // 'true' for non-auto-debit). isPaidBillKeyTruthy already handles both
-    // shapes so this is forward-compatible.
-    const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
-    const txnTs = lastTxn ? lastTxn.ts : Date.now();
+    // reverse the txn + balance the user just logged.
+    // Bundle 11: callers SHOULD pass txnTsOverride (the ts returned by
+    // BRAIN.transaction.record for the bill-pay txn). Falls back to the
+    // last-txn-in-S.txns heuristic for legacy callers, but that's fragile
+    // when round-ups push after the expense — back-ref ends up pointing
+    // to the round-up instead of the bill payment. New BRAIN.transaction
+    // call sites avoid the fallback entirely.
+    let txnTs;
+    if (typeof txnTsOverride === 'number') {
+      txnTs = txnTsOverride;
+    } else {
+      const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
+      txnTs = lastTxn ? lastTxn.ts : Date.now();
+    }
     const now = Date.now();
     // guardian-allow: no-direct-paidbills-access - window._pendingBillPayKey is always set via canonical paidBillKey helper in markBillAlreadyPaid / _markBillPaidViaQuickLog; this is intermediate transport not a parallel key format (permanent - Bundle 7.2.2 bill-pay stash consumer; 7.2.4 adds the _txnTs reverse-undo back-reference)
     S.paidBills[window._pendingBillPayKey] = window._pendingBillPayAutoDebit
@@ -10737,6 +10779,40 @@ function closePlanMode() {
 // BRAIN.savings under the hood — it will fold into BRAIN.dashboard.plan
 // (or BRAIN.plan) when the dashboard bubble lands.
 const BRAIN = {
+  // ─── BRAIN.SOURCES — frozen source-tag vocabulary ───────────────────────
+  // Every canonical writer takes a `source` arg explaining WHERE the
+  // mutation came from. Pre-Bundle-11 these were stringly-typed and a
+  // typo ('plan_add' vs 'plan-add') only surfaced at audit-grep time.
+  // Now: write-time validation. Writers reject unknown source tags.
+  //
+  // To add a new source: add the enum constant AND the literal to
+  // _SOURCE_SET below. Spec'd tags must appear in both lists or the
+  // writer will reject them at runtime.
+  SOURCES: Object.freeze({
+    // BRAIN.savings + general
+    ROUNDUP:         'roundup',
+    UNDO_ROUNDUP:    'undo-roundup',
+    PLAN_ADD:        'plan-add',
+    PLAN_EDIT:       'plan-edit',
+    MANUAL:          'manual',
+    RECONCILE:       'reconcile',
+    MIGRATION:       'migration',
+    CHAT:            'chat',
+    // BRAIN.transaction (Bundle 11)
+    LOG_EXPENSE:     'log-expense',
+    LOG_INCOME:      'log-income',
+    LOG_FROM_PERSON: 'log-from-person',
+    PAY_BILL_NOW:    'pay-bill-now',
+    MARK_BILL_PAID:  'mark-bill-paid',
+    BUCKET_QUICK_ADD: 'bucket-quick-add',
+  }),
+  _SOURCE_SET: new Set([
+    'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
+    'reconcile', 'migration', 'chat',
+    'log-expense', 'log-income', 'log-from-person', 'pay-bill-now',
+    'mark-bill-paid', 'bucket-quick-add',
+  ]),
+
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
   // Lightweight log so every canonical writer can record what changed and
   // why. Capped at 500 entries to prevent unbounded growth. Future AI
@@ -10848,6 +10924,85 @@ const BRAIN = {
         ? MODEL.weekSpent
         : 0;
     }
+  },
+
+  // ─── BRAIN.transaction — Transaction bubble (seeded Bundle 11) ──────────
+  // Canonical writer + readers for S.txns. Pre-Bundle-11 every push
+  // happened ad-hoc via `S.txns.push({...})` with no source attribution
+  // and no validation; Bundle 7.2.4's _txnTs back-reference for
+  // reversible undo relied on "the txn we just pushed is the last entry"
+  // — fragile when round-ups land or when async flows interleave.
+  //
+  // Establishes the failure-semantics shape spec'd in BRAIN_ARCHITECTURE
+  // Q5 feedback: writers return { ok, txn?, ts?, reason? } — callers
+  // SHOULD check `ok`. BRAIN.savings will retrofit to this shape in a
+  // follow-up; setting the precedent here.
+  transaction: {
+    // Record a transaction. source MUST be in BRAIN.SOURCES.
+    // Sets txn.ts if not pre-set (callers can pre-set for back-ref
+    // consistency, e.g., when a paidBills entry's _txnTs must equal
+    // this txn's ts). Returns the recorded txn + its ts so callers can
+    // store the back-ref without re-reading S.txns.
+    //
+    // What this does NOT do: mutate S.bal. Callers retain responsibility
+    // for the balance side-effect (same contract as the old S.txns.push)
+    // because some flows (income, from-person) modify balance differently
+    // than discretionary expense.
+    record(txn, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.transaction] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!txn || typeof txn.amt !== 'number' || isNaN(txn.amt) || txn.amt < 0) {
+        console.warn('[BRAIN.transaction] invalid txn:', txn);
+        return { ok: false, reason: 'invalid-amt' };
+      }
+      if (!Array.isArray(S.txns)) S.txns = [];
+      const ts = txn.ts || Date.now();
+      const finalTxn = { ...txn, ts };
+      S.txns.push(finalTxn);
+      BRAIN.audit.append({
+        type: 'txn_record',
+        amt: finalTxn.amt,
+        cat: finalTxn.cat || null,
+        note: finalTxn.note || null,
+        income: !!finalTxn.income,
+        roundup: !!finalTxn._isRoundup,
+        source,
+        ts: Date.now(),
+        txnTs: ts
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, txn: finalTxn, ts };
+    },
+    // Find a single txn by ts (back-ref lookup). Returns undefined if
+    // not found — callers can `?.amt` chain safely.
+    findByTs(ts) {
+      return (S.txns || []).find(t => t.ts === ts);
+    },
+    // Remove a txn by ts. Returns { ok, removed? }. Used by undo flows
+    // (Bundle 7.2.4's _reversePaidBillTxn would naturally migrate here
+    // in a follow-up, but kept inline for now to keep Bundle 11 tight).
+    removeByTs(ts) {
+      if (!Array.isArray(S.txns)) return { ok: false, reason: 'no-txns' };
+      const idx = S.txns.findIndex(t => t.ts === ts);
+      if (idx < 0) return { ok: false, reason: 'not-found' };
+      const removed = S.txns.splice(idx, 1)[0];
+      BRAIN.audit.append({
+        type: 'txn_remove',
+        amt: removed.amt,
+        ts: Date.now(),
+        txnTs: ts
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
+    },
+    // Filtered list. Predicate-based for flexibility. Used by callers
+    // that need a subset without recomputing the filter.
+    list(predicate) {
+      const txns = S.txns || [];
+      return predicate ? txns.filter(predicate) : txns;
+    }
   }
 };
 
@@ -10903,7 +11058,11 @@ const PLAN = {
 
   // Write a saved value through to the bucket (or mumAccountBalance).
   // Auto-creates the bucket for user-added items if missing.
-  writeSavedToSource(item, savedValue) {
+  // Bundle 11: optional `source` parameter — callers can override the
+  // default 'plan-add' tag (e.g., chat-driven add_trip_savings passes
+  // BRAIN.SOURCES.CHAT so the audit log distinguishes UI vs AI origin).
+  writeSavedToSource(item, savedValue, source) {
+    const tag = source || (typeof BRAIN !== 'undefined' ? BRAIN.SOURCES.PLAN_ADD : 'plan-add');
     const ref = this.bucketForPlanItem(item.id);
     if (!ref) return;
     if (ref.type === 'mumAccount') {
@@ -10930,7 +11089,7 @@ const PLAN = {
     // Bundle 8: route through BRAIN.savings — the canonical writer logs
     // to BRAIN.audit so we can see WHERE bucket changes came from. Source
     // tag distinguishes Plan-mode confirm flows from raw bucket-modal edits.
-    BRAIN.savings.setBucketSaved(bucketName, savedValue, 'plan-add');
+    BRAIN.savings.setBucketSaved(bucketName, savedValue, tag);
   },
 
   get INCOME_MONTHLY() { return S.income || 7282; },

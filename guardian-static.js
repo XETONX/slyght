@@ -56,6 +56,28 @@ const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillP
 // the load() migration path which patches data shapes during boot.
 const BUCKET_SAVED_WRITER_FNS = new Set(['setBucketSaved', 'load']);
 
+// Bundle 11: allow-set for the no-direct-txns-push rule. BRAIN.transaction
+// owns S.txns mutation. Exempt contexts:
+//   - `record`: BRAIN.transaction's canonical writer (the chokepoint;
+//     forbidding direct pushes everywhere else IS the rule's purpose).
+//   - `load`: migration paths that rewrite/repair existing txns on boot
+//     (also Bundle 8's S.tripDefs/goalDefs migration and snapshot replay).
+//   - `applyBalanceCorrection`: reconciliation corrections with the
+//     _isCorrection flag — Bundle 12+ may relocate to BRAIN.transaction
+//     with a dedicated RECONCILE source; keeping the edge-case semantics
+//     intact for now (passive antibiotic).
+//   - `confirmWrxAlloc`: WRX sale-proceeds allocation flow creating
+//     multiple debt-repayment txns at once. Rare event; out of Bundle 11
+//     scope.
+//   - `markDebtPaid`: debt-cleared domain (BRAIN.debts bubble territory).
+//     Will migrate when the debts bubble seeds.
+// Service-worker NO_SPEND anonymous arrow uses inline guardian-allow
+// (can't carry enclosing-fn exemption — anonymous context).
+const TXNS_PUSH_WRITER_FNS = new Set([
+  'record', 'load',
+  'applyBalanceCorrection', 'confirmWrxAlloc', 'markDebtPaid',
+]);
+
 // Bundle 10: allow-set for the no-inline-todayspend-computation rule.
 // BRAIN.dashboard.todaySpend / todayTxns are the canonical chokepoints
 // for "today's discretionary spend" computation. The canonical helpers
@@ -485,6 +507,49 @@ const RULES = [
             line: fileLine(node.loc.start.line),
             col: node.loc.start.column,
             evidence: `bucket .saved write inside ${fn || '<top-level>'} — route through BRAIN.savings.setBucketSaved`,
+          });
+        },
+      });
+      return violations;
+    },
+  },
+
+  // ─── 2d. no-direct-txns-push (Bundle 11 architectural barrier) ─────────
+  // BRAIN.transaction.record is the canonical writer for S.txns. Pre-
+  // Bundle-11 every push happened ad-hoc with no source attribution and
+  // no validation, which meant audit-log forensics were impossible and
+  // Bundle 7.2.4's _txnTs back-reference for reversible undo relied on
+  // "the last entry in S.txns is the one I just pushed" — fragile once
+  // round-ups landed and shifted the "last" assumption.
+  //
+  // Rule shape: flag any S.txns.push(...) outside TXNS_PUSH_WRITER_FNS.
+  // AST-based on the existing MemberExpression patterns used by Bundle 8's
+  // no-direct-bucket-saved-write rule.
+  {
+    name: 'no-direct-txns-push',
+    severity: 'fail',
+    anchor: 'arch-barrier-bundle-11',
+    check() {
+      const violations = [];
+      walk.simple(ast, {
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'MemberExpression') return;
+          if (!node.callee.property || node.callee.property.name !== 'push') return;
+          const obj = node.callee.object;
+          // Target: S.txns.push (direct member access). Skips (S.txns||[]).push
+          // because that's a defensive pattern reading S.txns, not writing it
+          // — and the only callers using that pattern (BRAIN.transaction.record)
+          // are already in the allow-list anyway.
+          const isTxns = obj && obj.type === 'MemberExpression'
+            && obj.object && obj.object.name === 'S'
+            && obj.property && obj.property.name === 'txns';
+          if (!isTxns) return;
+          const fn = enclosingFn(node.range[0]);
+          if (TXNS_PUSH_WRITER_FNS.has(fn)) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: `S.txns.push inside ${fn || '<top-level>'} — route through BRAIN.transaction.record`,
           });
         },
       });
