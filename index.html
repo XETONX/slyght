@@ -2487,17 +2487,22 @@ function withMarkPaidGate(bill, action) {
     action();
     try {
       const key = paidBillKey(bill.name, bill.day);
-      // guardian-allow: no-direct-paidbills-access — key built immediately above via canonical paidBillKey() helper; this is the upgrade-legacy-true-to-structured-entry write that ONLY needs to fire on true-shape (permanent — Bundle 7 mark-paid auto-debit upgrade write)
+      // guardian-allow: no-direct-paidbills-access - key built immediately above via canonical paidBillKey helper; this is the upgrade-legacy-true-to-structured-entry write that ONLY needs to fire on true-shape (permanent - Bundle 7 mark-paid auto-debit upgrade write retained for unaudited callers)
       if (S.paidBills && S.paidBills[key] === true) {
-        // guardian-allow: no-direct-paidbills-access — same paidBillKey()-derived key; structured-entry assignment for the auto-debit flag (permanent — Bundle 7 mark-paid auto-debit upgrade write)
+        // Path (a) — legacy direct-set already happened (rare; only the
+        // fallback path in markBillAlreadyPaid / _markBillPaidViaQuickLog
+        // hits this). Upgrade shape inline.
+        // guardian-allow: no-direct-paidbills-access - same paidBillKey-derived key; structured-entry assignment for the auto-debit flag (permanent - Bundle 7 mark-paid auto-debit upgrade write)
         S.paidBills[key] = { paid: true, _scheduledAutoDebit: true, ts: Date.now() };
         save();
-      } else if (window._pendingBillPayKey === key) {
-        // Path (b) — Quick Log stash is live; tag it so _consumePendingBillPay
-        // writes the structured shape instead of legacy true on save.
-        window._pendingBillPayAutoDebit = true;
+      } else if (BRAIN.bills._pendingPay && BRAIN.bills._pendingPay.key === key) {
+        // Path (b) — Quick Log stash is live (Bundle 14: now lives on
+        // BRAIN.bills, was window globals pre-Bundle-14). Flip the
+        // autoDebit flag so consumePendingPay writes the structured
+        // auto-debit shape on Quick Log save.
+        BRAIN.bills._pendingPay.autoDebit = true;
       }
-    } catch(e) { console.warn('[Bundle 7] auto-debit flag write failed:', e); }
+    } catch(e) { console.warn('[BRAIN.bills autoDebit] flag write failed:', e); }
   };
 
   modal.classList.add('open');
@@ -3102,35 +3107,20 @@ const MathInvariants = {
       // pre-mark workflow (#23): a daily re-banner of the same set is nagging,
       // but a NEW pre-mark added to the set should still surface.
       dismissPolicy: 'persistent',
+      // Bundle 14: logic moved to BRAIN.bills.invariants — semantic ownership
+      // with the Bills bubble. Registry entry stays cross-cutting so the
+      // render-time check runs every render (preserves the safety net for
+      // paths the canonical writer didn't audit). See spec v1.2 Invariant
+      // Ownership. Banner copy + dismiss/escalation logic unchanged.
       check() {
-        if (!S.paidBills) return null;
-        const today = new Date();
-        const todayY = today.getFullYear();
-        const todayM = today.getMonth() + 1;
-        const todayD = today.getDate();
-        const future = Object.keys(S.paidBills).filter(key => {
-          // Bundle 7 (#23): auto-debit entries are legitimate forward-
-          // dated markers — user explicitly chose "this auto-debits"
-          // in the mark-paid modal. Excluded from MI-13 detection.
-          if (isPaidBillAutoDebit(key)) return false;
-          const m = key.match(/^(\d{4})-(\d{1,2})-.*-(\d{1,2})$/);
-          if (!m) return false; // malformed handled by state-shape-paidbills
-          const y = +m[1], mo = +m[2], d = +m[3];
-          if (y > todayY) return true;
-          if (y === todayY && mo > todayM) return true;
-          if (y === todayY && mo === todayM && d > todayD) return true;
-          return false;
-        });
-        if (future.length === 0) return null;
-        return { displayValue: future.length + ' bill(s)',
-          expected: 'paidBills key day ≤ today',
-          // Bundle 7 (#23 follow-up): show bill names only, not full keys.
-          // Key format: "${y}-${m+1}-${name}-${day}". Extract name segment.
-          details: future.slice(0, 3).map(k => {
-            const m2 = k.match(/^\d{4}-\d{1,2}-(.*)-\d{1,2}$/);
-            return m2 ? m2[1] : k;
-          }).join(', ') + (future.length > 3 ? ' +' + (future.length - 3) + ' more' : ''),
-          keys: future };
+        // TDZ-safe fallback: invariants run on every render via
+        // MathInvariants.render(). If for some reason this fires before
+        // BRAIN's const initializer (e.g., a mid-load() render), bail
+        // safely instead of throwing. In normal flow BRAIN is defined.
+        if (typeof BRAIN === 'undefined' || !BRAIN.bills || !BRAIN.bills.invariants) {
+          return null;
+        }
+        return BRAIN.bills.invariants.checkFutureKeyNotPaid();
       },
       message(v) { return 'Bills tracked as paid early — tap to review'; },
     },
@@ -5027,15 +5017,19 @@ function markBillPaidMonth() {
     // undoBillPaid can reverse the paired txn (restore S.bal, splice).
     // Bundle 11: route txn push through BRAIN.transaction; use its
     // returned ts as the back-ref (single source of truth).
+    // Bundle 14: route through BRAIN.bills.markPaid \u2014 composes with
+    // BRAIN.transaction.record for the paired txn and sets the
+    // structured paidBills entry with _txnTs back-ref. STRICT abort
+    // on inner failure; if record() fails we reverse the balance
+    // deduction so we don't leave the user under-balanced with no
+    // bill flagged paid.
     S.bal -= b.amt;
-    const _mbpRes = BRAIN.transaction.record(
-      { amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', income: false, _balAffected: true },
-      BRAIN.SOURCES.MARK_BILL_PAID
-    );
-    const txnTs = _mbpRes.ok ? _mbpRes.ts : Date.now();
-    if (!S.paidBills) S.paidBills = {};
-    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - markBillPaidMonth writes the structured shape so undo can reverse the paired txn)
-    S.paidBills[paidBillKey(b.name, b.day)] = { paid: true, ts: txnTs, _txnTs: txnTs };
+    const r = BRAIN.bills.markPaid(b, BRAIN.SOURCES.MARK_BILL_PAID);
+    if (!r.ok) {
+      S.bal += b.amt;
+      showToast('\u26a0\ufe0f Could not mark ' + b.name + ' paid \u2014 ' + r.reason);
+      return;
+    }
     closeModal('bill-modal', true); onStateChange('bill-paid-month');
     if(navigator.vibrate) navigator.vibrate(50);
     // Immediately remove any notification for this bill — don't wait for heartbeat
@@ -5043,66 +5037,26 @@ function markBillPaidMonth() {
   });
 }
 
-// Bundle 7.2.4 fix-forward: shared reversal helper. Finds the paired txn
-// via _txnTs (recorded when the paid-mark was created), restores S.bal,
-// and removes the txn from S.txns. Also handles a round-up txn that may
-// sit immediately after the main txn (tagged _isRoundup) — round-ups
-// were created BECAUSE of the original spend so undoing the spend
-// should undo the round-up too, otherwise the savings bucket holds
-// orphan money and S.bal stays off by the round-up amount.
-// Returns true if a txn was reversed (caller can decide messaging).
-function _reversePaidBillTxn(entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  const txnTs = entry._txnTs;
-  if (!txnTs) return false;
-  const txns = S.txns || [];
-  const idx = txns.findIndex(t => t.ts === txnTs);
-  if (idx < 0) return false;
-  const t = txns[idx];
-  if (t._balAffected) {
-    if (t.income) S.bal -= (t.amt || 0);
-    else S.bal += (t.amt || 0);
-    S.bal = parseFloat(S.bal.toFixed(2));
-  }
-  let removeCount = 1;
-  const next = txns[idx + 1];
-  if (next && next._isRoundup) {
-    if (next._balAffected) {
-      S.bal = parseFloat((S.bal + (next.amt || 0)).toFixed(2));
-    }
-    const m = (next.note || '').match(/Round-up\s*[→\-]+\s*(.+)/);
-    if (m && S.savingsBuckets) {
-      const target = m[1].trim().toLowerCase();
-      const bucket = S.savingsBuckets.find(bk => (bk.name || '').toLowerCase() === target);
-      if (bucket && typeof bucket.saved === 'number' && typeof BRAIN !== 'undefined') {
-        // Bundle 8: route through BRAIN.savings — direct bucket.saved writes
-        // are now banned by the no-direct-bucket-saved-write rule.
-        BRAIN.savings.setBucketSaved(
-          bucket.name,
-          Math.max(0, bucket.saved - (next.amt || 0)),
-          BRAIN.SOURCES.UNDO_ROUNDUP
-        );
-      }
-    }
-    removeCount = 2;
-  }
-  txns.splice(idx, removeCount);
-  return true;
-}
+// Bundle 14: _reversePaidBillTxn deleted — its logic is now inlined
+// inside BRAIN.bills.unmark, which composes with BRAIN.transaction.
+// removeByTs (lenient on not-found per Composition Contract Exception)
+// for the main txn cleanup + BRAIN.savings.setBucketSaved for round-up
+// reversal. Grep audit at Bundle 14 ship time confirmed no remaining
+// callers — undoBillPaid and undoPaidBillByKey both route through
+// BRAIN.bills.unmark now.
 
 // Undo paid bill — removes paidBills key; only accessible inside the modal to prevent accidental triggers
 function undoBillPaid() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
   const key = paidBillKey(b.name, b.day);
-  // Bundle 7.2.4 fix-forward: reverse the paired txn + balance impact.
-  // Run BEFORE deleting the paidBills key so we can read _txnTs.
-  if (S.paidBills) {
-    _reversePaidBillTxn(S.paidBills[key]);
-    if (!S._billUnmarkLog) S._billUnmarkLog = {};
-    S._billUnmarkLog[key] = Date.now();
-    delete S.paidBills[key];
-  }
+  // Bundle 14: route through BRAIN.bills.unmark — composes with
+  // BRAIN.transaction.removeByTs for paired-txn cleanup. LENIENT
+  // exception per Composition Contract: if the paired txn is already
+  // gone (snapshot restore, manual edit-txn delete, autoDetect entry
+  // with no _txnTs), warn and proceed with paidBills cleanup. Bal
+  // restoration happens inside unmark.
+  BRAIN.bills.unmark(key, BRAIN.SOURCES.UNMARK_BILL);
   closeModal('bill-modal', true);
   // onStateChange (not save+renderAll) so MODEL/NW/plan/surplus all
   // recompute from the restored balance.
@@ -5138,37 +5092,15 @@ function unmarkBillFromCal(key, day) {
 }
 
 function undoPaidBillByKey(key) {
-  if (!S.paidBills || !S.paidBills[key]) return false;
+  // Bundle 14: route through BRAIN.bills.unmark. LENIENT-with-warning
+  // exception per Composition Contract handles the "txn already gone"
+  // case so this never throws when the user just wants to clear the flag.
+  // unmark also handles the _billUnmarkLog write + invariant-count reset
+  // + audit emission internally.
   const name = parseMI13Key(key).name || key;
-  // Bundle 7.2.4 fix-forward: reverse the paired txn + balance impact.
-  // BEFORE delete so we can read _txnTs from the entry. _reversePaidBillTxn
-  // restores S.bal, removes the txn, and handles a trailing round-up txn
-  // if there was one. Returns true if a txn was reversed (the entry was
-  // created via a path that logged a txn — payBillNow, markBillPaidMonth,
-  // _consumePendingBillPay). Entries created by autoDetect/autoMatch have
-  // no _txnTs (no txn was created), so this is a no-op for those — which
-  // is correct: there's nothing to reverse.
-  const reversed = _reversePaidBillTxn(S.paidBills[key]);
-  // Bundle 7.2.3 fix-forward: record the un-mark so autoDetect /
-  // autoMatch skip this bill for 30 days. Without this, the next render
-  // (refresh, tab switch, any state change) re-runs auto-detection
-  // against the same pre-existing txns and re-flags the bill — which
-  // is exactly what was happening to YouTube Premium / Spotify on every
-  // refresh after the user un-flagged them.
-  if (!S._billUnmarkLog) S._billUnmarkLog = {};
-  S._billUnmarkLog[key] = Date.now();
-  delete S.paidBills[key];
-  // Mission #42 adjacent — reset the violation count when the user
-  // actively resolves an entry. Otherwise the previous count (which
-  // may have already escalated to the alarmist card via banner→card
-  // promotion on a re-render) stays high and re-fires on the next
-  // unrelated render. After this reset, any remaining future-paid
-  // keys will re-banner at count=1 (banner, not card).
-  if (S._invariantViolationCounts) {
-    S._invariantViolationCounts['paidbills-key-not-future'] = { count: 0, firstSeenTs: Date.now() };
-  }
-  try { save(); } catch (_) {}
-  // Re-render the modal against the new state — close if no rows left.
+  const r = BRAIN.bills.unmark(key, BRAIN.SOURCES.UNMARK_BILL);
+  if (!r.ok) return false;
+  // Re-render the MI-13 modal against the new state — close if no rows left.
   try {
     const inv = MathInvariants.invariants.find(i => i.name === 'paidbills-key-not-future');
     const result = inv && inv.check();
@@ -5178,15 +5110,12 @@ function undoPaidBillByKey(key) {
       closeModal('mi13-details-modal', true);
     }
   } catch (_) {}
-  // Bundle 7.2.4 fix-forward: route through onStateChange (was renderAll
-  // alone) so MODEL recomputes from the restored balance and all
-  // downstream surfaces (NW, plan capacity, surplus, MI banner, AI
-  // copy) re-derive consistently. renderAll() alone just repaints from
-  // stale MODEL — surfaces that derive from MODEL would lag.
+  // onStateChange so MODEL/NW/plan/surplus all recompute from the
+  // restored balance.
   if (typeof onStateChange === 'function') onStateChange('bill-paid-undone');
   else if (typeof renderAll === 'function') renderAll();
   try {
-    showToast(reversed
+    showToast(r.txnReversed
       ? 'Undid: ' + name + ' — balance + txn reversed'
       : 'Undid: ' + name);
   } catch (_) {}
@@ -5565,13 +5494,16 @@ function _markBillPaidViaQuickLog(name, day) {
   const billAmt = (bill && typeof bill.amt === 'number') ? bill.amt : 0;
   withMarkPaidGate(bill, () => {
     if (typeof openQuickLogModal !== 'function') {
-      if (!S.paidBills) S.paidBills = {};
-      S.paidBills[paidBillKey(name, day)] = true;
-      onStateChange('bill-paid');
+      // Bundle 14: fallback path — route through BRAIN.bills.markPaid
+      // default mode (creates a synthetic txn via BRAIN.transaction.record).
+      bill.amt = billAmt;
+      const r = BRAIN.bills.markPaid(bill, BRAIN.SOURCES.MARK_BILL_PAID);
+      if (r.ok) onStateChange('bill-paid');
       return;
     }
     openQuickLogModal();
-    window._pendingBillPayKey = paidBillKey(name, day);
+    // Bundle 14: cross-modal stash now lives on BRAIN.bills.
+    BRAIN.bills.setPendingPay(paidBillKey(name, day), { autoDebit: false });
     const _a = document.getElementById('ql-amt');
     const _n = document.getElementById('ql-note');
     const _c = document.getElementById('ql-cat-hidden');
@@ -6256,12 +6188,12 @@ function openQuickLogModal() {
   // cancelled "Already paid" flow. Callers that want to set the stash
   // (markBillAlreadyPaid, _markBillPaidViaQuickLog) re-set it AFTER
   // calling openQuickLogModal, so this clear-at-start doesn't fight them.
-  // Bundle 7.2.3 fix-forward: also clear the auto-debit shape flag so
-  // a cancelled auto-debit-marked flow can't leak into the next log.
-  // The withMarkPaidGate autodebitBtn handler re-sets this AFTER action()
-  // (which calls openQuickLogModal), so the order works out.
-  delete window._pendingBillPayKey;
-  delete window._pendingBillPayAutoDebit;
+  // Bundle 14: cross-modal stash now lives on BRAIN.bills._pendingPay.
+  // clearPendingPay nulls the context so a cancelled "Already paid" flow
+  // can't leak into the next log. The withMarkPaidGate autoDebit handler
+  // re-sets BRAIN.bills._pendingPay.autoDebit AFTER action() (which calls
+  // openQuickLogModal), so the order works out.
+  BRAIN.bills.clearPendingPay();
   const _qla2 = $('ql-amt'); if (_qla2) _qla2.value = '';
   const _qln2 = $('ql-note'); if (_qln2) _qln2.value = '';
   const _qlc = $('ql-cat'); if (_qlc) _qlc.value = '';
@@ -6347,11 +6279,9 @@ function quickLogTxn() {
     );
     const incomeTxn = _incomeRes.ok ? _incomeRes.txn : null;
     if (incomeTxn && typeof checkForBonusInterception === 'function') checkForBonusInterception(incomeTxn);
-    // Bundle 7.2.2 fix-forward: user pivoted to Income — drop the bill-pay
-    // stash without applying. They're not paying a bill anymore.
-    // Bundle 7.2.3: also drop the auto-debit shape flag.
-    delete window._pendingBillPayKey;
-    delete window._pendingBillPayAutoDebit;
+    // Bundle 14: user pivoted to Income — drop the bill-pay stash
+    // without applying. They're not paying a bill anymore.
+    BRAIN.bills.clearPendingPay();
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-income');
@@ -6376,11 +6306,9 @@ function quickLogTxn() {
         mumDebt.amt = parseFloat((mumDebt.amt + amt).toFixed(2));
       }
     }
-    // Bundle 7.2.2 fix-forward: user pivoted to From-person — drop the
-    // bill-pay stash without applying. Not a bill payment.
-    // Bundle 7.2.3: also drop the auto-debit shape flag.
-    delete window._pendingBillPayKey;
-    delete window._pendingBillPayAutoDebit;
+    // Bundle 14: user pivoted to From-person — drop the bill-pay stash
+    // without applying. Not a bill payment.
+    BRAIN.bills.clearPendingPay();
     closeModal('quick-log-modal');
     document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
     onStateChange('log-from-person');
@@ -6479,59 +6407,15 @@ function _isBillRecentlyUnmarked(billName, billDay, m, y) {
   return true;
 }
 
+// Bundle 14: shims around BRAIN.bills.autoMatch / autoDetect. The
+// bubble owns the logic + composes with BRAIN.bills.markPaid (link
+// mode) for each match — paidBills writes now flow through the
+// canonical writer with the AUTO_MATCH / AUTO_DETECT source tags.
 function autoMatchBillsToTxns(silent) {
-  const now = new Date();
-  const todayStr = now.toDateString();
-  const todayM = now.getMonth(), todayY = now.getFullYear(), todayD = now.getDate();
-  const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === todayStr);
-  let matched = [];
-  (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
-    if (isThisMonthlyBillPaid(b.name, b.day)) return; // already paid
-    if (_isBillRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
-    if (!todayTxns.some(t => _txnMatchesBillStrict(t, b))) return;
-    if (!S.paidBills) S.paidBills = {};
-    const key = paidBillKey(b.name, b.day, todayM, todayY);
-    const isBillFuture = b.day > todayD;
-    // Bundle 7.2.3 fix-forward: future-dated keys need the structured
-    // shape so MI-13 doesn't fire on them \u2014 a matching txn before
-    // the due date implies the user paid early or set up an auto-debit.
-    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper one line above; structured Bundle 7 shape write for future-dated bills (permanent - auto-mark writes the auto-debit shape so MI-13 ignores future-dated entries)
-    S.paidBills[key] = isBillFuture
-      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
-      : true;
-    matched.push(b.name);
-  });
-  if (matched.length && !silent) {
-    showUndoToast('\u2713 ' + matched.join(', ') + ' marked as paid \u2014 matched transaction');
-  }
-  if (matched.length) save();
+  return BRAIN.bills.autoMatch({ silent });
 }
-
 function autoDetectBillPayments() {
-  const now = new Date();
-  const todayM = now.getMonth(), todayY = now.getFullYear(), todayD = now.getDate();
-  const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
-  const recentTxns = (S.txns || []).filter(t => !t.income && t.ts >= sevenDaysAgo);
-  const detected = [];
-  (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
-    if (isThisMonthlyBillPaid(b.name, b.day)) return;
-    if (_isBillRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
-    if (!recentTxns.some(t => _txnMatchesBillStrict(t, b))) return;
-    if (!S.paidBills) S.paidBills = {};
-    const key = paidBillKey(b.name, b.day, todayM, todayY);
-    const isBillFuture = b.day > todayD;
-    // Bundle 7.2.3 fix-forward: see autoMatchBillsToTxns above for the
-    // strict matcher + un-mark log + future-key shape rationale.
-    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper one line above; structured Bundle 7 shape write for future-dated bills (permanent - auto-detect writes the auto-debit shape so MI-13 ignores future-dated entries)
-    S.paidBills[key] = isBillFuture
-      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
-      : true;
-    detected.push(b.name);
-  });
-  if (detected.length) {
-    save();
-    try { showToast('✓ ' + detected.join(', ') + ' auto-detected as paid'); } catch(e) {}
-  }
+  return BRAIN.bills.autoDetect();
 }
 
 function setQlCat(cat) {
@@ -6558,13 +6442,13 @@ function selectCat(btn, cat) {
   // into an unrelated Income / From-person log. The bill-pay stash itself
   // is already cleared on income/from-person save paths (7.2.2/7.2.3),
   // but the form fields stay populated and feel like a false-flag.
-  if (window._pendingBillPayKey && cat !== 'Bills') {
+  // Bundle 14: cross-modal stash now lives on BRAIN.bills._pendingPay.
+  if (BRAIN.bills._pendingPay && cat !== 'Bills') {
     const amtEl = document.getElementById('ql-amt');
     const noteEl = document.getElementById('ql-note');
     if (amtEl) amtEl.value = '';
     if (noteEl) noteEl.value = '';
-    delete window._pendingBillPayKey;
-    delete window._pendingBillPayAutoDebit;
+    BRAIN.bills.clearPendingPay();
   }
 }
 
@@ -10562,79 +10446,63 @@ function pivotToggle(cat) {
 
 
 function payBillNow(billName, billDay, billAmt) {
-  const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
+  const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay, amt: billAmt };
+  bill.amt = billAmt; // ensure amt is set for markPaid's txn composition
   withMarkPaidGate(bill, () => {
-    // Bundle 11: route txn push through BRAIN.transaction. Capture ts
-    // for the paidBills _txnTs back-ref so undoPaidBillByKey can reverse
-    // both balance and txn atomically (Bundle 7.2.4's reversible-undo
-    // contract, now sourced from the canonical writer's return value).
-    const _r = BRAIN.transaction.record(
-      { amt: billAmt, note: billName + ' — paid', cat: 'Bills', income: false, _balAffected: true },
-      BRAIN.SOURCES.PAY_BILL_NOW
-    );
-    const txnTs = _r.ok ? _r.ts : Date.now();
+    // Bundle 14: route through BRAIN.bills.markPaid (default mode) — it
+    // composes with BRAIN.transaction.record to create the paired txn and
+    // sets the structured paidBills entry with _txnTs back-ref. STRICT
+    // abort if the inner record fails — no orphan paid flag.
+    const r = BRAIN.bills.markPaid(bill, BRAIN.SOURCES.PAY_BILL_NOW);
+    if (!r.ok) {
+      showToast('⚠️ Could not mark ' + billName + ' paid — ' + r.reason);
+      return;
+    }
     S.bal = parseFloat((S.bal - billAmt).toFixed(2));
-    if (!S.paidBills) S.paidBills = {};
-    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - payBillNow writes the structured shape so undo can find and reverse the paired txn)
-    S.paidBills[paidBillKey(billName, billDay)] = { paid: true, ts: txnTs, _txnTs: txnTs };
     onStateChange('bill_paid_now');
     showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
-    document.getElementById('cal-day-detail').style.display = 'none';
+    const detail = document.getElementById('cal-day-detail');
+    if (detail) detail.style.display = 'none';
   });
 }
 
-// Bundle 7.2.2 fix-forward: stash + consume pattern lets "Already paid"
-// flows route through Quick Log so the user confirms the txn details,
-// then on save we also flip paidBills. Previously markBillAlreadyPaid
-// silently flipped paidBills without creating a txn — S.txns and
-// S.paidBills drifted apart, MI-13 would later flag the missing spend.
+// Bundle 14: thin shim around BRAIN.bills.consumePendingPay. Existing
+// callers (Quick Log expense save in particular) pass the captured
+// txn ts so the paidBills _txnTs back-ref is correct even when a
+// round-up was recorded after the expense (Bundle 11 fix preserved).
 function _consumePendingBillPay(txnTsOverride) {
-  if (window._pendingBillPayKey) {
-    if (!S.paidBills) S.paidBills = {};
-    // Bundle 7.2.4 fix-forward: record _txnTs so undoPaidBillByKey can
-    // reverse the txn + balance the user just logged.
-    // Bundle 11: callers SHOULD pass txnTsOverride (the ts returned by
-    // BRAIN.transaction.record for the bill-pay txn). Falls back to the
-    // last-txn-in-S.txns heuristic for legacy callers, but that's fragile
-    // when round-ups push after the expense — back-ref ends up pointing
-    // to the round-up instead of the bill payment. New BRAIN.transaction
-    // call sites avoid the fallback entirely.
-    let txnTs;
-    if (typeof txnTsOverride === 'number') {
-      txnTs = txnTsOverride;
-    } else {
-      const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
-      txnTs = lastTxn ? lastTxn.ts : Date.now();
-    }
-    const now = Date.now();
-    // guardian-allow: no-direct-paidbills-access - window._pendingBillPayKey is always set via canonical paidBillKey helper in markBillAlreadyPaid / _markBillPaidViaQuickLog; this is intermediate transport not a parallel key format (permanent - Bundle 7.2.2 bill-pay stash consumer; 7.2.4 adds the _txnTs reverse-undo back-reference)
-    S.paidBills[window._pendingBillPayKey] = window._pendingBillPayAutoDebit
-      ? { paid: true, _scheduledAutoDebit: true, ts: now, _txnTs: txnTs }
-      : { paid: true, ts: now, _txnTs: txnTs };
-    delete window._pendingBillPayKey;
-    delete window._pendingBillPayAutoDebit;
-  }
+  return BRAIN.bills.consumePendingPay(
+    (typeof txnTsOverride === 'number') ? txnTsOverride : Date.now()
+  );
 }
 
 function markBillAlreadyPaid(billName, billDay) {
   const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
   const billAmt = (bill && typeof bill.amt === 'number') ? bill.amt : 0;
   withMarkPaidGate(bill, () => {
-    // Bundle 7.2.2 fix-forward: route through Quick Log so the user
-    // logs the txn. quickLogTxn consumes _pendingBillPayKey on save.
+    // Bundle 14: cross-modal stash now lives on BRAIN.bills, not window.
+    // Route through Quick Log so the user logs the txn; consumePendingPay
+    // flips the paidBills entry on save.
     if (typeof openQuickLogModal !== 'function') {
-      if (!S.paidBills) S.paidBills = {};
-      S.paidBills[paidBillKey(billName, billDay)] = true;
-      onStateChange('bill_already_paid');
-      showToast('✅ ' + billName + ' marked as paid');
-      document.getElementById('cal-day-detail').style.display = 'none';
+      // Fallback path — no Quick Log available. Use markPaid default
+      // mode which creates a synthetic txn through BRAIN.transaction.
+      bill.amt = billAmt;
+      const r = BRAIN.bills.markPaid(bill, BRAIN.SOURCES.MARK_BILL_PAID);
+      if (r.ok) {
+        onStateChange('bill_already_paid');
+        showToast('✅ ' + billName + ' marked as paid');
+      } else {
+        showToast('⚠️ Could not mark ' + billName + ' paid — ' + r.reason);
+      }
+      const detail0 = document.getElementById('cal-day-detail');
+      if (detail0) detail0.style.display = 'none';
       return;
     }
     const detail = document.getElementById('cal-day-detail');
     if (detail) detail.style.display = 'none';
     openQuickLogModal();
     // Stash AFTER open (openQuickLogModal clears any stale stash at start).
-    window._pendingBillPayKey = paidBillKey(billName, billDay);
+    BRAIN.bills.setPendingPay(paidBillKey(billName, billDay), { autoDebit: false });
     const _a = document.getElementById('ql-amt');
     const _n = document.getElementById('ql-note');
     const _c = document.getElementById('ql-cat-hidden');
@@ -10805,12 +10673,17 @@ const BRAIN = {
     PAY_BILL_NOW:    'pay-bill-now',
     MARK_BILL_PAID:  'mark-bill-paid',
     BUCKET_QUICK_ADD: 'bucket-quick-add',
+    // BRAIN.bills (Bundle 14)
+    UNMARK_BILL:     'unmark-bill',
+    AUTO_MATCH:      'auto-match',
+    AUTO_DETECT:     'auto-detect',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
     'reconcile', 'migration', 'chat',
     'log-expense', 'log-income', 'log-from-person', 'pay-bill-now',
     'mark-bill-paid', 'bucket-quick-add',
+    'unmark-bill', 'auto-match', 'auto-detect',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -11019,6 +10892,332 @@ const BRAIN = {
     list(predicate) {
       const txns = S.txns || [];
       return predicate ? txns.filter(predicate) : txns;
+    }
+  },
+
+  // ─── BRAIN.bills — Bills bubble (seeded Bundle 14) ─────────────────────
+  // Owns the paidBills lifecycle: markPaid (with auto-debit and linked-txn
+  // modes), unmark (lenient-with-warning per Composition Contract
+  // Exception — spec v1.3), isPaid, isAutoDebit, dueBeforePayday. Composes
+  // with BRAIN.transaction.record / removeByTs to keep paid-flag and txn
+  // in lockstep — first real cross-bubble composition in the codebase,
+  // validates the architecture's premise.
+  //
+  // Composition behavior:
+  //   markPaid (CREATE direction): STRICT abort on inner failure. Don't
+  //   flip a paid flag without its supporting txn. Per Composition
+  //   Contract (spec v1.2).
+  //
+  //   unmark (DESTROY direction): LENIENT-WITH-WARNING per Composition
+  //   Contract EXCEPTION (spec v1.3). If the inner removeByTs returns
+  //   not-found / no-txns (txn already gone — snapshot restore, manual
+  //   edit-txn delete, autoDetect-created entry with no _txnTs), warn
+  //   and proceed with paidBills cleanup. Any OTHER inner failure aborts
+  //   per standard contract. unmark's purpose is to converge on a clean
+  //   state; aborting because cleanup target is already clean would
+  //   strand the paidBills entry forever.
+  bills: {
+    // ─── Internal state (replaces window._pendingBillPay* globals) ──────
+    _pendingPay: null,
+
+    // ─── Pending-pay context API ────────────────────────────────────────
+    setPendingPay(key, opts) {
+      this._pendingPay = {
+        key,
+        autoDebit: !!(opts && opts.autoDebit),
+      };
+    },
+    clearPendingPay() {
+      this._pendingPay = null;
+    },
+    // Consume on Quick Log expense save. txnTs is the ts returned by
+    // BRAIN.transaction.record for the txn the user just logged.
+    consumePendingPay(txnTs) {
+      if (!this._pendingPay) return { ok: false, reason: 'no-pending-pay' };
+      const ctx = this._pendingPay;
+      this._pendingPay = null;
+      return this._setPaidEntry(ctx.key, {
+        autoDebit: ctx.autoDebit,
+        txnTs,
+        source: BRAIN.SOURCES.MARK_BILL_PAID,
+      });
+    },
+
+    // ─── Canonical writer: markPaid ─────────────────────────────────────
+    // Three modes via options:
+    //   default               -> create new txn (BRAIN.transaction.record),
+    //                            set {paid:true, ts, _txnTs}
+    //   { autoDebit:true }    -> create new txn,
+    //                            set {paid:true, _scheduledAutoDebit:true, ts, _txnTs}
+    //   { txnTs:<existing> }  -> don't create txn, link to existing;
+    //                            auto-set _scheduledAutoDebit if bill day future
+    //
+    // bill = { name, day, amt, tag? }. source MUST be in BRAIN.SOURCES.
+    // STRICT abort if BRAIN.transaction.record fails in create mode —
+    // returns { ok: false, reason: 'inner-<reason>' }.
+    markPaid(bill, source, options) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!bill || !bill.name || typeof bill.day !== 'number') {
+        return { ok: false, reason: 'invalid-bill' };
+      }
+      const opts = options || {};
+      const key = paidBillKey(bill.name, bill.day);
+      let txnTs;
+      let autoDebit = !!opts.autoDebit;
+      if (typeof opts.txnTs === 'number') {
+        const linked = BRAIN.transaction.findByTs(opts.txnTs);
+        if (!linked) {
+          return { ok: false, reason: 'linked-txn-missing', txnTs: opts.txnTs };
+        }
+        txnTs = opts.txnTs;
+        const now = new Date();
+        if (bill.day > now.getDate()) autoDebit = true;
+      } else {
+        const billAmt = (typeof bill.amt === 'number') ? bill.amt : 0;
+        const txnSource = (source === BRAIN.SOURCES.PAY_BILL_NOW)
+          ? BRAIN.SOURCES.PAY_BILL_NOW
+          : BRAIN.SOURCES.MARK_BILL_PAID;
+        const rec = BRAIN.transaction.record(
+          { amt: billAmt, note: bill.name + ' — paid', cat: bill.tag || 'Bills', income: false, _balAffected: true },
+          txnSource
+        );
+        if (!rec.ok) {
+          return { ok: false, reason: 'inner-' + rec.reason };
+        }
+        txnTs = rec.ts;
+      }
+      return this._setPaidEntry(key, { autoDebit, txnTs, source });
+    },
+
+    // Internal helper — write the structured paidBills entry. Called by
+    // markPaid (after txn settled) and consumePendingPay.
+    _setPaidEntry(key, ctx) {
+      if (!S.paidBills) S.paidBills = {};
+      const entry = ctx.autoDebit
+        ? { paid: true, _scheduledAutoDebit: true, ts: ctx.txnTs, _txnTs: ctx.txnTs }
+        : { paid: true, ts: ctx.txnTs, _txnTs: ctx.txnTs };
+      // guardian-allow: no-direct-paidbills-access - key resolved by caller via paidBillKey; structured Bundle 7+ shape carrying the txn back-reference for reversible undo (permanent - BRAIN.bills internal write helper consumed by markPaid and consumePendingPay)
+      S.paidBills[key] = entry;
+      BRAIN.audit.append({
+        type: 'bill_mark_paid',
+        key,
+        autoDebit: ctx.autoDebit,
+        txnTs: ctx.txnTs,
+        source: ctx.source,
+        ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, key, entry };
+    },
+
+    // ─── Canonical writer: unmark ───────────────────────────────────────
+    // LENIENT-WITH-WARNING per Composition Contract Exception (spec v1.3).
+    unmark(key, source) {
+      if (!source) source = BRAIN.SOURCES.UNMARK_BILL;
+      if (!BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!S.paidBills || !S.paidBills[key]) {
+        return { ok: false, reason: 'not-paid', key };
+      }
+      const entry = S.paidBills[key];
+      const txnTs = (entry && typeof entry === 'object') ? entry._txnTs : null;
+      let txnReversed = false;
+
+      if (txnTs) {
+        const removed = BRAIN.transaction.removeByTs(txnTs);
+        if (!removed.ok) {
+          if (removed.reason === 'not-found' || removed.reason === 'no-txns') {
+            console.warn('[BRAIN.bills.unmark] paired txn already gone (' + removed.reason + ') for key', key);
+          } else {
+            // STRICT abort on unexpected failure.
+            return { ok: false, reason: 'inner-' + removed.reason };
+          }
+        } else {
+          // Restore balance for the txn we just removed.
+          const t = removed.removed;
+          if (t && t._balAffected) {
+            if (t.income) S.bal -= (t.amt || 0);
+            else S.bal += (t.amt || 0);
+            S.bal = parseFloat(S.bal.toFixed(2));
+          }
+          txnReversed = true;
+          // Handle round-up sibling (matches Bundle 7.2.4's
+          // _reversePaidBillTxn logic). Look for an _isRoundup txn
+          // immediately following the now-removed entry's index.
+          const txns = S.txns || [];
+          // After splice, the original idx+1 slot now holds what WAS
+          // the round-up. Identify it by _isRoundup + matching note prefix.
+          const candidateIdx = txns.findIndex(tx =>
+            tx._isRoundup && tx.ts >= txnTs && tx.ts < txnTs + 2000
+          );
+          if (candidateIdx >= 0) {
+            const ru = txns[candidateIdx];
+            if (ru._balAffected) {
+              S.bal = parseFloat((S.bal + (ru.amt || 0)).toFixed(2));
+            }
+            // Reverse the round-up's savings bucket impact via canonical writer.
+            // LENIENT on no-bucket (bucket may have been renamed/deleted).
+            const m = (ru.note || '').match(/Round-up\s*[→\-]+\s*(.+)/);
+            if (m && S.savingsBuckets) {
+              const target = m[1].trim().toLowerCase();
+              const bucket = S.savingsBuckets.find(bk => (bk.name || '').toLowerCase() === target);
+              if (bucket) {
+                const newSaved = Math.max(0, (bucket.saved || 0) - (ru.amt || 0));
+                const savingsResult = BRAIN.savings.setBucketSaved(bucket.name, newSaved, BRAIN.SOURCES.UNDO_ROUNDUP);
+                if (!savingsResult.ok && savingsResult.reason !== 'no-bucket') {
+                  console.warn('[BRAIN.bills.unmark] round-up bucket reversal failed:', savingsResult.reason);
+                  // Note: NOT aborting — lenient on round-up reversal failure.
+                  // The main bill un-mark proceeds regardless. Adjacent debt
+                  // tracked in known gaps if a non-lenient failure surfaces.
+                }
+              }
+            }
+            txns.splice(candidateIdx, 1);
+          }
+        }
+      }
+
+      if (!S._billUnmarkLog) S._billUnmarkLog = {};
+      S._billUnmarkLog[key] = Date.now();
+
+      // guardian-allow: no-direct-paidbills-access - key handed in by caller as a stored paidBills lookup; this is the canonical delete in BRAIN.bills.unmark, the un-mark equivalent of paidBillKey-based access (permanent - BRAIN.bills.unmark canonical deletion)
+      delete S.paidBills[key];
+
+      if (S._invariantViolationCounts) {
+        S._invariantViolationCounts['paidbills-key-not-future'] = { count: 0, firstSeenTs: Date.now() };
+      }
+
+      BRAIN.audit.append({
+        type: 'bill_unmark',
+        key,
+        txnReversed,
+        source,
+        ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, key, txnReversed };
+    },
+
+    // ─── Readers ────────────────────────────────────────────────────────
+    // Delegate to the free functions which stay as the canonical impl.
+    // Reason: isPaidBillKeyTruthy / isPaidBillAutoDebit are called from
+    // boot-time paths (isThisMonthlyBillPaid -> buildCalendarEntries
+    // during early render) BEFORE BRAIN's const initializer runs in
+    // strict TDZ. Free functions are TDZ-safe; bubble methods wrap them
+    // so external callers get the BRAIN.bills surface and internal
+    // canonical paths stay rock-solid.
+    isPaid(key) {
+      return isPaidBillKeyTruthy(key);
+    },
+    isAutoDebit(key) {
+      return isPaidBillAutoDebit(key);
+    },
+    dueBeforePayday() {
+      return (typeof getBillsDue === 'function') ? getBillsDue() : [];
+    },
+
+    // ─── Auto-detect / Auto-match (relocated, not unified) ──────────────
+    autoMatch(opts) {
+      const silent = !!(opts && opts.silent);
+      const now = new Date();
+      const todayStr = now.toDateString();
+      const todayM = now.getMonth(), todayY = now.getFullYear();
+      const todayTxns = (S.txns || []).filter(t => new Date(t.ts).toDateString() === todayStr);
+      const matched = [];
+      (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
+        if (this.isPaid(paidBillKey(b.name, b.day))) return;
+        if (this._isRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
+        const matchTxn = todayTxns.find(t => this._txnMatches(t, b));
+        if (!matchTxn) return;
+        const r = this.markPaid(b, BRAIN.SOURCES.AUTO_MATCH, { txnTs: matchTxn.ts });
+        if (r.ok) matched.push(b.name);
+      });
+      if (matched.length && !silent && typeof showUndoToast === 'function') {
+        showUndoToast('✓ ' + matched.join(', ') + ' marked as paid — matched transaction');
+      }
+      return { ok: true, matched };
+    },
+    autoDetect() {
+      const now = new Date();
+      const todayM = now.getMonth(), todayY = now.getFullYear();
+      const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
+      const recentTxns = (S.txns || []).filter(t => !t.income && t.ts >= sevenDaysAgo);
+      const detected = [];
+      (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
+        if (this.isPaid(paidBillKey(b.name, b.day))) return;
+        if (this._isRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
+        const matchTxn = recentTxns.find(t => this._txnMatches(t, b));
+        if (!matchTxn) return;
+        const r = this.markPaid(b, BRAIN.SOURCES.AUTO_DETECT, { txnTs: matchTxn.ts });
+        if (r.ok) detected.push(b.name);
+      });
+      if (detected.length && typeof showToast === 'function') {
+        try { showToast('✓ ' + detected.join(', ') + ' auto-detected as paid'); } catch(e) {}
+      }
+      return { ok: true, detected };
+    },
+
+    // ─── Internal: strict txn-bill matcher ──────────────────────────────
+    _txnMatches(t, b) {
+      if (t.income || t._isRoundup || t._isCorrection) return false;
+      const amt = b.amt || 0;
+      const tolerance = amt <= 20 ? 0.50 : 1.00;
+      if (Math.abs((t.amt || 0) - amt) > tolerance) return false;
+      const keyword = (b.name || '').toLowerCase().split(/[\s\-—]+/)
+        .filter(w => w.length >= 4)
+        .sort((a, x) => x.length - a.length)[0];
+      if (!keyword) return false;
+      return ((t.note || '').toLowerCase()).indexOf(keyword) >= 0;
+    },
+
+    // ─── Internal: 30-day un-mark log respect ───────────────────────────
+    _isRecentlyUnmarked(billName, billDay, m, y) {
+      const log = S._billUnmarkLog;
+      if (!log) return false;
+      const key = paidBillKey(billName, billDay, m, y);
+      const ts = log[key];
+      if (!ts) return false;
+      if (Date.now() - ts > 30 * 86400000) {
+        delete log[key];
+        return false;
+      }
+      return true;
+    },
+
+    // ─── Invariants (registered cross-cutting in MathInvariants) ───────
+    // Logic owned by Bills; registry stays in MathInvariants.invariants[]
+    // so the render-time safety net catches drift from paths the canonical
+    // writer didn't audit (snapshot restore, load() migrations, future
+    // bugs that bypass markPaid). See spec v1.2 Invariant Ownership.
+    invariants: {
+      checkFutureKeyNotPaid() {
+        const now = new Date();
+        const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate();
+        // guardian-allow: no-direct-paidbills-access - invariant scan over Object.keys; reads paidBills directly here (BRAIN.bills.isAutoDebit is the canonical reader for the flag check below) (permanent - invariant logic owned by Bills, reads its own state)
+        const future = Object.keys(S.paidBills || {}).filter(k => {
+          if (BRAIN.bills.isAutoDebit(k)) return false;
+          const m2 = k.match(/^(\d{4})-(\d{1,2})-.*-(\d{1,2})$/);
+          if (!m2) return false;
+          const y = +m2[1], mo = +m2[2]-1, d = +m2[3];
+          if (y > todayY) return true;
+          if (y === todayY && mo > todayM) return true;
+          if (y === todayY && mo === todayM && d > todayD) return true;
+          return false;
+        });
+        if (future.length === 0) return null;
+        return {
+          displayValue: future.length + ' bill(s)',
+          expected: 'paidBills key day ≤ today',
+          details: future.slice(0, 3).map(k => {
+            const m2 = k.match(/^\d{4}-\d{1,2}-(.*)-\d{1,2}$/);
+            return m2 ? m2[1] : k;
+          }).join(', ') + (future.length > 3 ? ' +' + (future.length - 3) + ' more' : ''),
+          keys: future
+        };
+      }
     }
   }
 };

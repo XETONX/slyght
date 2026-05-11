@@ -1,9 +1,10 @@
 # SLYGHT BRAIN Architecture
 
-> **Status:** v1.2 — composition contract + invariant ownership + test coverage requirement locked Bundle 13.
+> **Status:** v1.3 — Composition Contract Exceptions (lenient-with-warning for DESTROY-direction) locked Bundle 14.
 > **Established:** Bundle 8 (commit f9a2b2d) shipped the BRAIN seed.
 > **Pattern:** Layered Brain Architecture with Strangler Migration.
 > **Envelope contract:** writers return `{ ok, ...payload, reason? }` — see Composition Contract section.
+> **Composition asymmetry (v1.3):** CREATE writers strict-abort on inner failure; DESTROY writers lenient-on-already-clean.
 
 ---
 
@@ -48,8 +49,8 @@ services hanging off BRAIN root.
 
 | Bubble | Responsibility | Status |
 |---|---|---|
-| `BRAIN.dashboard` | NOW screen: NW strip, calendar, today's spend, hero copy | Pending (Bundle 10 seeds it) |
-| `BRAIN.bills` | Bills tab, paid/unpaid lifecycle, autoDetect, MI-13 | Pending (Bundle 11) |
+| `BRAIN.dashboard` | NOW screen: NW strip, calendar, today's spend, hero copy | ✅ Bundle 10 (readers don't envelope — nouns can't fail) |
+| `BRAIN.bills` | Bills tab, paid/unpaid lifecycle, autoDetect, MI-13 | ✅ Bundle 14, envelope v1.2 + Composition Exception v1.3 |
 | `BRAIN.transaction` | Quick Log, txn list, edit/delete, round-ups | Pending |
 | `BRAIN.chat` | AI chat surface, intent routing into other bubbles | Pending (post-architecture) |
 | `BRAIN.analysis` | Spending pivot, cut sliders, forecasts | Pending |
@@ -142,6 +143,53 @@ levels deep can tell which layer rejected: `'inner-source-rejected:...'`,
 `BRAIN.transaction.findByTs(ts)`) return data directly. Readers can't
 fail in the same way writers can — missing data returns sensible
 defaults (0, empty array, `undefined`) without wrapping.
+
+---
+
+## Composition Contract Exceptions (v1.3)
+
+The abort-on-inner-failure rule has named exceptions for CLEANUP-
+direction operations. `unmark` / `undo` / `delete` operations have the
+opposite intent: converge on a clean state. If a downstream cleanup
+target is already absent, that's success (we wanted it gone), not
+failure. These operations follow LENIENT-WITH-WARNING semantics for
+"already-clean" failure modes.
+
+**Current exceptions:**
+
+- `BRAIN.bills.unmark(key)` calling `BRAIN.transaction.removeByTs(ts)`:
+  if inner returns `not-found` or `no-txns`, log a warning and proceed
+  with the paidBills cleanup. Any OTHER inner failure aborts per
+  standard contract (returns `inner-<reason>` envelope).
+- `BRAIN.bills.unmark(key)` calling `BRAIN.savings.setBucketSaved` for
+  round-up reversal: if inner returns `no-bucket` (bucket was
+  renamed/deleted), log warning and proceed. Other failures abort.
+
+**Rule for naming the exception in code:** the composition function
+MUST explicitly check the `reason` field and decide per-code. Implicit
+lenience is forbidden — every composition either aborts-or-proceeds on
+EVERY possible inner reason code. New "already-clean" reason codes
+added to inner writers must be re-evaluated by every outer caller.
+
+**Why CREATE-strict / DESTROY-lenient is the right asymmetry:**
+
+- CREATE direction (markPaid, record, setBucketSaved): the goal is to
+  establish state. A failed inner write means the supporting record
+  doesn't exist, so the outer write would create an orphan flag. Abort.
+- DESTROY direction (unmark, removeByTs): the goal is to converge on
+  cleanliness. An "already-clean" inner result means the cleanup target
+  has converged ahead of us. Proceed and finish convergence.
+
+**Tested.** `tests/brain.test.js` locks both invariants:
+- `composition: markPaid default mode aborts cleanly when
+  transaction.record fails (strict)` — verifies no paidBills entry
+  created when inner record() returns failure.
+- `composition: unmark proceeds when removeByTs returns not-found
+  (lenient)` — verifies paidBills cleanup completes even when paired
+  txn is gone.
+- `composition: unmark aborts on UNEXPECTED inner failure (strict for
+  non-lenient reasons)` — verifies the per-code check forbids implicit
+  lenience.
 
 ---
 
@@ -261,9 +309,13 @@ bubbles seed. Locking it at the surface-area-still-small moment
   envelope.** ✅ Resolved in Bundle 13 (envelope landed for savings;
   dashboard readers stay nouns — they can't fail).
 - **`window._pendingBillPayKey` / `_pendingBillPayAutoDebit` globals.**
-  Bundle 7.2.2 cross-modal stash lives on `window`. Bundle 14 folds
-  into `BRAIN.bills._pendingBillPayContext` as part of Bills bubble
-  seeding. Tracked.
+  ✅ Resolved in Bundle 14 — folded into `BRAIN.bills._pendingPay`
+  with `setPendingPay` / `clearPendingPay` / `consumePendingPay` API.
+- **MI-13 invariant cross-cutting registry vs Bills ownership.**
+  ✅ Resolved in Bundle 14 per Invariant Ownership pattern (v1.2):
+  logic in `BRAIN.bills.invariants.checkFutureKeyNotPaid()`, registry
+  entry stays in `MathInvariants.invariants[]` and delegates via
+  TDZ-safe fallback.
 - **Reconciliation correction txns + WRX sale allocation + debt-
   cleared txn.** Edge-case writers exempt from `no-direct-txns-push`
   in Bundle 11. Reconciliation moves into BRAIN.transaction with a

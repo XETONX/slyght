@@ -48,7 +48,11 @@ const TXNS_FILTER_HELPERS = new Set([
 // reversal) and then delete it. Keeping them in this set keeps the
 // rule's intent — direct paidBills access is allowed in well-named
 // migration / un-mark helpers; everywhere else routes via paidBillKey.
-const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillPaid']);
+// Bundle 14: BRAIN.bills.unmark joins the set. It's the canonical
+// un-mark now; the old undoBillPaid/undoPaidBillByKey functions both
+// route through unmark, but they're kept in the set for the small
+// orchestration code they still own (re-render MI-13 modal, etc).
+const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillPaid', 'unmark']);
 
 // Bundle 8: parallel allow-set for the no-direct-bucket-saved-write rule.
 // BRAIN.savings.setBucketSaved is the canonical chokepoint for any
