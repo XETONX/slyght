@@ -507,6 +507,56 @@ const BRAIN = {
     total(opts) {
       const includeViaRent = !!(opts && opts.includeViaRent);
       return (S.debts || []).filter(d => !d.paid && (includeViaRent || !d.viaRent)).reduce((s, d) => s + (d.amt || 0), 0);
+    },
+    isViaRent(id) {
+      const debt = (S.debts || []).find(d => d.id === id);
+      return !!(debt && debt.viaRent);
+    },
+    allocateWrxProceeds(allocations, saleNet, source) {
+      if (!source) source = BRAIN.SOURCES.WRX_ALLOCATE;
+      if (!BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (!Array.isArray(allocations)) return { ok: false, reason: 'invalid-allocations' };
+      if (typeof saleNet !== 'number' || isNaN(saleNet)) return { ok: false, reason: 'invalid-saleNet' };
+      for (const a of allocations) {
+        if (a.type === 'debt') {
+          if (typeof a.id !== 'number') return { ok: false, reason: 'invalid-debt-allocation', allocation: a };
+          const d = this.findById(a.id);
+          if (!d) return { ok: false, reason: 'debt-not-found', id: a.id };
+          if (d.paid) return { ok: false, reason: 'already-paid', id: a.id };
+        } else if (a.type === 'car') {
+          if (typeof a.amt !== 'number' || isNaN(a.amt) || a.amt < 0) return { ok: false, reason: 'invalid-car-allocation', allocation: a };
+        } else {
+          return { ok: false, reason: 'unknown-allocation-type', allocation: a };
+        }
+      }
+      const cleared = [];
+      const carPaydowns = [];
+      for (const a of allocations) {
+        if (a.type === 'debt') {
+          const r = this.markPaid(a.id, source);
+          if (!r.ok) return { ok: false, reason: 'inner-markPaid-' + r.reason, allocation: a };
+          cleared.push({ id: a.id, name: a.name, txnTs: r.txnTs });
+        } else if (a.type === 'car') {
+          S.carloan = Math.max(0, (S.carloan || 0) - a.amt);
+          const rec = BRAIN.transaction.record(
+            { amt: a.amt, note: 'WRX sale ' + a.name, cat: 'Debt repayment', income: false, _balAffected: true },
+            source
+          );
+          if (!rec.ok) return { ok: false, reason: 'inner-record-' + rec.reason, allocation: a };
+          carPaydowns.push({ amt: a.amt, txnTs: rec.ts });
+        }
+      }
+      S.bal += saleNet;
+      S.wrxValue = 0;
+      S.wrxStatus = 'sold';
+      BRAIN.audit.append({
+        type: 'wrx_proceeds_allocated', saleNet,
+        cleared: cleared.map(c => c.name),
+        carPaydowns: carPaydowns.map(c => c.amt),
+        source, ts: Date.now()
+      });
+      try { save(); } catch(_) {}
+      return { ok: true, cleared, carPaydowns, saleNet };
     }
   }
 };
@@ -1254,6 +1304,100 @@ test('debts.findById / active / total: readers correctness', () => {
   expect(BRAIN.debts.total()).toBe(170); // 120 + 50
   // total({includeViaRent:true}) includes Mum
   expect(BRAIN.debts.total({ includeViaRent: true })).toBe(5170);
+});
+
+// ── Bundle 15.1: isViaRent + allocateWrxProceeds ────────
+test('debts.isViaRent: true for viaRent-flagged debt, false otherwise', () => {
+  resetS();
+  expect(BRAIN.debts.isViaRent(1)).toBe(true);  // Owed to Mum (viaRent)
+  expect(BRAIN.debts.isViaRent(2)).toBe(false); // Pet Insurance (not viaRent)
+  expect(BRAIN.debts.isViaRent(99999)).toBe(false); // missing debt
+});
+
+test('debts.allocateWrxProceeds: happy path clears multiple debts + carloan + saleNet', () => {
+  resetS();
+  S.carloan = 1000;
+  const balBefore = S.bal;
+  const allocs = [
+    { type: 'debt', id: 2, name: 'Pet Insurance', amt: 120 },
+    { type: 'debt', id: 3, name: 'Afterpay', amt: 50 },
+    { type: 'car', name: 'KIA Loan', amt: 500 }
+  ];
+  const r = BRAIN.debts.allocateWrxProceeds(allocs, 9330, BRAIN.SOURCES.WRX_ALLOCATE);
+  expect(r.ok).toBe(true);
+  expect(r.cleared.length).toBe(2);
+  expect(r.carPaydowns.length).toBe(1);
+  expect(r.saleNet).toBe(9330);
+  // State mutations applied
+  expect(S.debts.find(d => d.id === 2).paid).toBe(true);
+  expect(S.debts.find(d => d.id === 3).paid).toBe(true);
+  expect(S.carloan).toBe(500);
+  expect(S.bal).toBe(balBefore + 9330);
+  expect(S.wrxStatus).toBe('sold');
+});
+
+test('composition: allocateWrxProceeds phase-1 validation catches invalid debt id BEFORE any mutation', () => {
+  resetS();
+  S.carloan = 1000;
+  const balBefore = S.bal;
+  const allocs = [
+    { type: 'debt', id: 2, name: 'Pet Insurance', amt: 120 },
+    { type: 'debt', id: 99999, name: 'Phantom', amt: 50 }, // doesn't exist
+    { type: 'car', name: 'KIA Loan', amt: 500 }
+  ];
+  const r = BRAIN.debts.allocateWrxProceeds(allocs, 9330, BRAIN.SOURCES.WRX_ALLOCATE);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('debt-not-found');
+  // NOTHING mutated — phase-1 abort means no partial WRX state
+  expect(S.debts.find(d => d.id === 2).paid).toBe(false);
+  expect(S.carloan).toBe(1000);
+  expect(S.bal).toBe(balBefore);
+  expect(S.wrxStatus === 'sold').toBe(false);
+});
+
+test('composition: allocateWrxProceeds STRICT abort when inner markPaid fails', () => {
+  resetS();
+  S.carloan = 1000;
+  const original = BRAIN.transaction.record;
+  // Stub: first record() (Pet Insurance clearance) succeeds; second (Afterpay) fails.
+  let calls = 0;
+  BRAIN.transaction.record = function(txn, source) {
+    calls++;
+    if (calls === 2) return { ok: false, reason: 'forced-test-failure' };
+    return original.call(this, txn, source);
+  };
+  try {
+    const allocs = [
+      { type: 'debt', id: 2, name: 'Pet Insurance', amt: 120 },
+      { type: 'debt', id: 3, name: 'Afterpay', amt: 50 },
+    ];
+    const r = BRAIN.debts.allocateWrxProceeds(allocs, 1000, BRAIN.SOURCES.WRX_ALLOCATE);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('inner-markPaid-inner-forced-test-failure');
+    // Pet Insurance got cleared (phase 2 fired) — STRICT abort means
+    // the partial state is visible. The caller (confirmWrxAlloc) shows
+    // the failure toast. Note: phase-1 validation already ran on the
+    // FULL list so we know all debts existed at start; the failure here
+    // is mid-phase-2 racy state (transaction layer broken). Document
+    // this in spec as "STRICT abort = no further allocations; partial
+    // earlier-in-batch mutations remain — caller surfaces error."
+    expect(S.debts.find(d => d.id === 2).paid).toBe(true);
+    expect(S.debts.find(d => d.id === 3).paid).toBe(false);
+    expect(S.wrxStatus === 'sold').toBe(false);
+  } finally {
+    BRAIN.transaction.record = original;
+  }
+});
+
+test('debts.allocateWrxProceeds: unknown allocation type rejected', () => {
+  resetS();
+  const r = BRAIN.debts.allocateWrxProceeds(
+    [{ type: 'mystery', amt: 50 }],
+    100,
+    BRAIN.SOURCES.WRX_ALLOCATE
+  );
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('unknown-allocation-type');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

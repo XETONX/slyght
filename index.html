@@ -4670,30 +4670,23 @@ function openWrxAllocModal() {
 }
 
 function confirmWrxAlloc(allocs, saleNet) {
-  // Bundle 15: route each debt allocation through BRAIN.debts.markPaid
-  // (which composes with BRAIN.transaction.record for the WRX-sale txn
-  // tagged WRX_ALLOCATE in BRAIN.audit). Carloan adjustment + sale-net
-  // balance bump stay direct — those aren't debt-array writes.
-  allocs.forEach((a,i) => {
-    if (!document.getElementById('wa-'+i)?.checked) return;
-    if (a.type === 'debt') {
-      const r = BRAIN.debts.markPaid(a.id, BRAIN.SOURCES.WRX_ALLOCATE);
-      if (!r.ok) {
-        console.warn('[confirmWrxAlloc] markPaid failed for', a.name, '—', r.reason);
-      }
-    } else if (a.type === 'car') {
-      S.carloan = Math.max(0, (S.carloan || 0) - a.amt);
-      // For the carloan path (not a S.debts entry), still need to log
-      // the txn so the WRX-sale story is complete in S.txns.
-      BRAIN.transaction.record(
-        { amt: a.amt, note: 'WRX sale ' + a.name, cat: 'Debt repayment', income: false, _balAffected: true },
-        BRAIN.SOURCES.WRX_ALLOCATE
-      );
-    }
-  });
-  S.bal += saleNet;
-  S.wrxValue = 0; S.wrxStatus = 'sold';
-  save(); closeModal('wrx-alloc-modal'); renderAll();
+  // Bundle 15.1: thin orchestrator. Collects the user's checkbox
+  // selections, hands the full picture to BRAIN.debts.allocateWrxProceeds
+  // which owns the multi-bubble composition (debts + transaction +
+  // S.bal/S.carloan/S.wrxStatus). Phase-1 validation in the bubble
+  // catches problems BEFORE any mutation, so this UI handler doesn't
+  // need to worry about partial-allocation rollback.
+  const selected = allocs.filter((a, i) => document.getElementById('wa-'+i)?.checked);
+  if (selected.length === 0) {
+    closeModal('wrx-alloc-modal');
+    return;
+  }
+  const r = BRAIN.debts.allocateWrxProceeds(selected, saleNet, BRAIN.SOURCES.WRX_ALLOCATE);
+  if (!r.ok) {
+    showToast('⚠️ WRX allocation failed: ' + r.reason);
+    return;
+  }
+  closeModal('wrx-alloc-modal'); renderAll();
   showUndoToast('WRX proceeds allocated — great work!');
 }
 
@@ -11476,6 +11469,107 @@ const BRAIN = {
       return (S.debts || [])
         .filter(d => !d.paid && (includeViaRent || !d.viaRent))
         .reduce((s, d) => s + (d.amt || 0), 0);
+    },
+    // Bundle 15.1: explicit viaRent reader. The viaRent flag is metadata
+    // about HOW a debt is normally paid (through the rent flow — Property
+    // Deposit / Owed to Mum routed via S.mumAccountBalance), NOT a hard
+    // prohibition on markPaid. Distinguish from autoDebit semantics
+    // (Bundle 16): autoDebit means "bank handles it, don't pre-mark";
+    // viaRent means "tracked through rent, but user can still mark paid
+    // if they pay outside that flow" (e.g., cash to Mum directly).
+    // Readers like active() / total() exclude viaRent by default for
+    // the "what's due before payday" surface, but markPaid accepts
+    // viaRent debts when the user explicitly clears them.
+    isViaRent(id) {
+      const debt = (S.debts || []).find(d => d.id === id);
+      return !!(debt && debt.viaRent);
+    },
+
+    // ─── Multi-bubble composition: allocateWrxProceeds ──────────────────
+    // CREATE-strict composition across BRAIN.debts.markPaid (per debt
+    // allocation), BRAIN.transaction.record (carloan path), and direct
+    // S.bal / S.carloan / S.wrxStatus / S.wrxValue mutations (vehicle-
+    // finance domain — not yet a bubble). One-time event (WRX sale)
+    // orchestrated end-to-end through the bubble surface instead of the
+    // UI handler holding the orchestration.
+    //
+    // Per-allocation failure (markPaid returning { ok: false }) aborts
+    // the WHOLE allocation per CREATE-strict — no partial WRX sale state.
+    // The carloan/saleNet/wrxStatus writes only fire if all allocations
+    // succeed.
+    //
+    // allocations: [{ type: 'debt'|'car', id?, name, amt }]
+    // saleNet: number — net proceeds after debt clearance.
+    allocateWrxProceeds(allocations, saleNet, source) {
+      if (!source) source = BRAIN.SOURCES.WRX_ALLOCATE;
+      if (!BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!Array.isArray(allocations)) {
+        return { ok: false, reason: 'invalid-allocations' };
+      }
+      if (typeof saleNet !== 'number' || isNaN(saleNet)) {
+        return { ok: false, reason: 'invalid-saleNet' };
+      }
+      // Phase 1 — validate each allocation BEFORE any mutation. This is
+      // the "abort BEFORE second mutation" rule from spec v1.2: we don't
+      // start clearing debts then discover allocation #3 is invalid.
+      for (const a of allocations) {
+        if (a.type === 'debt') {
+          if (typeof a.id !== 'number') {
+            return { ok: false, reason: 'invalid-debt-allocation', allocation: a };
+          }
+          const d = this.findById(a.id);
+          if (!d) return { ok: false, reason: 'debt-not-found', id: a.id };
+          if (d.paid) return { ok: false, reason: 'already-paid', id: a.id };
+        } else if (a.type === 'car') {
+          if (typeof a.amt !== 'number' || isNaN(a.amt) || a.amt < 0) {
+            return { ok: false, reason: 'invalid-car-allocation', allocation: a };
+          }
+        } else {
+          return { ok: false, reason: 'unknown-allocation-type', allocation: a };
+        }
+      }
+      // Phase 2 — apply each allocation. STRICT abort on inner failure
+      // returns the aggregate envelope with the offending allocation.
+      const cleared = [];
+      const carPaydowns = [];
+      for (const a of allocations) {
+        if (a.type === 'debt') {
+          const r = this.markPaid(a.id, source);
+          if (!r.ok) {
+            // Inner failure — abort. Note: phase-1 validation should
+            // have caught most cases; this catches racy state changes
+            // or transaction.record failures.
+            return { ok: false, reason: 'inner-markPaid-' + r.reason, allocation: a };
+          }
+          cleared.push({ id: a.id, name: a.name, txnTs: r.txnTs });
+        } else if (a.type === 'car') {
+          S.carloan = Math.max(0, (S.carloan || 0) - a.amt);
+          const rec = BRAIN.transaction.record(
+            { amt: a.amt, note: 'WRX sale ' + a.name, cat: 'Debt repayment', income: false, _balAffected: true },
+            source
+          );
+          if (!rec.ok) {
+            return { ok: false, reason: 'inner-record-' + rec.reason, allocation: a };
+          }
+          carPaydowns.push({ amt: a.amt, txnTs: rec.ts });
+        }
+      }
+      // Phase 3 — Vehicle-finance domain writes (not yet bubble-owned).
+      S.bal += saleNet;
+      S.wrxValue = 0;
+      S.wrxStatus = 'sold';
+      BRAIN.audit.append({
+        type: 'wrx_proceeds_allocated',
+        saleNet,
+        cleared: cleared.map(c => c.name),
+        carPaydowns: carPaydowns.map(c => c.amt),
+        source,
+        ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, cleared, carPaydowns, saleNet };
     }
   }
 };

@@ -52,7 +52,7 @@ services hanging off BRAIN root.
 |---|---|---|
 | `BRAIN.dashboard` | NOW screen: NW strip, calendar, today's spend, hero copy | ✅ Bundle 10 (readers don't envelope — nouns can't fail) |
 | `BRAIN.bills` | Bills tab, paid/unpaid lifecycle, autoDetect, MI-13 | ✅ Bundle 14, envelope v1.2 + Composition Exception v1.3 |
-| `BRAIN.debts` | Debt lifecycle: add / markPaid / unmark / update / delete + WRX alloc | ✅ Bundle 15, envelope v1.2 + Composition Exception v1.3 |
+| `BRAIN.debts` | Debt lifecycle: add / markPaid / unmark / update / delete + WRX alloc | ✅ Bundle 15 + 15.1, envelope v1.2 + Composition Exception v1.3 + multi-bubble Phase pattern v1.4 |
 | `BRAIN.transaction` | Quick Log, txn list, edit/delete, round-ups | Pending |
 | `BRAIN.chat` | AI chat surface, intent routing into other bubbles | Pending (post-architecture) |
 | `BRAIN.analysis` | Spending pivot, cut sliders, forecasts | Pending |
@@ -145,6 +145,45 @@ levels deep can tell which layer rejected: `'inner-source-rejected:...'`,
 `BRAIN.transaction.findByTs(ts)`) return data directly. Readers can't
 fail in the same way writers can — missing data returns sensible
 defaults (0, empty array, `undefined`) without wrapping.
+
+---
+
+## Multi-Bubble Composition — Two-Phase Allocation (v1.4)
+
+When a single canonical method composes across three or more bubbles
+in a single user action (the WRX sale-proceeds allocation is the
+prototype), the composition follows a **two-phase** pattern that
+generalizes the abort-on-inner-failure rule:
+
+**Phase 1 — Validate every step BEFORE any mutation.** Walk the
+allocation set, check each unit's preconditions (existence, validity,
+not-already-applied). If any fails, return `{ ok: false, reason: ... }`
+WITHOUT touching state. Phase-1 abort = clean state preserved.
+
+**Phase 2 — Apply each step. STRICT abort on first inner failure.**
+Phase-1 caught the predictable failures; phase-2 failures are racy
+state changes (transaction layer broken, inner canonical writer
+unexpectedly rejecting). When phase-2 aborts mid-allocation, partial
+earlier-in-batch mutations REMAIN visible. The caller surfaces the
+error; the user can review what cleared vs what didn't via
+BRAIN.audit. JS has no transactions; this is the honest contract.
+
+**Phase 3 — Wrap-up writes (domain side effects).** After all
+allocations succeed, write the orchestration-level state (e.g.,
+WRX_proceeds: `S.bal += saleNet`, `S.wrxStatus = 'sold'`). Phase-3
+writes are NOT skipped by phase-2 failure — but phase-3 only runs if
+phase-2 completed cleanly.
+
+**Current example:** `BRAIN.debts.allocateWrxProceeds(allocations, saleNet, source)`
+composes BRAIN.debts.markPaid (per debt) + BRAIN.transaction.record
+(per carloan paydown) + direct S.bal/S.carloan/S.wrxStatus writes.
+
+**Why this lives in BRAIN.debts and not BRAIN.transaction:** the
+allocation's primary domain is debt clearance. Vehicle-finance fields
+(S.carloan / S.wrxStatus) are not yet bubble-owned; when a future
+bundle seeds BRAIN.vehicleFinance, the carloan branch migrates there
+and the orchestration coordinator moves up to a higher layer
+(possibly BRAIN itself).
 
 ---
 
@@ -321,10 +360,40 @@ bubbles seed. Locking it at the surface-area-still-small moment
 - **Bundle 11's three TXNS_PUSH allow-list exemptions** (applyBalanceCorrection
   / confirmWrxAlloc / markDebtPaid). ✅ Resolved in Bundle 15:
   applyBalanceCorrection routes through `BRAIN.transaction.recordCorrection`;
-  confirmWrxAlloc loops through `BRAIN.debts.markPaid(id, WRX_ALLOCATE)`;
-  markDebtPaid is a thin shim around `BRAIN.debts.markPaid`. The
-  TXNS_PUSH_WRITER_FNS set shrinks from 5 → 2 (just `record` + `load`).
-  Architectural lift complete.
+  confirmWrxAlloc (Bundle 15.1) becomes a thin orchestrator around
+  `BRAIN.debts.allocateWrxProceeds`; markDebtPaid is a thin shim around
+  `BRAIN.debts.markPaid`. The TXNS_PUSH_WRITER_FNS set shrinks from
+  5 → 2 (just `record` + `load`). Architectural lift complete.
+
+### viaRent debt semantics (Bundle 15.1)
+
+The `viaRent: true` flag on a debt is metadata about HOW the debt is
+NORMALLY paid (through the rent flow — Property Deposit / Owed to Mum
+routed via `S.mumAccountBalance`). It is NOT a hard prohibition on
+`markPaid`. Distinction from autoDebit semantics (Bundle 16):
+
+- `autoDebit: true` (Bundle 16) — "bank handles it, don't pre-mark";
+  `markPaid` for an autoDebit bill in the future returns
+  `{ ok: false, reason: 'autoDebit-future-no-premark' }`.
+- `viaRent: true` — "tracked through rent, but user can still mark
+  paid if they pay outside that flow" (e.g., cash to Mum directly).
+  `markPaid` accepts viaRent debts.
+
+Readers `active()` and `total()` exclude viaRent by default (the
+"what's due before payday" surface), but `total({ includeViaRent: true })`
+and `findById()` return everything. `isViaRent(id)` is the canonical
+predicate; bubble methods read through it.
+
+### linkedLiability detection (adjacent debt — Bundle 16+ candidate)
+
+`saveNewDebt` (UI handler) currently runs keyword detection on the
+debt name + notes to suggest "Is this linked to your Car Loan
+(Firstmac)?" / "Is this linked to your Credit Card (ANZ)?". The
+detection logic is keyword-list based (`LINKED_KEYWORDS`). Could move
+to `BRAIN.debts.detectLinkedLiability(name, notes) → 'carloan' | 'cc' | null`
+as a pure-function reader; UI keeps owning the `confirm()` dialog.
+Refactor is clarity-only — current placement works. Surfaced for
+future cleanup.
 - **Reconciliation correction txns + WRX sale allocation + debt-
   cleared txn.** Edge-case writers exempt from `no-direct-txns-push`
   in Bundle 11. Reconciliation moves into BRAIN.transaction with a
