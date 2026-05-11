@@ -1393,6 +1393,67 @@ function load() {
     S._youtubeDayMigrationV1 = true;
     save();
   }
+  // Bundle 8: consolidate slyght_trips + slyght_goals into S.tripDefs +
+  // S.goalDefs. The three-store pattern (plan items / buckets / mum
+  // account) is what made the China $70 / $74 / $76 drift possible in
+  // the first place. After this migration, trip/goal *definitions* live
+  // in S like everything else, and the 'saved' value continues to derive
+  // from S.savingsBuckets via PLAN.readSavedFromSource — single source of
+  // truth, structurally enforced.
+  //
+  // Safety net: before deleting old localStorage keys, write a recovery
+  // snapshot to _backup_bundle8. If the migration breaks state on phone-
+  // verify, the user (or a follow-up commit) can restore via:
+  //   const b = JSON.parse(localStorage.getItem('_backup_bundle8'));
+  //   localStorage.setItem('slyght_trips', b.slyght_trips);
+  //   localStorage.setItem('slyght_goals', b.slyght_goals);
+  //   then refresh + git revert HEAD
+  if (!S._bundle8MigrationV1) {
+    let _b8BackupOk = false;
+    try {
+      const backup = {
+        slyght_trips: localStorage.getItem('slyght_trips'),
+        slyght_goals: localStorage.getItem('slyght_goals'),
+        ts: Date.now(),
+        version: 'bundle8-v1'
+      };
+      localStorage.setItem('_backup_bundle8', JSON.stringify(backup));
+      _b8BackupOk = true;
+    } catch (e) {
+      console.error('[Bundle 8] backup write failed; aborting migration', e);
+    }
+    if (_b8BackupOk) {
+      try {
+        const trips = JSON.parse(localStorage.getItem('slyght_trips') || '[]');
+        const goals = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
+        // Strip 'saved' field — it's now derived from S.savingsBuckets via
+        // PLAN.readSavedFromSource. Storing it would be drift waiting to happen.
+        S.tripDefs = trips.map(t => { const { saved, ...rest } = t; return rest; });
+        S.goalDefs = goals.map(g => { const { saved, ...rest } = g; return rest; });
+        // Delete old keys ONLY after S has the new data.
+        localStorage.removeItem('slyght_trips');
+        localStorage.removeItem('slyght_goals');
+        S._bundle8MigrationV1 = true;
+        // BRAIN is declared further down in the script (TDZ during first
+        // load() call). Wrap the audit append so a TDZ ReferenceError on
+        // first boot doesn't abort the migration's final save() — by the
+        // second load() BRAIN will be defined and any audit entries from
+        // future migrations land normally.
+        try {
+          BRAIN.audit.append({
+            type: 'bundle8_migration',
+            tripDefs: S.tripDefs.length,
+            goalDefs: S.goalDefs.length,
+            backup: '_backup_bundle8',
+            ts: Date.now()
+          });
+        } catch (_) {}
+        save();
+      } catch (e) {
+        console.error('[Bundle 8] migration body failed; will retry next load', e);
+      }
+    }
+  }
   // Stale notification cleanup — remove pings for debts the audit closed
   if (!S._notifCleanV1) {
     const staleIds = [
@@ -4944,8 +5005,14 @@ function _reversePaidBillTxn(entry) {
     if (m && S.savingsBuckets) {
       const target = m[1].trim().toLowerCase();
       const bucket = S.savingsBuckets.find(bk => (bk.name || '').toLowerCase() === target);
-      if (bucket && typeof bucket.saved === 'number') {
-        bucket.saved = parseFloat(Math.max(0, bucket.saved - (next.amt || 0)).toFixed(2));
+      if (bucket && typeof bucket.saved === 'number' && typeof BRAIN !== 'undefined') {
+        // Bundle 8: route through BRAIN.savings — direct bucket.saved writes
+        // are now banned by the no-direct-bucket-saved-write rule.
+        BRAIN.savings.setBucketSaved(
+          bucket.name,
+          Math.max(0, bucket.saved - (next.amt || 0)),
+          'undo-roundup'
+        );
       }
     }
     removeCount = 2;
@@ -5749,11 +5816,14 @@ function renderChinaHolidayTracker(b, i) {
 
 function quickAddToBucket(i, amt) {
   if (S.bal < amt) { showUndoToast('Not enough balance'); return; }
-  S.savingsBuckets[i].saved = (S.savingsBuckets[i].saved||0) + amt;
+  // Bundle 8: route bucket write through BRAIN.savings.
+  const bucket = S.savingsBuckets[i];
+  if (!bucket) return;
+  BRAIN.savings.addToBucket(bucket.name, amt, 'manual');
   S.bal -= amt;
-  S.txns.push({amt, note: S.savingsBuckets[i].name+' — quick add', cat:'Savings', ts:Date.now(), income:false});
+  S.txns.push({amt, note: bucket.name+' — quick add', cat:'Savings', ts:Date.now(), income:false});
   onStateChange('bucket-add');
-  showUndoToast(fmtC(amt)+' added to '+S.savingsBuckets[i].name);
+  showUndoToast(fmtC(amt)+' added to '+bucket.name);
 }
 
 function renderSavingsBuckets() {
@@ -5824,7 +5894,8 @@ function saveBucketModal() {
   const b = S.savingsBuckets[activeBucketIdx];
   const _bkn2 = $('bkt-name'); if (_bkn2) b.name = _bkn2.value.trim() || b.name;
   const _bkg2 = $('bkt-goal'); if (_bkg2) { const _gv = parseFloat(_bkg2.value); if (!isNaN(_gv) && _gv > 0) b.goal = _gv; }
-  const _bksv2 = $('bkt-saved'); if (_bksv2) b.saved = parseFloat(_bksv2.value) || 0;
+  // Bundle 8: route bucket write through BRAIN.savings.
+  const _bksv2 = $('bkt-saved'); if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, 'manual');
   const _bkac2 = $('bkt-account'); if (_bkac2) b.account = _bkac2.value || b.account;
   const _bkno2 = $('bkt-notes'); if (_bkno2) b.notes = _bkno2.value.trim();
   save(); closeModal('bucket-modal', true); renderAll();
@@ -5835,8 +5906,10 @@ function addFundsBucketModal() {
   const _bkaf2 = $('bkt-add-funds'); if (!_bkaf2) return;
   const v = parseFloat(_bkaf2.value);
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
-  S.savingsBuckets[activeBucketIdx].saved = (S.savingsBuckets[activeBucketIdx].saved||0) + v;
-  save(); closeModal('bucket-modal', true); renderAll();
+  // Bundle 8: route through BRAIN.savings.
+  const _b = S.savingsBuckets[activeBucketIdx];
+  if (_b) BRAIN.savings.addToBucket(_b.name, v, 'manual');
+  closeModal('bucket-modal', true); renderAll();
 }
 
 function deleteBucket() {
@@ -5854,7 +5927,8 @@ function addToBucket(i) {
   const v = parseFloat(input.value);
   if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
   if (!S.savingsBuckets[i]) return;
-  S.savingsBuckets[i].saved = (S.savingsBuckets[i].saved||0) + v;
+  // Bundle 8: route through BRAIN.savings.
+  BRAIN.savings.addToBucket(S.savingsBuckets[i].name, v, 'plan-add');
   onStateChange('bucket-add');
 }
 
@@ -6248,8 +6322,9 @@ function quickLogTxn() {
   if (roundUp > 0 && roundUp < 1 && roundUpOn && S.roundUpsEnabled !== false) {
     S.bal = parseFloat((S.bal - roundUp).toFixed(2));
     S.txns.push({amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', ts: Date.now(), income: false, _isRoundup: true, _balAffected: true});
+    // Bundle 8: route round-up bucket write through BRAIN.savings.
     const chinaHol = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('china'));
-    if (chinaHol) chinaHol.saved = parseFloat(((chinaHol.saved||0) + roundUp).toFixed(2));
+    if (chinaHol) BRAIN.savings.addToBucket(chinaHol.name, roundUp, 'roundup');
   }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
   // Bundle 7.2.2 fix-forward: if this expense came from an "Already paid"
@@ -7340,8 +7415,9 @@ function executeChatAction(action) {
             _balAffected: true
           });
           S.bal = parseFloat((S.bal - roundUp).toFixed(2));
+          // Bundle 8: route through BRAIN.savings.
           const bucket = S.savingsBuckets?.find(b => b.name === 'China Holiday');
-          if (bucket) bucket.saved = parseFloat((bucket.saved + roundUp).toFixed(2));
+          if (bucket) BRAIN.savings.addToBucket(bucket.name, roundUp, 'chat');
         }
         onStateChange('chat_logged_txn');
         showToast('✅ Logged: ' + action.note + ' $' + action.amt);
@@ -10537,7 +10613,135 @@ function closePlanMode() {
   if (el) el.classList.remove('plan-open');
 }
 
+// ─── BRAIN ──────────────────────────────────────────────────────────────────
+// Central state coordinator. Each main app tab becomes its own BRAIN object
+// (a "bubble"), and the bubbles report to BRAIN + talk to each other through
+// BRAIN's public surface. Tabs identified:
+//
+//   BRAIN.dashboard   — the main NOW screen (NW strip, calendar, today's
+//                       spend, surplus, AI copy). Renders aggregations
+//                       computed from other bubbles' state.
+//   BRAIN.bills       — bills tab + paid/unpaid lifecycle (payBillNow,
+//                       markBillPaid, undoBillPaid, MI-13 invariant,
+//                       autoDetect). Currently free-floating functions
+//                       and arrays (BILLS, S.paidBills); relocate when
+//                       Tier-1 bugs #4 + #15 + #17 are tackled.
+//   BRAIN.transaction — Quick Log + txn list + edit/delete + round-ups.
+//                       Currently free functions (quickLogTxn,
+//                       editTransaction, _consumePendingBillPay).
+//   BRAIN.chat        — AI chat surface. Routes user-side intents into
+//                       state mutations via the other bubbles' APIs.
+//                       Currently a free chat handler at L7330+.
+//   BRAIN.analysis    — spending pivot, cut sliders, forecasts, week
+//                       projection. Tier-2 math-drift cluster lives here.
+//   BRAIN.settings    — app settings, account info, character config.
+//
+// Plus two cross-cutting concerns (not tabs themselves — shared services
+// every bubble can call):
+//
+//   BRAIN.savings     — canonical writer for S.savingsBuckets[i].saved.
+//                       Used by transaction (round-ups), bills (undo-roundup
+//                       on bill-paid reversal), dashboard (manual edits),
+//                       and the plan engine (trip/goal add-savings flows).
+//   BRAIN.audit       — append-only mutation ledger. Every canonical writer
+//                       logs WHO changed WHAT, WHEN, and WHY (source tag).
+//
+// Why this shape:
+//   1. The future AI agent reads BRAIN.bills.getDue(), calls
+//      BRAIN.transaction.log({...}), inspects BRAIN.audit.recent() — a
+//      stable, narrow surface that's auditable and reversible.
+//   2. Each bubble can be migrated independently — the bubble's tab UI
+//      is its public surface, the BRAIN.<bubble> object is its API.
+//   3. Bubbles talk through BRAIN, not through global S — so changes
+//      propagate predictably (one bubble's mutation triggers another
+//      bubble's recompute via well-defined hooks).
+//   4. Tests can mock individual bubbles instead of all of S.
+//
+// Migration shape per bubble (same as Bundle 8 lays out for savings):
+//   (a) grep direct mutation sites for the domain
+//   (b) add canonical writer/reader to BRAIN.<bubble>
+//   (c) add guardian rule banning direct mutation
+//   (d) migrate call sites with source tags so BRAIN.audit explains origin
+//
+// Bundle 8 lands BRAIN.savings + BRAIN.audit (the cross-cutting two).
+// The existing PLAN engine remains a free-standing module that calls
+// BRAIN.savings under the hood — it will fold into BRAIN.dashboard.plan
+// (or BRAIN.plan) when the dashboard bubble lands.
+const BRAIN = {
+  // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
+  // Lightweight log so every canonical writer can record what changed and
+  // why. Capped at 500 entries to prevent unbounded growth. Future AI
+  // agent reads BRAIN.audit to reason about recent state changes.
+  audit: {
+    append(entry) {
+      if (!S._auditLog) S._auditLog = [];
+      S._auditLog.push(entry);
+      if (S._auditLog.length > 500) S._auditLog = S._auditLog.slice(-500);
+    },
+    recent(n) {
+      return (S._auditLog || []).slice(-(n || 20));
+    }
+  },
+
+  // ─── BRAIN.savings — canonical bucket writer ────────────────────────────
+  // All S.savingsBuckets[i].saved mutations route through here. Direct
+  // writes are forbidden by the no-direct-bucket-saved-write guardian rule
+  // (Bundle 8.3). source tag explains the call site:
+  //   'roundup'        — auto round-up on expense log
+  //   'undo-roundup'   — reversal when user undoes a paid-bill flow
+  //   'plan-add'       — "+ Add Savings" buttons (Plan mode trips/goals)
+  //   'plan-edit'      — Plan mode edit handlers
+  //   'manual'         — bucket modal save / direct +amt
+  //   'reconcile'      — reconciliation paths
+  //   'migration'      — one-time data fixes during load()
+  //   'chat'           — AI chat-driven mutations
+  savings: {
+    setBucketSaved(bucketName, newValue, source) {
+      if (!S.savingsBuckets) S.savingsBuckets = [];
+      const bucket = S.savingsBuckets.find(b => b.name === bucketName);
+      if (!bucket) {
+        console.warn('[BRAIN.savings] no bucket named', bucketName);
+        return false;
+      }
+      const safeNew = parseFloat(Number(newValue).toFixed(2));
+      if (isNaN(safeNew)) {
+        console.warn('[BRAIN.savings] invalid value', newValue);
+        return false;
+      }
+      const oldValue = bucket.saved || 0;
+      // guardian-allow: no-direct-bucket-saved-write - this IS the canonical writer; all other call sites must route through this function; the rule's job is to forbid direct writes everywhere else (permanent - BRAIN.savings.setBucketSaved is the chokepoint by design)
+      bucket.saved = safeNew;
+      BRAIN.audit.append({
+        type: 'bucket_saved_change',
+        bucket: bucketName,
+        oldValue, newValue: safeNew,
+        delta: parseFloat((safeNew - oldValue).toFixed(2)),
+        source: source || 'unknown',
+        ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return true;
+    },
+    // Convenience: incremental adjust. Returns true if successful.
+    addToBucket(bucketName, delta, source) {
+      const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
+      if (!bucket) return false;
+      return this.setBucketSaved(bucketName, (bucket.saved || 0) + delta, source);
+    }
+  }
+};
+
+// Backwards-compat shim. Pre-BRAIN code expected a free function. New code
+// should call BRAIN.savings.setBucketSaved directly; this exists so the
+// Bundle 8 migration doesn't have to touch every caller in one pass.
+function setBucketSaved(bucketName, newValue, source) {
+  return BRAIN.savings.setBucketSaved(bucketName, newValue, source);
+}
+
 // ─── PLAN ENGINE — single source of truth for future planning ───────────────
+// Future: relocate under BRAIN.plan once Bundle 9+ migrates call sites.
+// Today it remains a free-standing module; BRAIN.savings handles the
+// bucket-write chokepoint that PLAN's writeSavedToSource now routes through.
 const PLAN = {
   // Single source of truth: which bucket each plan item syncs to.
   // Returns { type: 'bucket', name: <bucket name> } for normal items,
@@ -10591,6 +10795,8 @@ const PLAN = {
     if (!S.savingsBuckets) S.savingsBuckets = [];
     let bucket = S.savingsBuckets.find(b => b.name === bucketName);
     if (!bucket) {
+      // Auto-create the bucket on first write — saved starts at 0,
+      // BRAIN.savings.setBucketSaved below populates the real value.
       bucket = {
         id: (S.nextBucketId || S.savingsBuckets.length) + 1,
         name: bucketName,
@@ -10601,8 +10807,10 @@ const PLAN = {
       S.savingsBuckets.push(bucket);
       S.nextBucketId = (S.nextBucketId || S.savingsBuckets.length) + 1;
     }
-    bucket.saved = parseFloat(savedValue.toFixed(2));
-    try { save(); } catch(e) {}
+    // Bundle 8: route through BRAIN.savings — the canonical writer logs
+    // to BRAIN.audit so we can see WHERE bucket changes came from. Source
+    // tag distinguishes Plan-mode confirm flows from raw bucket-modal edits.
+    BRAIN.savings.setBucketSaved(bucketName, savedValue, 'plan-add');
   },
 
   get INCOME_MONTHLY() { return S.income || 7282; },
@@ -10652,7 +10860,12 @@ const PLAN = {
   },
 
   getTrips() {
-    const stored = JSON.parse(localStorage.getItem('slyght_trips') || '[]');
+    // Bundle 8: read from S.tripDefs (canonical). Fall back to legacy
+    // localStorage for first-run safety in case the migration hasn't
+    // fired yet (e.g., race between BRAIN init and a getTrips call).
+    const stored = (S && Array.isArray(S.tripDefs))
+      ? S.tripDefs
+      : JSON.parse(localStorage.getItem('slyght_trips') || '[]');
     const defaults = [
       {
         id: 'darwin-2026', name: 'Darwin', emoji: '🐊',
@@ -10685,15 +10898,24 @@ const PLAN = {
   },
 
   saveTrip(trip) {
-    const trips = this.getTrips();
-    const idx = trips.findIndex(t => t.id === trip.id);
-    if (idx >= 0) trips[idx] = trip;
-    else trips.push(trip);
-    localStorage.setItem('slyght_trips', JSON.stringify(trips));
+    // Bundle 8: write to S.tripDefs (canonical). Strip 'saved' before
+    // persisting — that field is always derived from S.savingsBuckets via
+    // readSavedFromSource, so storing it duplicates state and re-opens
+    // the three-store drift window Bundle 8 just closed.
+    if (!S.tripDefs) S.tripDefs = [];
+    const { saved, ...rest } = trip;
+    const idx = S.tripDefs.findIndex(t => t.id === rest.id);
+    if (idx >= 0) S.tripDefs[idx] = rest;
+    else S.tripDefs.push(rest);
+    try { save(); } catch (e) {}
   },
 
   getGoals() {
-    const stored = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
+    // Bundle 8: read from S.goalDefs (canonical). Legacy localStorage
+    // fallback mirrors getTrips for first-run safety.
+    const stored = (S && Array.isArray(S.goalDefs))
+      ? S.goalDefs
+      : JSON.parse(localStorage.getItem('slyght_goals') || '[]');
     const defaults = [
       {
         id: 'apartment', name: 'Property Deposit', emoji: '🏠',
@@ -10733,11 +10955,14 @@ const PLAN = {
   },
 
   saveGoal(goal) {
-    const goals = this.getGoals();
-    const idx = goals.findIndex(g => g.id === goal.id);
-    if (idx >= 0) goals[idx] = goal;
-    else goals.push(goal);
-    localStorage.setItem('slyght_goals', JSON.stringify(goals));
+    // Bundle 8: write to S.goalDefs (canonical). 'saved' stripped — see
+    // saveTrip note. derived from S.savingsBuckets / S.mumAccountBalance.
+    if (!S.goalDefs) S.goalDefs = [];
+    const { saved, ...rest } = goal;
+    const idx = S.goalDefs.findIndex(g => g.id === rest.id);
+    if (idx >= 0) S.goalDefs[idx] = rest;
+    else S.goalDefs.push(rest);
+    try { save(); } catch (e) {}
   },
 
   getPostWrxSurplus() {
@@ -12159,10 +12384,15 @@ function confirmDeleteGoal(goalId) {
     return;
   }
 
-  // Remove from stored slyght_goals (defaults regenerate naturally).
-  const stored = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
-  const filtered = stored.filter(g => g.id !== goalId);
-  localStorage.setItem('slyght_goals', JSON.stringify(filtered));
+  // Bundle 8: remove from S.goalDefs (canonical). Defaults regenerate on
+  // next render from PLAN.getGoals merging. Legacy localStorage fallback
+  // still cleaned for users on the old shape.
+  if (Array.isArray(S.goalDefs)) {
+    S.goalDefs = S.goalDefs.filter(g => g.id !== goalId);
+  } else {
+    const stored = JSON.parse(localStorage.getItem('slyght_goals') || '[]');
+    localStorage.setItem('slyght_goals', JSON.stringify(stored.filter(g => g.id !== goalId)));
+  }
 
   // For user-added goals (id starts with 'goal-'), remove the auto-
   // created bucket too — UNLESS it has saved > 0, in which case keep

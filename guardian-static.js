@@ -49,6 +49,12 @@ const TXNS_FILTER_HELPERS = new Set([
 // rule's intent — direct paidBills access is allowed in well-named
 // migration / un-mark helpers; everywhere else routes via paidBillKey.
 const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillPaid']);
+
+// Bundle 8: parallel allow-set for the no-direct-bucket-saved-write rule.
+// BRAIN.savings.setBucketSaved is the canonical chokepoint for any
+// S.savingsBuckets[i].saved mutation. The only legitimate exception is
+// the load() migration path which patches data shapes during boot.
+const BUCKET_SAVED_WRITER_FNS = new Set(['setBucketSaved', 'load']);
 // Survival-mode strings (rule no-hardcoded-survival-mode-string).
 const SURVIVAL_MODE_STRINGS = new Set(['critical', 'survival', 'tight', 'cautious', 'normal']);
 // Debt strategy strings.
@@ -411,6 +417,61 @@ const RULES = [
               evidence: `paidBills-key-shaped concat (${parts.length} parts) inside ${fn || '<top-level>'}`,
             });
           }
+        },
+      });
+      return violations;
+    },
+  },
+
+  // ─── 2b. no-direct-bucket-saved-write (Bundle 8 architectural barrier) ─
+  // S.savingsBuckets[i].saved is the canonical storage for plan-mode trip
+  // and goal savings totals (Bundle 4's source-of-truth flip). Direct
+  // writes outside BRAIN.savings.setBucketSaved drift state across the
+  // three-store pattern (plan items / buckets / mum account) — the China
+  // Holiday $70/$74/$76 drift that motivated Bundle 8.
+  //
+  // Patterns flagged:
+  //   - S.savingsBuckets[<expr>].saved = <expr>     (direct subscript)
+  //   - <ident>.saved = <expr>  WHERE <ident> is named like a bucket
+  //     ('bucket', 'chinaHol', or starts with 'savings'). goal.saved /
+  //     trip.saved / b.saved are not flagged because the LHS shape can't
+  //     be statically distinguished — those callers should still route
+  //     through BRAIN.savings if the value sync's to a bucket, but we
+  //     prefer false negatives over false positives in this rule.
+  {
+    name: 'no-direct-bucket-saved-write',
+    severity: 'fail',
+    anchor: 'arch-barrier-bundle-8',
+    check() {
+      const BUCKETISH_IDENTS = new Set(['bucket', 'chinaHol', 'b']);
+      const violations = [];
+      walk.simple(ast, {
+        AssignmentExpression(node) {
+          if (node.operator !== '=' && node.operator !== '+=' && node.operator !== '-=') return;
+          const lhs = node.left;
+          if (!lhs || lhs.type !== 'MemberExpression') return;
+          if (!lhs.property || lhs.property.name !== 'saved') return;
+          const fn = enclosingFn(node.range[0]);
+          if (BUCKET_SAVED_WRITER_FNS.has(fn)) return;
+          // Pattern A: S.savingsBuckets[<expr>].saved = ...
+          const obj = lhs.object;
+          const isSavingsBucketSubscript = obj && obj.type === 'MemberExpression'
+            && obj.computed
+            && obj.object && obj.object.type === 'MemberExpression'
+            && obj.object.object && obj.object.object.name === 'S'
+            && obj.object.property && obj.object.property.name === 'savingsBuckets';
+          // Pattern B: <ident>.saved = ... where <ident> is bucketish.
+          // 'b' is included reluctantly because saveBucketModal aliases the
+          // bucket as `b`; legitimate non-bucket uses of `b.saved` (none
+          // in the current codebase) can carry a guardian-allow.
+          const isBucketishIdent = obj && obj.type === 'Identifier'
+            && BUCKETISH_IDENTS.has(obj.name);
+          if (!isSavingsBucketSubscript && !isBucketishIdent) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: `bucket .saved write inside ${fn || '<top-level>'} — route through BRAIN.savings.setBucketSaved`,
+          });
         },
       });
       return violations;
