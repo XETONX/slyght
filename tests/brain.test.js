@@ -28,6 +28,12 @@ function resetS() {
       { name: 'Rainy Day Fund', goal: 2000, saved: 50, account: 'ING' }
     ],
     paidBills: {},
+    debts: [
+      { id: 1, name: 'Owed to Mum', amt: 5000, rate: 0, paid: false, viaRent: true },
+      { id: 2, name: 'Pet Insurance', amt: 120, rate: 0, paid: false, delayDate: '2026-05-01' },
+      { id: 3, name: 'Afterpay', amt: 50, rate: 0, paid: false }
+    ],
+    nextDebtId: 4,
     _auditLog: [],
     _billUnmarkLog: {},
     _invariantViolationCounts: {}
@@ -118,6 +124,13 @@ const BRAIN = {
     UNMARK_BILL:     'unmark-bill',
     AUTO_MATCH:      'auto-match',
     AUTO_DETECT:     'auto-detect',
+    ADD_DEBT:        'add-debt',
+    CLEAR_DEBT:      'clear-debt',
+    UNMARK_DEBT:     'unmark-debt',
+    UPDATE_DEBT:     'update-debt',
+    DELETE_DEBT:     'delete-debt',
+    WRX_ALLOCATE:    'wrx-allocate',
+    RECONCILE_CORRECTION: 'reconcile-correction',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -125,6 +138,8 @@ const BRAIN = {
     'log-expense', 'log-income', 'log-from-person', 'pay-bill-now',
     'mark-bill-paid', 'bucket-quick-add',
     'unmark-bill', 'auto-match', 'auto-detect',
+    'add-debt', 'clear-debt', 'unmark-debt', 'update-debt',
+    'delete-debt', 'wrx-allocate', 'reconcile-correction',
   ]),
   audit: {
     append(entry) {
@@ -202,6 +217,20 @@ const BRAIN = {
     list(predicate) {
       const txns = S.txns || [];
       return predicate ? txns.filter(predicate) : txns;
+    },
+    // Bundle 15
+    recordCorrection(diff, reason) {
+      if (typeof diff !== 'number' || isNaN(diff)) {
+        return { ok: false, reason: 'invalid-diff' };
+      }
+      return this.record({
+        amt: Math.abs(diff),
+        note: reason || 'Balance correction',
+        cat: diff > 0 ? 'Income' : 'Adjustment',
+        income: diff > 0,
+        _balAffected: true,
+        _isCorrection: true
+      }, BRAIN.SOURCES.RECONCILE_CORRECTION);
     }
   },
 
@@ -377,6 +406,107 @@ const BRAIN = {
         if (future.length === 0) return null;
         return { displayValue: future.length + ' bill(s)', keys: future };
       }
+    }
+  },
+
+  // BRAIN.debts (Bundle 15) — verbatim from index.html.
+  debts: {
+    add(debt, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (!debt || typeof debt.name !== 'string' || !debt.name.trim()) return { ok: false, reason: 'invalid-name' };
+      if (typeof debt.amt !== 'number' || isNaN(debt.amt) || debt.amt <= 0) return { ok: false, reason: 'invalid-amt' };
+      if (!Array.isArray(S.debts)) S.debts = [];
+      if (!S.nextDebtId) S.nextDebtId = S.debts.length;
+      if (S.debts.length) {
+        const _maxId = Math.max(...S.debts.map(d => d.id || 0));
+        if (S.nextDebtId <= _maxId) S.nextDebtId = _maxId + 1;
+      }
+      const newDebt = Object.assign({ id: S.nextDebtId++, rate: 0, paid: false, delayed: false }, debt);
+      S.debts.push(newDebt);
+      BRAIN.audit.append({ type: 'debt_add', id: newDebt.id, name: newDebt.name, amt: newDebt.amt, source, ts: Date.now() });
+      try { save(); } catch(_) {}
+      return { ok: true, debt: newDebt, id: newDebt.id };
+    },
+    markPaid(id, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      if (debt.paid) return { ok: false, reason: 'already-paid', id };
+      const rec = BRAIN.transaction.record(
+        { amt: debt.amt, note: debt.name + ' cleared', cat: 'Debt repayment', income: false, _balAffected: true },
+        source === BRAIN.SOURCES.WRX_ALLOCATE ? BRAIN.SOURCES.WRX_ALLOCATE : BRAIN.SOURCES.CLEAR_DEBT
+      );
+      if (!rec.ok) return { ok: false, reason: 'inner-' + rec.reason };
+      debt.paid = true;
+      debt._clearedTxnTs = rec.ts;
+      BRAIN.audit.append({ type: 'debt_mark_paid', id, name: debt.name, amt: debt.amt, txnTs: rec.ts, source, ts: Date.now() });
+      try { save(); } catch(_) {}
+      return { ok: true, debt, txnTs: rec.ts };
+    },
+    unmark(id, source) {
+      if (!source) source = BRAIN.SOURCES.UNMARK_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      if (!debt.paid) return { ok: false, reason: 'not-paid', id };
+      const txnTs = debt._clearedTxnTs;
+      let txnReversed = false;
+      if (typeof txnTs === 'number') {
+        const removed = BRAIN.transaction.removeByTs(txnTs);
+        if (!removed.ok) {
+          if (removed.reason === 'not-found' || removed.reason === 'no-txns') {
+            // LENIENT
+          } else {
+            return { ok: false, reason: 'inner-' + removed.reason };
+          }
+        } else {
+          const t = removed.removed;
+          if (t && t._balAffected) {
+            if (t.income) S.bal -= (t.amt || 0);
+            else S.bal += (t.amt || 0);
+            S.bal = parseFloat(S.bal.toFixed(2));
+          }
+          txnReversed = true;
+        }
+      }
+      debt.paid = false;
+      delete debt._clearedTxnTs;
+      BRAIN.audit.append({ type: 'debt_unmark', id, name: debt.name, txnReversed, source, ts: Date.now() });
+      try { save(); } catch(_) {}
+      return { ok: true, debt, txnReversed };
+    },
+    update(id, fields, source) {
+      if (!source) source = BRAIN.SOURCES.UPDATE_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      const MUTABLE = new Set(['name', 'amt', 'rate', 'notes', 'delayDate', 'priority', 'delayed', 'coveredBy', 'coveredDate', '_noBaladjust', 'viaRent', 'longTerm', 'paid', 'originalAmt', 'linkedLiability']);
+      const changed = [];
+      Object.keys(fields || {}).forEach(k => {
+        if (!MUTABLE.has(k)) return;
+        if (debt[k] !== fields[k]) { debt[k] = fields[k]; changed.push(k); }
+      });
+      if (changed.length === 0) return { ok: true, debt, changed: [] };
+      BRAIN.audit.append({ type: 'debt_update', id, name: debt.name, changed, source, ts: Date.now() });
+      try { save(); } catch(_) {}
+      return { ok: true, debt, changed };
+    },
+    delete(id, source) {
+      if (!source) source = BRAIN.SOURCES.DELETE_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (!Array.isArray(S.debts)) return { ok: false, reason: 'no-debts' };
+      const idx = S.debts.findIndex(d => d.id === id);
+      if (idx < 0) return { ok: false, reason: 'debt-not-found', id };
+      const removed = S.debts.splice(idx, 1)[0];
+      BRAIN.audit.append({ type: 'debt_delete', id, name: removed.name, amt: removed.amt, source, ts: Date.now() });
+      try { save(); } catch(_) {}
+      return { ok: true, removed };
+    },
+    findById(id) { return (S.debts || []).find(d => d.id === id); },
+    active() { return (S.debts || []).filter(d => !d.paid && !d.viaRent); },
+    total(opts) {
+      const includeViaRent = !!(opts && opts.includeViaRent);
+      return (S.debts || []).filter(d => !d.paid && (includeViaRent || !d.viaRent)).reduce((s, d) => s + (d.amt || 0), 0);
     }
   }
 };
@@ -924,6 +1054,206 @@ test('bills.invariants.checkFutureKeyNotPaid: skips autoDebit-flagged keys', () 
   resetS();
   S.paidBills['2030-12-Future Bill-25'] = { paid: true, _scheduledAutoDebit: true, ts: Date.now() };
   expect(BRAIN.bills.invariants.checkFutureKeyNotPaid()).toBe(null);
+});
+
+// ── BRAIN.transaction.recordCorrection ─────────────────
+test('transaction.recordCorrection: positive diff creates Income+correction txn', () => {
+  resetS();
+  const r = BRAIN.transaction.recordCorrection(50, 'Bank synced up');
+  expect(r.ok).toBe(true);
+  expect(r.txn.amt).toBe(50);
+  expect(r.txn.income).toBe(true);
+  expect(r.txn.cat).toBe('Income');
+  expect(r.txn._isCorrection).toBe(true);
+});
+
+test('transaction.recordCorrection: negative diff creates Adjustment+correction txn', () => {
+  resetS();
+  const r = BRAIN.transaction.recordCorrection(-25, 'Bank short');
+  expect(r.ok).toBe(true);
+  expect(r.txn.amt).toBe(25);
+  expect(r.txn.income).toBe(false);
+  expect(r.txn.cat).toBe('Adjustment');
+  expect(r.txn._isCorrection).toBe(true);
+});
+
+test('transaction.recordCorrection: invalid diff rejected', () => {
+  resetS();
+  const r = BRAIN.transaction.recordCorrection(NaN);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('invalid-diff');
+});
+
+// ── BRAIN.debts ────────────────────────────────────────
+test('debts.add: happy path returns envelope with debt + id', () => {
+  resetS();
+  const r = BRAIN.debts.add({ name: 'New Debt', amt: 100, rate: 5 }, BRAIN.SOURCES.ADD_DEBT);
+  expect(r.ok).toBe(true);
+  expect(typeof r.id).toBe('number');
+  expect(r.debt.name).toBe('New Debt');
+  expect(r.debt.amt).toBe(100);
+});
+
+test('debts.add: rejects invalid name', () => {
+  resetS();
+  const r = BRAIN.debts.add({ name: '', amt: 100 }, BRAIN.SOURCES.ADD_DEBT);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('invalid-name');
+});
+
+test('debts.add: rejects invalid amt', () => {
+  resetS();
+  const r = BRAIN.debts.add({ name: 'X', amt: -5 }, BRAIN.SOURCES.ADD_DEBT);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('invalid-amt');
+});
+
+test('debts.add: ID-collision guard preserves Mission #42 era logic', () => {
+  resetS();
+  // Set nextDebtId BELOW the existing max id
+  S.nextDebtId = 1;
+  const r = BRAIN.debts.add({ name: 'Should Get High ID', amt: 50 }, BRAIN.SOURCES.ADD_DEBT);
+  expect(r.ok).toBe(true);
+  // Should exceed the highest existing id (which is 3 in resetS())
+  expect(r.id >= 4).toBe(true);
+});
+
+test('debts.markPaid: happy path sets paid + creates clearance txn + _clearedTxnTs back-ref', () => {
+  resetS();
+  const r = BRAIN.debts.markPaid(2, BRAIN.SOURCES.CLEAR_DEBT); // Pet Insurance
+  expect(r.ok).toBe(true);
+  expect(r.debt.paid).toBe(true);
+  expect(typeof r.txnTs).toBe('number');
+  expect(r.debt._clearedTxnTs).toBe(r.txnTs);
+  // Paired txn in S.txns
+  expect(S.txns.length).toBe(1);
+  expect(S.txns[0].cat).toBe('Debt repayment');
+});
+
+test('debts.markPaid: debt-not-found returns envelope', () => {
+  resetS();
+  const r = BRAIN.debts.markPaid(99999, BRAIN.SOURCES.CLEAR_DEBT);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('debt-not-found');
+});
+
+test('debts.markPaid: already-paid rejected', () => {
+  resetS();
+  BRAIN.debts.markPaid(2, BRAIN.SOURCES.CLEAR_DEBT);
+  const r2 = BRAIN.debts.markPaid(2, BRAIN.SOURCES.CLEAR_DEBT);
+  expect(r2.ok).toBe(false);
+  expect(r2.reason).toBe('already-paid');
+});
+
+// ── Composition: STRICT abort on CREATE (debts.markPaid)
+test('composition: debts.markPaid aborts cleanly when transaction.record fails (strict)', () => {
+  resetS();
+  const original = BRAIN.transaction.record;
+  BRAIN.transaction.record = () => ({ ok: false, reason: 'forced-test-failure' });
+  try {
+    const r = BRAIN.debts.markPaid(2, BRAIN.SOURCES.CLEAR_DEBT);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('inner-forced-test-failure');
+    // debt.paid stays false — strict abort means no half-state
+    const debt = S.debts.find(d => d.id === 2);
+    expect(debt.paid).toBe(false);
+  } finally {
+    BRAIN.transaction.record = original;
+  }
+});
+
+// ── Composition: LENIENT for unmark (DESTROY)
+test('composition: debts.unmark proceeds when removeByTs returns not-found (lenient)', () => {
+  resetS();
+  // Setup: debt is paid with a _clearedTxnTs that doesn't exist in S.txns
+  const debt = S.debts.find(d => d.id === 2);
+  debt.paid = true;
+  debt._clearedTxnTs = 99999; // orphan ts
+  const r = BRAIN.debts.unmark(2, BRAIN.SOURCES.UNMARK_DEBT);
+  expect(r.ok).toBe(true);
+  expect(r.txnReversed).toBe(false);
+  // debt.paid back to false
+  expect(debt.paid).toBe(false);
+});
+
+test('composition: debts.unmark aborts on UNEXPECTED inner failure (strict for non-lenient reasons)', () => {
+  resetS();
+  const debt = S.debts.find(d => d.id === 2);
+  const txnTs = Date.now();
+  S.txns.push({ amt: 120, ts: txnTs, _balAffected: true });
+  debt.paid = true;
+  debt._clearedTxnTs = txnTs;
+  const original = BRAIN.transaction.removeByTs;
+  BRAIN.transaction.removeByTs = () => ({ ok: false, reason: 'system-error' });
+  try {
+    const r = BRAIN.debts.unmark(2, BRAIN.SOURCES.UNMARK_DEBT);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe('inner-system-error');
+    // debt.paid still true — strict abort preserves state
+    expect(debt.paid).toBe(true);
+  } finally {
+    BRAIN.transaction.removeByTs = original;
+  }
+});
+
+test('debts.unmark: happy path reverses paired txn + restores balance', () => {
+  resetS();
+  const balBefore = S.bal;
+  const r1 = BRAIN.debts.markPaid(2, BRAIN.SOURCES.CLEAR_DEBT);
+  expect(r1.ok).toBe(true);
+  // Simulate balance deduction (caller responsibility per contract)
+  S.bal -= 120;
+  // Now unmark
+  const r2 = BRAIN.debts.unmark(2, BRAIN.SOURCES.UNMARK_DEBT);
+  expect(r2.ok).toBe(true);
+  expect(r2.txnReversed).toBe(true);
+  expect(S.bal).toBe(balBefore); // balance restored
+  expect(S.txns.length).toBe(0); // clearance txn removed
+});
+
+test('debts.update: whitelist enforces field set', () => {
+  resetS();
+  const r = BRAIN.debts.update(2, {
+    name: 'Renamed',
+    amt: 99,
+    secretField: 'should-be-ignored',
+    __proto__: 'no-pollution'
+  }, BRAIN.SOURCES.UPDATE_DEBT);
+  expect(r.ok).toBe(true);
+  expect(r.changed.length).toBe(2); // only name + amt counted
+  const debt = S.debts.find(d => d.id === 2);
+  expect(debt.name).toBe('Renamed');
+  expect(debt.amt).toBe(99);
+  expect(debt.secretField).toBe(undefined);
+});
+
+test('debts.update: debt-not-found returns envelope', () => {
+  resetS();
+  const r = BRAIN.debts.update(99999, { name: 'X' }, BRAIN.SOURCES.UPDATE_DEBT);
+  expect(r.ok).toBe(false);
+  expect(r.reason).toBe('debt-not-found');
+});
+
+test('debts.delete: removes by id', () => {
+  resetS();
+  const before = S.debts.length;
+  const r = BRAIN.debts.delete(2, BRAIN.SOURCES.DELETE_DEBT);
+  expect(r.ok).toBe(true);
+  expect(r.removed.name).toBe('Pet Insurance');
+  expect(S.debts.length).toBe(before - 1);
+});
+
+test('debts.findById / active / total: readers correctness', () => {
+  resetS();
+  expect(BRAIN.debts.findById(2).name).toBe('Pet Insurance');
+  expect(BRAIN.debts.findById(99999)).toBe(undefined);
+  // active() excludes viaRent (Owed to Mum id=1)
+  const active = BRAIN.debts.active();
+  expect(active.length).toBe(2); // Pet Insurance + Afterpay
+  // total() excludes viaRent by default
+  expect(BRAIN.debts.total()).toBe(170); // 120 + 50
+  // total({includeViaRent:true}) includes Mum
+  expect(BRAIN.debts.total({ includeViaRent: true })).toBe(5170);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

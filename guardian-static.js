@@ -66,20 +66,27 @@ const BUCKET_SAVED_WRITER_FNS = new Set(['setBucketSaved', 'load']);
 //     forbidding direct pushes everywhere else IS the rule's purpose).
 //   - `load`: migration paths that rewrite/repair existing txns on boot
 //     (also Bundle 8's S.tripDefs/goalDefs migration and snapshot replay).
-//   - `applyBalanceCorrection`: reconciliation corrections with the
-//     _isCorrection flag — Bundle 12+ may relocate to BRAIN.transaction
-//     with a dedicated RECONCILE source; keeping the edge-case semantics
-//     intact for now (passive antibiotic).
-//   - `confirmWrxAlloc`: WRX sale-proceeds allocation flow creating
-//     multiple debt-repayment txns at once. Rare event; out of Bundle 11
-//     scope.
-//   - `markDebtPaid`: debt-cleared domain (BRAIN.debts bubble territory).
-//     Will migrate when the debts bubble seeds.
+// Bundle 15 architectural completion: applyBalanceCorrection /
+// confirmWrxAlloc / markDebtPaid are REMOVED from this set. All three
+// now route through canonical writers:
+//   - applyBalanceCorrection -> BRAIN.transaction.recordCorrection
+//   - confirmWrxAlloc -> BRAIN.debts.markPaid (per allocation) + BRAIN.transaction.record (carloan path)
+//   - markDebtPaid -> BRAIN.debts.markPaid
 // Service-worker NO_SPEND anonymous arrow uses inline guardian-allow
 // (can't carry enclosing-fn exemption — anonymous context).
 const TXNS_PUSH_WRITER_FNS = new Set([
   'record', 'load',
-  'applyBalanceCorrection', 'confirmWrxAlloc', 'markDebtPaid',
+]);
+
+// Bundle 15: allow-set for the no-direct-debts-mutation rule.
+// BRAIN.debts owns S.debts mutation. Exempt contexts:
+//   - BRAIN.debts internal methods (add, markPaid, unmark, update,
+//     delete) — they ARE the canonical writers.
+//   - `load`: one-time migration paths that backfill debt data shapes.
+//   - `restore`: snapshot restoration (reassigns S.debts to snap.debts).
+const DEBTS_WRITER_FNS = new Set([
+  'add', 'markPaid', 'unmark', 'update', 'delete',
+  'load', 'restore',
 ]);
 
 // Bundle 10: allow-set for the no-inline-todayspend-computation rule.
@@ -653,6 +660,85 @@ const RULES = [
             col: node.loc.start.column,
             evidence: `inline today-spend filter (toDateString match) inside ${fn || '<top-level>'} — route through BRAIN.dashboard.todayTxns / todaySpend`,
           });
+        },
+      });
+      return violations;
+    },
+  },
+
+  // ─── 2e. no-direct-debts-mutation (Bundle 15 architectural barrier) ────
+  // BRAIN.debts is the canonical owner of S.debts. Direct mutation outside
+  // its methods is forbidden. Flags:
+  //   - S.debts.push(...) / S.debts.splice(...)
+  //   - S.debts = <expr> (reassignment)
+  //   - S.debts[<expr>].paid = <expr>
+  //   - S.debts[<expr>].amt = <expr>
+  //   - S.debts[<expr>].priority = <expr>
+  //   - S.debts[<expr>].delayed = <expr>
+  // Allow-list DEBTS_WRITER_FNS exempts BRAIN.debts internal methods
+  // (add, markPaid, unmark, update, delete) + load + restore.
+  {
+    name: 'no-direct-debts-mutation',
+    severity: 'fail',
+    anchor: 'arch-barrier-bundle-15',
+    check() {
+      const FLAGGED_FIELDS = new Set(['paid', 'amt', 'priority', 'delayed', 'rate', 'notes', 'delayDate', 'coveredBy', 'coveredDate', 'name', 'originalAmt']);
+      const violations = [];
+      walk.simple(ast, {
+        // Pattern A: S.debts.push / S.debts.splice
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'MemberExpression') return;
+          const method = node.callee.property && node.callee.property.name;
+          if (method !== 'push' && method !== 'splice') return;
+          const obj = node.callee.object;
+          const isDebts = obj && obj.type === 'MemberExpression'
+            && obj.object && obj.object.name === 'S'
+            && obj.property && obj.property.name === 'debts';
+          if (!isDebts) return;
+          const fn = enclosingFn(node.range[0]);
+          if (DEBTS_WRITER_FNS.has(fn)) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: `S.debts.${method} inside ${fn || '<top-level>'} — route through BRAIN.debts.add / delete`,
+          });
+        },
+        // Pattern B: S.debts = <expr>  AND  S.debts[<expr>].<field> = <expr>
+        AssignmentExpression(node) {
+          if (node.operator !== '=') return;
+          const lhs = node.left;
+          if (!lhs) return;
+          // S.debts = X  (reassignment)
+          if (lhs.type === 'MemberExpression'
+              && lhs.object && lhs.object.name === 'S'
+              && lhs.property && lhs.property.name === 'debts') {
+            const fn = enclosingFn(node.range[0]);
+            if (DEBTS_WRITER_FNS.has(fn)) return;
+            violations.push({
+              line: fileLine(node.loc.start.line),
+              col: node.loc.start.column,
+              evidence: `S.debts = ... (reassignment) inside ${fn || '<top-level>'} — route through BRAIN.debts.delete or .update`,
+            });
+            return;
+          }
+          // S.debts[<expr>].<field> = <expr>
+          if (lhs.type !== 'MemberExpression') return;
+          const fieldName = lhs.property && lhs.property.name;
+          if (!FLAGGED_FIELDS.has(fieldName)) return;
+          const obj = lhs.object;
+          if (!obj || obj.type !== 'MemberExpression') return;
+          if (!obj.computed) return; // we want S.debts[X], not S.debts.foo
+          if (!obj.object || obj.object.type !== 'MemberExpression') return;
+          if (obj.object.object && obj.object.object.name === 'S'
+              && obj.object.property && obj.object.property.name === 'debts') {
+            const fn = enclosingFn(node.range[0]);
+            if (DEBTS_WRITER_FNS.has(fn)) return;
+            violations.push({
+              line: fileLine(node.loc.start.line),
+              col: node.loc.start.column,
+              evidence: `S.debts[...].${fieldName} = ... inside ${fn || '<top-level>'} — route through BRAIN.debts.update`,
+            });
+          }
         },
       });
       return violations;

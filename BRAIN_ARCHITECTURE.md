@@ -1,10 +1,11 @@
 # SLYGHT BRAIN Architecture
 
-> **Status:** v1.3 — Composition Contract Exceptions (lenient-with-warning for DESTROY-direction) locked Bundle 14.
+> **Status:** v1.4 — Bundle 15 closes the architectural lift. 5 bubbles seeded; Bundle 11's TXNS_PUSH allow-list closed (no more edge-case exemptions).
 > **Established:** Bundle 8 (commit f9a2b2d) shipped the BRAIN seed.
 > **Pattern:** Layered Brain Architecture with Strangler Migration.
 > **Envelope contract:** writers return `{ ok, ...payload, reason? }` — see Composition Contract section.
 > **Composition asymmetry (v1.3):** CREATE writers strict-abort on inner failure; DESTROY writers lenient-on-already-clean.
+> **Architectural lift completion (v1.4):** Bundle 15 (BRAIN.debts) closes the last allow-list exemptions. Bundle 16+ is feature/UX work on a defended architecture.
 
 ---
 
@@ -51,6 +52,7 @@ services hanging off BRAIN root.
 |---|---|---|
 | `BRAIN.dashboard` | NOW screen: NW strip, calendar, today's spend, hero copy | ✅ Bundle 10 (readers don't envelope — nouns can't fail) |
 | `BRAIN.bills` | Bills tab, paid/unpaid lifecycle, autoDetect, MI-13 | ✅ Bundle 14, envelope v1.2 + Composition Exception v1.3 |
+| `BRAIN.debts` | Debt lifecycle: add / markPaid / unmark / update / delete + WRX alloc | ✅ Bundle 15, envelope v1.2 + Composition Exception v1.3 |
 | `BRAIN.transaction` | Quick Log, txn list, edit/delete, round-ups | Pending |
 | `BRAIN.chat` | AI chat surface, intent routing into other bubbles | Pending (post-architecture) |
 | `BRAIN.analysis` | Spending pivot, cut sliders, forecasts | Pending |
@@ -316,6 +318,13 @@ bubbles seed. Locking it at the surface-area-still-small moment
   logic in `BRAIN.bills.invariants.checkFutureKeyNotPaid()`, registry
   entry stays in `MathInvariants.invariants[]` and delegates via
   TDZ-safe fallback.
+- **Bundle 11's three TXNS_PUSH allow-list exemptions** (applyBalanceCorrection
+  / confirmWrxAlloc / markDebtPaid). ✅ Resolved in Bundle 15:
+  applyBalanceCorrection routes through `BRAIN.transaction.recordCorrection`;
+  confirmWrxAlloc loops through `BRAIN.debts.markPaid(id, WRX_ALLOCATE)`;
+  markDebtPaid is a thin shim around `BRAIN.debts.markPaid`. The
+  TXNS_PUSH_WRITER_FNS set shrinks from 5 → 2 (just `record` + `load`).
+  Architectural lift complete.
 - **Reconciliation correction txns + WRX sale allocation + debt-
   cleared txn.** Edge-case writers exempt from `no-direct-txns-push`
   in Bundle 11. Reconciliation moves into BRAIN.transaction with a

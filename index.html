@@ -4428,16 +4428,11 @@ let _pendingBalCorrection = null; // {newBal, prevExpected} set by confirmHeroBa
 function applyBalanceCorrection(newBal, reason) {
   const diff = parseFloat((newBal - S.bal).toFixed(2));
   if (Math.abs(diff) < 0.01) return; // no change
-  const txn = {
-    amt: Math.abs(diff),
-    note: reason || 'Balance correction',
-    cat: diff > 0 ? 'Income' : 'Adjustment',
-    ts: Date.now(),
-    income: diff > 0,
-    _balAffected: true,
-    _isCorrection: true
-  };
-  S.txns.push(txn);
+  // Bundle 15: txn push routes through BRAIN.transaction.recordCorrection
+  // (closes the Bundle 11 TXNS_PUSH allow-list exemption for this fn).
+  // The S.bal adjustment + AUDITOR side effect stay here — those are
+  // reconciliation-domain concerns, not transaction-domain.
+  BRAIN.transaction.recordCorrection(diff, reason);
   S.bal = parseFloat(newBal.toFixed(2));
   AUDITOR.record(
     diff > 0 ? 'BALANCE_CORRECTION_UP' : 'BALANCE_CORRECTION_DOWN',
@@ -4632,9 +4627,11 @@ function autoSortDebts() {
   // Show suggested order
   const names = scored.map((d,i) => (i+1)+'. '+d.name+' ($'+d.amt.toFixed(0)+(d.delayDate?' due '+d.delayDate:'')+')').join('\n');
   if (confirm('Suggested order (lowest score = highest priority):\n\n'+names+'\n\nApply this order?')) {
+    // Bundle 15: route through BRAIN.debts.update (priority is in the
+    // whitelist). UPDATE_DEBT source tags each priority flip in audit
+    // so the auto-sort decision is recoverable.
     scored.forEach((d, i) => {
-      const idx = S.debts.findIndex(x => x.id === d.id);
-      if (idx >= 0) S.debts[idx].priority = i + 1;
+      BRAIN.debts.update(d.id, { priority: i + 1 }, BRAIN.SOURCES.UPDATE_DEBT);
     });
     onStateChange('debt-resort');
     showUndoToast('Debts re-sorted by urgency');
@@ -4673,18 +4670,29 @@ function openWrxAllocModal() {
 }
 
 function confirmWrxAlloc(allocs, saleNet) {
+  // Bundle 15: route each debt allocation through BRAIN.debts.markPaid
+  // (which composes with BRAIN.transaction.record for the WRX-sale txn
+  // tagged WRX_ALLOCATE in BRAIN.audit). Carloan adjustment + sale-net
+  // balance bump stay direct — those aren't debt-array writes.
   allocs.forEach((a,i) => {
-    if (document.getElementById('wa-'+i)?.checked) {
-      if (a.type==='debt') {
-        const di = (S.debts||[]).findIndex(d=>d.id===a.id);
-        if (di>=0) { S.debts[di].paid=true; }
+    if (!document.getElementById('wa-'+i)?.checked) return;
+    if (a.type === 'debt') {
+      const r = BRAIN.debts.markPaid(a.id, BRAIN.SOURCES.WRX_ALLOCATE);
+      if (!r.ok) {
+        console.warn('[confirmWrxAlloc] markPaid failed for', a.name, '—', r.reason);
       }
-      if (a.type==='car') { S.carloan = Math.max(0,(S.carloan||0)-a.amt); }
-      S.txns.push({amt:a.amt,note:'WRX sale — '+a.name,cat:'Debt repayment',ts:Date.now(),income:false,_balAffected:true});
+    } else if (a.type === 'car') {
+      S.carloan = Math.max(0, (S.carloan || 0) - a.amt);
+      // For the carloan path (not a S.debts entry), still need to log
+      // the txn so the WRX-sale story is complete in S.txns.
+      BRAIN.transaction.record(
+        { amt: a.amt, note: 'WRX sale ' + a.name, cat: 'Debt repayment', income: false, _balAffected: true },
+        BRAIN.SOURCES.WRX_ALLOCATE
+      );
     }
   });
   S.bal += saleNet;
-  S.wrxValue = 0; S.wrxStatus='sold';
+  S.wrxValue = 0; S.wrxStatus = 'sold';
   save(); closeModal('wrx-alloc-modal'); renderAll();
   showUndoToast('WRX proceeds allocated — great work!');
 }
@@ -4715,29 +4723,36 @@ function openDebtModal(idx) {
   if (typeof UX !== 'undefined') UX.trackModalOpen('debt-modal');
 }
 
+// Bundle 15: saveDebt + saveDebtDelay route through BRAIN.debts.update.
+// Both read the same form fields and apply them as a partial update; the
+// only difference is saveDebtDelay also flips `delayed: true`.
+function _collectDebtModalFields() {
+  const fields = {};
+  const _smn = $('modal-name'); if (_smn && _smn.value) fields.name = _smn.value;
+  const _sma = $('modal-amt'); if (_sma) { const _v = parseFloat(_sma.value); if (!isNaN(_v) && _v > 0) fields.amt = _v; }
+  const _smr = $('modal-rate'); if (_smr) fields.rate = parseFloat(_smr.value) || 0;
+  const _smd = $('modal-due'); if (_smd) fields.delayDate = _smd.value || '';
+  const _smno = $('modal-notes'); if (_smno) fields.notes = _smno.value;
+  const _smp = $('modal-priority'); if (_smp) fields.priority = parseInt(_smp.value) || 99;
+  return fields;
+}
+
 function saveDebt() {
   if (activeDebtIdx < 0) return;
   const d = S.debts[activeDebtIdx];
-  const _smn = $('modal-name'); if (_smn) d.name = _smn.value || d.name;
-  const _sma = $('modal-amt'); if (_sma) { const _v = parseFloat(_sma.value); if (!isNaN(_v)) d.amt = _v || d.amt; }
-  const _smr = $('modal-rate'); if (_smr) d.rate = parseFloat(_smr.value) || 0;
-  const _smd = $('modal-due'); if (_smd) d.delayDate = _smd.value || '';
-  const _smno = $('modal-notes'); if (_smno) d.notes = _smno.value || d.notes;
-  const _smp = $('modal-priority'); if (_smp) d.priority = parseInt(_smp.value) || 99;
-  save(); closeModal('debt-modal', true); renderAll();
+  if (!d) return;
+  BRAIN.debts.update(d.id, _collectDebtModalFields(), BRAIN.SOURCES.UPDATE_DEBT);
+  closeModal('debt-modal', true); renderAll();
 }
 
 function saveDebtDelay() {
   if (activeDebtIdx < 0) return;
   const d = S.debts[activeDebtIdx];
-  d.delayed = true;
-  const _sdmn = $('modal-name'); if (_sdmn) d.name = _sdmn.value || d.name;
-  const _sdma = $('modal-amt'); if (_sdma) { const _v2 = parseFloat(_sdma.value); if (!isNaN(_v2)) d.amt = _v2 || d.amt; }
-  const _sdmr = $('modal-rate'); if (_sdmr) d.rate = parseFloat(_sdmr.value) || 0;
-  const _sdmd = $('modal-due'); if (_sdmd) d.delayDate = _sdmd.value || '';
-  const _sdmno = $('modal-notes'); if (_sdmno) d.notes = _sdmno.value || d.notes;
-  const _sdmp = $('modal-priority'); if (_sdmp) d.priority = parseInt(_sdmp.value) || 99;
-  save(); closeModal('debt-modal', true); renderAll();
+  if (!d) return;
+  const fields = _collectDebtModalFields();
+  fields.delayed = true;
+  BRAIN.debts.update(d.id, fields, BRAIN.SOURCES.UPDATE_DEBT);
+  closeModal('debt-modal', true); renderAll();
 }
 
 function markDebtPaid() {
@@ -4750,18 +4765,26 @@ function markDebtPaid() {
   if (idx < 0) return;
   const d = S.debts[idx];
   saveUndoState(); // L3: undo support
-  // Deduct from S.bal and log to history
+  // Bundle 15: route through BRAIN.debts.markPaid. CREATE-strict
+  // composition with BRAIN.transaction.record handles the clearance txn
+  // + audit emission + _clearedTxnTs back-ref for reversible undo via
+  // BRAIN.debts.unmark. STRICT abort if record fails \u2014 restore S.bal.
   S.bal -= d.amt;
-  S.txns.push({amt: d.amt, note: d.name + ' \u2014 cleared', cat: 'Debt repayment', ts: Date.now(), income: false, _balAffected: true});
-  S.debts[idx].paid = true;
+  const r = BRAIN.debts.markPaid(d.id, BRAIN.SOURCES.CLEAR_DEBT);
+  if (!r.ok) {
+    S.bal += d.amt;
+    showToast('\u26a0\ufe0f Could not clear ' + d.name + ' \u2014 ' + r.reason);
+    return;
+  }
   closeModal('debt-modal', true); onStateChange('debt-paid');
   showUndoToast('Debt marked paid');
-  // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill paid
+  // Auto-link: if Afterpay debt cleared, also mark Afterpay instalment bill
+  // paid. Bundle 15: route through BRAIN.bills.markPaid (link mode to skip
+  // creating a duplicate txn \u2014 the clearance txn above already covers it).
   if (d.name.toLowerCase().includes('afterpay')) {
     const apBill = BILLS.find(b => b.name.toLowerCase().includes('afterpay'));
     if (apBill) {
-      if (!S.paidBills) S.paidBills = {};
-      S.paidBills[paidBillKey(apBill.name, apBill.day)] = true;
+      BRAIN.bills.markPaid(apBill, BRAIN.SOURCES.CLEAR_DEBT, { txnTs: r.txnTs });
     }
   }
   // UX2: debt cleared celebration
@@ -4796,9 +4819,6 @@ function saveNewDebt() {
   const _ndd2 = $('nd-due'); const due = _ndd2 ? (_ndd2.value || '') : '';
   const _ndno2 = $('nd-notes'); const notes = _ndno2 ? _ndno2.value.trim() : '';
   if (!name || isNaN(amt) || amt <= 0) { alert('Enter a name and amount.'); return; }
-  if (!S.nextDebtId) S.nextDebtId = S.debts.length;
-  // ID collision guard: ensure nextDebtId exceeds highest existing debt id
-  if (S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if (S.nextDebtId <= _maxId) S.nextDebtId = _maxId + 1; }
   // Missed payment detection: scan for linked liabilities
   const LINKED_KEYWORDS = ['missed', 'late', 'overdue', 'car', 'firstmac', 'loan', 'credit', 'card', 'cc', 'visa', 'afterpay'];
   const combinedText = (name + ' ' + notes).toLowerCase();
@@ -4817,17 +4837,24 @@ function saveNewDebt() {
   }
   // Type: immediate (default), longterm, viaRent
   const _ndt2 = $('nd-type'); const debtType = _ndt2 ? _ndt2.value : 'immediate';
-  const newDebt = {id: S.nextDebtId++, name, amt, rate, paid: false, delayed: false, delayDate: due, notes, ...(linkedLiability ? {linkedLiability} : {})};
-  if (debtType === 'viaRent') newDebt.viaRent = true;
-  if (debtType === 'longterm') newDebt.longTerm = true;
-  S.debts.push(newDebt);
-  save(); closeModal('add-debt-modal', true);
+  const debtFields = { name, amt, rate, delayDate: due, notes };
+  if (linkedLiability) debtFields.linkedLiability = linkedLiability;
+  if (debtType === 'viaRent') debtFields.viaRent = true;
+  if (debtType === 'longterm') debtFields.longTerm = true;
+  // Bundle 15: route through BRAIN.debts.add (canonical writer, ID-collision
+  // guard, audit emission, save).
+  const r = BRAIN.debts.add(debtFields, BRAIN.SOURCES.ADD_DEBT);
+  if (!r.ok) {
+    alert('Could not add debt: ' + r.reason);
+    return;
+  }
+  closeModal('add-debt-modal', true);
   onStateChange('debt_added');
 }
 
 // Delete any debt with confirmation — does NOT adjust balance.
 function deleteDebt(id) {
-  const debt = S.debts.find(d => d.id === id);
+  const debt = BRAIN.debts.findById(id);
   if (!debt) return;
   const confirmed = confirm(
     'Delete "' + debt.name + '"?\n\n' +
@@ -4835,7 +4862,14 @@ function deleteDebt(id) {
     (debt.paid ? '' : 'Balance will NOT be adjusted — the debt is unpaid.')
   );
   if (!confirmed) return;
-  S.debts = S.debts.filter(d => d.id !== id);
+  // Bundle 15: route through BRAIN.debts.delete (canonical writer with
+  // audit emission). No composition — deleting a debt doesn't create or
+  // reverse a txn (different from unmark, which reverses a clearance txn).
+  const r = BRAIN.debts.delete(id, BRAIN.SOURCES.DELETE_DEBT);
+  if (!r.ok) {
+    showToast('Could not delete: ' + r.reason);
+    return;
+  }
   closeModal('debt-modal', true);
   onStateChange('debt_deleted');
   showToast(debt.name + ' removed');
@@ -4843,14 +4877,20 @@ function deleteDebt(id) {
 
 // Mark a debt as covered by someone else (not paid by John). Optionally
 // rolls the amount into Owed to Mum so the obligation is still tracked.
+// Bundle 15: routes through BRAIN.debts.update for the covered-by metadata
+// flip + the optional roll-into-Mum-debt amount update. No clearance txn
+// is created (this debt wasn't paid by John — someone else covered it,
+// so no balance impact). The _noBaladjust flag signals downstream
+// computations to exclude this from balance-reconciliation math.
 function markDebtCovered(id) {
-  const debt = S.debts.find(d => d.id === id);
+  const debt = BRAIN.debts.findById(id);
   if (!debt) return;
-
-  debt.paid = true;
-  debt.coveredBy = 'Mum';
-  debt.coveredDate = new Date().toISOString();
-  debt._noBaladjust = true;
+  BRAIN.debts.update(id, {
+    paid: true,
+    coveredBy: 'Mum',
+    coveredDate: new Date().toISOString(),
+    _noBaladjust: true
+  }, BRAIN.SOURCES.UPDATE_DEBT);
 
   const mumDebt = findMumDebt();
   if (mumDebt && mumDebt.id !== debt.id) {
@@ -4859,13 +4899,13 @@ function markDebtCovered(id) {
       '(Mum covered this debt — it increases what you owe her)'
     );
     if (addToMum) {
-      mumDebt.amt = parseFloat((mumDebt.amt + debt.amt).toFixed(2));
-      mumDebt.originalAmt = parseFloat(
-        ((mumDebt.originalAmt || mumDebt.amt) + debt.amt).toFixed(2)
-      );
-      mumDebt.notes = (mumDebt.notes || '') + ' + ' + debt.name +
-        ' $' + debt.amt.toFixed(2) + ' (' +
-        new Date().toLocaleDateString('en-AU') + ')';
+      BRAIN.debts.update(mumDebt.id, {
+        amt: parseFloat((mumDebt.amt + debt.amt).toFixed(2)),
+        originalAmt: parseFloat(((mumDebt.originalAmt || mumDebt.amt) + debt.amt).toFixed(2)),
+        notes: (mumDebt.notes || '') + ' + ' + debt.name +
+          ' $' + debt.amt.toFixed(2) + ' (' +
+          new Date().toLocaleDateString('en-AU') + ')'
+      }, BRAIN.SOURCES.UPDATE_DEBT);
     }
   }
 
@@ -10121,9 +10161,6 @@ function confirmScanAdd() {
     const amt = parseFloat(document.getElementById('sc-amt')?.value) || result.amount || 0;
     const dateVal = document.getElementById('sc-date')?.value || result.dueDate || null;
     const rate = parseFloat(document.getElementById('sc-rate')?.value) || 0;
-    // ID collision guard (scan path): ensure nextDebtId exceeds highest existing debt id
-    if (S.debts && S.debts.length) { const _maxId = Math.max(...S.debts.map(d => d.id)); if ((S.nextDebtId||0) <= _maxId) S.nextDebtId = _maxId + 1; }
-    if (!S.nextDebtId) S.nextDebtId = 0;
     const notes = document.getElementById('sc-notes')?.value?.trim() || '';
     const addType = document.querySelector('input[name="sc-add-type"]:checked')?.value || 'debt';
     console.log('[SCAN] addType=' + addType + ' name=' + name + ' amt=' + amt);
@@ -10131,14 +10168,20 @@ function confirmScanAdd() {
     if (addType === 'debt') {
       const urgency = result.urgency || 'future';
       const priority = (urgency==='overdue'||urgency==='today') ? 1 : urgency==='this_week' ? 2 : 3;
-      const newDebt = {
-        id: S.nextDebtId++, name: name, amt: amt, rate: rate, priority: priority,
-        paid: false, delayed: false, delayDate: dateVal || null,
-        notes: notes, scanned: true, scanConfidence: result.confidence,
-        paymentMethod: (result.paymentMethods||[]).join(', '), reference: result.reference || ''
-      };
-      console.log('[SCAN] pushing debt', newDebt);
-      S.debts.push(newDebt);
+      // Bundle 15: route through BRAIN.debts.add — ID-collision guard is
+      // inside add(), no need to duplicate here. Source is CHAT (scan flow
+      // is chat-adjacent — AI extracts a debt from a photo, user confirms).
+      const r = BRAIN.debts.add({
+        name, amt, rate, priority, delayDate: dateVal || null, notes,
+        scanned: true, scanConfidence: result.confidence,
+        paymentMethod: (result.paymentMethods||[]).join(', '),
+        reference: result.reference || ''
+      }, BRAIN.SOURCES.CHAT);
+      if (!r.ok) {
+        showToast('Could not add scanned debt: ' + r.reason);
+        return;
+      }
+      console.log('[SCAN] added debt id=' + r.id);
       onStateChange('scan-add-debt');
       window._activeScanResult = null;
       const _scc2 = $('scan-confirm'); if (_scc2) _scc2.style.display = 'none';
@@ -10677,6 +10720,14 @@ const BRAIN = {
     UNMARK_BILL:     'unmark-bill',
     AUTO_MATCH:      'auto-match',
     AUTO_DETECT:     'auto-detect',
+    // BRAIN.debts (Bundle 15)
+    ADD_DEBT:        'add-debt',
+    CLEAR_DEBT:      'clear-debt',
+    UNMARK_DEBT:     'unmark-debt',
+    UPDATE_DEBT:     'update-debt',
+    DELETE_DEBT:     'delete-debt',
+    WRX_ALLOCATE:    'wrx-allocate',
+    RECONCILE_CORRECTION: 'reconcile-correction',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -10684,6 +10735,8 @@ const BRAIN = {
     'log-expense', 'log-income', 'log-from-person', 'pay-bill-now',
     'mark-bill-paid', 'bucket-quick-add',
     'unmark-bill', 'auto-match', 'auto-detect',
+    'add-debt', 'clear-debt', 'unmark-debt', 'update-debt',
+    'delete-debt', 'wrx-allocate', 'reconcile-correction',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -10892,6 +10945,24 @@ const BRAIN = {
     list(predicate) {
       const txns = S.txns || [];
       return predicate ? txns.filter(predicate) : txns;
+    },
+    // Bundle 15: dedicated correction-record helper. Wraps record() with
+    // the _isCorrection:true shape + RECONCILE_CORRECTION source so
+    // applyBalanceCorrection comes off the TXNS_PUSH allow-list. Caller
+    // remains responsible for the S.bal adjustment (different from
+    // discretionary deduction in the expense path).
+    recordCorrection(diff, reason) {
+      if (typeof diff !== 'number' || isNaN(diff)) {
+        return { ok: false, reason: 'invalid-diff' };
+      }
+      return this.record({
+        amt: Math.abs(diff),
+        note: reason || 'Balance correction',
+        cat: diff > 0 ? 'Income' : 'Adjustment',
+        income: diff > 0,
+        _balAffected: true,
+        _isCorrection: true
+      }, BRAIN.SOURCES.RECONCILE_CORRECTION);
     }
   },
 
@@ -11218,6 +11289,193 @@ const BRAIN = {
           keys: future
         };
       }
+    }
+  },
+
+  // ─── BRAIN.debts — Debts bubble (seeded Bundle 15) ─────────────────────
+  // Fifth and final bubble of the architectural lift. Owns S.debts
+  // lifecycle: add / markPaid / unmark / update / delete + readers.
+  // markPaid composes with BRAIN.transaction.record for clearance txn
+  // (CREATE-strict per Composition Contract). unmark composes with
+  // BRAIN.transaction.removeByTs (DESTROY-lenient per v1.3 Exception).
+  // Closes Bundle 11's TXNS_PUSH allow-list exemptions for
+  // applyBalanceCorrection (now uses BRAIN.transaction.recordCorrection),
+  // confirmWrxAlloc (routes through markPaid with WRX_ALLOCATE source),
+  // and markDebtPaid (free fn becomes shim around markPaid).
+  debts: {
+    // ─── Canonical writer: add ──────────────────────────────────────────
+    // Pushes a new debt with validation + ID-collision guard (Mission #42
+    // era logic preserved). No composition needed — adding a debt isn't
+    // creating a transaction.
+    add(debt, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!debt || typeof debt.name !== 'string' || !debt.name.trim()) {
+        return { ok: false, reason: 'invalid-name' };
+      }
+      if (typeof debt.amt !== 'number' || isNaN(debt.amt) || debt.amt <= 0) {
+        return { ok: false, reason: 'invalid-amt' };
+      }
+      if (!Array.isArray(S.debts)) S.debts = [];
+      if (!S.nextDebtId) S.nextDebtId = S.debts.length;
+      // ID-collision guard: ensure nextDebtId exceeds highest existing.
+      if (S.debts.length) {
+        const _maxId = Math.max(...S.debts.map(d => d.id || 0));
+        if (S.nextDebtId <= _maxId) S.nextDebtId = _maxId + 1;
+      }
+      const newDebt = Object.assign({
+        id: S.nextDebtId++,
+        rate: 0,
+        paid: false,
+        delayed: false
+      }, debt);
+      S.debts.push(newDebt);
+      BRAIN.audit.append({
+        type: 'debt_add', id: newDebt.id, name: newDebt.name,
+        amt: newDebt.amt, source, ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, debt: newDebt, id: newDebt.id };
+    },
+
+    // ─── Canonical writer: markPaid (CREATE-strict composition) ─────────
+    // Composes with BRAIN.transaction.record for the clearance txn.
+    // STRICT abort if record fails — don't flip paid:true without the
+    // supporting txn.
+    markPaid(id, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      if (debt.paid) return { ok: false, reason: 'already-paid', id };
+      // Bundle 15: clearance txn via BRAIN.transaction.record.
+      const rec = BRAIN.transaction.record(
+        { amt: debt.amt, note: debt.name + ' cleared', cat: 'Debt repayment', income: false, _balAffected: true },
+        source === BRAIN.SOURCES.WRX_ALLOCATE ? BRAIN.SOURCES.WRX_ALLOCATE : BRAIN.SOURCES.CLEAR_DEBT
+      );
+      if (!rec.ok) {
+        return { ok: false, reason: 'inner-' + rec.reason };
+      }
+      debt.paid = true;
+      debt._clearedTxnTs = rec.ts;
+      BRAIN.audit.append({
+        type: 'debt_mark_paid', id, name: debt.name, amt: debt.amt,
+        txnTs: rec.ts, source, ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, debt, txnTs: rec.ts };
+    },
+
+    // ─── Canonical writer: unmark (DESTROY-lenient composition) ─────────
+    // Reverses markPaid: clears paid flag, removes the clearance txn,
+    // restores balance. LENIENT on removeByTs not-found per v1.3
+    // Composition Exception — converge on clean state.
+    unmark(id, source) {
+      if (!source) source = BRAIN.SOURCES.UNMARK_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      if (!debt.paid) return { ok: false, reason: 'not-paid', id };
+      const txnTs = debt._clearedTxnTs;
+      let txnReversed = false;
+      if (typeof txnTs === 'number') {
+        const removed = BRAIN.transaction.removeByTs(txnTs);
+        if (!removed.ok) {
+          if (removed.reason === 'not-found' || removed.reason === 'no-txns') {
+            console.warn('[BRAIN.debts.unmark] paired txn already gone (' + removed.reason + ') for debt id', id);
+          } else {
+            return { ok: false, reason: 'inner-' + removed.reason };
+          }
+        } else {
+          const t = removed.removed;
+          if (t && t._balAffected) {
+            // Reverse the deduction: clearance txn was an expense, restore S.bal.
+            if (t.income) S.bal -= (t.amt || 0);
+            else S.bal += (t.amt || 0);
+            S.bal = parseFloat(S.bal.toFixed(2));
+          }
+          txnReversed = true;
+        }
+      }
+      debt.paid = false;
+      delete debt._clearedTxnTs;
+      BRAIN.audit.append({
+        type: 'debt_unmark', id, name: debt.name, txnReversed,
+        source, ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, debt, txnReversed };
+    },
+
+    // ─── Canonical writer: update (partial, whitelisted) ────────────────
+    // Whitelisted mutable fields. Returns the changed-fields list so
+    // audit log can attribute the specific delta.
+    update(id, fields, source) {
+      if (!source) source = BRAIN.SOURCES.UPDATE_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const debt = (S.debts || []).find(d => d.id === id);
+      if (!debt) return { ok: false, reason: 'debt-not-found', id };
+      const MUTABLE = new Set([
+        'name', 'amt', 'rate', 'notes', 'delayDate', 'priority',
+        'delayed', 'coveredBy', 'coveredDate', '_noBaladjust',
+        'viaRent', 'longTerm', 'paid', 'originalAmt', 'linkedLiability'
+      ]);
+      const changed = [];
+      Object.keys(fields || {}).forEach(k => {
+        if (!MUTABLE.has(k)) return;
+        if (debt[k] !== fields[k]) {
+          debt[k] = fields[k];
+          changed.push(k);
+        }
+      });
+      if (changed.length === 0) return { ok: true, debt, changed: [] };
+      BRAIN.audit.append({
+        type: 'debt_update', id, name: debt.name, changed,
+        source, ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, debt, changed };
+    },
+
+    // ─── Canonical writer: delete ───────────────────────────────────────
+    // Removes the debt entirely. No composition — deleting a debt doesn't
+    // create or reverse a txn (different from unmark, which reverses a
+    // clearance txn). Caller responsibility to confirm with user.
+    delete(id, source) {
+      if (!source) source = BRAIN.SOURCES.DELETE_DEBT;
+      if (!BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!Array.isArray(S.debts)) return { ok: false, reason: 'no-debts' };
+      const idx = S.debts.findIndex(d => d.id === id);
+      if (idx < 0) return { ok: false, reason: 'debt-not-found', id };
+      const removed = S.debts.splice(idx, 1)[0];
+      BRAIN.audit.append({
+        type: 'debt_delete', id, name: removed.name, amt: removed.amt,
+        source, ts: Date.now()
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
+    },
+
+    // ─── Readers ────────────────────────────────────────────────────────
+    findById(id) {
+      return (S.debts || []).find(d => d.id === id);
+    },
+    active() {
+      return (S.debts || []).filter(d => !d.paid && !d.viaRent);
+    },
+    total(opts) {
+      const includeViaRent = !!(opts && opts.includeViaRent);
+      return (S.debts || [])
+        .filter(d => !d.paid && (includeViaRent || !d.viaRent))
+        .reduce((s, d) => s + (d.amt || 0), 0);
     }
   }
 };
