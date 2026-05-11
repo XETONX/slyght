@@ -1857,6 +1857,21 @@ function getTodaySpent() {
 function getTodayDiscretionarySpend() {
   return getTodaySpent();
 }
+// Bundle 10: canonical "today's discretionary transactions" list. Same
+// filter as computeSpentInRange but returns the txn array instead of the
+// sum. Pre-Bundle-10, two surfaces (chat system prompt + PUSH worker
+// state) rebuilt this filter inline with subtly different exclusions,
+// drifting from Dashboard/Footer/Analysis numbers. BRAIN.dashboard
+// exposes this via todayTxns() so both surfaces use one source.
+function todayTxnsCanonical(now) {
+  const ref = new Date(now || Date.now()); ref.setHours(0,0,0,0);
+  const start = ref.getTime();
+  return (S.txns || []).filter(t =>
+    t.ts >= start &&
+    !t.income && !_NON_SPEND_CATS.has(t.cat) &&
+    !t._isCorrection && !t._isRoundup
+  );
+}
 function getNoSpendStreak() {
   // Only discretionary transactions break the streak — debt repayments do NOT count
   const expenseTxns = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat));
@@ -7232,12 +7247,12 @@ async function sendChatMessage(userMessage) {
   if (btn) btn.disabled = true;
 
   const nwData = calculateNetWorth();
-  const todayStr = new Date().toDateString();
-  const todayTxns = S.txns.filter(t =>
-    new Date(t.ts).toDateString() === todayStr &&
-    !t.income && !t._isCorrection && !t._isRoundup
-  );
-  const todaySpent = todayTxns.reduce((s,t) => s+t.amt, 0);
+  // Bundle 10: was an inline S.txns.filter rebuild missing the
+  // _NON_SPEND_CATS exclusion — the chat AI saw Bills/Savings/Transfers
+  // as "today's discretionary spend" while every other surface excluded
+  // them. Now routes through BRAIN.dashboard for one source of truth.
+  const todayTxns = BRAIN.dashboard.todayTxns();
+  const todaySpent = BRAIN.dashboard.todaySpend();
   const weekAgo = Date.now() - 7*86400000;
   const weekTxns = S.txns.filter(t =>
     t.ts > weekAgo && !t.income && !t._isCorrection
@@ -9544,14 +9559,16 @@ const PUSH = {
   async syncState() {
     if (!this.subscription) return;
     try {
-      const today = new Date().toDateString();
-      const todayTxns = (S.txns || []).filter(t => {
-        return new Date(t.ts).toDateString() === today && !t.income && !t._isCorrection;
-      });
+      // Bundle 10: was an inline S.txns.filter rebuild missing BOTH the
+      // _NON_SPEND_CATS exclusion AND the _isRoundup exclusion — push
+      // worker could fire false "over budget" alarms when bills auto-
+      // debited or round-ups landed. Now routes through BRAIN.dashboard
+      // for the canonical filter; morning/lunch sub-filters apply on top.
+      const todayTxns = BRAIN.dashboard.todayTxns();
       const morningTxns = todayTxns.filter(t => { const h = new Date(t.ts).getHours(); return h >= 7 && h < 11; });
       const lunchTxns   = todayTxns.filter(t => { const h = new Date(t.ts).getHours(); return h >= 11 && h < 15; });
       const lunchSpend  = lunchTxns.reduce((s, t) => s + t.amt, 0);
-      const todaySpent  = todayTxns.reduce((s, t) => s + t.amt, 0);
+      const todaySpent  = BRAIN.dashboard.todaySpend();
 
       // Plan-mode awareness for worker notifications
       const _trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
@@ -10779,6 +10796,57 @@ const BRAIN = {
       const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
       if (!bucket) return false;
       return this.setBucketSaved(bucketName, (bucket.saved || 0) + delta, source);
+    }
+  },
+
+  // ─── BRAIN.dashboard — Dashboard bubble (seeded Bundle 10) ──────────────
+  // First derived-view bubble. Owns the canonical "what does the user see
+  // RIGHT NOW" surface — today's spend, cycle spend, week spend, the list
+  // of today's transactions. Pre-Bundle-10 these were computed inline in
+  // at least 2 places (chat system prompt at L7236 + PUSH worker state at
+  // L9548) with subtly different filters, drifting from the canonical
+  // Dashboard/Footer/Analysis numbers. OPEN-BUGS #17 documented the
+  // visible three-tile drift; #15 documented daily-cost drift.
+  //
+  // Bundle 10 wires this as the public surface. Internals delegate to the
+  // existing canonical helpers (computeSpentToday / todayTxnsCanonical /
+  // MODEL.cycleSpent / MODEL.weekSpent) — no new math is introduced, just
+  // one entry point. Future bundles relocate more dashboard concerns
+  // (NW strip, calendar, hero copy generators) under BRAIN.dashboard.
+  dashboard: {
+    // The canonical "today's discretionary spend" number. Excludes income,
+    // non-spend categories (Bills/Savings/Transfer/Loans/CC payments),
+    // corrections, and round-ups. Same number Dashboard/Footer/Alert/
+    // Analysis already display.
+    todaySpend(now) {
+      return (typeof computeSpentToday === 'function')
+        ? computeSpentToday(now)
+        : 0;
+    },
+    // The list of today's discretionary transactions — same filter as
+    // todaySpend, but returns the array. Use this anywhere you need both
+    // the count, the list, AND the sum (e.g., AI system prompts that
+    // enumerate what the user spent today, push worker state that splits
+    // morning/lunch). Calling code that needs `lunchTxns` or similar
+    // sub-filters builds on TOP of this canonical base.
+    todayTxns(now) {
+      return (typeof todayTxnsCanonical === 'function')
+        ? todayTxnsCanonical(now)
+        : [];
+    },
+    // Cycle-to-date spend — for "$X this cycle" hero fallback. Delegates
+    // to MODEL.cycleSpent which is rebuilt every render via
+    // computeFinancialModel.
+    cycleSpend() {
+      return (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.cycleSpent === 'number')
+        ? MODEL.cycleSpent
+        : 0;
+    },
+    // Week-to-date spend — for "$X this week" / over-pace alerts.
+    weekSpend() {
+      return (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.weekSpent === 'number')
+        ? MODEL.weekSpent
+        : 0;
     }
   }
 };

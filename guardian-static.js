@@ -55,6 +55,20 @@ const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillP
 // S.savingsBuckets[i].saved mutation. The only legitimate exception is
 // the load() migration path which patches data shapes during boot.
 const BUCKET_SAVED_WRITER_FNS = new Set(['setBucketSaved', 'load']);
+
+// Bundle 10: allow-set for the no-inline-todayspend-computation rule.
+// BRAIN.dashboard.todaySpend / todayTxns are the canonical chokepoints
+// for "today's discretionary spend" computation. The canonical helpers
+// themselves (computeSpentToday, todayTxnsCanonical, getTodaySpent and
+// its aliases, getNoSpendStreak which legitimately walks days using
+// date strings, computeSpentInRange which uses ts-range not date-string
+// matching) are exempt. The PUSH worker's pre-Bundle-10 inline logic
+// was the bug source — that's now gone.
+const TODAYSPEND_CANONICAL_FNS = new Set([
+  'computeSpentToday', 'todayTxnsCanonical', 'getTodaySpent',
+  'getTodayDiscretionarySpend', 'computeSpentInRange',
+  'getDiscretionaryByCategory', 'getNoSpendStreak'
+]);
 // Survival-mode strings (rule no-hardcoded-survival-mode-string).
 const SURVIVAL_MODE_STRINGS = new Set(['critical', 'survival', 'tight', 'cautious', 'normal']);
 // Debt strategy strings.
@@ -471,6 +485,104 @@ const RULES = [
             line: fileLine(node.loc.start.line),
             col: node.loc.start.column,
             evidence: `bucket .saved write inside ${fn || '<top-level>'} — route through BRAIN.savings.setBucketSaved`,
+          });
+        },
+      });
+      return violations;
+    },
+  },
+
+  // ─── 2c. no-inline-todayspend-computation (Bundle 10 architectural barrier) ─
+  // "Today's discretionary spend" computation belongs in the canonical
+  // chain (computeSpentToday -> computeSpentInRange) exposed via
+  // BRAIN.dashboard.todaySpend / todayTxns. Pre-Bundle-10 two surfaces
+  // rebuilt the filter inline — chat system prompt (L7236-7240) was
+  // missing the _NON_SPEND_CATS exclusion, and the PUSH worker state
+  // (L9548-9554) was missing both _NON_SPEND_CATS AND _isRoundup.
+  // Result: the AI saw Bills as "today's spend", push worker fired
+  // false "over budget" alarms when bills auto-debited.
+  //
+  // Rule shape: flag any S.txns.filter(<cb>) where the callback contains
+  // a "today date-string match" — `new Date(t.ts).toDateString() === <expr>`.
+  // AST-based, not regex — precise. Allow-list TODAYSPEND_CANONICAL_FNS
+  // (the canonical chain itself can read S.txns this way; it just uses
+  // ts-range comparison, not date-string match, so this pattern doesn't
+  // fire on it anyway, but the allow-list is defensive).
+  {
+    name: 'no-inline-todayspend-computation',
+    severity: 'fail',
+    anchor: 'arch-barrier-bundle-10',
+    check() {
+      const violations = [];
+      // Walks a callback's body looking for the discretionary-today
+      // signature: BOTH a `new Date(<x>).toDateString() === <y>` match
+      // AND a `t._isCorrection` or `t._isRoundup` exclusion. The legit
+      // non-spend "today" filters (Last 7 Days chart, debt-repayment
+      // breakdown, reconciler totals, character scoring) all match on
+      // toDateString but never combine it with the correction/roundup
+      // exclusion that's signature of "discretionary spend" computation.
+      // Combining both signals narrows the rule to the actual drift
+      // pattern the chat handler + PUSH worker had before Bundle 10.
+      const cbHasTodayDateMatch = (cb) => {
+        if (!cb || !cb.range) return false;
+        let found = false;
+        walk.simple(cb, {
+          BinaryExpression(node) {
+            if (node.operator !== '===' && node.operator !== '==') return;
+            const sides = [node.left, node.right];
+            for (const side of sides) {
+              if (!side || side.type !== 'CallExpression') continue;
+              const callee = side.callee;
+              if (!callee || callee.type !== 'MemberExpression') continue;
+              if (!callee.property || callee.property.name !== 'toDateString') continue;
+              found = true;
+              return;
+            }
+          },
+        });
+        return found;
+      };
+      const cbHasDiscretionaryExclusion = (cb) => {
+        if (!cb || !cb.range) return false;
+        let found = false;
+        walk.simple(cb, {
+          MemberExpression(node) {
+            if (!node.property) return;
+            const name = node.property.name;
+            if (name === '_isCorrection' || name === '_isRoundup') {
+              found = true;
+              return;
+            }
+          },
+        });
+        return found;
+      };
+      const cbContainsTodayDateMatch = (cb) =>
+        cbHasTodayDateMatch(cb) && cbHasDiscretionaryExclusion(cb);
+      walk.simple(ast, {
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'MemberExpression') return;
+          if (!node.callee.property || node.callee.property.name !== 'filter') return;
+          // Target is S.txns or (S.txns || []) — the actual transaction store.
+          const obj = node.callee.object;
+          const isTxns =
+            (obj && obj.type === 'MemberExpression' && obj.object
+              && obj.object.name === 'S'
+              && obj.property && obj.property.name === 'txns')
+            || (obj && obj.type === 'LogicalExpression' && obj.operator === '||'
+              && obj.left && obj.left.type === 'MemberExpression'
+              && obj.left.object && obj.left.object.name === 'S'
+              && obj.left.property && obj.left.property.name === 'txns');
+          if (!isTxns) return;
+          const cb = node.arguments[0];
+          if (!cb) return;
+          if (!cbContainsTodayDateMatch(cb)) return;
+          const fn = enclosingFn(node.range[0]);
+          if (TODAYSPEND_CANONICAL_FNS.has(fn)) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: `inline today-spend filter (toDateString match) inside ${fn || '<top-level>'} — route through BRAIN.dashboard.todayTxns / todaySpend`,
           });
         },
       });
