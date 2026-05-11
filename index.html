@@ -4898,10 +4898,14 @@ function markBillPaidMonth() {
   withMarkPaidGate(b, () => {
     saveUndoState(); // L3: undo support
     // Deduct from S.bal and log to history
+    // Bundle 7.2.4 fix-forward: record _txnTs on the paidBills entry so
+    // undoBillPaid can reverse the paired txn (restore S.bal, splice).
+    const txnTs = Date.now();
     S.bal -= b.amt;
-    S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: Date.now(), income: false, _balAffected: true});
+    S.txns.push({amt: b.amt, note: b.name + ' \u2014 paid', cat: b.tag || 'Bills', ts: txnTs, income: false, _balAffected: true});
     if (!S.paidBills) S.paidBills = {};
-    S.paidBills[paidBillKey(b.name, b.day)] = true;
+    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - markBillPaidMonth writes the structured shape so undo can reverse the paired txn)
+    S.paidBills[paidBillKey(b.name, b.day)] = { paid: true, ts: txnTs, _txnTs: txnTs };
     closeModal('bill-modal', true); onStateChange('bill-paid-month');
     if(navigator.vibrate) navigator.vibrate(50);
     // Immediately remove any notification for this bill — don't wait for heartbeat
@@ -4909,12 +4913,64 @@ function markBillPaidMonth() {
   });
 }
 
+// Bundle 7.2.4 fix-forward: shared reversal helper. Finds the paired txn
+// via _txnTs (recorded when the paid-mark was created), restores S.bal,
+// and removes the txn from S.txns. Also handles a round-up txn that may
+// sit immediately after the main txn (tagged _isRoundup) — round-ups
+// were created BECAUSE of the original spend so undoing the spend
+// should undo the round-up too, otherwise the savings bucket holds
+// orphan money and S.bal stays off by the round-up amount.
+// Returns true if a txn was reversed (caller can decide messaging).
+function _reversePaidBillTxn(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const txnTs = entry._txnTs;
+  if (!txnTs) return false;
+  const txns = S.txns || [];
+  const idx = txns.findIndex(t => t.ts === txnTs);
+  if (idx < 0) return false;
+  const t = txns[idx];
+  if (t._balAffected) {
+    if (t.income) S.bal -= (t.amt || 0);
+    else S.bal += (t.amt || 0);
+    S.bal = parseFloat(S.bal.toFixed(2));
+  }
+  let removeCount = 1;
+  const next = txns[idx + 1];
+  if (next && next._isRoundup) {
+    if (next._balAffected) {
+      S.bal = parseFloat((S.bal + (next.amt || 0)).toFixed(2));
+    }
+    const m = (next.note || '').match(/Round-up\s*[→\-]+\s*(.+)/);
+    if (m && S.savingsBuckets) {
+      const target = m[1].trim().toLowerCase();
+      const bucket = S.savingsBuckets.find(bk => (bk.name || '').toLowerCase() === target);
+      if (bucket && typeof bucket.saved === 'number') {
+        bucket.saved = parseFloat(Math.max(0, bucket.saved - (next.amt || 0)).toFixed(2));
+      }
+    }
+    removeCount = 2;
+  }
+  txns.splice(idx, removeCount);
+  return true;
+}
+
 // Undo paid bill — removes paidBills key; only accessible inside the modal to prevent accidental triggers
 function undoBillPaid() {
   if (activeBillIdx < 0) return;
   const b = BILLS[activeBillIdx];
-  if (S.paidBills) delete S.paidBills[paidBillKey(b.name, b.day)];
-  save(); closeModal('bill-modal', true); renderAll();
+  const key = paidBillKey(b.name, b.day);
+  // Bundle 7.2.4 fix-forward: reverse the paired txn + balance impact.
+  // Run BEFORE deleting the paidBills key so we can read _txnTs.
+  if (S.paidBills) {
+    _reversePaidBillTxn(S.paidBills[key]);
+    if (!S._billUnmarkLog) S._billUnmarkLog = {};
+    S._billUnmarkLog[key] = Date.now();
+    delete S.paidBills[key];
+  }
+  closeModal('bill-modal', true);
+  // onStateChange (not save+renderAll) so MODEL/NW/plan/surplus all
+  // recompute from the restored balance.
+  onStateChange('bill-paid-undone');
 }
 
 // OPEN-BUGS #39 — undo a single paid-early entry by full paidBills key.
@@ -4948,6 +5004,15 @@ function unmarkBillFromCal(key, day) {
 function undoPaidBillByKey(key) {
   if (!S.paidBills || !S.paidBills[key]) return false;
   const name = parseMI13Key(key).name || key;
+  // Bundle 7.2.4 fix-forward: reverse the paired txn + balance impact.
+  // BEFORE delete so we can read _txnTs from the entry. _reversePaidBillTxn
+  // restores S.bal, removes the txn, and handles a trailing round-up txn
+  // if there was one. Returns true if a txn was reversed (the entry was
+  // created via a path that logged a txn — payBillNow, markBillPaidMonth,
+  // _consumePendingBillPay). Entries created by autoDetect/autoMatch have
+  // no _txnTs (no txn was created), so this is a no-op for those — which
+  // is correct: there's nothing to reverse.
+  const reversed = _reversePaidBillTxn(S.paidBills[key]);
   // Bundle 7.2.3 fix-forward: record the un-mark so autoDetect /
   // autoMatch skip this bill for 30 days. Without this, the next render
   // (refresh, tab switch, any state change) re-runs auto-detection
@@ -4977,8 +5042,18 @@ function undoPaidBillByKey(key) {
       closeModal('mi13-details-modal', true);
     }
   } catch (_) {}
-  if (typeof renderAll === 'function') renderAll();
-  try { showToast('Undid: ' + name); } catch (_) {}
+  // Bundle 7.2.4 fix-forward: route through onStateChange (was renderAll
+  // alone) so MODEL recomputes from the restored balance and all
+  // downstream surfaces (NW, plan capacity, surplus, MI banner, AI
+  // copy) re-derive consistently. renderAll() alone just repaints from
+  // stale MODEL — surfaces that derive from MODEL would lag.
+  if (typeof onStateChange === 'function') onStateChange('bill-paid-undone');
+  else if (typeof renderAll === 'function') renderAll();
+  try {
+    showToast(reversed
+      ? 'Undid: ' + name + ' — balance + txn reversed'
+      : 'Undid: ' + name);
+  } catch (_) {}
   return true;
 }
 
@@ -5973,7 +6048,6 @@ function openCatModal(cat) {
 function renderDashTxns() {
   const c = $('dash-txns');
   // FIX 3: last 5 transactions, tappable to edit
-  const totalCount = S.txns.length;
   // Bundle 6: filter round-ups out of Recent Spending (they appeared
   // 3-of-5 in dashboard list, dominating real spend visibility).
   // Round-ups still tracked elsewhere (Plan goals, Spending Pivot
@@ -5981,7 +6055,16 @@ function renderDashTxns() {
   const recent = (S.txns||[]).filter(t => !t._isRoundup).slice(-5).reverse();
   if (!recent.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   c.innerHTML = recent.map((t, revIdx) => {
-    const realIdx = totalCount - 1 - revIdx;
+    // Bundle 7.2.4 fix-forward: realIdx = totalCount - 1 - revIdx was
+    // wrong when round-ups exist in S.txns. quickLogTxn pushes the main
+    // expense THEN appends a round-up txn, so a $16.99 YouTube payment
+    // sits at S.txns[N], the $0.01 round-up at S.txns[N+1]. We filter
+    // round-ups out of `recent` but the old realIdx formula counted
+    // them in totalCount — so tapping the most-recent visible row
+    // opened the round-up txn instead of the actual bill payment.
+    // S.txns.indexOf(t) returns the real position regardless of what
+    // else is in the array.
+    const realIdx = S.txns.indexOf(t);
     const col = CHIP_COLORS[Math.abs((t.note||'').charCodeAt(0)) % CHIP_COLORS.length];
     const d = new Date(t.ts);
     const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
@@ -6296,6 +6379,21 @@ function selectCat(btn, cat) {
   const sel = document.getElementById('ql-cat');
   if (sel) sel.value = cat;
   localStorage.setItem('slyght_last_cat', cat);
+  // Bundle 7.2.4 fix-forward: if user pivots category away from 'Bills'
+  // during an active bill-pay flow (set by markBillAlreadyPaid /
+  // _markBillPaidViaQuickLog), clear the prefilled amount + note + stash.
+  // Without this, "$16.99 — YouTube Premium — paid" would silently leak
+  // into an unrelated Income / From-person log. The bill-pay stash itself
+  // is already cleared on income/from-person save paths (7.2.2/7.2.3),
+  // but the form fields stay populated and feel like a false-flag.
+  if (window._pendingBillPayKey && cat !== 'Bills') {
+    const amtEl = document.getElementById('ql-amt');
+    const noteEl = document.getElementById('ql-note');
+    if (amtEl) amtEl.value = '';
+    if (noteEl) noteEl.value = '';
+    delete window._pendingBillPayKey;
+    delete window._pendingBillPayAutoDebit;
+  }
 }
 
 function rmTxn(i) {
@@ -10281,17 +10379,24 @@ function pivotToggle(cat) {
 function payBillNow(billName, billDay, billAmt) {
   const bill = findBillByNameDay(billName, billDay) || { name: billName, day: billDay };
   withMarkPaidGate(bill, () => {
+    // Bundle 7.2.4 fix-forward: record _txnTs on the paidBills entry so
+    // undoPaidBillByKey can find and reverse this exact txn (restoring
+    // S.bal and removing from S.txns). Pre-7.2.4, undo only deleted the
+    // paidBills key — txn stayed, balance stayed off — user had to
+    // reconcile manually which polluted the data.
+    const txnTs = Date.now();
     S.txns.push({
       amt: billAmt,
       note: billName + ' — paid',
       cat: 'Bills',
-      ts: Date.now(),
+      ts: txnTs,
       income: false,
       _balAffected: true
     });
     S.bal = parseFloat((S.bal - billAmt).toFixed(2));
     if (!S.paidBills) S.paidBills = {};
-    S.paidBills[paidBillKey(billName, billDay)] = true;
+    // guardian-allow: no-direct-paidbills-access - key built via canonical paidBillKey helper on same expression; structured Bundle 7 shape carrying the txn timestamp for reversible undo (permanent - payBillNow writes the structured shape so undo can find and reverse the paired txn)
+    S.paidBills[paidBillKey(billName, billDay)] = { paid: true, ts: txnTs, _txnTs: txnTs };
     onStateChange('bill_paid_now');
     showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
     document.getElementById('cal-day-detail').style.display = 'none';
@@ -10306,14 +10411,19 @@ function payBillNow(billName, billDay, billAmt) {
 function _consumePendingBillPay() {
   if (window._pendingBillPayKey) {
     if (!S.paidBills) S.paidBills = {};
-    // Bundle 7.2.3 fix-forward: honor _pendingBillPayAutoDebit (set by
-    // withMarkPaidGate when the user picked "this auto-debits" in the
-    // 3-way modal). Writes the structured Bundle 7 shape so MI-13
-    // ignores the future-dated entry.
-    // guardian-allow: no-direct-paidbills-access — window._pendingBillPayKey is always set via canonical paidBillKey() in markBillAlreadyPaid / _markBillPaidViaQuickLog; the stash is intermediate transport, not a parallel key format (permanent — Bundle 7.2.2 bill-pay stash consumer)
+    // Bundle 7.2.4 fix-forward: record _txnTs so undoPaidBillByKey can
+    // reverse the txn + balance the user just logged. The last entry in
+    // S.txns is the txn quickLogTxn just pushed for this bill-pay flow.
+    // Both autoDebit and manual paths now use structured shape (was: legacy
+    // 'true' for non-auto-debit). isPaidBillKeyTruthy already handles both
+    // shapes so this is forward-compatible.
+    const lastTxn = (S.txns || [])[(S.txns || []).length - 1];
+    const txnTs = lastTxn ? lastTxn.ts : Date.now();
+    const now = Date.now();
+    // guardian-allow: no-direct-paidbills-access - window._pendingBillPayKey is always set via canonical paidBillKey helper in markBillAlreadyPaid / _markBillPaidViaQuickLog; this is intermediate transport not a parallel key format (permanent - Bundle 7.2.2 bill-pay stash consumer; 7.2.4 adds the _txnTs reverse-undo back-reference)
     S.paidBills[window._pendingBillPayKey] = window._pendingBillPayAutoDebit
-      ? { paid: true, _scheduledAutoDebit: true, ts: Date.now() }
-      : true;
+      ? { paid: true, _scheduledAutoDebit: true, ts: now, _txnTs: txnTs }
+      : { paid: true, ts: now, _txnTs: txnTs };
     delete window._pendingBillPayKey;
     delete window._pendingBillPayAutoDebit;
   }

@@ -42,7 +42,13 @@ const TXNS_FILTER_HELPERS = new Set([
 ]);
 // Functions where reading S.paidBills directly is sanctioned (migrations or
 // operate on existing keys handed in by callers — no key construction).
-const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey']);
+// Bundle 7.2.4: undoBillPaid joins the migration-fn allow-list alongside
+// undoPaidBillByKey. Both are un-mark helpers that need to read paidBills
+// by stored key (to fetch the entry's _txnTs back-reference for txn
+// reversal) and then delete it. Keeping them in this set keeps the
+// rule's intent — direct paidBills access is allowed in well-named
+// migration / un-mark helpers; everywhere else routes via paidBillKey.
+const PAIDBILLS_MIGRATION_FNS = new Set(['load', 'undoPaidBillByKey', 'undoBillPaid']);
 // Survival-mode strings (rule no-hardcoded-survival-mode-string).
 const SURVIVAL_MODE_STRINGS = new Set(['critical', 'survival', 'tight', 'cautious', 'normal']);
 // Debt strategy strings.
