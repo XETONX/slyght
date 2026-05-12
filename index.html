@@ -127,7 +127,7 @@ body.edit-modal-open{overflow:hidden}
    the transform via normal cascade. Earlier inline-style version had the
    transform stuck at translateX(100%) because inline beats class rules
    (Bundle 27 1+2 verify fix). */
-#pg-payday-plan{position:fixed;inset:0;background:var(--bg);z-index:510;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);overflow-y:auto;-webkit-overflow-scrolling:touch}
+#pg-payday-plan{position:fixed;inset:0;background:var(--bg);z-index:510;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 #pg-payday-plan.payday-active{transform:translateX(0)}
 #pg-payday-plan.has-active-subscreen{overflow:hidden}
 .payday-subscreen{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);transform:translateX(100%);transition:transform 250ms ease-out;z-index:20;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;visibility:hidden}
@@ -7742,42 +7742,70 @@ function renderPaydayPlanRoot() {
     + seg(snap.knownUpcoming.total, 'var(--amber)')
     + seg(snap.dailyLiving.plannedTotal, 'var(--text3)')
     + '</div>';
-  // 3-number summary line
-  const claimedFmt = fmt(snap.derived.claimedTotal);
-  const freeFmt = fmt(snap.derived.freeTotal);
-  const perDayFmt = fmt(snap.dailyLiving.perDay);
-  const freeCol = snap.derived.freeTotal >= snap.bufferFloor ? 'var(--green)' : snap.derived.freeTotal >= 0 ? 'var(--amber)' : 'var(--red)';
   // Hero
   let html = '';
   html += '<div class="payday-hero">';
-  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">To plan this cycle</div>';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in</div>';
   html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
   html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono)">' + fmt(inc.netPay || 0) + '</span> net pay · ' + bonusBadge + ' <button onclick="alert(\'Bonus editor — Phase 6\')" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button></div>';
   html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
   html += '</div>';
 
-  // 3-number line + proportion bar
-  html += '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text2);padding:0 4px">';
-  html += '<span>Claimed <strong style="font-family:var(--mono);color:var(--text)">' + claimedFmt + '</strong></span>';
-  html += '<span>Free <strong style="font-family:var(--mono);color:' + freeCol + '">' + freeFmt + '</strong></span>';
-  html += '<span>/Day <strong style="font-family:var(--mono);color:var(--text)">' + perDayFmt + '</strong></span>';
-  html += '</div>';
+  // Compact proportion bar — visual context, no big claim
   html += propBar;
   html += '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:18px">Bills · Debts · Savings · Upcoming · Living</div>';
 
-  // 5 category rows
-  const billsLabel = snap.bills.items > 0 ? (fmt(snap.bills.total) + ' · ' + snap.bills.items + ' bill' + (snap.bills.items === 1 ? '' : 's')) : 'No bills this cycle';
+  // ── ESSENTIALS section (bills + debts + living) ──
+  // Per John 2026-05-13: "show what the expected monthly costs will be
+  // that month and remainder after essentials paid, then like i can dig
+  // deeper via the menus to understand"
+  const billsLabel = fmt(snap.bills.total) + ' · ' + snap.bills.items + ' bill' + (snap.bills.items === 1 ? '' : 's');
   const debtsLabel = snap.debts.items > 0 ? (fmt(snap.debts.total) + ' · ' + snap.debts.items + ' active') : 'No active debts';
-  const savingsLabel = fmt(snap.savings.total) + ' allocated';
-  const upLabel = snap.knownUpcoming.items > 0 ? (fmt(snap.knownUpcoming.total) + ' · ' + snap.knownUpcoming.items + ' item' + (snap.knownUpcoming.items === 1 ? '' : 's')) : 'None added yet';
-  const livingLabel = fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days';
+  const livingLabel = fmt(snap.dailyLiving.plannedTotal) + ' · ' + fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days';
+  const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
+  const remainder = snap.totalToPlan - essentialsTotal;
   const navRow = (icon, title, subtitle, onclick) => '<button class="payday-nav-row" onclick="' + onclick + '" aria-label="' + title + ': ' + subtitle + '"><span class="row-icon">' + icon + '</span><span class="row-text"><span class="row-title">' + title + '</span><span class="row-subtitle">' + subtitle + '</span></span><span class="row-chevron">›</span></button>';
-  html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px">';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:6px 4px 8px">Essentials this cycle</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:8px">';
   html += navRow('🏠', 'Bills', billsLabel, "openPaydayCategory('payday-bills')");
   html += navRow('💳', 'Debts', debtsLabel, "openPaydayCategory('payday-debts')");
-  html += navRow('💰', 'Savings plan', savingsLabel, "openPaydayCategory('payday-savings')");
-  html += navRow('🎯', 'Known upcoming', upLabel, "openPaydayCategory('payday-upcoming')");
   html += navRow('📅', 'Daily living', livingLabel, "openPaydayCategory('payday-living')");
+  html += '</div>';
+  // Essentials subtotal line
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 14px 14px;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);margin-bottom:14px">';
+  html += '<span>Essentials total</span>';
+  html += '<span style="font-family:var(--mono);font-weight:600;color:var(--text)">' + fmt(essentialsTotal) + '</span>';
+  html += '</div>';
+
+  // ── REMAINDER tile (the headline number — where $634 comes from) ──
+  const remainderCol = remainder >= snap.bufferFloor ? 'var(--green)' : remainder >= 0 ? 'var(--amber)' : 'var(--red)';
+  html += '<div style="background:' + (remainder >= 0 ? 'rgba(78,205,196,0.08)' : 'rgba(231,76,60,0.08)') + ';border:1px solid ' + (remainder >= 0 ? 'rgba(78,205,196,0.25)' : 'rgba(231,76,60,0.25)') + ';border-radius:12px;padding:14px 16px;margin-bottom:14px">';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🎯 Remainder after essentials</div>';
+  html += '<div style="font-family:var(--mono);font-size:28px;font-weight:800;color:' + remainderCol + ';line-height:1">' + fmt(remainder) + '</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-top:6px">' + fmt(snap.totalToPlan) + ' coming in − ' + fmt(essentialsTotal) + ' essentials = ' + fmt(remainder) + '</div>';
+  html += '</div>';
+
+  // ── ALLOCATING REMAINDER section (savings + upcoming) ──
+  const savingsLabel = snap.savings.total > 0 ? (fmt(snap.savings.total) + ' allocated') : 'Nothing allocated yet';
+  const upLabel = snap.knownUpcoming.items > 0 ? (fmt(snap.knownUpcoming.total) + ' · ' + snap.knownUpcoming.items + ' item' + (snap.knownUpcoming.items === 1 ? '' : 's')) : 'None added yet';
+  const discretionaryTotal = snap.savings.total + snap.knownUpcoming.total;
+  const stillFree = remainder - discretionaryTotal;
+  const stillFreeCol = stillFree >= 0 ? 'var(--green)' : 'var(--red)';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:6px 4px 8px">Allocating the remainder</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:8px">';
+  html += navRow('💰', 'Savings goals', savingsLabel, "openPaydayCategory('payday-savings')");
+  html += navRow('🎯', 'Known upcoming', upLabel, "openPaydayCategory('payday-upcoming')");
+  html += '</div>';
+  // Allocations subtotal + still-free
+  html += '<div style="padding:0 14px 14px;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);margin-bottom:14px">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline">';
+  html += '<span>Allocated so far</span>';
+  html += '<span style="font-family:var(--mono);font-weight:600;color:var(--text)">' + fmt(discretionaryTotal) + '</span>';
+  html += '</div>';
+  html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">';
+  html += '<span style="color:var(--text)">Still free</span>';
+  html += '<span style="font-family:var(--mono);font-weight:700;color:' + stillFreeCol + '">' + fmt(stillFree) + '</span>';
+  html += '</div>';
   html += '</div>';
 
   // 3 action rows
@@ -18290,7 +18318,7 @@ document.getElementById('plan-modal-overlay')
   </div>
 </div>
 <!-- PLAN MODE OVERLAY -->
-<div id="plan-mode" style="position:fixed;inset:0;background:#0a0f1a;z-index:500;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);overflow-y:auto;padding-bottom:100px">
+<div id="plan-mode" style="position:fixed;inset:0;background:#0a0f1a;z-index:500;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);overflow-y:auto;overflow-x:hidden;padding-bottom:100px">
   <div style="position:sticky;top:0;background:#0a0f1a;padding:16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.06);z-index:10">
     <button onclick="closePlanMode()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:#fff;padding:8px 16px;font-size:14px;cursor:pointer">‹ NOW</button>
     <div style="color:#fff;font-size:15px;font-weight:700;letter-spacing:1px">FUTURE PLAN</div>
