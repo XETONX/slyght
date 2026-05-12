@@ -12626,6 +12626,26 @@ const BRAIN = {
     },
     recent(n) {
       return (S._auditLog || []).slice(-(n || 20));
+    },
+    // Bundle 24 Phase 3: AI agent reads "what changed since X" via this.
+    // Returns all audit entries with ts > sinceTs, in chronological order.
+    // Useful for proactive coaching ("since this morning you've cleared a
+    // bill and added $X to round-ups").
+    since(sinceTs) {
+      const cutoff = +sinceTs || 0;
+      return (S._auditLog || []).filter(e => (+e.ts || 0) > cutoff);
+    },
+    // Group recent audit entries by type — used by AI to summarize categories
+    // of activity ("you marked 3 bills paid and updated 2 balances today").
+    summarizeRecent(sinceTs) {
+      const entries = this.since(sinceTs);
+      const byType = {};
+      entries.forEach(e => {
+        const t = e.type || 'unknown';
+        if (!byType[t]) byType[t] = 0;
+        byType[t]++;
+      });
+      return { count: entries.length, byType };
     }
   },
 
@@ -13113,9 +13133,121 @@ const BRAIN = {
           note: (t.note || '').slice(0, 40),
           income: !!t.income,
           ts: t.ts
-        }))
+        })),
+        // Bundle 24 Phase 3: enriched envelope for proactive AI coaching.
+        // forecast / anomalies / healthSnapshot are computed-on-demand.
+        // Stays defensive — missing data returns null/empty, not throws.
+        forecast: this.forecast(),
+        anomalies: this.anomalies(),
+        health: this.healthSnapshot(),
       };
-    }
+    },
+    // Bundle 24 Phase 3: forecast — projected balances + key dates.
+    // Simple linear model based on current state + cycle averages. AI uses
+    // this to answer "will I make it to payday" / "what's my runway".
+    forecast() {
+      const bal = (typeof S !== 'undefined') ? (+S.bal || 0) : 0;
+      const daysToPayday = (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.daysToPayday === 'number')
+        ? MODEL.daysToPayday : null;
+      // Average daily discretionary spend over last 14 days. Use a
+      // {from, to} range since 'last14days' isn't a built-in token.
+      const FOURTEEN_D = 14 * 86400000;
+      const last14 = this.total({ from: Date.now() - FOURTEEN_D, to: Date.now() });
+      const avgDailySpend = last14 / 14;
+      // Bills due before payday (canonical helper exists).
+      const billsDueAmt = (typeof getActiveDebtsDueBeforePayday === 'function')
+        ? getActiveDebtsDueBeforePayday() : 0;
+      const billsDueList = (typeof getBillsDue === 'function')
+        ? getBillsDue() : [];
+      const billsTotal = billsDueList.reduce((s, b) => s + (b.amt || 0), 0);
+      const projectedBalanceAtPayday = daysToPayday != null
+        ? bal - (avgDailySpend * daysToPayday) - billsTotal - billsDueAmt
+        : null;
+      // Days of runway at current spend rate (excluding bills — discretionary only).
+      const daysOfRunway = (avgDailySpend > 0) ? Math.floor(bal / avgDailySpend) : null;
+      return {
+        avgDailySpend: parseFloat(avgDailySpend.toFixed(2)),
+        billsBeforePayday: parseFloat((billsTotal + billsDueAmt).toFixed(2)),
+        projectedBalanceAtPayday: projectedBalanceAtPayday != null ? parseFloat(projectedBalanceAtPayday.toFixed(2)) : null,
+        daysOfRunway,
+        daysToPayday,
+      };
+    },
+    // Bundle 24 Phase 3: anomalies — out-of-norm patterns surfaced for AI.
+    // Two simple detectors: (1) over-budget streak day count, (2) category
+    // spikes vs trailing-30 average. Both return empty/0 when data is sparse.
+    anomalies() {
+      const out = { overBudgetStreak: 0, categorySpikes: [] };
+      // Over-budget streak — consecutive days where spend > applicable
+      // budget (weekday vs weekend), looking back up to 14 days.
+      const txns = (typeof S !== 'undefined' && Array.isArray(S.txns)) ? S.txns : [];
+      const wkBudget = +S.weekdayBudget || 60;
+      const weBudget = +S.weekendBudget || 180;
+      const dayBuckets = {};
+      txns.forEach(t => {
+        if (!t || t.income || t._isCorrection || t._isRoundup) return;
+        if (t.cat === 'Bills' || t.cat === 'Savings' || t.cat === 'Transfer' || t.cat === 'Loan' || t.cat === 'CC Payment') return;
+        const d = new Date(t.ts);
+        const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+        if (!dayBuckets[key]) dayBuckets[key] = { amt: 0, dow: d.getDay() };
+        dayBuckets[key].amt += +t.amt || 0;
+      });
+      // Walk back from yesterday — only count finished days.
+      let streak = 0;
+      const now = new Date();
+      for (let i = 1; i <= 14; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const key = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+        const day = dayBuckets[key];
+        if (!day) break;  // gap — streak ends
+        const budget = (day.dow === 0 || day.dow === 6) ? weBudget : wkBudget;
+        if (day.amt > budget) streak++; else break;
+      }
+      out.overBudgetStreak = streak;
+      // Category spikes — last7 vs trailing30 avg (per-day basis).
+      const cat7 = this.totalsByCategory('last7days');
+      const cat30 = this.totalsByCategory('last30days');
+      Object.keys(cat7).forEach(cat => {
+        const last7Per = (cat7[cat] || 0) / 7;
+        const last30Per = (cat30[cat] || 0) / 30;
+        if (last30Per <= 0) return;  // no baseline — skip
+        const ratio = last7Per / last30Per;
+        if (ratio >= 1.5 && cat7[cat] >= 30) {  // >=50% above baseline AND meaningful $
+          out.categorySpikes.push({
+            cat,
+            last7: parseFloat(cat7[cat].toFixed(2)),
+            last30: parseFloat(cat30[cat].toFixed(2)),
+            ratio: parseFloat(ratio.toFixed(2)),
+          });
+        }
+      });
+      out.categorySpikes.sort((a, b) => b.ratio - a.ratio);
+      return out;
+    },
+    // Bundle 24 Phase 3: health snapshot — single envelope of canonical
+    // financial-health metrics the AI uses for proactive coaching.
+    healthSnapshot() {
+      const hasAssets = typeof BRAIN !== 'undefined' && BRAIN.assets;
+      const nw = hasAssets ? BRAIN.assets.netWorth() : 0;
+      const liquidNet = hasAssets ? BRAIN.assets.liquidNet() : 0;
+      const liabilities = hasAssets ? BRAIN.assets.totalLiabilities() : 0;
+      const income = (typeof S !== 'undefined') ? (+S.income || 0) : 0;
+      const debtToIncome = (income > 0) ? parseFloat((liabilities / (income * 12)).toFixed(3)) : null;
+      const ccUsed = (+S.cc || 0);
+      const ccLimit = (+S.ccLimit || 0);
+      const ccUtilisation = (ccLimit > 0) ? parseFloat((ccUsed / ccLimit).toFixed(3)) : null;
+      const bucketTotal = (S.savingsBuckets || []).reduce((s, b) => s + (+b.saved || 0), 0);
+      return {
+        netWorth: parseFloat(nw.toFixed(2)),
+        liquidNet: parseFloat(liquidNet.toFixed(2)),
+        totalLiabilities: parseFloat(liabilities.toFixed(2)),
+        savingsTotal: parseFloat(bucketTotal.toFixed(2)),
+        debtToAnnualIncomeRatio: debtToIncome,
+        ccUtilisation,
+        roundUpsEnabled: !!(S.roundUpsEnabled),
+        roundUpDestination: S.roundUpDestination || null,
+      };
+    },
   },
 
   // ─── BRAIN.dashboard — Dashboard bubble (seeded Bundle 10) ──────────────
