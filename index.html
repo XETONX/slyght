@@ -1639,7 +1639,13 @@ const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Tr
 // of negative remaining, show the borrow card. Tunable single-edit.
 const SURVIVAL_BORROW_THRESHOLD = 100;
 function getAvgDailySpend() {
-  const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
+  // Bundle 22.4: migrated from raw S.txns.filter to BRAIN.summary.
+  // Pre-fix: separate filter that didn't exclude _isCorrection / _isRoundup,
+  // letting balance-corrections + round-up cents inflate the avg daily.
+  // Now: canonical discretionary filter via BRAIN.summary.discretionaryTxns('all').
+  const expTxns = (typeof BRAIN !== 'undefined' && BRAIN.summary)
+    ? BRAIN.summary.discretionaryTxns('all')
+    : (S.txns || []).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && !t._isCorrection && !t._isRoundup);
   if (expTxns.length < 3) return S.weekdayBudget || 60;
   const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
@@ -1896,8 +1902,12 @@ function todayTxnsCanonical(now) {
   );
 }
 function getNoSpendStreak() {
-  // Only discretionary transactions break the streak — debt repayments do NOT count
-  const expenseTxns = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat));
+  // Only discretionary transactions break the streak — debt repayments do NOT count.
+  // Bundle 22.4: migrated from raw filter to BRAIN.summary canonical helper.
+  // Includes _isCorrection + _isRoundup exclusion (was missing pre-22.4).
+  const expenseTxns = (typeof BRAIN !== 'undefined' && BRAIN.summary)
+    ? BRAIN.summary.discretionaryTxns('all')
+    : S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && !t._isCorrection && !t._isRoundup);
   if (!expenseTxns.length) return 0;
   const today = new Date(); today.setHours(0,0,0,0);
   const todayHasTxn = expenseTxns.some(t => new Date(t.ts) >= today);
@@ -11516,6 +11526,20 @@ const BRAIN = {
       return (typeof todayTxnsCanonical === 'function')
         ? todayTxnsCanonical(now)
         : [];
+    },
+
+    // Bundle 22.4: raw discretionary txn array in range. Same filter as
+    // computeSpentInRange but returns the array (for callers that need
+    // timestamps, count, daySpan etc — e.g., getAvgDailySpend,
+    // getNoSpendStreak). Migrating these off raw S.txns.filter eliminates
+    // a class of "every render scans S.txns 5x" perf concerns.
+    discretionaryTxns(range) {
+      const { from, to } = this._resolveRange(range);
+      return (S.txns || []).filter(t =>
+        t.ts >= from && t.ts <= to &&
+        !t.income && !_NON_SPEND_CATS.has(t.cat) &&
+        !t._isCorrection && !t._isRoundup
+      );
     },
 
     // ─── AI context envelope ─────────────────────────────────────────────
