@@ -8098,7 +8098,57 @@ function openEditPaydayLivingFloor() {
 // "edit modal coming Phase 4" alert. Tick actions surface a "lock plan
 // first" hint pre-lock (Phase 5 wires post-lock ticks).
 const _PAYDAY_TICK_HINT_PRE = "Lock your plan to start ticking items off.";
-const _PAYDAY_TICK_HINT_POST = "Tick to mark this done — Phase 5 wires the real transaction.";
+
+// Bundle 27 Phase 5: post-lock tick action — fires real downstream txn via
+// BRAIN.plan.tickItem, re-renders the sub-screen, refreshes canvas root
+// (real balance + counters update immediately).
+function paydayTick(category, itemId, sourceTag) {
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan) return;
+  const snap = BRAIN.plan.getSnapshot();
+  if (!snap.locked) {
+    if (typeof showToast === 'function') showToast(_PAYDAY_TICK_HINT_PRE);
+    return;
+  }
+  const r = BRAIN.plan.tickItem(category, itemId, sourceTag);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Couldn\'t tick: ' + (r.reason || 'error'));
+    return;
+  }
+  // Refresh sub-screen + root
+  const rendererMap = {
+    bill: () => typeof renderPaydayBills === 'function' && renderPaydayBills(),
+    debt: () => typeof renderPaydayDebts === 'function' && renderPaydayDebts(),
+    savings: () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    'kia-extra': () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    upcoming: () => typeof renderPaydayUpcoming === 'function' && renderPaydayUpcoming(),
+  };
+  const fn = rendererMap[category];
+  if (fn) fn();
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof showToast === 'function') showToast('✓ Marked done');
+}
+function paydayUntick(category, itemId, sourceTag) {
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan) return;
+  if (!confirm('Untick this? It will reverse the transaction.')) return;
+  const r = BRAIN.plan.untickItem(category, itemId, sourceTag || BRAIN.SOURCES.PLAN_UNTICK);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Couldn\'t untick: ' + (r.reason || 'error'));
+    return;
+  }
+  const rendererMap = {
+    bill: () => typeof renderPaydayBills === 'function' && renderPaydayBills(),
+    debt: () => typeof renderPaydayDebts === 'function' && renderPaydayDebts(),
+    savings: () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    'kia-extra': () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    upcoming: () => typeof renderPaydayUpcoming === 'function' && renderPaydayUpcoming(),
+  };
+  const fn = rendererMap[category];
+  if (fn) fn();
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof showToast === 'function') showToast('↩ Unticked');
+}
 
 function _fmtCycleDay(day) {
   // Format day-of-month into "May 1" using current cycle month.
@@ -8233,7 +8283,7 @@ function renderPaydayBills() {
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
         onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
-        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
       });
     });
     html += '</div>';
@@ -8253,7 +8303,7 @@ function renderPaydayBills() {
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
         onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
-        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
       });
     });
     html += '</div>';
@@ -8294,7 +8344,7 @@ function renderPaydayDebts() {
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
         onTap: "openEditPaydayDebt('" + (d.id || d.name).toString().replace(/'/g, "\\'") + "')",
-        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: "paydayTick('debt', '" + (d.id || d.name).toString().replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_DEBT_TICK)",
       });
     });
     html += '</div>';
@@ -8366,7 +8416,7 @@ function renderPaydaySavings() {
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         onTap: "openEditPaydaySavings('" + b.name.replace(/'/g, "\\'") + "')",
-        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: "paydayTick('savings', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)",
       });
     });
     html += '</div>';
@@ -8393,8 +8443,8 @@ function renderPaydaySavings() {
       name: 'KIA extra',
       sub: 'pay over the minimum · ' + (S.debtStrategy === 'snowball' ? 'snowball strategy' : 'avalanche strategy'),
       value: fmtC2(amt),
-      onTap: "alert('Edit modal — Phase 4.')",
-      onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      onTap: "alert('KIA extra editor — Phase 6 candidate. Set the amount via the override mechanism, then tick when paid.')",
+      onTickTap: "paydayTick('kia-extra', 'KIA', BRAIN.SOURCES.PLAN_KIA_EXTRA_TICK)",
     });
     html += '</div>';
   }
@@ -8427,7 +8477,7 @@ function renderPaydayUpcoming() {
         sub: dateLabel + (item.notes ? ' · ' + item.notes : ''),
         value: fmtC2(item.amount || 0),
         onTap: "openEditPaydayUpcoming('" + item.id + "')",
-        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: "paydayTick('upcoming', '" + item.id + "', BRAIN.SOURCES.PLAN_UPCOMING_TICK)",
       });
     });
     html += '</div>';
@@ -14340,22 +14390,137 @@ const BRAIN = {
       return { ok: true, removed };
     },
     // ─── TICKING ───────────────────────────────
+    // Bundle 27 Phase 5: tick = mark item done AND fire the real downstream
+    // transaction per category. Each tick routes through the existing
+    // canonical writer (BRAIN.bills.markPaid / BRAIN.transaction.record /
+    // BRAIN.savings.addToBucket) so the audit trail is complete and the
+    // real balance reflects immediately.
+    //
+    // Pre-lock: callers should check BRAIN.allocation.isLocked() / S.activePlan.lockedAt
+    // and refuse to call this. Ticking pre-lock would create real txns
+    // before the plan is committed — bad UX. The UI layer enforces.
     tickItem(category, itemId, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       S.activePlan = S.activePlan || _emptyActivePlan();
       const ticks = S.activePlan.ticks = S.activePlan.ticks || {};
       ticks[category] = ticks[category] || {};
       if (ticks[category][itemId]) return { ok: false, reason: 'already-ticked' };
-      ticks[category][itemId] = { tickedAt: Date.now() };
-      BRAIN.audit.append({ type: 'plan_tick', category, itemId, source, ts: Date.now() });
+      const overrides = S.activePlan.overrides || {};
+      let txnTs = null;
+      let downstream = null;
+      try {
+        if (category === 'bill') {
+          // Find bill in BILLS via canonical reader
+          const bills = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+          const bill = bills.find(b => b.name === itemId || b.id === itemId);
+          if (!bill) return { ok: false, reason: 'bill-not-found' };
+          if (bill.paid) return { ok: false, reason: 'already-paid-legacy' };
+          // Apply override amount if set
+          const ov = overrides['bill:' + bill.name];
+          const billToPay = ov ? Object.assign({}, bill, { amt: ov.thisCycleAmount }) : bill;
+          downstream = BRAIN.bills.markPaid(billToPay, source);
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed:' + (downstream.reason || 'unknown') };
+        } else if (category === 'debt') {
+          // Record the debt-payment txn (doesn't auto-clear debt unless paid in full)
+          const debt = (S.debts || []).find(d => d && (d.id === itemId || d.name === itemId));
+          if (!debt) return { ok: false, reason: 'debt-not-found' };
+          const ov = overrides['debt:' + (debt.id || debt.name)];
+          const amt = ov ? ov.thisCycleAmount : (+debt.amt || 0);
+          if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
+          downstream = BRAIN.transaction.record(
+            { amt, note: 'Debt payment: ' + debt.name, cat: 'Debt repayment', income: false, _balAffected: true },
+            source
+          );
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+          // Update remaining balance
+          debt.amt = Math.max(0, (+debt.amt || 0) - amt);
+          if (debt.amt <= 0.01) debt.paid = true;
+          S.bal = parseFloat((S.bal - amt).toFixed(2));
+          txnTs = downstream.ts;
+        } else if (category === 'savings') {
+          const bucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(itemId) : null;
+          if (!bucket) return { ok: false, reason: 'bucket-not-found' };
+          const ov = overrides['savings:' + bucket.name];
+          const planSavings = (S.activePlan && S.activePlan.savings) || {};
+          const amt = ov ? ov.thisCycleAmount : (+planSavings[bucket.name] || 0);
+          if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
+          downstream = BRAIN.savings.addToBucket(bucket.name, amt, source);
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+          // Record the balance deduction txn
+          const recRes = BRAIN.transaction.record(
+            { amt, note: 'Savings: ' + bucket.name, cat: 'Savings', income: false, _balAffected: true },
+            source
+          );
+          S.bal = parseFloat((S.bal - amt).toFixed(2));
+          txnTs = recRes && recRes.ts;
+        } else if (category === 'kia-extra') {
+          const ov = overrides['kia-extra:' + itemId];
+          const amt = ov ? ov.thisCycleAmount : 0;
+          if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
+          downstream = BRAIN.transaction.record(
+            { amt, note: 'KIA extra payment', cat: 'Loan', income: false, _balAffected: true },
+            source
+          );
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+          S.bal = parseFloat((S.bal - amt).toFixed(2));
+          S.carloan = Math.max(0, (+S.carloan || 0) - amt);
+          txnTs = downstream.ts;
+        } else if (category === 'upcoming') {
+          const item = (S.activePlan && S.activePlan.knownUpcoming || []).find(i => i.id === itemId);
+          if (!item) return { ok: false, reason: 'item-not-found' };
+          const catMap = { gift: 'Other', essentials: 'Other', subscription: 'Subscriptions', event: 'Entertainment', family: 'Other', health: 'Health', 'one-off': 'Other', other: 'Other' };
+          const txnCat = catMap[item.category] || 'Other';
+          downstream = BRAIN.transaction.record(
+            { amt: +item.amount || 0, note: item.name, cat: txnCat, income: false, _balAffected: true },
+            source
+          );
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+          S.bal = parseFloat((S.bal - (+item.amount || 0)).toFixed(2));
+          item.status = 'bought';
+          item.boughtAt = Date.now();
+          item.txnTs = downstream.ts;
+          txnTs = downstream.ts;
+        } else {
+          return { ok: false, reason: 'invalid-category' };
+        }
+      } catch (e) {
+        return { ok: false, reason: 'tick-exception:' + (e && e.message) };
+      }
+      ticks[category][itemId] = { tickedAt: Date.now(), txnTs };
+      BRAIN.audit.append({ type: 'plan_tick', category, itemId, txnTs, source, ts: Date.now() });
       try { save(); } catch (_) {}
-      return { ok: true, tickedAt: ticks[category][itemId].tickedAt };
+      return { ok: true, tickedAt: ticks[category][itemId].tickedAt, txnTs };
     },
+    // Untick: reverses the tick. For bills uses BRAIN.bills.unmark. For
+    // other categories, removes the txn via BRAIN.transaction.removeByTs
+    // (which restores S.bal). Lenient — if downstream fails the tick
+    // state is still cleared (so user isn't stuck).
     untickItem(category, itemId, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       const ticks = (S.activePlan && S.activePlan.ticks) || {};
       if (!ticks[category] || !ticks[category][itemId]) return { ok: false, reason: 'not-ticked' };
       const removed = ticks[category][itemId];
+      try {
+        if (category === 'bill') {
+          const bills = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+          const bill = bills.find(b => b.name === itemId || b.id === itemId);
+          if (bill) {
+            const key = (typeof paidBillKey === 'function') ? paidBillKey(bill.name, bill.day) : null;
+            if (key) BRAIN.bills.unmark(key, source);
+          }
+        } else if (removed.txnTs) {
+          // Restore balance + remove the txn
+          const findRes = BRAIN.transaction.findByTs(removed.txnTs);
+          if (findRes) {
+            S.bal = parseFloat((S.bal + (+findRes.amt || 0)).toFixed(2));
+            BRAIN.transaction.removeByTs(removed.txnTs, source);
+          }
+          if (category === 'upcoming') {
+            const item = (S.activePlan && S.activePlan.knownUpcoming || []).find(i => i.id === itemId);
+            if (item) { item.status = 'planned'; item.boughtAt = null; item.txnTs = null; }
+          }
+        }
+      } catch (_) {}
       delete ticks[category][itemId];
       BRAIN.audit.append({ type: 'plan_untick', category, itemId, removed, source, ts: Date.now() });
       try { save(); } catch (_) {}
