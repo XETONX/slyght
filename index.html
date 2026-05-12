@@ -3976,8 +3976,21 @@ function renderAnalysisTab() {
     html += '</div>';
     if (prevNW !== null) {
       const delta = nw.net - prevNW;
-      const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
-      html += '<div style="font-size:13px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
+      // Bundle 17: prevNW formula was `latest.bal − (S.carloan + S.cc)` — used
+      // CURRENT debts against an old balance, missed WRX/super/deposit assets
+      // entirely. When those big assets got entered later, the trend exploded
+      // (+$90,506 visible in 2026-05-12 audit). Sanity-clamp: if delta is
+      // implausibly large for a monthly trend (>$15k or >50% of current NW),
+      // show "Historical comparison building" instead. Proper fix (full NW
+      // snapshot in monthlyHistory schema) deferred to a later bundle.
+      const SANITY_CAP = 15000;
+      const isPlausible = Math.abs(delta) < SANITY_CAP && Math.abs(delta) < Math.abs(nw.net || 1) * 0.5;
+      if (isPlausible) {
+        const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
+        html += '<div style="font-size:13px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
+      } else {
+        html += '<div style="font-size:11px;color:var(--text3);font-style:italic;margin-top:4px">Historical comparison building — needs more monthly snapshots with full NW shape (assets entered after prior snapshot skew the delta).</div>';
+      }
     }
     html += '</div>';
   }
@@ -4348,7 +4361,14 @@ function renderMonthlyPosition() {
   const recurringBills = (BILLS || []).filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
   const immDebts = getActiveDebtsDueBeforePayday();
   const living = Math.round(getAvgDailySpend() * 30);
-  const surplus = getGenuineSurplus();
+  // Bundle 17: surplus row was reading getGenuineSurplus() (balance-based,
+  // subtracts savings buckets + dynamic buffer + living-reserve from CURRENT
+  // bal). The rows above were monthly cash-flow values though, so the surplus
+  // row didn't equal income − bills − debts − living. User saw "$7,282 − $4,189 −
+  // $31 − $900 = $0.00" which is obviously wrong. Use the cash-flow formula
+  // that matches the displayed rows. getGenuineSurplus stays in place for
+  // "do I have free cash NOW" callers; this row answers a different question.
+  const surplus = income - recurringBills - immDebts - living;
   el.innerHTML = '<div class="card"><div class="card-title" style="margin-bottom:10px">Monthly Position</div><div style="font-size:13px;line-height:2"><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Income</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+' + fmtC(income) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Recurring bills</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(recurringBills) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Debts due this cycle</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(immDebts) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Living costs (est.)</span><span style="font-family:var(--mono);color:var(--amber)">\u2212' + fmtC(living) + '</span></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-weight:700">Genuine surplus</span><span style="font-family:var(--mono);font-weight:700;color:'+(surplus>0?'var(--green)':'var(--red)')+'">'+fmtC(surplus)+'</span></div></div></div>';
 }
 
@@ -5485,14 +5505,53 @@ function renderBillsGrouped() {
   let monthlyHtml = '';
   if (upcomingUnpaid.length || upcomingPaid.length) {
     const monthlyTotal = upcomingUnpaid.reduce((s,b) => s+b.amt, 0);
+
+    // Bundle 17: payday-aware running balance projection.
+    //
+    // Pre-Bundle-17: runBal started at liveBal ($83) and deducted each bill
+    // sequentially, never adding payday income. So Adobe day 25 (May) showed
+    // → -$98, Spotify day 26 → -$114, then June bills compounded negative
+    // beyond -$3000. Visually catastrophic when reality is $7,282 payday
+    // hits May 15 + another June 15 wiping the deficit.
+    //
+    // Bundle 17: sort bills chronologically by their effective rendered date
+    // (month + day; bills with day < today render as next month), then walk
+    // forward day-by-day adding S.income on each payday crossed.
+    const _payday = S.payday || 15;
+    const _income = S.income || 0;
+    const _today = new Date(); _today.setHours(0, 0, 0, 0);
+    const _sortedUnpaid = upcomingUnpaid.slice().sort((a, b) => {
+      const myA = _billRenderedMY(a);
+      const myB = _billRenderedMY(b);
+      return (myA.y - myB.y) * 10000 + (myA.m - myB.m) * 100 + (a.day - b.day);
+    });
     let runBal = getLiveBal();
-    const unpaidRows = upcomingUnpaid.map(b => {
+    let _checkpointDate = new Date(_today);
+
+    function _addPaydaysUpTo(targetDate) {
+      // Walk forward from the day after _checkpointDate through targetDate,
+      // adding income on each payday encountered. Updates _checkpointDate.
+      let cursor = new Date(_checkpointDate);
+      cursor.setDate(cursor.getDate() + 1);
+      while (cursor <= targetDate) {
+        if (cursor.getDate() === _payday) runBal += _income;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      _checkpointDate = new Date(targetDate);
+    }
+
+    const unpaidRows = _sortedUnpaid.map(b => {
       const ri = BILLS.findIndex(x => x.name === b.name);
+      const _my = _billRenderedMY(b);
+      const _billDate = new Date(_my.y, _my.m, b.day);
+      _addPaydaysUpTo(_billDate);
       runBal -= b.amt;
       const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
+      const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const _dateLabel = b.day + ' ' + _months[_my.m];
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
         '<div style="min-width:0"><div style="font-size:13px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:11px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+'</div>' +
-        '<div style="font-size:11px;color:var(--text3)">day '+b.day+'</div></div>' +
+        '<div style="font-size:11px;color:var(--text3)">'+_dateLabel+'</div></div>' +
         '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)">'+fmt(b.amt)+'</div>' +
         '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div></div></div>';
     }).join('');
@@ -5786,7 +5845,7 @@ function renderCalWeekSummary() {
     : 'Running ' + fmtC(Math.abs(paceOver)) + ' under pace — good week';
   html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:12px;line-height:1.8;color:var(--text2)">' +
     '<div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Dynamic Week Projection</div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Spent so far:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + ' (' + (proj.daysSoFarInWeek === 0 ? 'today' : proj.daysSoFarInWeek === 1 ? '1 day' : proj.daysSoFarInWeek + ' days') + ')</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Spent so far this week:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + (proj.daysSoFarInWeek === 0 ? ' (today only)' : '') + '</span></div>' +
     '<div style="display:flex;justify-content:space-between"><span>Bills remaining:</span><span style="font-family:var(--mono);font-weight:700;color:var(--red)">' + fmtC(proj.billsDueThisWeek) + '</span></div>' +
     '<div style="display:flex;justify-content:space-between"><span>Projected daily:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days = ' + fmtC(proj.projectedRemaining) + '</span></div>' +
     '<div style="display:flex;justify-content:space-between"><span>Week total projection:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedTotal) + '</span></div>' +
@@ -12402,9 +12461,12 @@ function showKiaLoanInfo() {
         <span style="color:rgba(255,255,255,0.5)">Original Loan</span>
         <span style="color:#fff">$${original.toLocaleString()}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
-        <span style="color:rgba(255,255,255,0.5)">Paid Off So Far</span>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="color:rgba(255,255,255,0.5)">Principal Repaid</span>
         <span style="color:#4ECDC4">$${Math.round(paidOff).toLocaleString()} (${pctPaid}%)</span>
+      </div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:10px;font-style:italic">
+        + accrued interest paid to date (not shown — lifetime payments to Firstmac are higher)
       </div>
       <div style="display:flex;justify-content:space-between;margin-bottom:10px">
         <span style="color:rgba(255,255,255,0.5)">Remaining Balance</span>
