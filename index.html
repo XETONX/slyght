@@ -8472,7 +8472,20 @@ const SNAPSHOTS = {
   },
   autoSnapshot(reason) {
     const snaps = this.load(), last = snaps[0];
-    if (last && Math.abs(last.bal - S.bal) < 0.01 && reason === 'auto') return;
+    // Bundle 17.x: broader dedup. Pre-fix: only 'auto' reason was deduped
+    // against same-bal; app_open + end-of-day fired on every page load
+    // producing 5-second churn pairs visible in Activity Log. Now: skip
+    // if the previous snapshot was very recent (<30s) OR if balance is
+    // unchanged AND the reason is a low-importance auto-trigger.
+    if (last) {
+      // last.ts is an ISO string (e.g. "2026-05-12T15:30:00.000Z"); parse to ms.
+      const tsMs = last.ts ? new Date(last.ts).getTime() : 0;
+      const ageMs = tsMs > 0 ? (Date.now() - tsMs) : Infinity;
+      const sameBal = Math.abs((last.bal || 0) - (S.bal || 0)) < 0.01;
+      const lowImportanceReasons = new Set(['auto', 'app_open', 'end-of-day']);
+      if (ageMs > 0 && ageMs < 30000) return; // hard rate-limit: 1 snapshot per 30s regardless of reason
+      if (sameBal && lowImportanceReasons.has(reason)) return; // unchanged state + boring reason → skip
+    }
     this.take(reason);
   }
 };
@@ -10513,10 +10526,17 @@ const HEARTBEAT = {
     // Detect payday cycle rollover (was inline in renderAll pre-Guardian-Layer-1).
     try { detectPaydayCycleRollover(); } catch(e) {}
 
-    // Fix 4B: end-of-day check — runs once per calendar day at midnight crossover
+    // Fix 4B: end-of-day check — runs once per calendar day at midnight crossover.
+    // Bundle 17.x: persist lastEODCheck to localStorage so it survives page
+    // reloads. Pre-fix the instance prop was reset on every cold start, so
+    // every refresh re-fired runEndOfDayCheck → SNAPSHOTS.autoSnapshot('end-of-day').
+    // John's Activity Log showed app_open + end-of-day pairs every 5 sec on
+    // multiple refreshes (visible churn in screenshot 152247).
     try {
       const today = new Date().toDateString();
-      if (this.lastEODCheck !== today) {
+      const lastStored = (typeof localStorage !== 'undefined') ? localStorage.getItem('slyght_lastEODCheck') : null;
+      if (lastStored !== today) {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('slyght_lastEODCheck', today);
         this.lastEODCheck = today;
         runEndOfDayCheck();
       }
