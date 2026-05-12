@@ -108,6 +108,9 @@ button,input,select,textarea{font-family:var(--sans)}
 .edit-modal-actions .btn-danger{background:var(--red);color:#fff}
 /* Body scroll lock when any edit-modal is open. */
 body.edit-modal-open{overflow:hidden}
+/* Bundle 22 v3 Phase 5: 44x44 tap-target utility — apply where existing
+   inline styles don't already satisfy WCAG minimum. */
+.tappable{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -753,13 +756,9 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         </div>
 
-        <!-- Phase 1 dev escape hatch: legacy Settings still accessible for now -->
-        <div style="text-align:center;margin-top:8px;margin-bottom:24px">
-          <button onclick="document.getElementById('settings-legacy').style.display=document.getElementById('settings-legacy').style.display==='none'?'block':'none';" style="padding:8px 14px;background:transparent;border:1px solid var(--border2);border-radius:8px;color:var(--text3);font-size:13px;cursor:pointer">Show / hide legacy Settings</button>
-        </div>
-
       </div>
       <!-- ═══ End Phase 1 root navigator ═══ -->
+      <!-- (Bundle 22 v3 Phase 5: legacy escape-hatch toggle removed; every Settings surface has its own sub-screen + edit modal. Legacy markup remains in DOM display:none to preserve the input IDs renderAll writes to. Spec preserve list.) -->
 
       <!-- ═══ Legacy Settings (hidden by default; preserved for input IDs + Phase 2+ extraction) ═══ -->
       <div id="settings-legacy" style="display:none">
@@ -7717,6 +7716,64 @@ function openEditApiThreshold() {
     },
   });
 }
+
+// ─── Bundle 22 v3 Phase 5: System back-button intercept ──────────────────
+// On Android (and any PWA with a hardware/gesture back), the system back
+// would otherwise exit the whole app when a modal is open. Instead, we
+// intercept popstate and close the topmost open layer:
+//   1. Edit-modal (Phase 4a) OR Reset-flow modal (Phase 4b)
+//   2. Legacy modal-overlay (Quick Log, Add Bill, etc.)
+//   3. Recon-overlay
+//   4. Settings sub-screen (Phase 2)
+// Approach: a MutationObserver watches every modal/sub-screen for the
+// .open / .settings-active class transition. When something opens, we
+// push a history-state guard. When popstate fires (user pressed back),
+// we close the topmost open layer instead of letting the browser navigate.
+// CSS-only via :has() already handles the visual scroll-lock — this adds
+// the navigation-lock so back gestures stay inside the app.
+function _slyghtCloseTopmostModal() {
+  const editModal = document.querySelector('.edit-modal.open');
+  if (editModal) {
+    if (editModal.id === 'reset-flow-modal' && typeof RESET_FLOW !== 'undefined') RESET_FLOW.cancel();
+    else if (typeof EDIT_MODAL !== 'undefined') EDIT_MODAL.close();
+    return true;
+  }
+  const overlayModal = document.querySelector('.modal-overlay.open');
+  if (overlayModal && typeof closeModal === 'function') {
+    closeModal(overlayModal.id);
+    return true;
+  }
+  const reconModal = document.querySelector('.recon-overlay.open');
+  if (reconModal) {
+    reconModal.classList.remove('open');
+    return true;
+  }
+  const subscreen = document.querySelector('.settings-subscreen.settings-active');
+  if (subscreen) {
+    if (typeof closeSettingsCategory === 'function') closeSettingsCategory(subscreen.id);
+    return true;
+  }
+  return false;
+}
+window.addEventListener('popstate', () => { _slyghtCloseTopmostModal(); });
+window.addEventListener('DOMContentLoaded', () => {
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
+      const el = m.target;
+      const isOpen = el.classList.contains('open') || el.classList.contains('settings-active');
+      const wasOpen = el._slyghtWasOpen;
+      if (isOpen && !wasOpen) {
+        try { history.pushState({ slyghtModalGuard: true }, ''); } catch (_) {}
+        el._slyghtWasOpen = true;
+      } else if (!isOpen && wasOpen) {
+        el._slyghtWasOpen = false;
+      }
+    }
+  });
+  document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen')
+    .forEach(el => observer.observe(el, { attributes: true, attributeFilter: ['class'] }));
+});
 
 // ─── Bundle 22 v3 Phase 4b: Reset All Data — 3-stage flow ─────────────────
 // Stage 1: type RESET (uppercase) to enable Continue
