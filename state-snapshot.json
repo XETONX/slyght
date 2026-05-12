@@ -1753,15 +1753,6 @@
       "autoDebit": true
     },
     {
-      "name": "NRMA KIA Insurance",
-      "amt": 1023.06,
-      "day": 2,
-      "tag": "insurance",
-      "recurring": false,
-      "scanned": true,
-      "freq": "monthly"
-    },
-    {
       "name": "Google Microsoft",
       "amt": 3,
       "day": 1,
@@ -1781,7 +1772,7 @@
     },
     {
       "name": "Allianz CTP",
-      "amt": 552,
+      "amt": 566,
       "day": 30,
       "tag": "Insurance",
       "recurring": true,

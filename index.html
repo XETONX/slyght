@@ -4347,52 +4347,45 @@ function renderMathHealth() {
 
 function renderEmergencyFundStatus() {
   const el = $('emergency-fund-status'); if (!el) return;
-  // Bundle 17.x: was conflating ALL savings buckets as emergency savings.
-  // John's only bucket is "China Holiday" — $93 earmarked for travel, not
-  // emergency reserve. Filter to emergency-purpose buckets (name-matched)
-  // so the display is honest. If no emergency bucket exists, surface that
-  // explicitly with a prompt to create one.
-  const buckets = S.savingsBuckets || [];
-  const isEmergencyBucket = (b) => {
-    const n = (b.name || '').toLowerCase();
-    return n.includes('emergency') || n.includes('buffer') || n.includes('freedom');
-  };
-  const emergencyBuckets = buckets.filter(isEmergencyBucket);
-  const emergencySaved = emergencyBuckets.reduce((s,b) => s+(b.saved||0), 0);
-  const otherSaved = buckets.filter(b => !isEmergencyBucket(b)).reduce((s,b) => s+(b.saved||0), 0);
-  const recommended = Math.round(getAvgDailySpend() * 90);
-  const gap = recommended - emergencySaved;
-
-  let body;
-  if (emergencyBuckets.length === 0) {
-    body = '<span style="color:var(--text3)">No emergency bucket yet.</span>' +
-      (otherSaved > 0 ? ' Your <strong>' + fmtC(otherSaved) + '</strong> in savings is earmarked elsewhere.' : '') + '<br>' +
-      'Recommended: <strong>' + fmtC(recommended) + '</strong> (90 days of essentials)';
-  } else {
-    body = 'Saved: <strong style="color:var(--green)">' + fmtC(emergencySaved) + '</strong>' +
-      ' (' + emergencyBuckets.map(b => b.name).join(', ') + ') · ' +
-      'Recommended: <strong>' + fmtC(recommended) + '</strong> (90 days)<br>' +
-      (gap > 0 ? '<span style="color:var(--amber)">$' + Math.round(gap).toLocaleString() + ' to go</span>' : '<span style="color:var(--green)">✓ Emergency fund covered</span>');
-  }
-
+  // Bundle 17.y: per John's 2026-05-12 feedback, this Settings section is
+  // redundant with PLAN mode's Freedom Buffer goal. Removed the duplicate
+  // data display; show a single redirect prompt instead. Any future
+  // emergency-fund logic lives under PLAN's Freedom Buffer.
   el.innerHTML = '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;margin-bottom:10px">' +
     '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Emergency Fund</div>' +
-    '<div style="font-size:13px;color:var(--text2)">' + body + '</div></div>';
+    '<div style="font-size:13px;color:var(--text2)">' +
+      'Managed under your <strong style="color:#4ECDC4">Freedom Buffer</strong> goal in PLAN mode.' +
+      '<button onclick="openPlanMode()" style="display:block;margin-top:8px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-xs);color:#4ECDC4;padding:6px 12px;font-size:12px;cursor:pointer;width:100%">→ Open PLAN mode</button>' +
+    '</div></div>';
 }
 
 function renderMonthlyPosition() {
   const el = $('monthly-position'); if (!el) return;
   const income = S.income || 7282;
-  const recurringBills = (BILLS || []).filter(b => b.recurring !== false).reduce((s,b) => s+b.amt, 0);
+  // Bundle 17.y: use monthly-equivalents for non-monthly frequencies. Pre-fix
+  // a $552 yearly Allianz CTP was being deducted as $552/month — bloating
+  // recurringBills by ~$1,014 across Allianz + KIA Registration and crushing
+  // the surplus row. Real monthly cost: $552/12 = $46/mo + $462/12 = $38.50/mo.
+  // Now: divide yearly /12, quarterly /3, fortnightly ×26/12 = ×2.17, weekly
+  // ×52/12 = ×4.33. Monthly (or unset freq) treated as full amount.
+  function _monthlyEquivalent(b) {
+    if (!b || typeof b.amt !== 'number') return 0;
+    const f = b.freq;
+    if (f === 'yearly' || f === 'annual') return b.amt / 12;
+    if (f === 'quarterly') return b.amt / 3;
+    if (f === 'biannual' || f === 'biannually') return b.amt / 6;
+    if (f === 'fortnightly') return b.amt * 26 / 12;
+    if (f === 'weekly') return b.amt * 52 / 12;
+    return b.amt; // monthly or unset
+  }
+  const recurringBills = (BILLS || []).filter(b => b.recurring !== false)
+    .reduce((s,b) => s + _monthlyEquivalent(b), 0);
   const immDebts = getActiveDebtsDueBeforePayday();
   const living = Math.round(getAvgDailySpend() * 30);
-  // Bundle 17: surplus row was reading getGenuineSurplus() (balance-based,
-  // subtracts savings buckets + dynamic buffer + living-reserve from CURRENT
-  // bal). The rows above were monthly cash-flow values though, so the surplus
-  // row didn't equal income − bills − debts − living. User saw "$7,282 − $4,189 −
-  // $31 − $900 = $0.00" which is obviously wrong. Use the cash-flow formula
-  // that matches the displayed rows. getGenuineSurplus stays in place for
-  // "do I have free cash NOW" callers; this row answers a different question.
+  // Bundle 17: surplus row was reading getGenuineSurplus() (balance-based);
+  // rows above were monthly cash-flow values, so the surplus row didn't
+  // equal income − bills − debts − living. Use cash-flow formula that
+  // matches the displayed rows.
   const surplus = income - recurringBills - immDebts - living;
   el.innerHTML = '<div class="card"><div class="card-title" style="margin-bottom:10px">Monthly Position</div><div style="font-size:13px;line-height:2"><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Income</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+' + fmtC(income) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Recurring bills</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(recurringBills) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Debts due this cycle</span><span style="font-family:var(--mono);color:var(--red)">\u2212' + fmtC(immDebts) + '</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Living costs (est.)</span><span style="font-family:var(--mono);color:var(--amber)">\u2212' + fmtC(living) + '</span></div><div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between"><span style="font-weight:700">Genuine surplus</span><span style="font-family:var(--mono);font-weight:700;color:'+(surplus>0?'var(--green)':'var(--red)')+'">'+fmtC(surplus)+'</span></div></div></div>';
 }
@@ -8240,6 +8233,68 @@ const REAL_STATE_V17 = {
 })();
 // guardian-allow-block-end: no-hardcoded-bill-name
 
+// guardian-allow-block-start: no-hardcoded-bill-name — seed v21 corrects Allianz CTP amount (552→566 per John's confirmation 2026-05-12) and removes NRMA from BILLS array as 2022 Excel-import ghost data per Opus correction. Requires literal bill-name lookups (permanent — seed design)
+// Seed v21 (Bundle 17.y): two corrections to prior seeds.
+//
+// 1. Allianz CTP amount: seedV20 wrote $552 but real value is $566 per
+//    John's 2026-05-12 confirmation. seedV20's idempotency guard won't
+//    re-write the entry, so we patch in place here.
+//
+// 2. NRMA ghost data: NRMA KIA Insurance in BILLS is 2022 Excel-import
+//    ghost data per Opus correction. NRMA was actually WRX-related (now
+//    listed for sale, not actively insured). Mum-paid-for-John flow makes
+//    it a debt entry not a bill. Remove from BILLS if present.
+//
+// paidBills history for NRMA is NOT swept — preserve-history rule
+// (slyght_bills_cleanup_preserve_history memory) bias is toward keeping
+// historical entries for trend analysis. If the user explicitly asks
+// for a sweep later, that's a separate cleanup.
+//
+// Idempotent: flag-guarded. Safe to re-run.
+(function seedV21() {
+  const flag = 'slyght_seeded_v21';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    if (!Array.isArray(d.BILLS)) { localStorage.setItem(flag, '1'); return; }
+
+    let allianzPatched = false;
+    let nrmaRemoved = false;
+
+    // 1. Allianz CTP amount correction 552 → 566
+    const allianz = d.BILLS.find(b => b && b.name === 'Allianz CTP');
+    if (allianz && allianz.amt === 552) {
+      allianz.amt = 566;
+      allianzPatched = true;
+    }
+
+    // 2. NRMA BILLS removal (if present — defensive idempotent)
+    const beforeCount = d.BILLS.length;
+    d.BILLS = d.BILLS.filter(b => !(b && b.name && /^NRMA/.test(b.name)));
+    if (d.BILLS.length < beforeCount) nrmaRemoved = true;
+
+    if (allianzPatched || nrmaRemoved) {
+      const S = d.S || {};
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV21-corrections',
+        source: 'migration',
+        bundle: '17.y',
+        allianzPatched,
+        nrmaRemoved,
+        nrmaReason: nrmaRemoved ? 'ghost-data-cleanup-2022-excel' : null,
+        ts: Date.now()
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV21 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+// guardian-allow-block-end: no-hardcoded-bill-name
+
 // Shared helper used by multiple systems
 function getBucketTotal() {
   return (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
@@ -8474,17 +8529,27 @@ const SNAPSHOTS = {
     const snaps = this.load(), last = snaps[0];
     // Bundle 17.x: broader dedup. Pre-fix: only 'auto' reason was deduped
     // against same-bal; app_open + end-of-day fired on every page load
-    // producing 5-second churn pairs visible in Activity Log. Now: skip
-    // if the previous snapshot was very recent (<30s) OR if balance is
-    // unchanged AND the reason is a low-importance auto-trigger.
+    // producing 5-second churn pairs visible in Activity Log.
+    //
+    // Bundle 17.y: ADD force-daily override. Recovery model is the priority —
+    // if no snapshot has fired in >24h, take regardless of dedup so the
+    // user always has at least a daily anchor to restore from. John verified
+    // 2026-05-12 that snapshots hadn't fired since 23/04/2026, leaving his
+    // last 19 days of activity un-restorable. Force-daily guarantees the
+    // recovery model can never silently break this way again.
     if (last) {
-      // last.ts is an ISO string (e.g. "2026-05-12T15:30:00.000Z"); parse to ms.
       const tsMs = last.ts ? new Date(last.ts).getTime() : 0;
       const ageMs = tsMs > 0 ? (Date.now() - tsMs) : Infinity;
       const sameBal = Math.abs((last.bal || 0) - (S.bal || 0)) < 0.01;
       const lowImportanceReasons = new Set(['auto', 'app_open', 'end-of-day']);
-      if (ageMs > 0 && ageMs < 30000) return; // hard rate-limit: 1 snapshot per 30s regardless of reason
-      if (sameBal && lowImportanceReasons.has(reason)) return; // unchanged state + boring reason → skip
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      // Force-fire override: >24h since last snapshot → always take
+      if (ageMs > DAY_MS) {
+        this.take(reason);
+        return;
+      }
+      if (ageMs > 0 && ageMs < 30000) return; // hard rate-limit: 1 snapshot per 30s
+      if (sameBal && lowImportanceReasons.has(reason)) return; // dedup unchanged state
     }
     this.take(reason);
   }
@@ -10920,6 +10985,16 @@ function openPlanMode() {
 function closePlanMode() {
   const el = document.getElementById('plan-mode');
   if (el) el.classList.remove('plan-open');
+  // Bundle 17.y: clear _planScrollSavedY on exit so re-entry to PLAN mode
+  // lands at the top (Net Worth section), not restored from previous
+  // session's scroll position. Reported by John 2026-05-12: "if i leave
+  // PLAN mode and then go back in later to plan mode it starts from Darwin
+  // trip instead of networth like its routing there on purpose".
+  if (typeof _planScrollSavedY !== 'undefined') _planScrollSavedY = 0;
+  // Also reset the plan-mode element's scrollTop to 0 so the user sees a
+  // fresh view on next entry. Don't depend on browser's scroll-restoration
+  // behavior across the slide-out animation.
+  if (el) el.scrollTop = 0;
 }
 
 // ─── BRAIN ──────────────────────────────────────────────────────────────────
