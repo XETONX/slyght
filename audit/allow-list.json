@@ -1,5 +1,5 @@
 {
-  "lastGenerated": "2026-05-12T16:56:08.424Z",
+  "lastGenerated": "2026-05-12T17:01:59.538Z",
   "totalAllows": 49,
   "unusedAllows": 9,
   "byRule": {
@@ -70,8 +70,8 @@
       },
       {
         "type": "block",
-        "startLine": 10898,
-        "endLine": 10990,
+        "startLine": 10902,
+        "endLine": 10994,
         "removability": "permanent",
         "reason": "seedV19 cleanup migration legitimately bypasses paidBillKey() helper to delete a specific test artifact key by literal name",
         "condition": "one-shot migrations vs ongoing canonical access",
@@ -79,8 +79,8 @@
       },
       {
         "type": "block",
-        "startLine": 11284,
-        "endLine": 11349,
+        "startLine": 11288,
+        "endLine": 11353,
         "removability": "permanent",
         "reason": "seedV22 is a one-shot pre-BRAIN migration that deletes specific paidBills keys by regex (NRMA ghost cleanup). Cannot route through BRAIN.bills.unmark because that fires audit + restores balance — this isn't undoing a payment, it's removing stale spreadsheet-import artifacts. The intent is documented in audit log via S.auditLog.push",
         "condition": "migration design, runs pre-BRAIN init",
@@ -88,7 +88,7 @@
       },
       {
         "type": "single",
-        "line": 16202,
+        "line": 16206,
         "removability": "permanent",
         "reason": "key resolved by caller via paidBillKey; structured Bundle 7+ shape carrying the txn back-reference for reversible undo",
         "condition": "BRAIN.bills internal write helper consumed by markPaid and consumePendingPay",
@@ -96,7 +96,7 @@
       },
       {
         "type": "single",
-        "line": 16287,
+        "line": 16291,
         "removability": "permanent",
         "reason": "key handed in by caller as a stored paidBills lookup; this is the canonical delete in BRAIN.bills.unmark, the un-mark equivalent of paidBillKey-based access",
         "condition": "BRAIN.bills.unmark canonical deletion",
@@ -104,7 +104,7 @@
       },
       {
         "type": "single",
-        "line": 16446,
+        "line": 16450,
         "removability": "permanent",
         "reason": "invariant scan over Object.keys; reads paidBills directly here (BRAIN.bills.isAutoDebit is the canonical reader for the flag check below)",
         "condition": "invariant logic owned by Bills, reads its own state",
@@ -122,7 +122,7 @@
       },
       {
         "type": "single",
-        "line": 11436,
+        "line": 11440,
         "removability": "permanent",
         "reason": "HEALTH self-check validates the daysLeft helper itself returns 1-31; migrating to MODEL.daysToPayday changes what is being tested",
         "condition": "invariant validating canonical helper's contract",
@@ -130,7 +130,7 @@
       },
       {
         "type": "single",
-        "line": 13120,
+        "line": 13124,
         "removability": "permanent",
         "reason": "diagnostic export field reports the daysLeft helper's current return value; migrating to MODEL.daysToPayday changes what is being diagnosed",
         "condition": "diagnostic export inspects the canonical helper directly",
@@ -180,7 +180,7 @@
       },
       {
         "type": "single",
-        "line": 9702,
+        "line": 9706,
         "removability": "removable",
         "reason": "checkAfford \"what to cut\" tally excludes only Debt repayment; should use strict _NON_SPEND_CATS filter",
         "condition": "OPEN-BUGS #6 is fixed",
@@ -225,8 +225,8 @@
       },
       {
         "type": "block",
-        "startLine": 10710,
-        "endLine": 10896,
+        "startLine": 10714,
+        "endLine": 10900,
         "removability": "permanent",
         "reason": "seed v13 captures literal bill names from a real-data snapshot used to bootstrap state in clean browsers",
         "condition": "see seed function design: seeds must enumerate the bill set explicitly so existing-user-detection logic can identify and patch ghost/renamed entries",
@@ -234,8 +234,8 @@
       },
       {
         "type": "block",
-        "startLine": 10900,
-        "endLine": 10988,
+        "startLine": 10904,
+        "endLine": 10992,
         "removability": "permanent",
         "reason": "seedV19 references John's 12 known-auto-debit bill names by string literal to set the autoDebit flag during one-shot migration",
         "condition": "migration design",
@@ -243,8 +243,8 @@
       },
       {
         "type": "block",
-        "startLine": 10992,
-        "endLine": 11152,
+        "startLine": 10996,
+        "endLine": 11156,
         "removability": "permanent",
         "reason": "seed v17 captures John's real-state snapshot from 15 Apr 2026 + post-seed migration patches (NRMA, Teachers Health, etc.) requiring literal bill-name lookups to identify and update specific entries",
         "condition": "see seed function design",
@@ -252,8 +252,8 @@
       },
       {
         "type": "block",
-        "startLine": 11154,
-        "endLine": 11220,
+        "startLine": 11158,
+        "endLine": 11224,
         "removability": "permanent",
         "reason": "seed v20 adds two yearly bills (Allianz CTP green slip + KIA Registration) John surfaced 2026-05-12; requires literal bill-name lookups to avoid duplicates on re-run",
         "condition": "seed design",
@@ -261,8 +261,8 @@
       },
       {
         "type": "block",
-        "startLine": 11222,
-        "endLine": 11282,
+        "startLine": 11226,
+        "endLine": 11286,
         "removability": "permanent",
         "reason": "seed v21 corrects Allianz CTP amount (552→566 per John's confirmation 2026-05-12) and removes NRMA from BILLS array as 2022 Excel-import ghost data per Opus correction. Requires literal bill-name lookups",
         "condition": "seed design",
@@ -270,7 +270,7 @@
       },
       {
         "type": "single",
-        "line": 16900,
+        "line": 16904,
         "removability": "permanent",
         "reason": "provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers",
         "condition": "see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS",
@@ -278,7 +278,7 @@
       },
       {
         "type": "single",
-        "line": 17030,
+        "line": 17034,
         "removability": "removable",
         "reason": "\"other bills\" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner",
         "condition": "bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2",
@@ -286,7 +286,7 @@
       },
       {
         "type": "single",
-        "line": 17294,
+        "line": 17298,
         "removability": "permanent",
         "reason": "modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view",
         "condition": "see showKiaLoanInfo design",
@@ -294,7 +294,7 @@
       },
       {
         "type": "single",
-        "line": 18017,
+        "line": 18021,
         "removability": "permanent",
         "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
         "condition": "see locked-items breakdown design",
@@ -304,7 +304,7 @@
     "no-direct-txns-push": [
       {
         "type": "single",
-        "line": 13311,
+        "line": 13315,
         "removability": "permanent",
         "reason": "service-worker NO_SPEND channel writes a behavioral-marker txn with amt:0 and _noSpend:true; anonymous arrow inside addEventListener can't carry enclosing-fn exemption; migrating to BRAIN.transaction would require a dedicated source tag for one rare event class",
         "condition": "service-worker -> app message bridge edge case, narrow surface",
@@ -314,7 +314,7 @@
     "no-direct-bucket-saved-write": [
       {
         "type": "single",
-        "line": 15427,
+        "line": 15431,
         "removability": "permanent",
         "reason": "this IS the canonical writer; all other call sites must route through this function; the rule's job is to forbid direct writes everywhere else",
         "condition": "BRAIN.savings.setBucketSaved is the chokepoint by design",
@@ -344,8 +344,8 @@
       },
       {
         "type": "block",
-        "startLine": 8126,
-        "endLine": 8128,
+        "startLine": 8130,
+        "endLine": 8132,
         "removability": "permanent",
         "reason": "invoked from canvas row tap, post-boot user-event call path; PLAN is fully initialized. The `typeof PLAN !== 'undefined'` is a defensive null-check, not a TDZ guard",
         "condition": "see Settings sub-screen call paths convention",
@@ -353,8 +353,8 @@
       },
       {
         "type": "block",
-        "startLine": 8732,
-        "endLine": 8734,
+        "startLine": 8736,
+        "endLine": 8738,
         "removability": "permanent",
         "reason": "renderPaydaySavings is invoked at user-action time (sub-screen open or post-edit re-render), post-boot; PLAN is initialised. Defensive null check, not a TDZ guard",
         "condition": "see openPaydayCategory call path",
@@ -362,8 +362,8 @@
       },
       {
         "type": "block",
-        "startLine": 9534,
-        "endLine": 9544,
+        "startLine": 9538,
+        "endLine": 9548,
         "removability": "permanent",
         "reason": "RESET_FLOW.showStage2 only fires after the user types RESET in stage 1 (post-boot, user-initiated); PLAN is fully initialized. The `typeof PLAN !== 'undefined'` checks are defensive null-guards, not TDZ guards",
         "condition": "see RESET_FLOW.start call path: user tap on red Reset row",
@@ -371,8 +371,8 @@
       },
       {
         "type": "block",
-        "startLine": 9629,
-        "endLine": 9641,
+        "startLine": 9633,
+        "endLine": 9645,
         "removability": "permanent",
         "reason": "confirmSuperBalance/Mum-account update is a user-action handler called only post-boot (button click after splash + onboard); PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard",
         "condition": "see UI handler call paths",
@@ -380,8 +380,8 @@
       },
       {
         "type": "block",
-        "startLine": 10286,
-        "endLine": 10289,
+        "startLine": 10290,
+        "endLine": 10293,
         "removability": "permanent",
         "reason": "sendChatMessage system-prompt builder runs only when user sends a chat message (post-boot); the `typeof PLAN !== 'undefined' && PLAN.X` checks are defensive null-guards, not TDZ guards",
         "condition": "chat is user-initiated, never called during boot",
@@ -389,8 +389,8 @@
       },
       {
         "type": "block",
-        "startLine": 10542,
-        "endLine": 10559,
+        "startLine": 10546,
+        "endLine": 10563,
         "removability": "permanent",
         "reason": "executeChatAction runs only after the AI returns a structured action from a user-initiated chat message; PLAN is fully initialized by then",
         "condition": "chat-action call path is user-initiated, never during boot",
@@ -398,8 +398,8 @@
       },
       {
         "type": "block",
-        "startLine": 14750,
-        "endLine": 14766,
+        "startLine": 14754,
+        "endLine": 14770,
         "removability": "permanent",
         "reason": "BRAIN.plan.queryAffordability is invoked from user-action paths (chat handler, canvas tap) post-boot. PLAN is fully initialized by then. typeof guard is defensive null-check, not a TDZ guard",
         "condition": "user-event call path",
@@ -407,8 +407,8 @@
       },
       {
         "type": "block",
-        "startLine": 15262,
-        "endLine": 15270,
+        "startLine": 15266,
+        "endLine": 15274,
         "removability": "permanent",
         "reason": "BRAIN.assets.setMumAccount is invoked from EDIT_MODAL save handlers which only fire post-boot (user taps a Settings row); PLAN is fully initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive null-check, not a TDZ guard",
         "condition": "see Settings edit-modal save call path",
@@ -416,8 +416,8 @@
       },
       {
         "type": "block",
-        "startLine": 15463,
-        "endLine": 15508,
+        "startLine": 15467,
+        "endLine": 15512,
         "removability": "permanent",
         "reason": "getRoundUpDestinationName + setRoundUpDestination are methods on BRAIN.savings called only at user-event time (render, edit, txn save), never during boot; PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard",
         "condition": "see UI handler call paths",
@@ -427,8 +427,8 @@
     "no-direct-debts-mutation": [
       {
         "type": "block",
-        "startLine": 10899,
-        "endLine": 10989,
+        "startLine": 10903,
+        "endLine": 10993,
         "removability": "permanent",
         "reason": "seedV19 cleanup migration legitimately bypasses BRAIN.debts.delete to remove test/ghost debt entries by literal id match",
         "condition": "one-shot migration before BRAIN.debts was fully populated for these legacy entries",

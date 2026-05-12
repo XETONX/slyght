@@ -7828,7 +7828,11 @@ function renderPaydayPlanRoot() {
     try {
       const startMs = new Date(snap.cycleStartDate).getTime();
       const endMs = new Date(snap.cycleEndDate).getTime();
-      const elapsedPct = Math.max(0, Math.min(1, (Date.now() - startMs) / (endMs - startMs)));
+      const cycleSpan = endMs - startMs;
+      // Guard divide-by-zero on freshly-created activePlan where start===end
+      const elapsedPct = cycleSpan > 0
+        ? Math.max(0, Math.min(1, (Date.now() - startMs) / cycleSpan))
+        : 0;
       const progress = (typeof BRAIN !== 'undefined' && BRAIN.allocation && BRAIN.allocation.getLockedProgress)
         ? BRAIN.allocation.getLockedProgress() : null;
       if (progress && progress.bills && progress.bills.total > 0) {
@@ -14705,7 +14709,7 @@ const BRAIN = {
         totalToPlan: parseFloat(totalToPlan.toFixed(2)),
         bills: { total: parseFloat(billsTotal.toFixed(2)), items: billsList.length, paid: billsPaidThisCycle, unpaidTotal: parseFloat(billsUnpaidTotal.toFixed(2)) },
         debts: { total: parseFloat(debtsTotal.toFixed(2)), items: debtsList.length },
-        savings: { total: parseFloat(savingsTotal.toFixed(2)), items: Object.keys(savingsObj).length },
+        savings: { total: parseFloat(savingsTotal.toFixed(2)), items: allBuckets.length },
         knownUpcoming: { total: parseFloat(upcomingTotal.toFixed(2)), items: (p.knownUpcoming || []).length, list: p.knownUpcoming || [] },
         dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)) },
         derived: {
