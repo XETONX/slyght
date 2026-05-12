@@ -997,6 +997,14 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <span class="row-value" id="sub-row-carloan-orig">$0</span>
             <span class="row-chevron">›</span>
           </button>
+          <button class="settings-edit-row" onclick="openEditCarloanLifetimePaid()" aria-label="KIA total paid to Firstmac, tap to edit" data-brain-key="debts.carloanLifetimePaid">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">KIA lifetime paid</span>
+              <span class="row-sub">Total $ sent to Firstmac (incl interest)</span>
+            </span>
+            <span class="row-value" id="sub-row-carloan-lifetime">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
           <button class="settings-edit-row" onclick="openEditCC()" aria-label="Credit card balance, tap to edit" data-brain-key="debts.cc">
             <span class="row-label">Credit card</span>
             <span class="row-value" id="sub-row-cc">$0</span>
@@ -1755,7 +1763,8 @@ let S = {
   chatHistory: [],
   apiKey: '',
   apiAlertThreshold: 15,
-  roundUpDestination: 'China Holiday'
+  roundUpDestination: 'China Holiday',
+  carloanLifetimePaid: 0
 };
 
 let BILLS = [
@@ -3724,6 +3733,36 @@ const MathInvariants = {
       },
       message(v) { return 'monthlyHistory shape regression: ' + v.details + '. NW trend will mis-read.'; },
     },
+    // ─── Bundle 24 Phase 2: kia-lifetime-paid-bounds ────────────────────
+    // When user has entered S.carloanLifetimePaid (>0), it must be ≥
+    // the principal repaid so far (= carloanOriginal − carloan). You
+    // can't have paid LESS to Firstmac than the principal that's come
+    // off the balance; interest only adds on top. If the invariant fires,
+    // either lifetimePaid is stale or carloanOriginal was edited without
+    // updating lifetime.
+    {
+      name: 'kia-lifetime-paid-bounds',
+      tier: 'consistency',
+      anchor: 'kia-loan',
+      check() {
+        const lifetimePaid = +S.carloanLifetimePaid || 0;
+        if (lifetimePaid <= 0) return null;  // not set — nothing to check
+        const original = +S.carloanOriginal || 0;
+        const current = +S.carloan || 0;
+        if (original <= 0) return null;  // missing input
+        const principalRepaid = original - current;
+        if (principalRepaid > 0 && lifetimePaid < principalRepaid - 0.5) {
+          return {
+            displayValue: '$' + lifetimePaid.toFixed(0),
+            expected: '≥ $' + principalRepaid.toFixed(0),
+            details: 'Lifetime paid $' + lifetimePaid.toFixed(0) + ' < principal repaid $' + principalRepaid.toFixed(0) +
+              '. Either lifetimePaid is stale or carloanOriginal was changed without re-checking lifetime.',
+          };
+        }
+        return null;
+      },
+      message(v) { return 'KIA lifetime-paid consistency: ' + v.details + ' Update Settings → Financial Data → KIA lifetime paid.'; },
+    },
   ],
 
   // Run all invariants. Returns array of violation objects.
@@ -4869,6 +4908,7 @@ function renderAll() {
   if ($('sub-row-super')) $('sub-row-super').textContent = fmtC(S.superBalance || 0);
   if ($('sub-row-carloan')) $('sub-row-carloan').textContent = fmtC(S.carloan || 0);
   if ($('sub-row-carloan-orig')) $('sub-row-carloan-orig').textContent = fmtC(S.carloanOriginal || 0);
+  if ($('sub-row-carloan-lifetime')) $('sub-row-carloan-lifetime').textContent = S.carloanLifetimePaid > 0 ? fmtC(S.carloanLifetimePaid) : 'Not set';
   if ($('sub-row-cc')) $('sub-row-cc').textContent = fmtC(S.cc || 0);
   if ($('sub-row-cc-limit')) $('sub-row-cc-limit').textContent = fmtC(S.ccLimit || 0);
   if ($('sub-row-weekday-budget')) $('sub-row-weekday-budget').textContent = fmtC(S.weekdayBudget || 0);
@@ -7612,6 +7652,16 @@ function openEditCarloanOriginal() {
     currentValue: S.carloanOriginal || '',
     validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
     save: (v) => BRAIN.assets.setCarloanOriginal(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
+  });
+}
+function openEditCarloanLifetimePaid() {
+  EDIT_MODAL.open({
+    title: 'KIA lifetime paid',
+    hint: 'Total dollars sent to Firstmac since loan started — principal + interest + fees. Check your statements.',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '28672' },
+    currentValue: S.carloanLifetimePaid || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => BRAIN.assets.setCarloanLifetimePaid(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
   });
 }
 function openEditCC() {
@@ -12747,6 +12797,24 @@ const BRAIN = {
       try { save(); } catch (_) {}
       return { ok: true, old, new: n };
     },
+    // Bundle 24 Phase 2: lifetime $ paid to Firstmac on the KIA loan.
+    // Independent of carloanOriginal (the starting principal). Captures
+    // the running total of payments INCLUDING interest + fees — the
+    // figure John sees on his Firstmac statements. Pre-Bundle-24, the
+    // KIA modal only showed Principal Repaid (= original - current
+    // balance), which under-reports lifetime $ sent to Firstmac by the
+    // amount of accumulated interest.
+    setCarloanLifetimePaid(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.carloanLifetimePaid;
+      S.carloanLifetimePaid = n;
+      BRAIN.audit.append({ type: 'carloan_lifetime_paid_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    getCarloanLifetimePaid() { return +S.carloanLifetimePaid || 0; },
 
     // ─── Readers ────────────────────────────────────────────────────────
     getMumAccount() { return +S.mumAccountBalance || 0; },
@@ -14371,6 +14439,11 @@ function showKiaLoanInfo() {
   const paidOff = original - loan;
   const pctPaid = original > 0 ? Math.round(paidOff / original * 100) : 0;
   const monthlyInterest = loan * rate / 100 / 12;
+  // Bundle 24 Phase 2: lifetime $ sent to Firstmac (incl interest+fees).
+  // 0 means user hasn't entered — show inline edit affordance instead of
+  // the figure. Per CSV reconciliation 2026-05-12: real value ~$28,672.
+  const lifetimePaid = (typeof BRAIN !== 'undefined' && BRAIN.assets) ? BRAIN.assets.getCarloanLifetimePaid() : (S.carloanLifetimePaid || 0);
+  const interestPaidEst = lifetimePaid > paidOff ? (lifetimePaid - paidOff) : 0;
 
   PLAN_MODAL.open(
     // guardian-allow: no-hardcoded-bill-name — modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view (permanent — see showKiaLoanInfo design)
@@ -14385,13 +14458,21 @@ function showKiaLoanInfo() {
         <span style="color:rgba(255,255,255,0.5)">Original Loan</span>
         <span style="color:#fff">$${original.toLocaleString()}</span>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
         <span style="color:rgba(255,255,255,0.5)">Principal Repaid</span>
         <span style="color:#4ECDC4">$${Math.round(paidOff).toLocaleString()} (${pctPaid}%)</span>
       </div>
-      <div style="font-size:10px;color:rgba(255,255,255,0.35);margin-bottom:10px;font-style:italic">
-        + accrued interest paid to date (not shown — lifetime payments to Firstmac are higher)
-      </div>
+      ${lifetimePaid > 0
+        ? `<div style="display:flex;justify-content:space-between;margin-bottom:6px">
+             <span style="color:rgba(255,255,255,0.5)">Total Paid to Firstmac</span>
+             <span style="color:#fff;font-weight:600">$${Math.round(lifetimePaid).toLocaleString()}</span>
+           </div>
+           ${interestPaidEst > 0
+              ? `<div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:10px;font-style:italic">…of which ~$${Math.round(interestPaidEst).toLocaleString()} is interest + fees</div>`
+              : ''}`
+        : `<div style="font-size:11px;color:rgba(255,255,255,0.55);margin-bottom:10px;background:rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;line-height:1.5">
+             💡 <em>Want lifetime payments shown?</em> Tap "KIA lifetime paid" in Settings → Financial Data → Liabilities to enter the total per your Firstmac statements.
+           </div>`}
       <div style="display:flex;justify-content:space-between;margin-bottom:10px">
         <span style="color:rgba(255,255,255,0.5)">Remaining Balance</span>
         <span style="color:#FF6B35">$${Math.round(loan).toLocaleString()}</span>
