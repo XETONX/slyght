@@ -673,8 +673,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
               <div class="settings-row" style="margin-top:10px"><span class="settings-lbl">Superannuation</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="set-super" placeholder="63429"></div>
               <button onclick="saveSuperBalance()" style="margin-top:4px;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer">Save Super</button>
               <div style="color:var(--text3);font-size:11px;margin-top:3px">Aware Super (High Growth) — check the app for latest.</div>
-              <!-- Legacy: saveIncome hidden field for compat with old set-income callers -->
-              <input type="hidden" id="set-income">
+              <!-- Bundle 22.2: hidden #set-income removed — orphaned after
+                   Bundle 22 reorg moved income save to s-income oninput.
+                   saveIncome() function kept (deprecated) in case any code
+                   path still references it; calls null-check before reading. -->
+
             </div>
           </div>
           <div class="card">
@@ -758,7 +761,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
           <input id="s-cc" type="number" value="4595.35">
           <input id="s-cc-limit" type="number" value="6000">
           <div id="emergency-fund-status"></div>
-          <div id="settings-bills"></div>
+          <!-- Bundle 22.2: #settings-bills + #set-income removed. The legacy
+               renderSettingsBills caller short-circuits cleanly on missing
+               element; #set-income input was orphaned (no UI button to fire
+               saveIncome). Income still saves via #s-income (Configuration)
+               with oninput="saveSettings()". -->
         </div>
       </div>
 
@@ -4276,7 +4283,10 @@ function renderAll() {
   renderCutSliders();
   renderTrend();
   renderCatBreakdown();
-  renderSettingsBills();
+  // Bundle 22.2: renderSettingsBills() no-op now — Bundle 22 redesign moved
+  // bill editing to the Bills tab (Edit Bill modal); the Settings hidden
+  // #settings-bills div was removed in 22.2. Function kept but unused.
+  // renderSettingsBills();
   renderSavingsBuckets();
   renderSpendingCoach();
   if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
