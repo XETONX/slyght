@@ -1796,7 +1796,9 @@ let S = {
   apiKey: '',
   apiAlertThreshold: 15,
   roundUpDestination: 'China Holiday',
-  carloanLifetimePaid: 0
+  carloanLifetimePaid: 0,
+  // Bundle 27: Payday Plan Canvas state — null until first canvas open.
+  activePlan: null,
 };
 
 let BILLS = [
@@ -7643,6 +7645,84 @@ function runDiagnosticCheck(kind, opts) {
   if (!opts.silent && typeof showToast === 'function') showToast('✓ ' + (kind === 'math-reset' ? 'Math session reset' : 'Refreshed'));
 }
 
+// ─── Bundle 27 Phase 0: BRAIN.plan helpers ────────────────────────────────
+// Pure-ish utilities used by BRAIN.plan. Live outside the bubble so the
+// bubble's body stays focused on canonical writes.
+
+// Find the next payday date based on S.payday (day of month, 1–28).
+function _resolveNextPayday(fromDate) {
+  const d = fromDate ? new Date(fromDate) : new Date();
+  const payday = +S.payday || 15;
+  const today = d.getDate();
+  const result = new Date(d.getFullYear(), d.getMonth(), payday);
+  if (today >= payday) {
+    result.setMonth(result.getMonth() + 1);
+  }
+  return result;
+}
+// Find the previous payday date (cycle start).
+function _resolvePreviousPayday(fromDate) {
+  const d = fromDate ? new Date(fromDate) : new Date();
+  const payday = +S.payday || 15;
+  const today = d.getDate();
+  const result = new Date(d.getFullYear(), d.getMonth(), payday);
+  if (today < payday) {
+    result.setMonth(result.getMonth() - 1);
+  }
+  return result;
+}
+// Resolve the "normal" (non-overridden) amount for a planned item.
+function _resolveNormalAmount(category, itemId) {
+  if (category === 'bill') {
+    const list = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : [];
+    const b = list.find(x => x && (x.id === itemId || x.name === itemId));
+    return b ? (+b.amt || 0) : 0;
+  }
+  if (category === 'debt') {
+    const d = (S.debts || []).find(x => x && (x.id === itemId || x.name === itemId));
+    return d ? (+d.amt || 0) : 0;
+  }
+  if (category === 'savings') {
+    // For savings, "normal" = the goal's monthly target if available, else 0.
+    const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+    const b = buckets.find(x => x && (x.name === itemId || x.id === itemId));
+    return b ? (+b.monthly || 0) : 0;
+  }
+  if (category === 'kia-extra') {
+    return 0; // KIA extra has no "normal" baseline — it's discretionary
+  }
+  return 0;
+}
+// Build a fresh empty activePlan shape. Uses S.payday + S.income for sane
+// defaults. Idempotent — never replaces an existing S.activePlan, just
+// returns what one would look like.
+function _emptyActivePlan() {
+  const now = new Date();
+  const prev = _resolvePreviousPayday(now);
+  const next = _resolveNextPayday(now);
+  const netPay = +S.income || 0;
+  return {
+    cycleId: prev.toISOString().slice(0, 10),
+    cycleStartDate: prev.toISOString().slice(0, 10),
+    cycleEndDate: next.toISOString().slice(0, 10),
+    lockedAt: null,
+    income: {
+      netPay,
+      bonus: { amount: 0, included: false, status: 'expected' },
+    },
+    overrides: {},
+    savings: {},
+    knownUpcoming: [],
+    dailyLivingFloor: 30,
+    bufferFloor: Math.max(300, Math.round(netPay * 0.05)),
+    driftSensitivity: 0.15,
+    ticks: { bill: {}, debt: {}, savings: {}, 'kia-extra': {}, upcoming: {} },
+    pendingProposals: [],
+    streak: 0,
+    uiState: { sections: {} },
+  };
+}
+
 function doImportFromSub() {
   const subArea = document.getElementById('sub-import-area');
   const subMsg = document.getElementById('sub-import-msg');
@@ -9858,6 +9938,32 @@ const REAL_STATE_V17 = {
   localStorage.setItem(flag, '1');
 })();
 // guardian-allow-block-end: no-direct-paidbills-access
+
+// Seed v24 (Bundle 27 Phase 0): set S.activePlan default to null (Payday
+// Plan Canvas hasn't been opened yet). Idempotent.
+(function seedV24() {
+  const flag = 'slyght_seeded_v24';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    if (S.activePlan === undefined) {
+      S.activePlan = null;
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV24-active-plan-init',
+        source: 'migration',
+        bundle: '27-phase-0',
+        ts: Date.now()
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV24 error', e); }
+  localStorage.setItem(flag, '1');
+})();
 
 // Shared helper used by multiple systems
 function getBucketTotal() {
@@ -12815,6 +12921,29 @@ const BRAIN = {
     PLAN_ALLOCATE_SLIDER:    'plan-allocate-slider',
     PLAN_LOCK_PAYDAY:        'plan-lock-payday',
     PLAN_UNLOCK_PAYDAY:      'plan-unlock-payday',
+    // Bundle 27 — Payday Plan Canvas (BRAIN.plan)
+    PLAN_BILLS_TICK:           'plan-bills-tick',
+    PLAN_DEBT_TICK:            'plan-debt-tick',
+    PLAN_SAVINGS_TICK:         'plan-savings-tick',
+    PLAN_KIA_EXTRA_TICK:       'plan-kia-extra-tick',
+    PLAN_UPCOMING_TICK:        'plan-upcoming-tick',
+    PLAN_UPCOMING_ADD:         'plan-upcoming-add',
+    PLAN_UPCOMING_REMOVE:      'plan-upcoming-remove',
+    PLAN_UPCOMING_UPDATE:      'plan-upcoming-update',
+    PLAN_UNTICK:               'plan-untick',
+    PLAN_OVERRIDE_SET:         'plan-override-set',
+    PLAN_OVERRIDE_CLEAR:       'plan-override-clear',
+    PLAN_BONUS_EDIT:           'plan-bonus-edit',
+    PLAN_BONUS_CONFIRM:        'plan-bonus-confirm',
+    PLAN_DAILY_FLOOR_EDIT:     'plan-daily-floor-edit',
+    PLAN_BUFFER_FLOOR_EDIT:    'plan-buffer-floor-edit',
+    CANVAS_AUTO_APPLY:         'canvas-auto-apply',
+    CANVAS_LOCK:               'canvas-lock',
+    CANVAS_UNLOCK:             'canvas-unlock',
+    AI_AFFORDABILITY_QUERY:    'ai-affordability-query',
+    AI_PROPOSAL_APPLY:         'ai-proposal-apply',
+    AI_KNOWN_UPCOMING_ADD:     'ai-known-upcoming-add',
+    CARRIED_FROM_PRIOR_CYCLE:  'carried-from-prior-cycle',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -12835,6 +12964,16 @@ const BRAIN = {
     'quicklog-add-bill',
     // Bundle 26 Phase 1.5b additions
     'plan-allocate-slider', 'plan-lock-payday', 'plan-unlock-payday',
+    // Bundle 27 additions (Payday Plan Canvas — BRAIN.plan)
+    'plan-bills-tick', 'plan-debt-tick', 'plan-savings-tick',
+    'plan-kia-extra-tick', 'plan-upcoming-tick',
+    'plan-upcoming-add', 'plan-upcoming-remove', 'plan-upcoming-update',
+    'plan-untick', 'plan-override-set', 'plan-override-clear',
+    'plan-bonus-edit', 'plan-bonus-confirm',
+    'plan-daily-floor-edit', 'plan-buffer-floor-edit',
+    'canvas-auto-apply', 'canvas-lock', 'canvas-unlock',
+    'ai-affordability-query', 'ai-proposal-apply', 'ai-known-upcoming-add',
+    'carried-from-prior-cycle',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -13006,6 +13145,408 @@ const BRAIN = {
       this._writeRaw(plan);
       BRAIN.audit.append({ type: 'payday_plan_unlocked', wasLocked, source, ts: Date.now() });
       return { ok: true, wasLocked };
+    },
+    // Bundle 27 Phase 0: per-category progress vs plan for post-lock
+    // rendering. Returns counts + dollar totals + daily-living pace.
+    // Null when no S.activePlan or not locked.
+    getLockedProgress(now) {
+      const p = S.activePlan;
+      if (!p || !p.lockedAt) return null;
+      now = now || Date.now();
+      const ticks = p.ticks || {};
+      const count = (cat) => Object.keys(ticks[cat] || {}).length;
+      const sumTicked = (cat, resolver) => Object.keys(ticks[cat] || {}).reduce((s, id) => s + (resolver(id) || 0), 0);
+      // Resolvers map ticked ids → current-cycle planned amount.
+      const billAmt = (id) => {
+        const ov = (p.overrides || {})[`bill:${id}`];
+        if (ov) return ov.thisCycleAmount;
+        const b = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.find(x => x && (x.id === id || x.name === id)) : null;
+        return b ? (+b.amt || 0) : 0;
+      };
+      const debtAmt = (id) => {
+        const ov = (p.overrides || {})[`debt:${id}`];
+        if (ov) return ov.thisCycleAmount;
+        const d = (S.debts || []).find(x => x && (x.id === id || x.name === id));
+        return d ? (+d.amt || 0) : 0;
+      };
+      const savingsAmt = (id) => {
+        const ov = (p.overrides || {})[`savings:${id}`];
+        return ov ? ov.thisCycleAmount : ((p.savings || {})[id] || 0);
+      };
+      const upcomingAmt = (id) => {
+        const item = (p.knownUpcoming || []).find(x => x && x.id === id);
+        return item ? (+item.amount || 0) : 0;
+      };
+      const totalBills = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.length : 0;
+      const totalDebts = (S.debts || []).filter(d => !d.paid && !d.viaRent).length;
+      const totalBuckets = (S.savingsBuckets || []).length;
+      const totalUpcoming = (p.knownUpcoming || []).length;
+      // Daily-living pace: sum txns since lock, exclude category=Bills/Savings/etc.
+      const sinceLock = +p.lockedAt || 0;
+      const livingSpent = (S.txns || []).reduce((s, t) => {
+        if (!t || +t.ts < sinceLock) return s;
+        if (t.income || t._isCorrection || t._isRoundup) return s;
+        const c = t.cat || '';
+        if (c === 'Bills' || c === 'Savings' || c === 'Transfer' || c === 'Loan' || c === 'CC Payment' || c === 'Debt repayment') return s;
+        return s + (+t.amt || 0);
+      }, 0);
+      const daysSinceLock = Math.max(1, Math.round((now - sinceLock) / 86400000));
+      const dailyLivingPace = livingSpent / daysSinceLock;
+      return {
+        bills:    { paid: count('bill'), total: totalBills, $paid: sumTicked('bill', billAmt), lockedAt: p.lockedAt },
+        debts:    { paid: count('debt'), total: totalDebts, $paid: sumTicked('debt', debtAmt) },
+        savings:  { paid: count('savings'), total: totalBuckets, $paid: sumTicked('savings', savingsAmt) },
+        upcoming: { paid: count('upcoming'), total: totalUpcoming, $paid: sumTicked('upcoming', upcomingAmt) },
+        living:   { spent: parseFloat(livingSpent.toFixed(2)), paceDailyAvg: parseFloat(dailyLivingPace.toFixed(2)), daysSinceLock },
+      };
+    },
+  },
+
+  // ─── BRAIN.plan — Payday Plan Canvas bubble (seeded Bundle 27) ─────────
+  // The canonical surface for the Payday Plan Canvas. Owns S.activePlan
+  // (per-cycle state: bonus, overrides, knownUpcoming, ticks, floors).
+  // Distinct from BRAIN.allocation which owns the legacy slider plan in
+  // localStorage('slyght_payday_plan'). BRAIN.plan is the AI-readable
+  // canonical state — getSnapshot is what AI consumers read; every write
+  // goes through here so the audit trail is complete.
+  //
+  // S.activePlan shape (created lazily via _emptyActivePlan):
+  //   { cycleId, cycleStartDate, cycleEndDate, lockedAt, income,
+  //     overrides{}, savings{}, knownUpcoming[], dailyLivingFloor,
+  //     bufferFloor, driftSensitivity, ticks{}, pendingProposals[],
+  //     streak, uiState{} }
+  plan: {
+    // ─── READ ──────────────────────────────────
+    getSnapshot() {
+      const p = S.activePlan || _emptyActivePlan();
+      const startMs = p.cycleStartDate ? new Date(p.cycleStartDate).getTime() : Date.now();
+      const endMs = p.cycleEndDate ? new Date(p.cycleEndDate).getTime() : (Date.now() + 31 * 86400000);
+      const now = Date.now();
+      const daysInCycle = Math.max(1, Math.round((endMs - startMs) / 86400000));
+      const daysRemaining = Math.max(0, Math.round((endMs - now) / 86400000));
+      // Income — bonus toggleable.
+      const inc = p.income || { netPay: 0, bonus: { amount: 0, included: false, status: 'expected' } };
+      const bonusActive = !!(inc.bonus && inc.bonus.included);
+      const bonusAmt = bonusActive ? (+inc.bonus.amount || 0) : 0;
+      const totalToPlan = (+inc.netPay || 0) + bonusAmt;
+      // Bills + overrides
+      const billsList = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : [];
+      const billsTotal = billsList.reduce((s, b) => {
+        const k = `bill:${b.id || b.name}`;
+        const ov = (p.overrides || {})[k];
+        return s + (ov ? ov.thisCycleAmount : (+b.amt || 0));
+      }, 0);
+      // Debts + overrides
+      const debtsList = (S.debts || []).filter(d => !d.paid && !d.viaRent);
+      const debtsTotal = debtsList.reduce((s, d) => {
+        const k = `debt:${d.id || d.name}`;
+        const ov = (p.overrides || {})[k];
+        return s + (ov ? ov.thisCycleAmount : (+d.amt || 0));
+      }, 0);
+      // Savings (from p.savings + overrides)
+      const savingsObj = p.savings || {};
+      const savingsTotal = Object.keys(savingsObj).reduce((s, k) => {
+        const ov = (p.overrides || {})[`savings:${k}`];
+        return s + (ov ? ov.thisCycleAmount : (+savingsObj[k] || 0));
+      }, 0);
+      // Known Upcoming
+      const upcomingTotal = (p.knownUpcoming || []).reduce((s, i) => s + (+i.amount || 0), 0);
+      // Daily living
+      const floor = +p.dailyLivingFloor || 30;
+      const livingTotal = floor * daysInCycle;
+      // Derived
+      const claimedTotal = billsTotal + debtsTotal + savingsTotal + upcomingTotal + livingTotal;
+      const freeTotal = totalToPlan - claimedTotal;
+      const currentBalance = +S.bal || 0;
+      // Projected end balance = current + expected income coming in (if salary not yet received) - estimated outflow
+      const expectedSalaryStill = (S.paydayReceived ? 0 : (+inc.netPay || 0));
+      const projectedEndBalance = currentBalance + expectedSalaryStill + bonusAmt - (billsTotal + debtsTotal + livingTotal + upcomingTotal);
+      const perDay = daysInCycle > 0 ? livingTotal / daysInCycle : 0;
+      const availableNow = Math.max(0, freeTotal);
+      return {
+        cycleId: p.cycleId,
+        cycleStartDate: p.cycleStartDate,
+        cycleEndDate: p.cycleEndDate,
+        daysInCycle,
+        daysRemaining,
+        income: inc,
+        totalToPlan: parseFloat(totalToPlan.toFixed(2)),
+        bills: { total: parseFloat(billsTotal.toFixed(2)), items: billsList.length },
+        debts: { total: parseFloat(debtsTotal.toFixed(2)), items: debtsList.length },
+        savings: { total: parseFloat(savingsTotal.toFixed(2)), items: Object.keys(savingsObj).length },
+        knownUpcoming: { total: parseFloat(upcomingTotal.toFixed(2)), items: (p.knownUpcoming || []).length, list: p.knownUpcoming || [] },
+        dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)) },
+        derived: {
+          claimedTotal: parseFloat(claimedTotal.toFixed(2)),
+          freeTotal: parseFloat(freeTotal.toFixed(2)),
+          availableNow: parseFloat(availableNow.toFixed(2)),
+          currentBalance: parseFloat(currentBalance.toFixed(2)),
+          projectedEndBalance: parseFloat(projectedEndBalance.toFixed(2)),
+        },
+        bufferFloor: +p.bufferFloor || 0,
+        driftSensitivity: +p.driftSensitivity || 0.15,
+        locked: !!p.lockedAt,
+        lockedAt: p.lockedAt || null,
+        streak: +p.streak || 0,
+      };
+    },
+    // Bundle 27 Phase 0: affordability query with trip-gap awareness.
+    // Verdict 'yes' | 'tight' | 'no'. Includes tripGapWarning when the
+    // requested spend overlaps an upcoming trip window that extends past
+    // the next payday (e.g., Darwin Jun 7–15 + next pay Jun 15 = post-trip
+    // cash crunch). AI consumers read both reasoning + tripGapWarning.
+    queryAffordability(amount, options) {
+      if (typeof amount !== 'number' || !isFinite(amount) || amount < 0) {
+        return { ok: false, reason: 'invalid-amount' };
+      }
+      options = options || {};
+      const snap = this.getSnapshot();
+      const available = snap.derived.availableNow;
+      let verdict, reasoning;
+      if (available >= amount * 1.2) {
+        verdict = 'yes';
+        reasoning = 'After committed bills, debts, savings, and $' + snap.dailyLiving.floor + '/day living money through ' + snap.cycleEndDate + ', you have $' + available + ' free. $' + amount + ' fits with room to spare.';
+      } else if (available >= amount) {
+        verdict = 'tight';
+        reasoning = 'Yes but tight. After everything committed you have $' + available + ' free this cycle. $' + amount + ' would cut your buffer to about $' + Math.round(available - amount) + '.';
+      } else {
+        verdict = 'no';
+        reasoning = 'Not without shifting something. You have $' + available + ' free, you asked $' + amount + '. Need to free $' + Math.round(amount - available) + ' from somewhere else first.';
+      }
+      // Trip-gap warning: if active trips overlap the cycle end window.
+      let tripGapWarning = null;
+      // guardian-allow-block-start: tdz-safe-engine-access — BRAIN.plan.queryAffordability is invoked from user-action paths (chat handler, canvas tap) post-boot. PLAN is fully initialized by then. typeof guard is defensive null-check, not a TDZ guard (permanent — user-event call path)
+      if (typeof PLAN !== 'undefined' && PLAN.getTrips) {
+        try {
+          const trips = PLAN.getTrips() || [];
+          const cycleEndMs = snap.cycleEndDate ? new Date(snap.cycleEndDate).getTime() : 0;
+          const activeNear = trips.find(t => {
+            if (!t || !t.startDate || !t.endDate) return false;
+            const ts = new Date(t.startDate).getTime();
+            const te = new Date(t.endDate).getTime();
+            return ts < cycleEndMs && te > Date.now();
+          });
+          if (activeNear) {
+            tripGapWarning = activeNear.name + ' (' + activeNear.startDate + '–' + activeNear.endDate + ') overlaps your cycle. Make sure your living-money allocation accounts for being away.';
+          }
+        } catch (_) {}
+      }
+      // guardian-allow-block-end: tdz-safe-engine-access
+      const result = { ok: true, verdict, available, asked: amount, reasoning, alternatives: [], tripGapWarning };
+      // Audit-log the query so AI's affordability checks are visible in the audit trail.
+      BRAIN.audit.append({ type: 'affordability_query', amount, verdict, available, source: BRAIN.SOURCES.AI_AFFORDABILITY_QUERY, ts: Date.now() });
+      return result;
+    },
+    // ─── KNOWN UPCOMING ────────────────────────
+    addKnownUpcoming(item, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      if (!item || typeof item.name !== 'string' || !item.name.trim()) return { ok: false, reason: 'invalid-name' };
+      const amt = +item.amount;
+      if (!isFinite(amt) || amt < 0) return { ok: false, reason: 'invalid-amount' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      S.activePlan.knownUpcoming = S.activePlan.knownUpcoming || [];
+      const id = 'ku-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      const newItem = {
+        id, name: item.name.trim(), amount: amt,
+        date: item.date || null, category: item.category || 'other',
+        notes: item.notes || null, status: 'planned',
+        createdAt: Date.now(), source,
+      };
+      S.activePlan.knownUpcoming.push(newItem);
+      BRAIN.audit.append({ type: 'known_upcoming_add', id, name: newItem.name, amount: amt, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, id, item: newItem };
+    },
+    removeKnownUpcoming(id, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const list = (S.activePlan && S.activePlan.knownUpcoming) || [];
+      const idx = list.findIndex(i => i.id === id);
+      if (idx < 0) return { ok: false, reason: 'not-found' };
+      const removed = list.splice(idx, 1)[0];
+      BRAIN.audit.append({ type: 'known_upcoming_remove', id, name: removed.name, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
+    },
+    updateKnownUpcoming(id, patch, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const item = ((S.activePlan && S.activePlan.knownUpcoming) || []).find(i => i.id === id);
+      if (!item) return { ok: false, reason: 'not-found' };
+      const old = Object.assign({}, item);
+      Object.assign(item, patch || {});
+      BRAIN.audit.append({ type: 'known_upcoming_update', id, old, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, item };
+    },
+    // ─── PER-CYCLE OVERRIDES ───────────────────
+    setOverride(category, itemId, amount, opts, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      if (!['bill', 'debt', 'savings', 'kia-extra'].includes(category)) return { ok: false, reason: 'invalid-category' };
+      const n = +amount;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-amount' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      S.activePlan.overrides = S.activePlan.overrides || {};
+      const key = category + ':' + itemId;
+      const normalAmount = _resolveNormalAmount(category, itemId);
+      const old = S.activePlan.overrides[key];
+      S.activePlan.overrides[key] = {
+        normalAmount,
+        thisCycleAmount: n,
+        reason: (opts && opts.reason) || null,
+        deferred: Math.max(0, normalAmount - n),
+        deferAction: (opts && opts.deferAction) || 'none',
+        setAt: Date.now(),
+      };
+      BRAIN.audit.append({ type: 'plan_override_set', key, old, new: S.activePlan.overrides[key], source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, deferred: S.activePlan.overrides[key].deferred, normalAmount, newAmount: n };
+    },
+    clearOverride(category, itemId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const key = category + ':' + itemId;
+      const ovs = (S.activePlan && S.activePlan.overrides) || {};
+      if (!(key in ovs)) return { ok: false, reason: 'not-found' };
+      const removed = ovs[key];
+      delete ovs[key];
+      BRAIN.audit.append({ type: 'plan_override_clear', key, removed, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
+    },
+    // ─── TICKING ───────────────────────────────
+    tickItem(category, itemId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      const ticks = S.activePlan.ticks = S.activePlan.ticks || {};
+      ticks[category] = ticks[category] || {};
+      if (ticks[category][itemId]) return { ok: false, reason: 'already-ticked' };
+      ticks[category][itemId] = { tickedAt: Date.now() };
+      BRAIN.audit.append({ type: 'plan_tick', category, itemId, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, tickedAt: ticks[category][itemId].tickedAt };
+    },
+    untickItem(category, itemId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const ticks = (S.activePlan && S.activePlan.ticks) || {};
+      if (!ticks[category] || !ticks[category][itemId]) return { ok: false, reason: 'not-ticked' };
+      const removed = ticks[category][itemId];
+      delete ticks[category][itemId];
+      BRAIN.audit.append({ type: 'plan_untick', category, itemId, removed, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
+    },
+    // ─── BONUS ─────────────────────────────────
+    setBonus(patch, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      S.activePlan.income = S.activePlan.income || { netPay: +S.income || 0, bonus: { amount: 0, included: false, status: 'expected' } };
+      const old = Object.assign({}, S.activePlan.income.bonus);
+      if (patch && patch.amount !== undefined) S.activePlan.income.bonus.amount = +patch.amount;
+      if (patch && patch.included !== undefined) S.activePlan.income.bonus.included = !!patch.included;
+      if (patch && patch.status !== undefined) S.activePlan.income.bonus.status = patch.status;
+      BRAIN.audit.append({ type: 'plan_bonus_edit', old, new: Object.assign({}, S.activePlan.income.bonus), source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: Object.assign({}, S.activePlan.income.bonus) };
+    },
+    // ─── FLOORS ────────────────────────────────
+    setDailyLivingFloor(amount, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const n = +amount;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-amount' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      const old = +S.activePlan.dailyLivingFloor;
+      S.activePlan.dailyLivingFloor = n;
+      BRAIN.audit.append({ type: 'plan_daily_floor_edit', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setBufferFloor(amount, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const n = +amount;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-amount' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      const old = +S.activePlan.bufferFloor;
+      S.activePlan.bufferFloor = n;
+      BRAIN.audit.append({ type: 'plan_buffer_floor_edit', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    // ─── AUTO-ALLOCATE (PURE) ─────────────────
+    recommendAllocation() {
+      const snap = this.getSnapshot();
+      const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+      const totalBucketTarget = buckets.reduce((s, b) => s + (+b.goal || 0), 0);
+      const hardClaims = snap.bills.total + snap.debts.total + snap.knownUpcoming.total;
+      const livingReserve = snap.dailyLiving.plannedTotal * 1.1; // 10% padding
+      const allocatable = snap.totalToPlan - hardClaims - livingReserve - snap.bufferFloor;
+      if (allocatable < 0) {
+        return { ok: false, reason: 'shortfall', deficit: parseFloat((-allocatable).toFixed(2)), snap };
+      }
+      const bucketAllocations = {};
+      if (totalBucketTarget > 0) {
+        buckets.forEach(b => {
+          const share = (+b.goal || 0) / totalBucketTarget;
+          bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
+        });
+      }
+      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)) };
+    },
+    applyRecommendation(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const rec = this.recommendAllocation();
+      if (!rec.ok) return rec;
+      const applied = [];
+      Object.keys(rec.bucketAllocations).forEach(name => {
+        const r = this.setOverride('savings', name, rec.bucketAllocations[name], { reason: 'auto-allocated' }, source);
+        if (r.ok) applied.push({ name, amt: rec.bucketAllocations[name] });
+      });
+      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, source, ts: Date.now() });
+      return { ok: true, applied };
+    },
+    // ─── AI PROPOSAL FLOW ─────────────────────
+    proposeAdjustment(changes, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      if (!Array.isArray(changes)) return { ok: false, reason: 'invalid-changes' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      S.activePlan.pendingProposals = S.activePlan.pendingProposals || [];
+      const proposalId = 'prop-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+      S.activePlan.pendingProposals.push({ id: proposalId, changes, source, createdAt: Date.now() });
+      BRAIN.audit.append({ type: 'plan_proposal_create', proposalId, changes: changes.length, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, proposalId };
+    },
+    applyProposal(proposalId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const prop = ((S.activePlan && S.activePlan.pendingProposals) || []).find(p => p.id === proposalId);
+      if (!prop) return { ok: false, reason: 'not-found' };
+      const applied = [];
+      (prop.changes || []).forEach(c => {
+        if (c.op === 'addKnownUpcoming') {
+          const r = this.addKnownUpcoming(c.payload, source);
+          if (r.ok) applied.push({ op: c.op, id: r.id });
+        } else if (c.op === 'setOverride') {
+          const r = this.setOverride(c.payload.category, c.payload.itemId, c.payload.amount, c.payload.opts, source);
+          if (r.ok) applied.push({ op: c.op, key: c.payload.category + ':' + c.payload.itemId });
+        } else if (c.op === 'setBonus') {
+          const r = this.setBonus(c.payload, source);
+          if (r.ok) applied.push({ op: c.op });
+        }
+      });
+      // Remove proposal from pending
+      const list = S.activePlan.pendingProposals;
+      const idx = list.findIndex(p => p.id === proposalId);
+      if (idx >= 0) list.splice(idx, 1);
+      BRAIN.audit.append({ type: 'plan_proposal_apply', proposalId, applied, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, applied };
+    },
+    rejectProposal(proposalId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const list = (S.activePlan && S.activePlan.pendingProposals) || [];
+      const idx = list.findIndex(p => p.id === proposalId);
+      if (idx < 0) return { ok: false, reason: 'not-found' };
+      const removed = list.splice(idx, 1)[0];
+      BRAIN.audit.append({ type: 'plan_proposal_reject', proposalId, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
     },
   },
 
