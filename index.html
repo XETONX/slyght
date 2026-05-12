@@ -73,7 +73,20 @@ button,input,select,textarea{font-family:var(--sans)}
 .settings-edit-row .row-multi .row-sub{font-size:12px;color:var(--text3)}
 .settings-section-hint{font-size:12px;color:var(--text3);padding:8px 6px 16px;line-height:1.5}
 .settings-pointer-row{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 4px}
-.settings-pointer-row a{display:inline-block;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;text-decoration:none;cursor:pointer;min-height:38px;line-height:22px}
+.settings-pointer-row a{display:inline-block;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;text-decoration:none;cursor:pointer;min-height:38px;line-height:22px}
+/* Bundle 22 v3 Phase 3b: reusable toggle component (CSS-only, styled checkbox). */
+.toggle-row{display:flex;align-items:center;padding:14px 16px;min-height:56px;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-row .toggle-label{flex:1;display:flex;flex-direction:column;gap:2px;padding-right:12px}
+.toggle-row .toggle-label-title{font-size:15px;color:var(--text)}
+.toggle-row .toggle-label-sub{font-size:13px;color:var(--text3)}
+.toggle{position:relative;display:inline-block;width:48px;height:28px;flex-shrink:0;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-track{position:absolute;inset:0;background:var(--bg3);border:1px solid var(--border2);border-radius:28px;transition:background .18s,border-color .18s}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:22px;height:22px;background:var(--text2);border-radius:50%;transition:transform .18s ease-out,background .18s}
+.toggle input:checked + .toggle-track{background:var(--green-dim);border-color:var(--green-border)}
+.toggle input:checked + .toggle-track .toggle-thumb{transform:translateX(20px);background:var(--green)}
+.toggle input:focus-visible + .toggle-track{outline:2px solid var(--green);outline-offset:2px}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -1016,7 +1029,40 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">Notifications</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>notifications-active toggle, quiet-mode toggle, test notification button.</div>
+
+        <div class="settings-group-card">
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <span class="toggle-label-title">Notifications active</span>
+              <span class="toggle-label-sub">Stays active between sessions</span>
+            </div>
+            <label class="toggle" aria-label="Toggle notifications on or off">
+              <input type="checkbox" id="sub-toggle-notifs" onchange="onSubToggleNotifications(this.checked)">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <span class="toggle-label-title">Quiet mode</span>
+              <span class="toggle-label-sub">Morning alert only — silences other times of day</span>
+            </div>
+            <label class="toggle" aria-label="Toggle quiet mode on or off">
+              <input type="checkbox" id="sub-toggle-quiet" onchange="onSubToggleQuietMode(this.checked)">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+        </div>
+
+        <button onclick="if(typeof PUSH!=='undefined') PUSH.sendTest();" style="width:100%;padding:12px;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:14px;min-height:44px;margin-top:12px;cursor:pointer">
+          📳 Send test notification
+        </button>
+
+        <div class="settings-group-title">What you'll get</div>
+        <div class="settings-group-card" style="padding:14px 16px;line-height:1.6">
+          <div style="font-size:14px;color:var(--text2);margin-bottom:8px">Daily reminders tailored to your schedule and real balance.</div>
+          <div style="font-size:13px;color:var(--text3)">Morning · Breakfast · Lunch · Snack · Home time · Groceries</div>
+        </div>
+
       </div>
     </div>
 
@@ -4684,6 +4730,13 @@ function renderAll() {
     if ($('sub-ai-projected')) $('sub-ai-projected').textContent = '$' + _t.projectedMonthly.toFixed(2) + ' /month projected';
   }
   if ($('sub-row-api-threshold')) $('sub-row-api-threshold').textContent = '$' + (S.apiAlertThreshold || 15);
+  // Bundle 22 v3 Phase 3b: Notifications sub-screen toggle states.
+  if ($('sub-toggle-notifs') && typeof PUSH !== 'undefined') {
+    $('sub-toggle-notifs').checked = !!PUSH.subscription;
+  }
+  if ($('sub-toggle-quiet') && typeof PUSH !== 'undefined') {
+    $('sub-toggle-quiet').checked = !!PUSH.quietMode;
+  }
   const _explEl = $('strategy-explain');
   if (_explEl) {
     const _strat = S.debtStrategy || 'avalanche';
@@ -7135,6 +7188,17 @@ function closeAllSettingsSubscreens() {
   if (screen) screen.classList.remove('has-active-subscreen');
 }
 
+// Bundle 22 v3 Phase 3b: Notifications sub-screen toggle handlers.
+function onSubToggleNotifications(checked) {
+  if (typeof PUSH === 'undefined') return;
+  if (checked) PUSH.subscribe(); else PUSH.unsubscribe();
+}
+function onSubToggleQuietMode(checked) {
+  if (typeof PUSH === 'undefined') return;
+  // toggleQuietMode() flips; only call if state differs from desired.
+  if (!!PUSH.quietMode !== !!checked) PUSH.toggleQuietMode();
+}
+
 function saveIncome() {
   const v = parseFloat(document.getElementById('set-income')?.value);
   // Bundle 22 v3 Phase 0: route through BRAIN.config (set-income is a
@@ -7194,7 +7258,9 @@ function saveApiKey() {
 }
 
 function toggleRoundUps() {
-  S.roundUpsEnabled = !S.roundUpsEnabled;
+  // Bundle 22 v3 Phase 3b: route through BRAIN.config canonical writer.
+  const next = !S.roundUpsEnabled;
+  BRAIN.config.setRoundUpsEnabled(next, BRAIN.SOURCES.SETTINGS_ROUNDUPS_TOGGLE);
   onStateChange('roundups_toggled');
   const btn = document.getElementById('roundups-btn');
   if (btn) btn.textContent = S.roundUpsEnabled ? 'On' : 'Off';
@@ -11795,6 +11861,8 @@ const BRAIN = {
     SETTINGS_DEBT_STRATEGY:  'settings-debt-strategy',
     SETTINGS_ROUNDUP_DEST:   'settings-roundup-dest',
     QUICKLOG_ROUNDUP_DEST:   'quicklog-roundup-dest',
+    // Bundle 22 v3 Phase 3b additions
+    SETTINGS_ROUNDUPS_TOGGLE:'settings-roundups-toggle',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -11807,6 +11875,8 @@ const BRAIN = {
     // Bundle 22 v3 Phase 0 additions
     'settings-income-edit', 'settings-payday-edit', 'settings-budget-edit',
     'settings-debt-strategy', 'settings-roundup-dest', 'quicklog-roundup-dest',
+    // Bundle 22 v3 Phase 3b additions
+    'settings-roundups-toggle',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -11882,6 +11952,21 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'weekend_budget_change', old, new: n, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: n };
+    },
+    // Bundle 22 v3 Phase 3b: round-ups on/off canonical writer. Pre-3b
+    // toggleRoundUps() wrote S.roundUpsEnabled directly. Now routes
+    // through here for audit + source validation.
+    setRoundUpsEnabled(enabled, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const flag = !!enabled;
+      const old = !!S.roundUpsEnabled;
+      S.roundUpsEnabled = flag;
+      BRAIN.audit.append({ type: 'roundups_enabled_change', old, new: flag, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: flag };
     },
   },
 
