@@ -587,194 +587,172 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
   <div class="screen" id="pg-settings">
     <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:13px;font-weight:600;color:var(--text2)">Settings</div></div>
     <div class="pad">
-      <!-- ═══════════════════════════════════════════════════════════════════
-           Bundle 22 — Settings Information Architecture redesign.
-           Four sections (Configuration / Data Management / Diagnostics /
-           About) + redirect cards for content that lives in natural tabs.
-           Replaces 19-section junk-drawer with focused groups.
-           All input IDs + render-target IDs preserved so existing render
-           functions and event wiring continue to work unchanged.
-           ═══════════════════════════════════════════════════════════════════ -->
-
-      <!-- HERO: current balance (most-used action, default-visible at top) -->
+      <div style="margin-bottom:16px">
+        <button onclick="toggleSection('master-data')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>📊 My Financial Data</span><span id="master-data-arrow">▼</span></button>
+        <div id="master-data" style="display:none;padding:12px 0">
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">MONTHLY INCOME</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-income" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="7282"><button onclick="saveIncome()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">WRX VALUE ($)</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-wrx" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="25000"><button onclick="saveWrxValue()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">DEPOSIT ACCOUNT BALANCE (ASK MUM)</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-mum-account" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="3000"><button onclick="saveMumAccountBalance()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Check with Mum what's currently in the savings account. Updates your net worth and deposit timeline.</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">SUPERANNUATION BALANCE</div>
+            <div style="display:flex;gap:8px"><input type="number" id="set-super" style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px" autocomplete="off" placeholder="63429"><button onclick="saveSuperBalance()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Aware Super (High Growth). Check the app for the latest figure.</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button onclick="exportData()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📤 Export</button>
+            <button onclick="importData ? importData() : doImport()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📥 Import</button>
+            <button onclick="generateSnapshot()" style="flex:1;padding:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📋 Snapshot</button>
+          </div>
+          <button onclick="exportAsFile()" title="Download full state as a JSON file — bypasses clipboard / paste size caps" style="width:100%;padding:12px;margin-top:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:13px;min-height:48px">📁 Download Export (file)</button>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">
+        <button onclick="toggleSection('app-controls')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>⚙️ App Controls</span><span id="app-controls-arrow">▼</span></button>
+        <div id="app-controls" style="display:none;padding:12px 0">
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div><div style="color:var(--text);font-size:14px;font-weight:600">Round-ups</div><div style="color:var(--text3);font-size:11px">Add cents to China Holiday</div></div>
+              <button onclick="toggleRoundUps()" style="padding:8px 16px;border-radius:20px;border:1px solid var(--border2);font-size:13px;min-height:44px;background:var(--bg2);color:var(--text)" id="roundups-btn">On/Off</button>
+            </div>
+          </div>
+          <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
+            <div style="color:var(--text3);font-size:11px;margin-bottom:6px">ANTHROPIC API KEY</div>
+            <div style="display:flex;gap:8px"><input type="password" id="set-apikey" placeholder="sk-ant-..." style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px" autocomplete="off"><button onclick="saveApiKey()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
+            <div style="color:var(--text3);font-size:11px;margin-top:6px">Powers AI chat — get a key at console.anthropic.com</div>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <div class="settings-section">
-          <div class="settings-title">Current Balance</div>
-          <div class="settings-row"><span class="settings-lbl">Balance ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-bal" placeholder="0.00" inputmode="decimal"></div>
+          <div class="settings-title">Balance</div>
+          <div class="settings-row"><span class="settings-lbl">Current balance ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-bal" placeholder="0.00" inputmode="decimal"></div>
           <button class="add-btn" onclick="updateBalanceFromSettings()" style="margin-top:6px">Update Balance</button>
           <div id="s-bal-msg" style="font-size:13px;margin-top:6px"></div>
         </div>
-      </div>
-
-      <!-- ─── 1. CONFIGURATION (default expanded — most-tweaked settings) ─── -->
-      <div style="margin-bottom:16px">
-        <button onclick="toggleSection('settings-configuration')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>⚙️ Configuration</span><span id="settings-configuration-arrow">▼</span></button>
-        <div id="settings-configuration" style="display:block;padding:12px 0">
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">Income &amp; Budgets</div>
-              <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
-              <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
-              <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
-              <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
-              <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekday-budget" value="60" min="1" max="500" step="1"></div>
-              <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Mon–Fri</div>
-              <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekend-budget" value="180" min="1" max="500" step="1"></div>
-              <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Sat–Sun</div>
-              <button onclick="saveBudgets()" style="width:100%;margin-top:8px;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer">Save Daily Budgets</button>
-              <div id="budget-save-msg" style="font-size:12px;color:var(--green);margin-top:4px;display:none">✓ Budgets saved — Max/Day recalculated</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">Round-ups</div>
-              <div style="display:flex;justify-content:space-between;align-items:center">
-                <div><div style="color:var(--text);font-size:13px">Spare cents → China Holiday</div><div style="color:var(--text3);font-size:11px;margin-top:3px">Adds the round-up after every Quick Log transaction</div></div>
-                <button onclick="toggleRoundUps()" style="padding:8px 16px;border-radius:20px;border:1px solid var(--border2);font-size:13px;min-height:44px;background:var(--bg2);color:var(--text)" id="roundups-btn">On/Off</button>
-              </div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">Anthropic API key</div>
-              <div style="display:flex;gap:8px"><input type="password" id="set-apikey" placeholder="sk-ant-..." style="flex:1;padding:10px;background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px" autocomplete="off"><button onclick="saveApiKey()" style="padding:10px 16px;background:var(--green);border:none;border-radius:8px;color:#000;font-weight:700">Save</button></div>
-              <div style="color:var(--text3);font-size:11px;margin-top:6px">Powers AI chat — get a key at console.anthropic.com</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">App PIN</div>
-              <div class="settings-row"><span class="settings-lbl">4-digit PIN</span><input class="settings-input" autocomplete="new-password" data-lpignore="true" data-form-type="other" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">Smart Notifications</div>
-              <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">Daily reminders tailored to your schedule and real balance.<br>Morning · Breakfast · Lunch · Snack · Home time · Groceries</div>
-              <div id="push-settings"></div>
-            </div>
-          </div>
+        <div class="settings-section">
+          <div class="settings-title">App Security</div>
+          <div class="settings-row"><span class="settings-lbl">App PIN</span><input class="settings-input" autocomplete="new-password" data-lpignore="true" data-form-type="other" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
         </div>
-      </div>
-
-      <!-- ─── 2. DATA MANAGEMENT (default collapsed — periodic actions) ─── -->
-      <div style="margin-bottom:16px">
-        <button onclick="toggleSection('settings-data-mgmt')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>💾 Data Management</span><span id="settings-data-mgmt-arrow">▼</span></button>
-        <div id="settings-data-mgmt" style="display:none;padding:12px 0">
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">Financial Snapshot</div>
-              <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Manually-entered values that feed Net Worth + PLAN projections.</div>
-              <div class="settings-row"><span class="settings-lbl">WRX value ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="set-wrx" placeholder="25000"></div>
-              <button onclick="saveWrxValue()" style="margin-top:4px;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer">Save WRX</button>
-              <div class="settings-row" style="margin-top:10px"><span class="settings-lbl">Deposit account (Mum)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="set-mum-account" placeholder="3000"></div>
-              <button onclick="saveMumAccountBalance()" style="margin-top:4px;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer">Save Deposit</button>
-              <div style="color:var(--text3);font-size:11px;margin-top:3px">Check with Mum what's currently in the savings account.</div>
-              <div class="settings-row" style="margin-top:10px"><span class="settings-lbl">Superannuation</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="set-super" placeholder="63429"></div>
-              <button onclick="saveSuperBalance()" style="margin-top:4px;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);font-size:12px;cursor:pointer">Save Super</button>
-              <div style="color:var(--text3);font-size:11px;margin-top:3px">Aware Super (High Growth) — check the app for latest.</div>
-              <!-- Bundle 22.2: hidden #set-income removed — orphaned after
-                   Bundle 22 reorg moved income save to s-income oninput.
-                   saveIncome() function kept (deprecated) in case any code
-                   path still references it; calls null-check before reading. -->
-
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">State Snapshots</div></div>
-            <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Automatic backups of your financial state. Restore any point in time. Bundle 17.y guarantees at least one snapshot per 24h.</div>
-            <div id="snapshots-content"></div>
-            <button onclick="if(typeof SNAPSHOTS!=='undefined')SNAPSHOTS.take('manual');renderSnapshots();" style="margin-top:8px;width:100%;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;cursor:pointer">📋 Take Snapshot Now</button>
-          </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">Export / Import</div></div>
-            <div class="section-hdr">Export — paste into Claude to sync</div>
-            <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠️ This export contains real financial data. Only paste into trusted conversations.</div>
-            <button class="action-btn" onclick="copyExport()" title="⚠️ Export contains sensitive financial data — store securely">Copy Export Code</button>
-            <button onclick="exportAsFile()" title="Download full state as a JSON file" style="display:block;width:100%;margin-top:8px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;cursor:pointer">📁 Download Export (file)</button>
-            <div class="section-hdr" style="margin-top:12px">Import — paste Claude's updated code</div>
-            <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
-            <button class="action-btn" onclick="doImport()">Import &amp; Apply</button>
-            <div id="import-msg" style="font-size:13px;margin-top:6px"></div>
-          </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title" style="color:var(--red)">Danger Zone</div></div>
-            <button class="danger-btn" onclick="resetAll()">Reset All Data</button>
-          </div>
+        <div class="settings-section">
+          <div class="settings-title">Income</div>
+          <div class="settings-row"><span class="settings-lbl">Monthly salary</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-income" value="7282" oninput="saveSettings()"></div>
+          <div id="s-income-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Enter a valid income</div>
+          <div class="settings-row"><span class="settings-lbl">Payday (day of month)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-payday" value="15" min="1" max="28" oninput="validatePayday();saveSettings()"></div>
+          <div id="s-payday-err" style="font-size:12px;color:var(--red);margin:-4px 0 6px;display:none">Payday must be 1–28</div>
+          <div class="settings-row"><span class="settings-lbl">Weekday daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekday-budget" value="60" min="1" max="500" step="1"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Mon–Fri</div>
+          <div class="settings-row"><span class="settings-lbl">Weekend daily budget ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-weekend-budget" value="180" min="1" max="500" step="1"></div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px">Max discretionary spend Sat–Sun</div>
+          <button onclick="saveBudgets()" style="width:100%;margin-top:8px;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer">Save Daily Budgets</button>
+          <div id="budget-save-msg" style="font-size:12px;color:var(--green);margin-top:4px;display:none">✓ Budgets saved — Max/Day recalculated</div>
         </div>
-      </div>
+        <!-- Vehicle value moved to top "📊 My Financial Data" panel (set-wrx) — single source -->
 
-      <!-- ─── 3. DIAGNOSTICS (collapsed default — dev/debug surfaces) ─── -->
-      <div style="margin-bottom:16px">
-        <button onclick="toggleSection('settings-diagnostics')" style="width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--bg2);border:none;border-radius:12px;color:var(--text);font-size:15px;font-weight:700;min-height:52px;cursor:pointer"><span>🔧 Diagnostics</span><span id="settings-diagnostics-arrow">▼</span></button>
-        <div id="settings-diagnostics" style="display:none;padding:12px 0">
-          <div style="font-size:11px;color:var(--text3);padding:0 4px 10px">Internal health + instrumentation. Most users can ignore.</div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">Data Health</div></div>
-            <div id="health-content"></div>
-            <button onclick="HEALTH.render()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Health Check</button>
+        <div class="settings-section">
+          <div class="settings-title">Debt Strategy</div>
+          <div class="settings-row"><span class="settings-lbl">Repayment order</span>
+            <select class="settings-input" id="s-debt-strategy" onchange="saveSettings()">
+              <option value="avalanche">Avalanche — saves the most money (highest rate first)</option>
+              <option value="snowball">Snowball — faster psychological wins (smallest balance first)</option>
+            </select>
           </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">Math Health</div></div>
-            <div id="math-health-content" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button onclick="renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Check Now</button>
-              <button onclick="MathInvariants.resetSession();renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Reset Session Counts</button>
-            </div>
-          </div>
-          <div class="card">
-            <div class="settings-section">
-              <div class="settings-title">UX Intelligence</div>
-              <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Real-time analysis of how you interact with the app.</div>
-              <div id="ux-report-content"></div>
-              <button onclick="UX.renderReport()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Refresh UX Report</button>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">AI Usage &amp; Costs</div></div>
-            <div style="font-size:12px;color:var(--text3);margin-bottom:10px">All costs in USD · <a href="https://console.anthropic.com" target="_blank" style="color:var(--green)">Manage credits →</a></div>
-            <div id="api-costs-content"></div>
-          </div>
-          <div class="card">
-            <div class="card-hdr"><div class="card-title">Activity Log</div></div>
-            <div id="audit-log-content"></div>
-            <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear log</button>
-          </div>
+          <div id="strategy-explain" style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5;padding:8px;background:var(--bg3);border-radius:var(--r-sm)"></div>
+          <div style="font-size:11px;color:var(--text3);padding:4px 0 8px">Avalanche saves the most interest. Snowball builds momentum with quick wins.</div>
         </div>
-      </div>
-
-      <!-- ─── Redirected: bills / debts / savings live in natural tabs ─── -->
-      <div class="card" style="background:var(--bg3);border:1px dashed var(--border2)">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Managed Elsewhere</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.7">
-          📅 <strong>Bills</strong> — edit in <a href="#" onclick="goPage('pg-cal');return false;" style="color:#4ECDC4;text-decoration:underline">Bills tab</a><br>
-          💳 <strong>Debts &amp; Debt Strategy</strong> — edit in <a href="#" onclick="goPage('pg-dash');return false;" style="color:#4ECDC4;text-decoration:underline">Dashboard</a> (Immediate Debts card)<br>
-          🛟 <strong>Emergency Fund</strong> — set via <a href="#" onclick="openPlanMode();return false;" style="color:#4ECDC4;text-decoration:underline">PLAN mode → Freedom Buffer</a>
+        <div class="settings-section">
+          <div class="settings-title">Debts</div>
+          <div class="settings-row"><span class="settings-lbl">Car loan remaining</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-car" value="23989.70" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Car loan original amount</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-car-original" value="37400" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Credit card balance</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-cc" value="4595.35" oninput="saveSettings()"></div>
+          <div class="settings-row"><span class="settings-lbl">Credit card limit</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-cc-limit" value="6000" oninput="saveSettings()"></div>
         </div>
-        <!-- Hidden compat shims for code paths that read from these IDs.
-             They populate via saveSettings() but no longer have visible UI here. -->
-        <div style="display:none">
-          <select id="s-debt-strategy"><option value="avalanche">avalanche</option><option value="snowball">snowball</option></select>
-          <div id="strategy-explain"></div>
-          <input id="s-car" type="number" value="23989.70">
-          <input id="s-car-original" type="number" value="37400">
-          <input id="s-cc" type="number" value="4595.35">
-          <input id="s-cc-limit" type="number" value="6000">
+        <div class="settings-section">
+          <div class="settings-title">Savings</div>
           <div id="emergency-fund-status"></div>
-          <!-- Bundle 22.2: #settings-bills + #set-income removed. The legacy
-               renderSettingsBills caller short-circuits cleanly on missing
-               element; #set-income input was orphaned (no UI button to fire
-               saveIncome). Income still saves via #s-income (Configuration)
-               with oninput="saveSettings()". -->
+        </div>
+        <div class="settings-section">
+          <div class="settings-title">Bills</div>
+          <div id="settings-bills"></div>
         </div>
       </div>
-
-      <!-- ─── 4. ABOUT (always-visible footer) ─── -->
       <div class="card">
-        <div style="font-size:11px;color:var(--text3);line-height:1.6">
-          🔒 All data is stored locally on this device. Nothing is sent to any server.<br>
-          📱 To sync between devices: Export here → Import on the other device.
+        <div class="card-hdr"><div class="card-title">State Snapshots</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Automatic backups of your financial state. Restore any point in time.</div>
+        <div id="snapshots-content"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Data Health</div></div>
+        <div id="health-content"></div>
+        <button onclick="HEALTH.render()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Health Check</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Math Health</div></div>
+        <div id="math-health-content" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button onclick="renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Run Check Now</button>
+          <button onclick="MathInvariants.resetSession();renderMathHealth()" style="font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Reset Session Counts</button>
         </div>
+      </div>
+      <div class="card">
+        <div class="settings-section">
+          <div class="settings-title">UX Intelligence</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Real-time analysis of how you interact with the app.</div>
+          <div id="ux-report-content"></div>
+          <button onclick="UX.renderReport()" style="margin-top:8px;font-size:12px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Refresh UX Report</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="settings-section">
+          <div class="settings-title">Smart Notifications</div>
+          <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">
+            Daily reminders tailored to your schedule and real balance.<br>
+            Morning · Breakfast · Lunch · Snack · Home time · Groceries
+          </div>
+          <div id="push-settings"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">AI Usage &amp; Costs</div></div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:10px">All costs in USD · <a href="https://console.anthropic.com" target="_blank" style="color:var(--green)">Manage credits →</a></div>
+        <div id="api-costs-content"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Activity Log</div></div>
+        <div id="audit-log-content"></div>
+        <button onclick="AUDITOR.log=[];localStorage.removeItem('slyght_audit_log');renderAuditLog();" style="margin-top:8px;font-size:12px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Clear log</button>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Export / Import</div></div>
+        <div class="section-hdr">Export — paste into Claude to sync</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px">⚠️ This export contains real financial data. Only paste into trusted conversations.</div>
+        <button class="action-btn" onclick="copyExport()" title="⚠️ Export contains sensitive financial data — store securely">Copy Export Code</button>
+        <div class="section-hdr">Import — paste Claude's updated code</div>
+        <textarea class="import-area" id="import-area" placeholder="Paste export code here..."></textarea>
+        <button class="action-btn" onclick="doImport()">Import &amp; Apply</button>
+        <div id="import-msg" style="font-size:13px;margin-top:6px"></div>
+        <div style="font-size:12px;color:var(--text3);margin-top:8px;padding:10px;background:var(--bg3);border-radius:8px">
+          📱 <strong style="color:var(--text2)">Syncing between devices?</strong><br>
+          SLYGHT stores data on this device only.<br>
+          To sync: Export on one device &rarr; Import on another.
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:4px">🔒 All data is stored locally on this device. Nothing is sent to any server.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;line-height:1.6">📱 SLYGHT data is stored on this device only.<br>To sync between devices: export on one device, import on another.</div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title" style="color:var(--red)">Danger Zone</div></div>
+        <button class="danger-btn" onclick="resetAll()">Reset All Data</button>
       </div>
     </div>
   </div>
@@ -1639,13 +1617,7 @@ const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Tr
 // of negative remaining, show the borrow card. Tunable single-edit.
 const SURVIVAL_BORROW_THRESHOLD = 100;
 function getAvgDailySpend() {
-  // Bundle 22.4: migrated from raw S.txns.filter to BRAIN.summary.
-  // Pre-fix: separate filter that didn't exclude _isCorrection / _isRoundup,
-  // letting balance-corrections + round-up cents inflate the avg daily.
-  // Now: canonical discretionary filter via BRAIN.summary.discretionaryTxns('all').
-  const expTxns = (typeof BRAIN !== 'undefined' && BRAIN.summary)
-    ? BRAIN.summary.discretionaryTxns('all')
-    : (S.txns || []).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && !t._isCorrection && !t._isRoundup);
+  const expTxns = S.txns ? S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat)) : [];
   if (expTxns.length < 3) return S.weekdayBudget || 60;
   const timestamps = expTxns.map(t => t.ts);
   const oldest = Math.min(...timestamps);
@@ -1902,12 +1874,8 @@ function todayTxnsCanonical(now) {
   );
 }
 function getNoSpendStreak() {
-  // Only discretionary transactions break the streak — debt repayments do NOT count.
-  // Bundle 22.4: migrated from raw filter to BRAIN.summary canonical helper.
-  // Includes _isCorrection + _isRoundup exclusion (was missing pre-22.4).
-  const expenseTxns = (typeof BRAIN !== 'undefined' && BRAIN.summary)
-    ? BRAIN.summary.discretionaryTxns('all')
-    : S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat) && !t._isCorrection && !t._isRoundup);
+  // Only discretionary transactions break the streak — debt repayments do NOT count
+  const expenseTxns = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat));
   if (!expenseTxns.length) return 0;
   const today = new Date(); today.setHours(0,0,0,0);
   const todayHasTxn = expenseTxns.some(t => new Date(t.ts) >= today);
@@ -3856,22 +3824,9 @@ function renderAnalysisTab() {
     return;
   }
 
-  // Bundle 22.3 (Note 8): migrated from two inline S.txns.filter calls
-  // (one for cats, one for total) to BRAIN.summary.totalsByCategory('all').
-  // Single source of truth — same filter (excludes income, _NON_SPEND_CATS,
-  // corrections, round-ups) used by computeSpentInRange + dashboard +
-  // analysis pivot. Eliminates a class of "renderTrend disagrees with
-  // dashboard" bugs documented in OPEN-BUGS #6.
-  const cats = (typeof BRAIN !== 'undefined' && BRAIN.summary)
-    ? BRAIN.summary.totalsByCategory('all')
-    : (() => {
-        // Fallback if BRAIN not initialized yet (boot-time render edge case)
-        const out = {};
-        (S.txns || []).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection && !t._isRoundup)
-          .forEach(t => { const k = t.cat || 'Other'; out[k] = (out[k]||0) + t.amt; });
-        return out;
-      })();
-  const total = Object.values(cats).reduce((s, v) => s + v, 0);
+  const cats = {};
+  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).reduce((s,t) => s+t.amt, 0);
   const income = S.income || 7282;
   const days = MODEL.daysToPayday;
   const liveBal = getLiveBal();
@@ -4306,10 +4261,7 @@ function renderAll() {
   renderCutSliders();
   renderTrend();
   renderCatBreakdown();
-  // Bundle 22.2: renderSettingsBills() no-op now — Bundle 22 redesign moved
-  // bill editing to the Bills tab (Edit Bill modal); the Settings hidden
-  // #settings-bills div was removed in 22.2. Function kept but unused.
-  // renderSettingsBills();
+  renderSettingsBills();
   renderSavingsBuckets();
   renderSpendingCoach();
   if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
@@ -11528,20 +11480,6 @@ const BRAIN = {
         : [];
     },
 
-    // Bundle 22.4: raw discretionary txn array in range. Same filter as
-    // computeSpentInRange but returns the array (for callers that need
-    // timestamps, count, daySpan etc — e.g., getAvgDailySpend,
-    // getNoSpendStreak). Migrating these off raw S.txns.filter eliminates
-    // a class of "every render scans S.txns 5x" perf concerns.
-    discretionaryTxns(range) {
-      const { from, to } = this._resolveRange(range);
-      return (S.txns || []).filter(t =>
-        t.ts >= from && t.ts <= to &&
-        !t.income && !_NON_SPEND_CATS.has(t.cat) &&
-        !t._isCorrection && !t._isRoundup
-      );
-    },
-
     // ─── AI context envelope ─────────────────────────────────────────────
     // Standardized "user's financial state" payload. Use this anywhere an
     // AI surface needs to describe the user's situation — chat system
@@ -12031,24 +11969,6 @@ const BRAIN = {
       const amt = b.amt || 0;
       const tolerance = amt <= 20 ? 0.50 : 1.00;
       if (Math.abs((t.amt || 0) - amt) > tolerance) return false;
-      // Bundle 22.3 (Note 6 fix): require txn date to be within ±5 days of
-      // the bill's expected payment date in the CURRENT cycle. Pre-fix the
-      // matcher checked only amount + keyword, so a $34 "Claude" txn from
-      // 14 days ago could match this month's Claude Plus bill (re-creating
-      // the auto-flag treadmill killed in Bundle 7.2.3). Date guard
-      // disambiguates which cycle the txn belongs to. Quarterly/yearly bills
-      // (freq + dueMonth/dueMonths) are skipped here — autoDetect's outer
-      // freq guard handles those.
-      if (typeof t.ts === 'number' && typeof b.day === 'number' &&
-          (!b.freq || b.freq === 'monthly' || b.freq === 'fortnightly' || b.freq === 'weekly')) {
-        const txnDate = new Date(t.ts);
-        const today = new Date();
-        // Compute expected bill date: this month if b.day >= today, else past month
-        const expectedMonth = (b.day >= today.getDate()) ? today.getMonth() : today.getMonth() - 1;
-        const expectedDate = new Date(today.getFullYear(), expectedMonth, b.day);
-        const daysDelta = Math.abs((txnDate - expectedDate) / 86400000);
-        if (daysDelta > 5) return false;
-      }
       const keyword = (b.name || '').toLowerCase().split(/[\s\-—]+/)
         .filter(w => w.length >= 4)
         .sort((a, x) => x.length - a.length)[0];
