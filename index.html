@@ -1120,7 +1120,55 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">Data &amp; Backup</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>snapshots, round-ups toggle + destination dropdown, export, import.</div>
+
+        <div class="settings-group-title">Snapshots</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div style="font-size:13px;color:var(--text3);margin-bottom:4px" id="sub-snapshots-summary">Loading…</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onclick="SNAPSHOTS.take('manual'); renderAll();" style="flex:1;padding:10px;background:var(--green);border:none;border-radius:8px;color:#000;font-size:14px;font-weight:700;min-height:44px;cursor:pointer">Take Snapshot Now</button>
+            <button onclick="document.getElementById('sub-snapshots-list').style.display=document.getElementById('sub-snapshots-list').style.display==='none'?'block':'none'" style="padding:10px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">View all</button>
+          </div>
+          <div id="sub-snapshots-list" style="display:none;margin-top:12px;max-height:300px;overflow-y:auto;border-top:1px solid var(--border);padding-top:10px">
+            <div id="sub-snapshots-content"></div>
+          </div>
+        </div>
+
+        <div class="settings-group-title">Round-ups</div>
+        <div class="settings-group-card">
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <span class="toggle-label-title">Enabled</span>
+              <span class="toggle-label-sub">Adds cents from every spend to your goal</span>
+            </div>
+            <label class="toggle" aria-label="Toggle round-ups on or off">
+              <input type="checkbox" id="sub-toggle-roundups" onchange="onSubToggleRoundUps(this.checked)">
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>
+          </div>
+          <div style="padding:12px 16px;border-top:1px solid var(--border)">
+            <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Destination</div>
+            <select id="sub-roundup-dest" onchange="onSubRoundupDestChange(this.value)" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px"></select>
+          </div>
+        </div>
+        <div class="settings-section-hint">If the chosen goal is met, round-ups continue accruing in the bucket — adjust target anytime.</div>
+
+        <div class="settings-group-title">Export</div>
+        <div class="settings-group-card" style="padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="copyExport()" style="flex:1;min-width:140px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">📋 Copy to clipboard</button>
+          <button onclick="exportAsFile()" style="flex:1;min-width:140px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">📁 Download as file</button>
+        </div>
+
+        <div class="settings-group-title">Import</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <textarea id="sub-import-area" placeholder="Paste export code here…" style="width:100%;min-height:90px;padding:10px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--mono);resize:vertical"></textarea>
+          <button onclick="doImportFromSub()" style="width:100%;margin-top:8px;padding:10px;background:var(--green);border:none;border-radius:8px;color:#000;font-size:14px;font-weight:700;min-height:44px;cursor:pointer">📥 Import &amp; apply</button>
+          <div id="sub-import-msg" style="font-size:13px;margin-top:6px;min-height:18px"></div>
+        </div>
+
+        <div class="settings-section-hint" style="text-align:center;margin-top:16px">
+          🔒 All data stays on this device. Nothing is sent to any server.
+        </div>
+
       </div>
     </div>
 
@@ -1130,7 +1178,32 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">Diagnostics</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>data health, math health (13 invariants), UX intelligence, activity log.</div>
+
+        <div class="settings-group-title">Data health</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div id="sub-health-content"></div>
+          <button onclick="HEALTH.render()" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check now</button>
+        </div>
+
+        <div class="settings-group-title">Math health</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div id="sub-math-health-content" style="font-size:14px;color:var(--text2);line-height:1.6"></div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button onclick="renderMathHealth()" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check</button>
+            <button onclick="MathInvariants.resetSession(); renderMathHealth();" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;min-height:44px;cursor:pointer">Reset session</button>
+          </div>
+        </div>
+
+        <div class="settings-group-title">UX intelligence</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div id="sub-ux-report-content"></div>
+        </div>
+
+        <div class="settings-group-title">Activity log</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div id="sub-audit-log-content"></div>
+        </div>
+
       </div>
     </div>
 
@@ -4737,6 +4810,30 @@ function renderAll() {
   if ($('sub-toggle-quiet') && typeof PUSH !== 'undefined') {
     $('sub-toggle-quiet').checked = !!PUSH.quietMode;
   }
+  // Bundle 22 v3 Phase 3c: Data & Backup sub-screen state.
+  if ($('sub-toggle-roundups')) $('sub-toggle-roundups').checked = !!S.roundUpsEnabled;
+  if ($('sub-snapshots-summary')) {
+    try {
+      const _snaps = (typeof SNAPSHOTS !== 'undefined') ? SNAPSHOTS.load() : [];
+      const _last = _snaps[0];
+      const _whenTxt = _last && _last.ts ? new Date(_last.ts).toLocaleString('en-AU', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+      $('sub-snapshots-summary').textContent = 'Last: ' + _whenTxt + '  ·  ' + _snaps.length + ' stored';
+    } catch (_) { $('sub-snapshots-summary').textContent = '—'; }
+  }
+  // Mirror legacy diagnostics + snapshot innerHTML into the sub-screen targets.
+  // (Existing render fns write to legacy IDs; this keeps sub-screen in sync
+  // without touching each fn. Re-evaluate in a later cleanup pass.)
+  [
+    ['snapshots-content', 'sub-snapshots-content'],
+    ['health-content', 'sub-health-content'],
+    ['math-health-content', 'sub-math-health-content'],
+    ['ux-report-content', 'sub-ux-report-content'],
+    ['audit-log-content', 'sub-audit-log-content'],
+  ].forEach(([srcId, dstId]) => {
+    const src = document.getElementById(srcId);
+    const dst = document.getElementById(dstId);
+    if (src && dst && dst.innerHTML !== src.innerHTML) dst.innerHTML = src.innerHTML;
+  });
   const _explEl = $('strategy-explain');
   if (_explEl) {
     const _strat = S.debtStrategy || 'avalanche';
@@ -7171,6 +7268,10 @@ function openSettingsCategory(subscreenId) {
     screen.classList.add('has-active-subscreen');
   }
   el.classList.add('settings-active');
+  // Bundle 22 v3 Phase 3c: per-sub-screen open hooks.
+  if (subscreenId === 'sub-data' && typeof populateRoundupDestinationDropdown === 'function') {
+    populateRoundupDestinationDropdown();
+  }
 }
 function closeSettingsCategory(subscreenId) {
   const el = document.getElementById(subscreenId);
@@ -7197,6 +7298,63 @@ function onSubToggleQuietMode(checked) {
   if (typeof PUSH === 'undefined') return;
   // toggleQuietMode() flips; only call if state differs from desired.
   if (!!PUSH.quietMode !== !!checked) PUSH.toggleQuietMode();
+}
+
+// Bundle 22 v3 Phase 3c: Data & Backup sub-screen handlers.
+function onSubToggleRoundUps(checked) {
+  const r = BRAIN.config.setRoundUpsEnabled(checked, BRAIN.SOURCES.SETTINGS_ROUNDUPS_TOGGLE);
+  if (!r.ok) { showToast("Couldn't toggle round-ups: " + r.reason); return; }
+  // Mirror legacy button text + state.
+  const legacyBtn = document.getElementById('roundups-btn');
+  if (legacyBtn) legacyBtn.textContent = S.roundUpsEnabled ? 'On' : 'Off';
+  showToast('Round-ups ' + (S.roundUpsEnabled ? 'on' : 'off'));
+  renderAll();
+}
+function onSubRoundupDestChange(target) {
+  if (!target) return;
+  const r = BRAIN.savings.setRoundUpDestination(target, BRAIN.SOURCES.SETTINGS_ROUNDUP_DEST);
+  if (!r.ok) { showToast("Couldn't update destination: " + r.reason); populateRoundupDestinationDropdown(); return; }
+  showToast('Round-ups go to ' + BRAIN.savings.getRoundUpDestinationName());
+  renderAll();
+}
+// guardian-allow-block-start: tdz-safe-engine-access — populateRoundupDestinationDropdown is called only when the user opens the Data & Backup sub-screen (post-boot, user-initiated); PLAN const is fully initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive null-check, not a TDZ guard (permanent — see Settings sub-screen open call paths)
+function populateRoundupDestinationDropdown() {
+  const sel = document.getElementById('sub-roundup-dest');
+  if (!sel) return;
+  sel.innerHTML = '';
+  // Source 1: savings buckets (keyed by NAME — canonical key for BRAIN.savings).
+  const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings) ? BRAIN.savings.getBuckets() : [];
+  buckets.forEach(b => {
+    const opt = new Option(b.name, b.name);
+    sel.appendChild(opt);
+  });
+  // Source 2: active PLAN trips (by id).
+  if (typeof PLAN !== 'undefined') {
+    const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+    trips.filter(t => !t.completed).forEach(t => {
+      const opt = new Option('Trip: ' + (t.name || t.id), t.id);
+      sel.appendChild(opt);
+    });
+    // Source 3: active PLAN goals.
+    const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
+    goals.filter(g => !g.completed).forEach(g => {
+      const opt = new Option('Goal: ' + (g.name || g.id), g.id);
+      sel.appendChild(opt);
+    });
+  }
+  // Restore current selection.
+  sel.value = S.roundUpDestination || '';
+}
+// guardian-allow-block-end: tdz-safe-engine-access
+function doImportFromSub() {
+  const subArea = document.getElementById('sub-import-area');
+  const subMsg = document.getElementById('sub-import-msg');
+  const legacyArea = document.getElementById('import-area');
+  const legacyMsg = document.getElementById('import-msg');
+  if (subArea && legacyArea) legacyArea.value = subArea.value || '';
+  if (typeof doImport === 'function') doImport();
+  // Mirror status message back into sub-screen.
+  if (legacyMsg && subMsg) subMsg.innerHTML = legacyMsg.innerHTML;
 }
 
 function saveIncome() {
