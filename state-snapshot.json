@@ -1668,7 +1668,8 @@
         "depositSavings": 2500
       },
       "note": "$500 rent to Mum + $2,500 to property deposit account",
-      "autoDebit": true
+      "autoDebit": true,
+      "freq": "monthly"
     },
     {
       "name": "KIA Loan — Firstmac",
@@ -1712,7 +1713,8 @@
       "day": 10,
       "tag": "Streaming",
       "recurring": true,
-      "autoDebit": true
+      "autoDebit": true,
+      "freq": "monthly"
     },
     {
       "name": "Optus — Phone + Internet",
@@ -1720,7 +1722,8 @@
       "day": 16,
       "tag": "Fixed",
       "recurring": true,
-      "autoDebit": true
+      "autoDebit": true,
+      "freq": "monthly"
     },
     {
       "name": "YouTube Premium",
@@ -1755,7 +1758,8 @@
       "day": 2,
       "tag": "insurance",
       "recurring": false,
-      "scanned": true
+      "scanned": true,
+      "freq": "monthly"
     },
     {
       "name": "Google Microsoft",
@@ -1774,6 +1778,26 @@
       "recurring": true,
       "freq": "monthly",
       "autoDebit": true
+    },
+    {
+      "name": "Allianz CTP",
+      "amt": 552,
+      "day": 30,
+      "tag": "Insurance",
+      "recurring": true,
+      "freq": "yearly",
+      "dueMonth": 4,
+      "autoDebit": false
+    },
+    {
+      "name": "KIA Registration",
+      "amt": 462,
+      "day": 30,
+      "tag": "Transport",
+      "recurring": true,
+      "freq": "yearly",
+      "dueMonth": 4,
+      "autoDebit": false
     }
   ],
   "exported": "2026-05-12T04:54:11.972Z",

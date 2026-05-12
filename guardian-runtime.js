@@ -432,8 +432,11 @@ test('All transactions have valid positive amounts', () => {
   return {pass: bad.length === 0, detail: bad.length + ' invalid transactions'};
 });
 
-test('All bills have valid day (1-28)', () => {
-  const bad = TEST_BILLS.filter(b => !b.day || b.day < 1 || b.day > 28);
+test('All bills have valid day (1-31)', () => {
+  // Bundle 16: bumped from 1-28 to 1-31 to support Allianz CTP / KIA Registration
+  // day-30 yearly bills. Days 29-31 simply won't render in shorter months
+  // (acceptable per audit findings; smart-clamp-to-month-end deferred to 17.x).
+  const bad = TEST_BILLS.filter(b => !b.day || b.day < 1 || b.day > 31);
   return {pass: bad.length === 0, detail: bad.length === 0 ? 'OK' : 'Bad days: ' + bad.map(b=>b.name+' day:'+b.day).join(', ')};
 });
 

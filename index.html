@@ -6050,7 +6050,7 @@ function updBonus(id, f, v) { const b = S.bonuses.find(x => x.id === id); if (b)
 function commitBonus() { onStateChange('bonus-update'); }
 function rmBonus(id) { S.bonuses = S.bonuses.filter(x => x.id !== id); save(); renderBonusList(0,0); renderAll(); }
 
-function setSeg(s) { S.seg = s; ['1m','3m','6m'].forEach(x => $('sg-'+x).classList.toggle('on', x === s)); renderCutSliders(); }
+function setSeg(s) { S.seg = s; ['1m','3m','6m'].forEach(x => { const el = $('sg-'+x); if (el) el.classList.toggle('on', x === s); }); renderCutSliders(); }
 
 function renderCutSliders() {
   const c = $('cut-sliders'); if (!c) return;
@@ -8082,6 +8082,74 @@ const REAL_STATE_V17 = {
 })();
 // guardian-allow-block-end: no-hardcoded-bill-name
 
+// guardian-allow-block-start: no-hardcoded-bill-name — seed v20 adds two yearly bills (Allianz CTP green slip + KIA Registration) John surfaced 2026-05-12; requires literal bill-name lookups to avoid duplicates on re-run (permanent — seed design)
+// Seed v20 (Bundle 16.1): adds Allianz CTP + KIA Registration as yearly bills
+// (day 30, freq:'yearly', dueMonth:4 = May per John's confirmation). Also
+// migrates existing BILLS to set freq:'monthly' explicitly so the renderer's
+// freq-aware path treats them consistently (was: undefined freq fell through
+// to monthly default; now: explicit for clarity + future fortnightly/weekly
+// migrations are unambiguous).
+(function seedV20() {
+  const flag = 'slyght_seeded_v20';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    if (!Array.isArray(d.BILLS)) { localStorage.setItem(flag, '1'); return; }
+
+    // 1. Migrate existing entries: explicit freq:'monthly' where missing.
+    //    (Renderer already defaults to monthly for missing freq, so behavior
+    //    unchanged — this just makes the field explicit.)
+    d.BILLS.forEach(b => {
+      if (b && !b.freq) b.freq = 'monthly';
+    });
+
+    // 2. Add Allianz CTP if not already present
+    if (!d.BILLS.find(b => b && b.name === 'Allianz CTP')) {
+      d.BILLS.push({
+        name: 'Allianz CTP',
+        amt: 552,
+        day: 30,
+        tag: 'Insurance',
+        recurring: true,
+        freq: 'yearly',
+        dueMonth: 4,
+        autoDebit: false
+      });
+    }
+
+    // 3. Add KIA Registration if not already present
+    if (!d.BILLS.find(b => b && b.name === 'KIA Registration')) {
+      d.BILLS.push({
+        name: 'KIA Registration',
+        amt: 462,
+        day: 30,
+        tag: 'Transport',
+        recurring: true,
+        freq: 'yearly',
+        dueMonth: 4,
+        autoDebit: false
+      });
+    }
+
+    // 4. Audit log entry
+    const S = d.S || {};
+    if (!S.auditLog) S.auditLog = [];
+    S.auditLog.push({
+      type: 'seedV20-frequency-migration',
+      source: 'migration',
+      bundle: '16.1',
+      added: ['Allianz CTP (yearly day 30)', 'KIA Registration (yearly day 30)'],
+      ts: Date.now()
+    });
+    d.S = S;
+    localStorage.setItem('slyght_v5', JSON.stringify(d));
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV20 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+// guardian-allow-block-end: no-hardcoded-bill-name
+
 // Shared helper used by multiple systems
 function getBucketTotal() {
   return (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
@@ -8688,7 +8756,16 @@ const UX = {
     errors: []
   },
   trackTap(element, label) {
-    const entry = { ts: Date.now(), label: label || element?.id || element?.className?.toString()?.split(' ')?.[0] || 'unknown', tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
+    // Bundle 16.5: SVG elements expose className as SVGAnimatedString, not
+    // string. Calling .toString() on that yields "[object SVGAnimatedString]"
+    // which leaked into "Most used" UX report as "[object". Fall back to
+    // baseVal for SVGs, else explicit string check.
+    let cls = '';
+    if (element && element.className) {
+      if (typeof element.className === 'string') cls = element.className;
+      else if (typeof element.className.baseVal === 'string') cls = element.className.baseVal;
+    }
+    const entry = { ts: Date.now(), label: label || element?.id || (cls.split(' ')[0] || 'unknown'), tag: element?.tagName, time: new Date().toLocaleTimeString('en-AU') };
     this.session.interactions.push(entry);
     if (this.session.interactions.length > 500) this.session.interactions.shift();
   },
@@ -12373,15 +12450,20 @@ function renderPlanMode() {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
-  // Bundle 16: centralized scroll preservation. Every code path that triggers
-  // a re-render (slider drag, WRX edit save, bonus add, provision edit, lock
-  // dialog confirm, etc.) now preserves the user's scroll position
-  // automatically. Existing PLAN_MODAL.open-based saves in the 7 trip/goal
-  // confirm handlers remain as belt-and-suspenders — they restore from
-  // _planScrollSavedY (set before keyboard-shift) which is the more accurate
-  // value for those flows. This block covers the gap for non-PLAN_MODAL paths.
+  // Bundle 16.5: centralized scroll preservation with race-fix. The 7 existing
+  // confirm handlers restore _planScrollSavedY (the pre-keyboard-shift value
+  // captured by PLAN_MODAL.open). Bundle 16 added a competing _liveY restore
+  // here, which lost to the confirm handler's RAF in single-render cases but
+  // OVERRODE the correct value via a nested RAF for trip/goal edits — user
+  // saw jump-to-top. Fix: prefer _planScrollSavedY when modal flow set it,
+  // else use live capture. Consume the saved-flag at end so non-modal renders
+  // after a modal flow still get live-capture behavior.
   const _planEl = document.getElementById('plan-mode');
   const _liveY = _planEl ? _planEl.scrollTop : 0;
+  const _modalSavedY = (typeof _planScrollSavedY === 'number' && _planScrollSavedY > 0)
+    ? _planScrollSavedY
+    : null;
+  const _restoreY = (_modalSavedY !== null) ? _modalSavedY : _liveY;
 
   const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305 };
   const nwNet = nw.net;
@@ -12435,13 +12517,17 @@ function renderPlanMode() {
   if (typeof wireTripEditors === 'function') wireTripEditors();
   if (typeof wireGoalEditors === 'function') wireGoalEditors();
 
-  // Bundle 16: restore scroll position captured at top of this render. Sync
-  // write handles the no-relayout case; double-rAF handles the case where
-  // innerHTML reset scrollTop to 0 before the assignment took effect.
+  // Bundle 16.5: restore _restoreY (= _planScrollSavedY when modal flow set
+  // it, else _liveY). Same target as confirm handlers — no RAF race override.
+  // Clear _planScrollSavedY after second RAF so subsequent non-modal renders
+  // fall back to live capture instead of stale modal value.
   if (_planEl) {
-    _planEl.scrollTop = _liveY;
+    _planEl.scrollTop = _restoreY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _liveY; });
+      requestAnimationFrame(() => {
+        _planEl.scrollTop = _restoreY;
+        if (_modalSavedY !== null) _planScrollSavedY = 0;
+      });
     });
   }
 }
