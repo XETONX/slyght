@@ -12450,20 +12450,13 @@ function renderPlanMode() {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
-  // Bundle 16.5: centralized scroll preservation with race-fix. The 7 existing
-  // confirm handlers restore _planScrollSavedY (the pre-keyboard-shift value
-  // captured by PLAN_MODAL.open). Bundle 16 added a competing _liveY restore
-  // here, which lost to the confirm handler's RAF in single-render cases but
-  // OVERRODE the correct value via a nested RAF for trip/goal edits — user
-  // saw jump-to-top. Fix: prefer _planScrollSavedY when modal flow set it,
-  // else use live capture. Consume the saved-flag at end so non-modal renders
-  // after a modal flow still get live-capture behavior.
+  // Bundle 16.6: scroll preservation for NON-MODAL renderPlanMode calls
+  // (slider drag, direct re-render). Modal flows (Save/Cancel/X/etc) now have
+  // PLAN_MODAL.close() handle the restore — by the time renderPlanMode fires
+  // on the save path, plan-mode.scrollTop is already at the correct value, so
+  // capturing _liveY here is correct. Single source of truth, no race.
   const _planEl = document.getElementById('plan-mode');
   const _liveY = _planEl ? _planEl.scrollTop : 0;
-  const _modalSavedY = (typeof _planScrollSavedY === 'number' && _planScrollSavedY > 0)
-    ? _planScrollSavedY
-    : null;
-  const _restoreY = (_modalSavedY !== null) ? _modalSavedY : _liveY;
 
   const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305 };
   const nwNet = nw.net;
@@ -12517,17 +12510,14 @@ function renderPlanMode() {
   if (typeof wireTripEditors === 'function') wireTripEditors();
   if (typeof wireGoalEditors === 'function') wireGoalEditors();
 
-  // Bundle 16.5: restore _restoreY (= _planScrollSavedY when modal flow set
-  // it, else _liveY). Same target as confirm handlers — no RAF race override.
-  // Clear _planScrollSavedY after second RAF so subsequent non-modal renders
-  // fall back to live capture instead of stale modal value.
+  // Bundle 16.6: restore the live-captured scroll position. For non-modal
+  // re-renders this preserves user's position. For modal save paths, scroll
+  // is already correct via PLAN_MODAL.close() so this restore is a no-op
+  // (restoring to the same value).
   if (_planEl) {
-    _planEl.scrollTop = _restoreY;
+    _planEl.scrollTop = _liveY;
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        _planEl.scrollTop = _restoreY;
-        if (_modalSavedY !== null) _planScrollSavedY = 0;
-      });
+      requestAnimationFrame(() => { _planEl.scrollTop = _liveY; });
     });
   }
 }
@@ -13150,19 +13140,10 @@ function confirmEditTrip(tripId) {
   }
 
   PLAN.saveTrip(trip);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('✅ ' + trip.name + ' Updated');
 }
 
@@ -13211,19 +13192,10 @@ function confirmNewTrip() {
   PLAN.saveTrip(newTrip);
   // Auto-create a bucket for this trip so future savings flow correctly.
   PLAN.writeSavedToSource(newTrip, 0);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('✅ ' + emoji + ' ' + name + ' Added');
 }
 
@@ -13271,19 +13243,10 @@ function confirmTripSavings(tripId) {
   // Stored trip retains everything except canonical saved (which is
   // re-derived from bucket on next read via readSavedFromSource).
   PLAN.saveTrip(trip);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('✅ $' + amt.toLocaleString() + ' Added To ' + trip.name + ' Fund');
 }
 
@@ -13409,19 +13372,10 @@ function confirmEditGoal(goalId) {
   if (!isNaN(monthly)) goal.monthly = monthly;
   goal.description = desc;
   PLAN.saveGoal(goal);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('✅ ' + name + ' Updated');
 }
 
@@ -13467,19 +13421,10 @@ function confirmDeleteGoal(goalId) {
     }
   }
 
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('🗑 Goal deleted');
 }
 
@@ -13527,19 +13472,10 @@ function confirmGoalSavings(goalId) {
   // and if (goalId === 'apartment') blocks.
   PLAN.writeSavedToSource(goal, newSaved);
   PLAN.saveGoal(goal);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('🎯 $' + amt.toLocaleString() + ' Added To ' + goal.name + '!');
 }
 
@@ -13582,19 +13518,10 @@ function confirmNewGoal() {
   PLAN.saveGoal(newGoal);
   // Auto-create a bucket for this goal so future savings flow correctly.
   PLAN.writeSavedToSource(newGoal, 0);
-  // Bundle 7.2 fix-forward: restore from _planScrollSavedY snapshot taken
-  // in PLAN_MODAL.open (before keyboard-induced scroll drift). Sync write
-  // + double-rAF: sync handles the no-relayout case; rAFs handle the
-  // case where renderPlanMode's innerHTML reset scrollTop to 0.
+  // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
+  // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
-  const _planEl = document.getElementById('plan-mode');
-  if (_planEl) {
-    _planEl.scrollTop = _planScrollSavedY;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => { _planEl.scrollTop = _planScrollSavedY; });
-    });
-  }
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
 
@@ -13888,6 +13815,26 @@ const PLAN_MODAL = {
   close() {
     const overlay = document.getElementById('plan-modal-overlay');
     if (overlay) overlay.style.display = 'none';
+
+    // Bundle 16.6: restore plan-mode scroll position. Every modal exit path
+    // routes through here — Save (via confirm handler), Cancel, X, Close,
+    // Got It, Go Back And Adjust — so this single restore covers all 30+
+    // close-call sites without per-handler bookkeeping. Sync write handles
+    // the no-relayout case; double-rAF handles cases where keyboard dismiss
+    // or follow-up renderPlanMode reset scrollTop to 0. Clearing _planScroll-
+    // SavedY at end prevents stale modal-time values from being misapplied
+    // to subsequent non-modal renders (e.g. slider drag after a closed modal).
+    const planEl = document.getElementById('plan-mode');
+    if (planEl && typeof _planScrollSavedY === 'number' && _planScrollSavedY > 0) {
+      const targetY = _planScrollSavedY;
+      planEl.scrollTop = targetY;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          planEl.scrollTop = targetY;
+          _planScrollSavedY = 0;
+        });
+      });
+    }
   },
 
   header(title, subtitle) {
