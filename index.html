@@ -298,7 +298,20 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:flex-end;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r) var(--r) 0 0;padding:24px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r) var(--r) 0 0;padding:24px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;overscroll-behavior:contain}
+/* Bundle 22 v3 Phase 4c: every modal in the app locks page scroll while open,
+   so the focus stays inside the modal. Same discipline as the new Settings
+   sub-screens. :has() handles legacy modal-overlay / recon-overlay without
+   touching their individual open paths. */
+html:has(.modal-overlay.open),
+html:has(.recon-overlay.open),
+html:has(.edit-modal.open){overflow:hidden}
+body:has(.modal-overlay.open),
+body:has(.recon-overlay.open),
+body:has(.edit-modal.open){overflow:hidden;position:relative}
+.recon-overlay > div,
+.recon-overlay .recon-card,
+.recon-overlay > *:not(:empty){overscroll-behavior:contain}
 .modal-title{font-size:18px;font-weight:600;margin-bottom:4px;color:var(--text)}
 .modal-sub{font-size:14px;color:var(--text2);margin-bottom:20px}
 /* MI-13 details modal — row-removal animation (Mission #42 HF#1).
