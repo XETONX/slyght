@@ -87,6 +87,27 @@ button,input,select,textarea{font-family:var(--sans)}
 .toggle input:checked + .toggle-track{background:var(--green-dim);border-color:var(--green-border)}
 .toggle input:checked + .toggle-track .toggle-thumb{transform:translateX(20px);background:var(--green)}
 .toggle input:focus-visible + .toggle-track{outline:2px solid var(--green);outline-offset:2px}
+/* Bundle 22 v3 Phase 4a: reusable edit-modal — center card, scroll-locked, focus-contained. */
+.edit-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:400;background:rgba(0,0,0,0.72);padding:20px;-webkit-tap-highlight-color:transparent}
+.edit-modal.open{display:flex;animation:edit-modal-fade .15s ease-out}
+@keyframes edit-modal-fade{from{opacity:0}to{opacity:1}}
+.edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .2s ease-out}
+@keyframes edit-modal-slide{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+.edit-modal-title{font-size:19px;font-weight:700;color:var(--text);margin-bottom:6px}
+.edit-modal-hint{font-size:13px;color:var(--text3);margin-bottom:18px;line-height:1.5}
+.edit-modal-input{width:100%;padding:14px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:17px;margin-bottom:14px;-webkit-appearance:none;font-family:inherit}
+.edit-modal-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 2px var(--green-dim)}
+.edit-modal-input[type="number"]{font-family:var(--mono)}
+.edit-modal-err{color:var(--red);font-size:13px;margin-bottom:10px;display:none;line-height:1.4}
+.edit-modal-err.show{display:block}
+.edit-modal-actions{display:flex;gap:10px;margin-top:4px}
+.edit-modal-actions button{flex:1;padding:13px;border-radius:10px;font-size:15px;font-weight:700;min-height:48px;cursor:pointer;border:none;font-family:inherit}
+.edit-modal-actions .btn-cancel{background:var(--bg3);border:1px solid var(--border2);color:var(--text2)}
+.edit-modal-actions .btn-save{background:var(--green);color:#000}
+.edit-modal-actions .btn-save:active{transform:scale(0.98)}
+.edit-modal-actions .btn-danger{background:var(--red);color:#fff}
+/* Body scroll lock when any edit-modal is open. */
+body.edit-modal-open{overflow:hidden}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -914,12 +935,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Income</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now (toggle on root nav).')" aria-label="Monthly salary, tap to edit" data-brain-key="config.income">
+          <button class="settings-edit-row" onclick="openEditIncome()" aria-label="Monthly salary, tap to edit" data-brain-key="config.income">
             <span class="row-label">Monthly salary</span>
             <span class="row-value" id="sub-row-income">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Payday, tap to edit" data-brain-key="config.payday">
+          <button class="settings-edit-row" onclick="openEditPayday()" aria-label="Payday, tap to edit" data-brain-key="config.payday">
             <span class="row-label">Payday</span>
             <span class="row-value" id="sub-row-payday">—</span>
             <span class="row-chevron">›</span>
@@ -928,7 +949,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Assets</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Deposit account managed by Mum, tap to edit" data-brain-key="assets.mumAccount">
+          <button class="settings-edit-row" onclick="openEditMumAccount()" aria-label="Deposit account managed by Mum, tap to edit" data-brain-key="assets.mumAccount">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">Mum account</span>
               <span class="row-sub">Property deposit savings</span>
@@ -936,7 +957,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <span class="row-value" id="sub-row-mum">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Aware Super balance, tap to edit" data-brain-key="assets.super">
+          <button class="settings-edit-row" onclick="openEditSuper()" aria-label="Aware Super balance, tap to edit" data-brain-key="assets.super">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">Super balance</span>
               <span class="row-sub">Aware Super, High Growth</span>
@@ -948,7 +969,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Liabilities</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="KIA loan current balance, tap to edit" data-brain-key="debts.carloan">
+          <button class="settings-edit-row" onclick="openEditCarloan()" aria-label="KIA loan current balance, tap to edit" data-brain-key="debts.carloan">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">KIA loan</span>
               <span class="row-sub">Firstmac, current balance</span>
@@ -956,7 +977,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <span class="row-value" id="sub-row-carloan">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="KIA loan original principal, tap to edit" data-brain-key="debts.carloanOriginal">
+          <button class="settings-edit-row" onclick="openEditCarloanOriginal()" aria-label="KIA loan original principal, tap to edit" data-brain-key="debts.carloanOriginal">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">KIA original</span>
               <span class="row-sub">Loan starting principal</span>
@@ -964,12 +985,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <span class="row-value" id="sub-row-carloan-orig">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Credit card balance, tap to edit" data-brain-key="debts.cc">
+          <button class="settings-edit-row" onclick="openEditCC()" aria-label="Credit card balance, tap to edit" data-brain-key="debts.cc">
             <span class="row-label">Credit card</span>
             <span class="row-value" id="sub-row-cc">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Credit card limit, tap to edit" data-brain-key="debts.ccLimit">
+          <button class="settings-edit-row" onclick="openEditCCLimit()" aria-label="Credit card limit, tap to edit" data-brain-key="debts.ccLimit">
             <span class="row-label">CC limit</span>
             <span class="row-value" id="sub-row-cc-limit">$0</span>
             <span class="row-chevron">›</span>
@@ -997,12 +1018,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Daily budgets</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Weekday budget, tap to edit" data-brain-key="config.weekdayBudget">
+          <button class="settings-edit-row" onclick="openEditWeekdayBudget()" aria-label="Weekday budget, tap to edit" data-brain-key="config.weekdayBudget">
             <span class="row-label">Weekday</span>
             <span class="row-value" id="sub-row-weekday-budget">$0</span>
             <span class="row-chevron">›</span>
           </button>
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Weekend budget, tap to edit" data-brain-key="config.weekendBudget">
+          <button class="settings-edit-row" onclick="openEditWeekendBudget()" aria-label="Weekend budget, tap to edit" data-brain-key="config.weekendBudget">
             <span class="row-label">Weekend</span>
             <span class="row-value" id="sub-row-weekend-budget">$0</span>
             <span class="row-chevron">›</span>
@@ -1012,7 +1033,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Debt payoff</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Debt payoff strategy, tap to edit" data-brain-key="debts.strategy">
+          <button class="settings-edit-row" onclick="openEditDebtStrategy()" aria-label="Debt payoff strategy, tap to edit" data-brain-key="debts.strategy">
             <span class="row-label">Strategy</span>
             <span class="row-value" id="sub-row-strategy">—</span>
             <span class="row-chevron">›</span>
@@ -1075,7 +1096,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">API key</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Anthropic API key, tap to edit" data-brain-key="config.apiKey">
+          <button class="settings-edit-row" onclick="openEditApiKey()" aria-label="Anthropic API key, tap to edit" data-brain-key="config.apiKey">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">Anthropic key</span>
               <span class="row-sub" id="sub-row-apikey-masked">Not set</span>
@@ -1101,7 +1122,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
         <div class="settings-group-title">Alert threshold</div>
         <div class="settings-group-card">
-          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="API spend alert threshold, tap to edit" data-brain-key="config.apiAlertThreshold">
+          <button class="settings-edit-row" onclick="openEditApiThreshold()" aria-label="API spend alert threshold, tap to edit" data-brain-key="config.apiAlertThreshold">
             <span class="row-multi">
               <span style="font-size:15px;color:var(--text)">Warn at</span>
               <span class="row-sub">Monthly spend that triggers a heads-up</span>
@@ -1224,6 +1245,20 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
     <!-- ═══ End sub-screen scaffolding ═══ -->
 
+  </div>
+
+  <!-- Bundle 22 v3 Phase 4a: single reusable edit modal (content set dynamically by EDIT_MODAL.open). -->
+  <div class="edit-modal" id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title" onclick="if(event.target===this)EDIT_MODAL.close()">
+    <div class="edit-modal-card">
+      <div class="edit-modal-title" id="edit-modal-title">—</div>
+      <div class="edit-modal-hint" id="edit-modal-hint"></div>
+      <div id="edit-modal-input-area"></div>
+      <div class="edit-modal-err" id="edit-modal-err"></div>
+      <div class="edit-modal-actions">
+        <button class="btn-cancel" onclick="EDIT_MODAL.close()">Cancel</button>
+        <button class="btn-save" id="edit-modal-save-btn" onclick="EDIT_MODAL.attemptSave()">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- PERSISTENT STRIP -->
@@ -7355,6 +7390,314 @@ function doImportFromSub() {
   if (typeof doImport === 'function') doImport();
   // Mirror status message back into sub-screen.
   if (legacyMsg && subMsg) subMsg.innerHTML = legacyMsg.innerHTML;
+}
+
+// ─── Bundle 22 v3 Phase 4a: EDIT_MODAL — reusable edit dialog ─────────────
+// One modal element + one open API. Each Settings edit row calls
+// EDIT_MODAL.open({ ... }) with: title, hint, field config, current value,
+// validate fn, save fn. save returns the BRAIN canonical writer envelope
+// { ok, reason? } — on failure the modal shows the reason inline and stays
+// open. Body scroll is locked via .edit-modal-open class for the duration.
+const EDIT_MODAL = {
+  _save: null,
+  _validate: null,
+  _onAfter: null,
+  open(cfg) {
+    const root = document.getElementById('edit-modal');
+    if (!root) return;
+    // Populate header
+    document.getElementById('edit-modal-title').textContent = cfg.title || '';
+    document.getElementById('edit-modal-hint').textContent = cfg.hint || '';
+    // Build input
+    const area = document.getElementById('edit-modal-input-area');
+    area.innerHTML = '';
+    const field = cfg.field || { type: 'text' };
+    let input;
+    if (field.type === 'select') {
+      input = document.createElement('select');
+      (field.options || []).forEach(o => {
+        const opt = new Option(o.label, o.value);
+        input.appendChild(opt);
+      });
+    } else if (field.type === 'textarea') {
+      input = document.createElement('textarea');
+      input.rows = field.rows || 4;
+      input.style.minHeight = '90px';
+      input.style.resize = 'vertical';
+      input.style.fontFamily = 'var(--mono)';
+    } else {
+      input = document.createElement('input');
+      input.type = field.type || 'text';
+      if (field.inputMode) input.inputMode = field.inputMode;
+      if (field.placeholder) input.placeholder = field.placeholder;
+      if (field.step) input.step = field.step;
+      if (field.min !== undefined) input.min = field.min;
+      if (field.max !== undefined) input.max = field.max;
+      input.autocomplete = 'off';
+    }
+    input.id = 'edit-modal-input';
+    input.className = 'edit-modal-input';
+    input.value = (cfg.currentValue === undefined || cfg.currentValue === null) ? '' : String(cfg.currentValue);
+    area.appendChild(input);
+    // Wire Enter key on inputs to Save
+    if (field.type !== 'textarea') {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); EDIT_MODAL.attemptSave(); }
+      });
+    }
+    // Stash callbacks
+    this._save = cfg.save;
+    this._validate = cfg.validate;
+    this._onAfter = cfg.onAfter;
+    // Save-btn label override
+    const saveBtn = document.getElementById('edit-modal-save-btn');
+    if (saveBtn) {
+      saveBtn.textContent = cfg.saveLabel || 'Save';
+      saveBtn.className = cfg.danger ? 'btn-danger' : 'btn-save';
+    }
+    // Reset error
+    const errEl = document.getElementById('edit-modal-err');
+    if (errEl) { errEl.textContent = ''; errEl.classList.remove('show'); }
+    // Open + lock body scroll
+    root.classList.add('open');
+    document.body.classList.add('edit-modal-open');
+    // Auto-focus input (delay so animation completes)
+    setTimeout(() => { try { input.focus(); if (input.select) input.select(); } catch (_) {} }, 60);
+  },
+  close() {
+    const root = document.getElementById('edit-modal');
+    if (root) root.classList.remove('open');
+    document.body.classList.remove('edit-modal-open');
+    this._save = null;
+    this._validate = null;
+    this._onAfter = null;
+  },
+  showError(msg) {
+    const errEl = document.getElementById('edit-modal-err');
+    if (errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
+  },
+  attemptSave() {
+    const input = document.getElementById('edit-modal-input');
+    if (!input) return;
+    const val = input.value;
+    if (this._validate) {
+      const v = this._validate(val);
+      if (!v || v.ok === false) { this.showError((v && v.reason) || 'Invalid value'); return; }
+    }
+    if (this._save) {
+      const r = this._save(val);
+      if (r && r.ok === false) { this.showError(r.reason || 'Save failed'); return; }
+    }
+    const afterCb = this._onAfter;
+    this.close();
+    if (typeof afterCb === 'function') afterCb();
+    if (typeof renderAll === 'function') renderAll();
+  }
+};
+
+// ─── Settings edit-row openers — each wires a row to its BRAIN writer ─────
+// Financial Data
+function openEditIncome() {
+  EDIT_MODAL.open({
+    title: 'Monthly salary',
+    hint: 'Net amount that lands in your account each payday',
+    field: { type: 'number', inputMode: 'decimal', step: '1', placeholder: '7282' },
+    currentValue: S.income || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
+    save: (v) => BRAIN.config.setIncome(+v, BRAIN.SOURCES.SETTINGS_INCOME_EDIT),
+  });
+}
+function openEditPayday() {
+  EDIT_MODAL.open({
+    title: 'Payday',
+    hint: 'Day of the month your salary lands (1–28)',
+    field: { type: 'number', inputMode: 'numeric', step: '1', min: 1, max: 28, placeholder: '15' },
+    currentValue: S.payday || '',
+    validate: (v) => { const n = +v; return (Number.isInteger(n) && n >= 1 && n <= 28) ? { ok: true } : { ok: false, reason: 'Enter a whole day between 1 and 28' }; },
+    save: (v) => BRAIN.config.setPayday(+v, BRAIN.SOURCES.SETTINGS_PAYDAY_EDIT),
+  });
+}
+function openEditMumAccount() {
+  EDIT_MODAL.open({
+    title: 'Mum account',
+    hint: 'Current balance in the deposit savings account managed by Mum',
+    field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '3000' },
+    currentValue: S.mumAccountBalance || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => {
+      // No BRAIN.assets bubble yet (Bundle 16.5 candidate). Direct write + audit-log.
+      const n = +v;
+      const old = S.mumAccountBalance;
+      S.mumAccountBalance = n;
+      BRAIN.audit.append({ type: 'mum_account_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      // Preserve PLAN apartment-goal mirror (Bundle 9 logic).
+      if (typeof PLAN !== 'undefined') {
+        try {
+          const goals = PLAN.getGoals();
+          const apGoal = goals.find(g => g.id === 'apartment');
+          if (apGoal) PLAN.saveGoal(apGoal);
+        } catch (_) {}
+      }
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditSuper() {
+  EDIT_MODAL.open({
+    title: 'Super balance',
+    hint: 'Current Aware Super (High Growth) balance',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '63429' },
+    currentValue: S.superBalance || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.superBalance;
+      S.superBalance = n;
+      BRAIN.audit.append({ type: 'super_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditCarloan() {
+  EDIT_MODAL.open({
+    title: 'KIA loan balance',
+    hint: 'Current balance owed on the Firstmac car loan',
+    field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '23214' },
+    currentValue: S.carloan != null ? S.carloan : '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number (0 is valid if paid off)' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.carloan;
+      S.carloan = n;
+      BRAIN.audit.append({ type: 'carloan_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditCarloanOriginal() {
+  EDIT_MODAL.open({
+    title: 'KIA original principal',
+    hint: 'Starting principal on the KIA loan (for paid-off-so-far calc)',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '37400' },
+    currentValue: S.carloanOriginal || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.carloanOriginal;
+      S.carloanOriginal = n;
+      BRAIN.audit.append({ type: 'carloan_original_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditCC() {
+  EDIT_MODAL.open({
+    title: 'Credit card balance',
+    hint: 'Current balance on the credit card (0 if cleared)',
+    field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '0' },
+    currentValue: S.cc != null ? S.cc : '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.cc;
+      S.cc = n;
+      BRAIN.audit.append({ type: 'cc_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditCCLimit() {
+  EDIT_MODAL.open({
+    title: 'CC limit',
+    hint: 'Credit card credit limit',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '6000' },
+    currentValue: S.ccLimit || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.ccLimit;
+      S.ccLimit = n;
+      BRAIN.audit.append({ type: 'cc_limit_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+
+// Strategies
+function openEditWeekdayBudget() {
+  EDIT_MODAL.open({
+    title: 'Weekday budget',
+    hint: 'Max discretionary spend Mon–Fri',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '60' },
+    currentValue: S.weekdayBudget || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => BRAIN.config.setWeekdayBudget(+v, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT),
+  });
+}
+function openEditWeekendBudget() {
+  EDIT_MODAL.open({
+    title: 'Weekend budget',
+    hint: 'Max discretionary spend Sat–Sun',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '180' },
+    currentValue: S.weekendBudget || '',
+    validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
+    save: (v) => BRAIN.config.setWeekendBudget(+v, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT),
+  });
+}
+function openEditDebtStrategy() {
+  EDIT_MODAL.open({
+    title: 'Debt payoff strategy',
+    hint: 'Snowball: smallest balance first (motivation). Avalanche: highest rate first (math-optimal).',
+    field: { type: 'select', options: [
+      { value: 'avalanche', label: 'Avalanche — highest rate first' },
+      { value: 'snowball', label: 'Snowball — smallest balance first' },
+    ]},
+    currentValue: S.debtStrategy || 'avalanche',
+    save: (v) => BRAIN.debts.setStrategy(v, BRAIN.SOURCES.SETTINGS_DEBT_STRATEGY),
+  });
+}
+
+// AI Assistant
+function openEditApiKey() {
+  EDIT_MODAL.open({
+    title: 'Anthropic API key',
+    hint: 'Stored on this device only. Must start with sk-ant-.',
+    field: { type: 'password', placeholder: 'sk-ant-…' },
+    currentValue: S.apiKey || '',
+    validate: (v) => v && v.trim().startsWith('sk-ant') ? { ok: true } : { ok: false, reason: 'Key must start with sk-ant-' },
+    save: (v) => {
+      const k = v.trim();
+      try { localStorage.setItem('slyght_api_key', k); } catch (_) {}
+      const old = S.apiKey ? '<set>' : '<unset>';
+      S.apiKey = k;
+      BRAIN.audit.append({ type: 'api_key_change', old, new: '<set>', source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
+}
+function openEditApiThreshold() {
+  EDIT_MODAL.open({
+    title: 'API alert threshold',
+    hint: 'Warn when monthly API spend reaches this amount (USD)',
+    field: { type: 'number', inputMode: 'decimal', step: '1', min: 1, placeholder: '15' },
+    currentValue: S.apiAlertThreshold || 15,
+    validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
+    save: (v) => {
+      const n = +v;
+      const old = S.apiAlertThreshold;
+      S.apiAlertThreshold = n;
+      BRAIN.audit.append({ type: 'api_alert_threshold_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true };
+    },
+  });
 }
 
 function saveIncome() {
