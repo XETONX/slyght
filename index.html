@@ -812,11 +812,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 <div class="modal-overlay" id="bill-modal" onclick="handleOverlayClick(event,'bill-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title" id="bill-modal-title">Edit Bill</div>
-    <div class="modal-sub">Tap Save Changes to update this bill</div>
+    <div class="modal-sub" id="bill-modal-sub">Tap Save Changes to apply</div>
     <div id="bill-extra-info" style="margin-bottom:12px"></div>
     <div class="modal-field"><label>Bill name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bm-name"></div>
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bm-amt" inputmode="decimal"></div>
-    <div class="modal-field"><label>Day of month (1–28 max for all months)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bm-day" min="1" max="28"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 28</div></div>
+    <div class="modal-field"><label>Day of month (1–31)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bm-day" min="1" max="31"><div id="bm-day-err" style="font-size:12px;color:var(--red);margin-top:4px;display:none">Day must be between 1 and 31</div></div>
     <div class="modal-field"><label>Category</label>
       <select class="modal-input" id="bm-tag">
         <option>Fixed</option><option>Loan</option><option>Variable</option><option>Streaming</option>
@@ -1010,7 +1010,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <label for="ql-recurring">Recurring — add to bills list</label>
     </div>
     <div id="ql-recurring-fields" style="display:none;margin-bottom:10px">
-      <input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-day" placeholder="Day of month (1–28)" min="1" max="28">
+      <input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-day" placeholder="Day of month (1–31)" min="1" max="31">
     </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
@@ -1350,9 +1350,6 @@ function load() {
         carLoanBill.name = 'KIA Loan — Firstmac';
         carLoanBill.day = 15;
       }
-      // Food at Work → $100
-      const foodBill = BILLS.find(b => b.name === 'Food at Work');
-      if (foodBill) foodBill.amt = 100;
       // Ensure Teachers Health exists
       if (!BILLS.find(b => b.name === 'Teachers Health')) {
         BILLS.push({name:'Teachers Health', amt:259.41, day:1, tag:'Health', recurring:true, freq:'quarterly'});
@@ -2235,9 +2232,9 @@ function goPage(id) {
   document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
   document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  $(id).classList.add('active');
+  if ($(id)) $(id).classList.add('active');
   const map = {'pg-dash':'nav-dash','pg-cal':'nav-cal','pg-chat':'nav-chat','pg-spend':'nav-spend','pg-settings':'nav-settings'};
-  if (map[id]) $(map[id]).classList.add('active');
+  if (map[id] && $(map[id])) $(map[id]).classList.add('active');
   if (id === 'pg-cal') setTimeout(() => renderCalendar(), 50);
   if (id === 'pg-chat') { checkChatInactivity(); setTimeout(() => scrollChatToBottom(), 150); }
   if (typeof UX !== 'undefined') UX.trackTabVisit(id);
@@ -4996,7 +4993,7 @@ function saveBill() {
   const _bmday = $('bm-day');
   const dayVal = _bmday ? parseInt(_bmday.value) : 0;
   const dayErrEl = $('bm-day-err');
-  if (!dayVal || dayVal < 1 || dayVal > 28) {
+  if (!dayVal || dayVal < 1 || dayVal > 31) {
     if (dayErrEl) { dayErrEl.style.display = 'block'; }
     if (_bmday) _bmday.focus();
     return;
@@ -5677,6 +5674,16 @@ function calDayClick(day) {
         '<div style="background:var(--amber);color:#000;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px">TRACKED</div>' +
         '<button onclick="unmarkBillFromCal(\''+_safeKey+'\','+day+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:11px;padding:6px 10px;cursor:pointer;min-height:32px">Unmark</button>' +
         '</div></div>';
+    } else if (b.autoDebit) {
+      // Bundle 16: auto-debit bills don't need Pay/Already-paid buttons —
+      // the bank handles it. Show informational treatment so the user knows
+      // it's scheduled and doesn't try to mark it paid manually (which would
+      // double-count when the auto-debit actually fires).
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px;border:1px dashed var(--border2)">' +
+        '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
+        '<div style="color:var(--text3);font-size:12px;margin-top:2px">🤖 Auto-debits on day '+b.day+' · $'+b.amt.toFixed(2)+'</div></div>' +
+        '<div style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--bg5);color:var(--text2);border:1px solid var(--border2);border-radius:3px;padding:3px 8px">AUTO</div>' +
+        '</div>';
     } else {
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:var(--bg3);border-radius:10px;margin-bottom:8px">' +
         '<div><div style="color:var(--text);font-size:14px;font-weight:600">'+esc(b.name)+'</div>' +
@@ -6295,9 +6302,11 @@ function quickLogTxn() {
   const cat = (document.getElementById('ql-cat-hidden')?.value) || ($('ql-cat') ? $('ql-cat').value : '');
   const _qlr = $('ql-recurring'); const recurring = _qlr ? _qlr.checked : false;
   const _qld = $('ql-day'); let day = parseInt(_qld ? _qld.value : '') || new Date().getDate();
-  // C3: clamp bill day to 1-28 when adding recurring
-  if (recurring && (day < 1 || day > 28)) { alert('Recurring bill day must be 1\u201328.'); return; }
-  day = Math.min(28, Math.max(1, day));
+  // Bundle 16: clamp bill day to 1-31 (was 1-28). Days 29-31 simply won't
+  // render in shorter months \u2014 acceptable for now; smart-clamp-to-month-end
+  // deferred to Bundle 17.x. Required for Allianz CTP / Rego (day 30) entries.
+  if (recurring && (day < 1 || day > 31)) { alert('Recurring bill day must be 1\u201331.'); return; }
+  day = Math.min(31, Math.max(1, day));
   if (!amt || amt <= 0) { alert('Enter an amount.'); return; }
   saveUndoState(); // L3: undo support
   if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
@@ -7822,6 +7831,94 @@ if ('serviceWorker' in navigator) {
   localStorage.setItem(flag, '1');
 })();
 // guardian-allow-block-end: no-hardcoded-bill-name
+
+// Seed v19 (Bundle 16): one-time cleanup of Bundle 15 test artifacts +
+// the ghost "Borrowed from Michael $450" entry (id:11) + sets autoDebit
+// flag on 12 known auto-debit bills. Idempotent via flag. Matches on
+// exact id+name+amount so it can't misfire on real data.
+//
+// NOTE: seedV18 already exists below (adds NRMA KIA Insurance to debts).
+// Don't confuse — V18 = NRMA add, V19 = Bundle 16 cleanup + autoDebit.
+(function seedV19() {
+  const flag = 'slyght_seeded_v19';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+
+    // 1. Remove 15B test debt + ghost Borrowed from Michael ($450/id:11)
+    if (Array.isArray(S.debts)) {
+      S.debts = S.debts.filter(x =>
+        !(x && x.id === 14 && x.name === '15B test debt') &&
+        !(x && x.id === 11 && x.name === 'Borrowed from Michael' && x.amt === 450)
+      );
+    }
+
+    // 2. Remove paidBills test key
+    if (S.paidBills && S.paidBills['2026-5-Test-11'] !== undefined) {
+      delete S.paidBills['2026-5-Test-11'];
+    }
+
+    // 3. Remove "Test — paid" txn + reverse balance
+    if (Array.isArray(S.txns)) {
+      const idx = S.txns.findIndex(t =>
+        t && t.note === 'Test — paid' && t.amt === 1 && t.cat === 'Bills'
+      );
+      if (idx >= 0) {
+        const tx = S.txns[idx];
+        if (tx._balAffected && !tx.income && typeof S.bal === 'number') {
+          S.bal = parseFloat((S.bal + tx.amt).toFixed(2));
+        }
+        S.txns.splice(idx, 1);
+      }
+    }
+
+    // 4. Remove stale notifications (ghost Michael $450, 15A test debt)
+    if (Array.isArray(S.notifications)) {
+      S.notifications = S.notifications.filter(n => {
+        if (!n || !n.msg) return true;
+        if (n.msg.indexOf('Borrowed from Michael $450') !== -1) return false;
+        if (n.msg.indexOf('Test debt 15A') !== -1) return false;
+        return true;
+      });
+    }
+
+    // 5. Set autoDebit:true on John's 12 known auto-debit bills.
+    //    Per John's 2026-05-12 confirmation: YouTube, Spotify, Claude Plus,
+    //    Netflix, Adobe, Amazon Prime, Stan, Google Microsoft, Optus, Pet
+    //    Insurance — Bowtie, Rent + Deposit Savings, KIA Loan — Firstmac.
+    //    NRMA insurance already removed from BILLS (Mum-paid flow).
+    //    Teachers Health lives in S.debts not BILLS (arrears flow).
+    if (Array.isArray(d.BILLS)) {
+      const AUTO_DEBIT_NAMES = new Set([
+        'YouTube Premium', 'Spotify', 'Claude Plus', 'Netflix', 'Adobe',
+        'Amazon Prime', 'Stan', 'Google Microsoft', 'Optus — Phone + Internet',
+        'Pet Insurance — Bowtie', 'Rent + Deposit Savings', 'KIA Loan — Firstmac'
+      ]);
+      d.BILLS.forEach(b => {
+        if (b && b.name && AUTO_DEBIT_NAMES.has(b.name)) {
+          b.autoDebit = true;
+        }
+      });
+    }
+
+    // 6. Audit log entry (preserve history)
+    if (!S.auditLog) S.auditLog = [];
+    S.auditLog.push({
+      type: 'seedV19-cleanup',
+      source: 'migration',
+      bundle: '16',
+      autoDebitFlagsSet: 12,
+      ts: Date.now()
+    });
+
+    d.S = S;
+    localStorage.setItem('slyght_v5', JSON.stringify(d));
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV18 error', e); }
+  localStorage.setItem(flag, '1');
+})();
 
 // guardian-allow-block-start: no-hardcoded-bill-name — seed v17 captures John's real-state snapshot from 15 Apr 2026 + post-seed migration patches (NRMA, Teachers Health, etc.) requiring literal bill-name lookups to identify and update specific entries (permanent — see seed function design)
 // Seed v17: inject John's real financial state captured 15 Apr 2026
@@ -11574,6 +11671,11 @@ const BRAIN = {
   }
 };
 
+// Bundle 16: expose BRAIN to window for devtools introspection + future
+// AI-agent access. Top-level `const` doesn't auto-attach in module scope;
+// this one-liner closes that gap without changing semantics.
+if (typeof window !== 'undefined') window.BRAIN = BRAIN;
+
 // Backwards-compat shim. Pre-BRAIN code expected a free function. New code
 // should call BRAIN.savings.setBucketSaved directly; this exists so the
 // Bundle 8 migration doesn't have to touch every caller in one pass.
@@ -12271,6 +12373,16 @@ function renderPlanMode() {
   const el = document.getElementById('plan-content');
   if (!el) return;
 
+  // Bundle 16: centralized scroll preservation. Every code path that triggers
+  // a re-render (slider drag, WRX edit save, bonus add, provision edit, lock
+  // dialog confirm, etc.) now preserves the user's scroll position
+  // automatically. Existing PLAN_MODAL.open-based saves in the 7 trip/goal
+  // confirm handlers remain as belt-and-suspenders — they restore from
+  // _planScrollSavedY (set before keyboard-shift) which is the more accurate
+  // value for those flows. This block covers the gap for non-PLAN_MODAL paths.
+  const _planEl = document.getElementById('plan-mode');
+  const _liveY = _planEl ? _planEl.scrollTop : 0;
+
   const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305 };
   const nwNet = nw.net;
   const wrxImpact = PLAN.getWrxImpact();
@@ -12322,6 +12434,16 @@ function renderPlanMode() {
   if (typeof wirePaydaySliders === 'function') wirePaydaySliders();
   if (typeof wireTripEditors === 'function') wireTripEditors();
   if (typeof wireGoalEditors === 'function') wireGoalEditors();
+
+  // Bundle 16: restore scroll position captured at top of this render. Sync
+  // write handles the no-relayout case; double-rAF handles the case where
+  // innerHTML reset scrollTop to 0 before the assignment took effect.
+  if (_planEl) {
+    _planEl.scrollTop = _liveY;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { _planEl.scrollTop = _liveY; });
+    });
+  }
 }
 
 // ─── SECTION 4 — PAYDAY ALLOCATION PLANNER ──────────────────────────────────

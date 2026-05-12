@@ -1,6 +1,6 @@
 {
   "S": {
-    "bal": 381.35,
+    "bal": 84.89,
     "txns": [
       {
         "id": 0,
@@ -884,6 +884,227 @@
         "income": false,
         "_isRoundup": true,
         "_balAffected": true
+      },
+      {
+        "amt": 60.2,
+        "note": "Pet Insurance — Bowtie — paid",
+        "cat": "Fixed",
+        "ts": 1778029729673,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 38.55,
+        "note": "Anthropic platform",
+        "cat": "Bills",
+        "ts": 1778025600000,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.45,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778104379245,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 20,
+        "note": "Sick certificate",
+        "cat": "Health",
+        "ts": 1778106411201,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 20,
+        "note": "China holiday",
+        "cat": "Savings",
+        "ts": 1778133074190,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "one-off"
+      },
+      {
+        "amt": 40.23,
+        "note": "Dinner",
+        "cat": "Food / Coffee",
+        "ts": 1778154213856,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.77,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778154213856,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 2.9,
+        "note": "Biscuit",
+        "cat": "Food / Coffee",
+        "ts": 1778154227463,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.1,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778154227463,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 22,
+        "note": "Stan — paid",
+        "cat": "Fixed",
+        "ts": 1778154254890,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 8.06,
+        "note": "Opal Travel - Train and Tram",
+        "cat": "Adjustment",
+        "ts": 1778154367898,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 17.54,
+        "note": "Opal Travel - Train and Tram",
+        "cat": "Adjustment",
+        "ts": 1778282912620,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 28.99,
+        "note": "Netflix — paid",
+        "cat": "Streaming",
+        "ts": 1778407683780,
+        "income": false,
+        "_balAffected": true
+      },
+      {
+        "amt": 10.43,
+        "note": "Other",
+        "cat": "Adjustment",
+        "ts": 1778412507132,
+        "income": false,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 20.48,
+        "note": "Lunch",
+        "cat": "Food / Coffee",
+        "ts": 1778467709059,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.52,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778467709059,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 34,
+        "note": "Claude Plus — paid",
+        "cat": "Bills",
+        "ts": 1778498711777,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 27.8,
+        "note": "Correcting previous error",
+        "cat": "Income",
+        "ts": 1778498773882,
+        "income": true,
+        "_balAffected": true,
+        "_isCorrection": true
+      },
+      {
+        "amt": 16.99,
+        "note": "YouTube Premium — paid",
+        "cat": "Streaming",
+        "ts": 1778499820074,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.01,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778499820074,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 23.99,
+        "note": "Adobe",
+        "cat": "Food / Coffee",
+        "ts": 1778499921710,
+        "flagged": false,
+        "_balAffected": true,
+        "_txnType": "expense"
+      },
+      {
+        "amt": 0.01,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778499921710,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 23.99,
+        "note": "Adobe — paid",
+        "cat": "Income",
+        "ts": 1778500095258,
+        "income": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 0.9,
+        "note": "Round-up → China Holiday",
+        "cat": "Savings",
+        "ts": 1778503090612,
+        "income": false,
+        "_isRoundup": true,
+        "_balAffected": true
+      },
+      {
+        "amt": 18.87,
+        "note": "Correcting previous error",
+        "cat": "Income",
+        "ts": 1778503127351,
+        "income": true,
+        "_balAffected": true,
+        "_isCorrection": true
       }
     ],
     "bonuses": [],
@@ -944,24 +1165,12 @@
       {
         "id": 10,
         "name": "Afterpay — Concert Tickets",
-        "amt": 93.56,
+        "amt": 31.19,
         "rate": 0,
         "priority": 1,
         "paid": false,
         "notes": "Concert tickets. $60 received back from friend for their ticket.",
         "delayDate": "2026-05-14"
-      },
-      {
-        "id": 11,
-        "name": "Borrowed from Michael",
-        "amt": 450,
-        "rate": 0,
-        "paid": false,
-        "delayed": false,
-        "delayDate": "2026-05-15",
-        "notes": "",
-        "viaRent": true,
-        "priority": 2
       },
       {
         "id": 12,
@@ -972,16 +1181,16 @@
         "delayed": false,
         "delayDate": "2026-05-16",
         "notes": "I borrowed $450, I pay back $500",
-        "priority": 3
+        "priority": 2
       }
     ],
-    "nextDebtId": 13,
+    "nextDebtId": 15,
     "savingsBuckets": [
       {
         "id": 0,
         "name": "China Holiday",
         "goal": 4000,
-        "saved": 75.1,
+        "saved": 93.86,
         "account": "Virgin Money"
       },
       {
@@ -1006,16 +1215,14 @@
         "account": "Other"
       }
     ],
-    "nextBucketId": 4,
+    "nextBucketId": 5,
     "paidBills": {
-      "2026-5-KIA Loan — Firstmac-15": true,
       "2026-5-Amazon Prime-3": true,
-      "2026-5-YouTube Premium-20": true,
-      "2026-5-Adobe-25": true,
-      "2026-5-Spotify-26": true,
       "2026-5-Google Microsoft-1": true,
       "2026-5-Teachers Health-1": true,
-      "2026-5-Microsoft PC Game Pass-7": true,
+      "2026-5-Pet Insurance — Bowtie-6": true,
+      "2026-5-Stan-7": true,
+      "2026-5-Netflix-10": true,
       "2026-5-Claude Plus-9": true
     },
     "paydayReceived": false,
@@ -1024,7 +1231,7 @@
     "roundUpsEnabled": true,
     "weekdayBudget": 30,
     "weekendBudget": 100,
-    "lastOpenDate": "2026-05-05",
+    "lastOpenDate": "2026-05-12",
     "wrxValue": 25000,
     "debtStrategy": "avalanche",
     "apiAlertThreshold": 15,
@@ -1117,48 +1324,46 @@
         "date": "2026-05-04T21:33:37.250Z",
         "bal": 473.35,
         "reason": "Borrowed from Michael"
+      },
+      {
+        "date": "2026-05-07T11:46:07.898Z",
+        "bal": 168.09,
+        "reason": "Opal Travel - Train and Tram"
+      },
+      {
+        "date": "2026-05-08T23:28:32.619Z",
+        "bal": 150.55,
+        "reason": "Opal Travel - Train and Tram"
+      },
+      {
+        "date": "2026-05-10T11:28:27.132Z",
+        "bal": 111.13,
+        "reason": "Other"
+      },
+      {
+        "date": "2026-05-11T11:26:13.882Z",
+        "bal": 83.93,
+        "reason": "Correcting previous error"
+      },
+      {
+        "date": "2026-05-11T12:38:47.351Z",
+        "bal": 83.89,
+        "reason": "Correcting previous error"
+      },
+      {
+        "date": "2026-05-11T15:41:29.763Z",
+        "bal": 90,
+        "reason": "Correcting previous error"
       }
     ],
     "notifications": [
       {
-        "id": "urgent_Balance_below__500__",
+        "id": "urgent_Afterpay___Concert_T",
         "type": "urgent",
-        "msg": "Balance below $500 — review spending before next bill",
-        "act": "Check bills",
-        "ts": 1777961557573,
-        "read": true
-      },
-      {
-        "id": "info_Net_worth_up__96_110",
-        "type": "info",
-        "msg": "Net worth up $96,110 this month — keep going",
-        "act": null,
-        "ts": 1777961557574,
-        "read": true
-      },
-      {
-        "id": "eod-Tue May 05 2026",
-        "type": "warning",
-        "msg": "Daily budget exceeded — You spent $74.09 today — $52.53 over your $21.56 limit.",
-        "act": null,
-        "ts": 1777961643145,
-        "read": true
-      },
-      {
-        "id": "day-alert-Tue May 05 2026",
-        "type": "warning",
-        "msg": "Over daily budget — You're $71.18 over your $19.86 limit today.",
-        "act": null,
-        "ts": 1777971194809,
-        "read": true
-      },
-      {
-        "id": "info_Net_worth_up__96_093",
-        "type": "info",
-        "msg": "Net worth up $96,093 this month — keep going",
-        "act": null,
-        "ts": 1777971194824,
-        "read": true
+        "msg": "Afterpay — Concert Tickets $31 due in 2 days",
+        "act": "Pay",
+        "ts": 1778513690808,
+        "read": false
       }
     ],
     "dismissedNotifications": [
@@ -1167,7 +1372,9 @@
       "warning_Car_Loan___Firstmac_",
       "urgent_Parking_Fine__140_du",
       "warning_YouTube_Premium__17_",
-      "weekly_Week_review__spent__"
+      "weekly_Week_review__spent__",
+      "urgent_Balance_below__500__",
+      "info_Net_worth_up__95_880"
     ],
     "_currentSlyghtScore": 491,
     "_wrxSlider": 23500,
@@ -1186,16 +1393,268 @@
     "_debtAuditV1": true,
     "_notifCleanV1": true,
     "paydayPlanAutoExpanded": false,
-    "_invariantsHiddenAt": 1777978727927,
-    "_invariantViolationCounts": {
-      "paidbills-key-not-future": {
-        "count": 7,
-        "firstSeenTs": 1777976394990,
-        "lastSeenTs": 1777978739244
-      }
-    },
+    "_invariantsHiddenAt": 1778561642228,
+    "_invariantViolationCounts": {},
     "_invariantsDismissedSession": {},
-    "_invariantSessionTs": 1777976391855
+    "_invariantSessionTs": 1778561633159,
+    "_youtubeDayMigrationV1": true,
+    "_billUnmarkLog": {
+      "2026-5-YouTube Premium-18": 1778511923579,
+      "2026-5-Adobe-25": 1778499931606
+    },
+    "tripDefs": [
+      {
+        "id": "darwin-2026",
+        "name": "Darwin",
+        "emoji": "🐊",
+        "startDate": "2026-06-07",
+        "endDate": "2026-06-15",
+        "days": 9,
+        "covered": [
+          "flights",
+          "accommodation",
+          "car hire"
+        ],
+        "budget": 900,
+        "gfSplitting": true,
+        "notes": "Looking after uncle's dog. GF coming. Need to budget"
+      },
+      {
+        "id": "china-2026",
+        "name": "China",
+        "emoji": "🇨🇳",
+        "startDate": "2026-12-01",
+        "endDate": "2026-12-22",
+        "days": 21,
+        "covered": [],
+        "budget": 5000,
+        "gfSplitting": true,
+        "stayingWithFamily": true,
+        "notes": "Staying with her family and friends. Budget excludes flights."
+      }
+    ],
+    "goalDefs": [
+      {
+        "id": "apartment",
+        "name": "Property Deposit",
+        "emoji": "🏠",
+        "description": "Building toward your own place. Inner West, Meadowbank, Kogarah or Wolli Creek area. $50,000 deposit target. Account managed by Mum.",
+        "target": 50000,
+        "monthly": 2500,
+        "targetDate": null,
+        "colour": "#4ECDC4",
+        "priority": 1,
+        "notes": "$50k demonstrates genuine savings history. Budget $550-700k property."
+      },
+      {
+        "id": "freedom-buffer",
+        "name": "Freedom buffer",
+        "emoji": "🛡️",
+        "description": "3 months expenses if everything goes wrong",
+        "target": 9000,
+        "monthly": 0,
+        "targetDate": null,
+        "colour": "#FF6B35",
+        "priority": 2,
+        "notes": "First milestone: $1,000 buffer. Second: $3,000. Final: $9,000."
+      },
+      {
+        "id": "china",
+        "name": "China holiday",
+        "emoji": "🇨🇳",
+        "description": "End of 2026 with GF. Staying with family and friends.",
+        "target": 5000,
+        "monthly": 1550,
+        "targetDate": "2026-11-01",
+        "colour": "#E74C3C",
+        "priority": 3,
+        "notes": "Her estimate $5k excluding flights. Flights additional ~$1,200 return."
+      }
+    ],
+    "_bundle8MigrationV1": true,
+    "_auditLog": [
+      {
+        "type": "bucket_saved_change",
+        "bucket": "China Holiday",
+        "oldValue": 92.96,
+        "newValue": 93.86,
+        "delta": 0.9,
+        "source": "roundup",
+        "ts": 1778503090617
+      },
+      {
+        "type": "txn_record",
+        "amt": 16.99,
+        "cat": "Streaming",
+        "note": "YouTube Premium — paid",
+        "income": false,
+        "roundup": false,
+        "source": "mark-bill-paid",
+        "ts": 1778511548041,
+        "txnTs": 1778511548041
+      },
+      {
+        "type": "bill_mark_paid",
+        "key": "2026-5-YouTube Premium-18",
+        "autoDebit": false,
+        "txnTs": 1778511548041,
+        "source": "mark-bill-paid",
+        "ts": 1778511548043
+      },
+      {
+        "type": "txn_remove",
+        "amt": 16.99,
+        "ts": 1778511602523,
+        "txnTs": 1778511548041
+      },
+      {
+        "type": "bill_unmark",
+        "key": "2026-5-YouTube Premium-18",
+        "txnReversed": true,
+        "source": "unmark-bill",
+        "ts": 1778511602524
+      },
+      {
+        "type": "txn_record",
+        "amt": 16.99,
+        "cat": "Bills",
+        "note": "YouTube Premium — paid",
+        "income": false,
+        "roundup": false,
+        "source": "log-expense",
+        "ts": 1778511666860,
+        "txnTs": 1778511666860
+      },
+      {
+        "type": "txn_record",
+        "amt": 0.01,
+        "cat": "Savings",
+        "note": "Round-up → China Holiday",
+        "income": false,
+        "roundup": true,
+        "source": "roundup",
+        "ts": 1778511666862,
+        "txnTs": 1778511666862
+      },
+      {
+        "type": "bucket_saved_change",
+        "bucket": "China Holiday",
+        "oldValue": 93.86,
+        "newValue": 93.87,
+        "delta": 0.01,
+        "source": "roundup",
+        "ts": 1778511666863
+      },
+      {
+        "type": "bill_mark_paid",
+        "key": "2026-5-YouTube Premium-18",
+        "autoDebit": true,
+        "txnTs": 1778511666860,
+        "source": "mark-bill-paid",
+        "ts": 1778511666865
+      },
+      {
+        "type": "txn_remove",
+        "amt": 16.99,
+        "ts": 1778511923576,
+        "txnTs": 1778511666860
+      },
+      {
+        "type": "bucket_saved_change",
+        "bucket": "China Holiday",
+        "oldValue": 93.87,
+        "newValue": 93.86,
+        "delta": -0.01,
+        "source": "undo-roundup",
+        "ts": 1778511923578
+      },
+      {
+        "type": "bill_unmark",
+        "key": "2026-5-YouTube Premium-18",
+        "txnReversed": true,
+        "source": "unmark-bill",
+        "ts": 1778511923579
+      },
+      {
+        "type": "debt_add",
+        "id": 13,
+        "name": "Test debt 15A",
+        "amt": 1,
+        "source": "add-debt",
+        "ts": 1778513690784
+      },
+      {
+        "type": "debt_delete",
+        "id": 13,
+        "name": "Test debt 15A",
+        "amt": 1,
+        "source": "delete-debt",
+        "ts": 1778513723670
+      },
+      {
+        "type": "debt_add",
+        "id": 14,
+        "name": "15B test debt",
+        "amt": 1,
+        "source": "add-debt",
+        "ts": 1778513767247
+      },
+      {
+        "type": "txn_record",
+        "amt": 1,
+        "cat": "Debt repayment",
+        "note": "15B test debt cleared",
+        "income": false,
+        "roundup": false,
+        "source": "clear-debt",
+        "ts": 1778513784423,
+        "txnTs": 1778513784423
+      },
+      {
+        "type": "debt_mark_paid",
+        "id": 14,
+        "name": "15B test debt",
+        "amt": 1,
+        "txnTs": 1778513784423,
+        "source": "clear-debt",
+        "ts": 1778513784425
+      },
+      {
+        "type": "txn_record",
+        "amt": 6.11,
+        "cat": "Income",
+        "note": "Correcting previous error",
+        "income": true,
+        "roundup": false,
+        "source": "reconcile-correction",
+        "ts": 1778514089764,
+        "txnTs": 1778514089764
+      }
+    ],
+    "auditLog": [
+      {
+        "type": "bundle-15.2-cleanup",
+        "source": "migration",
+        "removed": {
+          "debts": [
+            "15B test debt (id:14)",
+            "Ghost Borrowed from Michael $450 (id:11)"
+          ],
+          "paidBills": [
+            "2026-5-Test-11"
+          ],
+          "txns": [
+            "Test — paid -$1 (ts:1778499767230)"
+          ],
+          "notifications": [
+            "ghost Michael $450",
+            "15A test debt overdue"
+          ]
+        },
+        "balanceAdjustment": 1,
+        "ts": 1778568314526
+      }
+    ]
   },
   "BILLS": [
     {
@@ -1208,7 +1667,8 @@
         "rent": 500,
         "depositSavings": 2500
       },
-      "note": "$500 rent to Mum + $2,500 to property deposit account"
+      "note": "$500 rent to Mum + $2,500 to property deposit account",
+      "autoDebit": true
     },
     {
       "name": "KIA Loan — Firstmac",
@@ -1216,56 +1676,60 @@
       "day": 15,
       "tag": "Loan",
       "recurring": true,
-      "freq": "monthly"
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Amazon Prime",
       "amt": 9.99,
       "day": 3,
       "tag": "Subscription",
-      "recurring": true
-    },
-    {
-      "name": "Microsoft PC Game Pass",
-      "amt": 19.45,
-      "day": 7,
-      "tag": "Subscription",
-      "recurring": true
+      "recurring": true,
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Pet Insurance — Bowtie",
       "amt": 60.2,
-      "day": 8,
+      "day": 6,
       "tag": "Fixed",
-      "recurring": true
+      "recurring": true,
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Claude Plus",
       "amt": 34,
       "day": 9,
       "tag": "Subscription",
-      "recurring": true
+      "recurring": true,
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Netflix",
       "amt": 28.99,
       "day": 10,
       "tag": "Streaming",
-      "recurring": true
+      "recurring": true,
+      "autoDebit": true
     },
     {
       "name": "Optus — Phone + Internet",
       "amt": 194,
       "day": 16,
       "tag": "Fixed",
-      "recurring": true
+      "recurring": true,
+      "autoDebit": true
     },
     {
       "name": "YouTube Premium",
       "amt": 16.99,
-      "day": 20,
+      "day": 18,
       "tag": "Streaming",
-      "recurring": true
+      "recurring": true,
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Adobe",
@@ -1273,7 +1737,8 @@
       "day": 25,
       "tag": "Subscription",
       "recurring": true,
-      "freq": "monthly"
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "Spotify",
@@ -1281,31 +1746,16 @@
       "day": 26,
       "tag": "Streaming",
       "recurring": true,
-      "freq": "monthly"
+      "freq": "monthly",
+      "autoDebit": true
     },
     {
       "name": "NRMA KIA Insurance",
       "amt": 1023.06,
       "day": 2,
       "tag": "insurance",
-      "recurring": true,
-      "scanned": true,
-      "freq": "yearly",
-      "dueMonth": 4
-    },
-    {
-      "name": "Teachers Health",
-      "amt": 259.41,
-      "day": 1,
-      "tag": "Health",
-      "recurring": true,
-      "freq": "quarterly",
-      "dueMonths": [
-        1,
-        4,
-        7,
-        10
-      ]
+      "recurring": false,
+      "scanned": true
     },
     {
       "name": "Google Microsoft",
@@ -1313,12 +1763,407 @@
       "day": 1,
       "tag": "Fixed",
       "recurring": true,
-      "freq": "monthly"
+      "freq": "monthly",
+      "autoDebit": true
+    },
+    {
+      "name": "Stan",
+      "amt": 22,
+      "day": 7,
+      "tag": "Fixed",
+      "recurring": true,
+      "freq": "monthly",
+      "autoDebit": true
     }
   ],
-  "exported": "2026-05-05T10:59:02.915Z",
+  "exported": "2026-05-12T04:54:11.972Z",
   "auditLog": {
     "entries": [
+      {
+        "ts": "2026-05-12T04:53:55.711Z",
+        "time": "2:53:55 pm",
+        "action": "JS_ERROR",
+        "before": 83.89,
+        "after": 83.89,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2240"
+      },
+      {
+        "ts": "2026-05-11T15:41:29.766Z",
+        "time": "1:41:29 am",
+        "action": "BALANCE_CORRECTION_UP",
+        "before": 83.89,
+        "after": 90,
+        "change": 6.11,
+        "expected": 6.11,
+        "ok": true,
+        "notes": "Correction: Correcting previous error | diff: $6.11"
+      },
+      {
+        "ts": "2026-05-11T15:40:39.344Z",
+        "time": "1:40:39 am",
+        "action": "JS_ERROR",
+        "before": 83.89,
+        "after": 83.89,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2240"
+      },
+      {
+        "ts": "2026-05-11T15:36:24.451Z",
+        "time": "1:36:24 am",
+        "action": "MARK_DEBT_PAID_15B test debt_$1",
+        "before": 83.89,
+        "after": 82.89,
+        "change": -1,
+        "expected": -1,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T15:01:06.890Z",
+        "time": "1:01:06 am",
+        "action": "LOG_EXPENSE_$16.99",
+        "before": 83.89,
+        "after": 66.89,
+        "change": -17,
+        "expected": -17,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T12:38:47.351Z",
+        "time": "10:38:47 pm",
+        "action": "BALANCE_CORRECTION_UP",
+        "before": 65.02,
+        "after": 83.89,
+        "change": 18.87,
+        "expected": 18.87,
+        "ok": true,
+        "notes": "Correction: Correcting previous error | diff: $18.87"
+      },
+      {
+        "ts": "2026-05-11T12:38:10.639Z",
+        "time": "10:38:10 pm",
+        "action": "LOG_EXPENSE_$1.1",
+        "before": 65.92,
+        "after": 63.92,
+        "change": -2,
+        "expected": -2,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T11:48:15.285Z",
+        "time": "9:48:15 pm",
+        "action": "LOG_EXPENSE_$23.99",
+        "before": 41.93,
+        "after": 65.92,
+        "change": 23.99,
+        "expected": -24,
+        "ok": false,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T11:45:21.733Z",
+        "time": "9:45:21 pm",
+        "action": "LOG_EXPENSE_$23.99",
+        "before": 65.93,
+        "after": 41.93,
+        "change": -24,
+        "expected": -24,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T11:43:40.098Z",
+        "time": "9:43:40 pm",
+        "action": "LOG_EXPENSE_$16.99",
+        "before": 82.93,
+        "after": 65.93,
+        "change": -17,
+        "expected": -17,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T11:26:13.882Z",
+        "time": "9:26:13 pm",
+        "action": "BALANCE_CORRECTION_UP",
+        "before": 56.13,
+        "after": 83.93,
+        "change": 27.8,
+        "expected": 27.8,
+        "ok": true,
+        "notes": "Correction: Correcting previous error | diff: $27.8"
+      },
+      {
+        "ts": "2026-05-11T11:25:11.807Z",
+        "time": "9:25:11 pm",
+        "action": "LOG_EXPENSE_$34",
+        "before": 90.13,
+        "after": 56.13,
+        "change": -34,
+        "expected": -34,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T10:56:10.827Z",
+        "time": "8:56:10 pm",
+        "action": "LOG_EXPENSE_$100",
+        "before": 90.13,
+        "after": -9.87,
+        "change": -100,
+        "expected": -100,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-11T10:56:10.824Z",
+        "time": "8:56:10 pm",
+        "action": "AUTO_STATE_CHECK",
+        "before": -9.87,
+        "after": -9.87,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Issues: Surplus ($0.00) exceeds balance ($-9.87)"
+      },
+      {
+        "ts": "2026-05-11T02:48:29.076Z",
+        "time": "12:48:29 pm",
+        "action": "LOG_EXPENSE_$20.48",
+        "before": 111.13,
+        "after": 90.13,
+        "change": -21,
+        "expected": -21,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-10T12:23:37.355Z",
+        "time": "10:23:37 pm",
+        "action": "LOG_EXPENSE_$100",
+        "before": 111.13,
+        "after": 11.13,
+        "change": -100,
+        "expected": -100,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-10T12:23:21.167Z",
+        "time": "10:23:21 pm",
+        "action": "LOG_EXPENSE_$5",
+        "before": 111.13,
+        "after": 106.13,
+        "change": -5,
+        "expected": -5,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-10T11:28:27.133Z",
+        "time": "9:28:27 pm",
+        "action": "BALANCE_CORRECTION_DOWN",
+        "before": 121.56,
+        "after": 111.13,
+        "change": -10.43,
+        "expected": -10.43,
+        "ok": true,
+        "notes": "Correction: Other | diff: $-10.43"
+      },
+      {
+        "ts": "2026-05-10T10:01:17.704Z",
+        "time": "8:01:17 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/:1"
+      },
+      {
+        "ts": "2026-05-10T09:59:03.351Z",
+        "time": "7:59:03 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/:1"
+      },
+      {
+        "ts": "2026-05-10T09:50:16.077Z",
+        "time": "7:50:16 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/:2090"
+      },
+      {
+        "ts": "2026-05-08T23:28:32.620Z",
+        "time": "9:28:32 am",
+        "action": "BALANCE_CORRECTION_DOWN",
+        "before": 168.09,
+        "after": 150.55,
+        "change": -17.54,
+        "expected": -17.54,
+        "ok": true,
+        "notes": "Correction: Opal Travel - Train and Tram | diff: $-17.54"
+      },
+      {
+        "ts": "2026-05-07T22:51:37.305Z",
+        "time": "8:51:37 am",
+        "action": "JS_ERROR",
+        "before": 168.09,
+        "after": 168.09,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2090"
+      },
+      {
+        "ts": "2026-05-07T11:46:07.898Z",
+        "time": "9:46:07 pm",
+        "action": "BALANCE_CORRECTION_DOWN",
+        "before": 176.15,
+        "after": 168.09,
+        "change": -8.06,
+        "expected": -8.06,
+        "ok": true,
+        "notes": "Correction: Opal Travel - Train and Tram | diff: $-8.06"
+      },
+      {
+        "ts": "2026-05-07T11:43:47.480Z",
+        "time": "9:43:47 pm",
+        "action": "LOG_EXPENSE_$2.9",
+        "before": 201.15,
+        "after": 198.15,
+        "change": -3,
+        "expected": -3,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-07T11:43:33.875Z",
+        "time": "9:43:33 pm",
+        "action": "LOG_EXPENSE_$40.23",
+        "before": 242.15,
+        "after": 201.15,
+        "change": -41,
+        "expected": -41,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-07T06:09:09.225Z",
+        "time": "4:09:09 pm",
+        "action": "JS_ERROR",
+        "before": 242.15,
+        "after": 242.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-07T05:51:57.246Z",
+        "time": "3:51:57 pm",
+        "action": "JS_ERROR",
+        "before": 242.15,
+        "after": 242.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2083"
+      },
+      {
+        "ts": "2026-05-07T05:51:14.209Z",
+        "time": "3:51:14 pm",
+        "action": "LOG_EXPENSE_$20",
+        "before": 262.15,
+        "after": 242.15,
+        "change": -20,
+        "expected": -20,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-07T05:50:33.702Z",
+        "time": "3:50:33 pm",
+        "action": "JS_ERROR",
+        "before": 262.15,
+        "after": 262.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2083"
+      },
+      {
+        "ts": "2026-05-07T05:49:42.581Z",
+        "time": "3:49:42 pm",
+        "action": "JS_ERROR",
+        "before": 262.15,
+        "after": 262.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-06T22:26:51.224Z",
+        "time": "8:26:51 am",
+        "action": "LOG_EXPENSE_$20",
+        "before": 282.15,
+        "after": 262.15,
+        "change": -20,
+        "expected": -20,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-06T21:52:59.268Z",
+        "time": "7:52:59 am",
+        "action": "LOG_EXPENSE_$38.55",
+        "before": 321.15,
+        "after": 282.15,
+        "change": -39,
+        "expected": -39,
+        "ok": true,
+        "notes": "Surplus: $0.00 → $0.00"
+      },
+      {
+        "ts": "2026-05-06T13:27:54.153Z",
+        "time": "11:27:54 pm",
+        "action": "JS_ERROR",
+        "before": 321.15,
+        "after": 321.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T13:26:00.364Z",
+        "time": "11:26:00 pm",
+        "action": "JS_ERROR",
+        "before": 381.35,
+        "after": 381.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
       {
         "ts": "2026-05-05T08:53:14.830Z",
         "time": "6:53:14 pm",
@@ -1419,9 +2264,153 @@
         "notes": "Surplus: $0.00 → $0.00"
       }
     ],
-    "totalCount": 9,
-    "anomalies": [],
+    "totalCount": 44,
+    "anomalies": [
+      {
+        "ts": "2026-05-11T11:48:15.285Z",
+        "time": "9:48:15 pm",
+        "action": "LOG_EXPENSE_$23.99",
+        "before": 41.93,
+        "after": 65.92,
+        "change": 23.99,
+        "expected": -24,
+        "ok": false,
+        "notes": "Surplus: $0.00 → $0.00"
+      }
+    ],
     "jsErrors": [
+      {
+        "ts": "2026-05-12T04:53:55.711Z",
+        "time": "2:53:55 pm",
+        "action": "JS_ERROR",
+        "before": 83.89,
+        "after": 83.89,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2240"
+      },
+      {
+        "ts": "2026-05-11T15:40:39.344Z",
+        "time": "1:40:39 am",
+        "action": "JS_ERROR",
+        "before": 83.89,
+        "after": 83.89,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2240"
+      },
+      {
+        "ts": "2026-05-10T10:01:17.704Z",
+        "time": "8:01:17 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/:1"
+      },
+      {
+        "ts": "2026-05-10T09:59:03.351Z",
+        "time": "7:59:03 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/:1"
+      },
+      {
+        "ts": "2026-05-10T09:50:16.077Z",
+        "time": "7:50:16 pm",
+        "action": "JS_ERROR",
+        "before": 150.55,
+        "after": 150.55,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/:2090"
+      },
+      {
+        "ts": "2026-05-07T22:51:37.305Z",
+        "time": "8:51:37 am",
+        "action": "JS_ERROR",
+        "before": 168.09,
+        "after": 168.09,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2090"
+      },
+      {
+        "ts": "2026-05-07T06:09:09.225Z",
+        "time": "4:09:09 pm",
+        "action": "JS_ERROR",
+        "before": 242.15,
+        "after": 242.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-07T05:51:57.246Z",
+        "time": "3:51:57 pm",
+        "action": "JS_ERROR",
+        "before": 242.15,
+        "after": 242.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2083"
+      },
+      {
+        "ts": "2026-05-07T05:50:33.702Z",
+        "time": "3:50:33 pm",
+        "action": "JS_ERROR",
+        "before": 262.15,
+        "after": 262.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught TypeError: Cannot read properties of null (reading 'classList') at https://xetonx.github.io/slyght/index.html:2083"
+      },
+      {
+        "ts": "2026-05-07T05:49:42.581Z",
+        "time": "3:49:42 pm",
+        "action": "JS_ERROR",
+        "before": 262.15,
+        "after": 262.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-06T13:27:54.153Z",
+        "time": "11:27:54 pm",
+        "action": "JS_ERROR",
+        "before": 321.15,
+        "after": 321.15,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
+      {
+        "ts": "2026-05-05T13:26:00.364Z",
+        "time": "11:26:00 pm",
+        "action": "JS_ERROR",
+        "before": 381.35,
+        "after": 381.35,
+        "change": 0,
+        "expected": 0,
+        "ok": true,
+        "notes": "Uncaught SyntaxError: Unexpected end of input at https://xetonx.github.io/slyght/index.html:1"
+      },
       {
         "ts": "2026-05-05T06:49:50.874Z",
         "time": "4:49:50 pm",
@@ -1459,15 +2448,19 @@
     "consistencyFails": []
   },
   "uxReport": {
-    "ts": "2026-05-05T10:58:52.987Z",
+    "ts": "2026-05-12T04:53:56.599Z",
     "sessionMins": 0,
-    "totalTaps": 1,
+    "totalTaps": 2,
     "missedTapPct": 0,
     "slowRenders": 0,
     "modalAbandons": 0,
     "topFeatures": [
       [
         "SLYGHT\n  Know your money. Alwa",
+        1
+      ],
+      [
+        "[object",
         1
       ]
     ],
@@ -1479,8 +2472,8 @@
     "score": 95,
     "sessionStats": {
       "sessionMins": 0,
-      "totalTaps": 3,
-      "missedTapPct": 167,
+      "totalTaps": 4,
+      "missedTapPct": 25,
       "slowRenders": 0,
       "modalAbandons": 0,
       "topFeatures": [
@@ -1489,28 +2482,22 @@
           1
         ],
         [
-          "Settings",
+          "[object",
           1
         ],
         [
-          "📊 My Financial Data▲",
+          "▲",
           1
         ]
       ],
-      "tabUsage": [
-        [
-          "pg-settings",
-          1
-        ]
-      ],
+      "tabUsage": [],
       "issues": [
-        "HIGH missed tap rate (167%) — tap targets may be too small"
+        "HIGH missed tap rate (25%) — tap targets may be too small"
       ],
       "suggestions": [
-        "Unvisited tabs: dash, cal, chat, spend — content may not be discoverable",
-        "Low scroll on pg-settings (1%) — key info may need moving higher"
+        "Unvisited tabs: dash, cal, chat, spend, settings — content may not be discoverable"
       ],
-      "score": 75
+      "score": 80
     }
   },
   "snapshots": {
@@ -3271,20 +4258,20 @@
     ]
   },
   "apiCosts": {
-    "allTime": 0.4133,
-    "thisMonth": 0.4133,
+    "allTime": 0.4295,
+    "thisMonth": 0.4295,
     "today": 0,
-    "chatCalls": 20,
+    "chatCalls": 23,
     "scanCalls": 3,
-    "totalCalls": 23,
-    "avgPerCall": 0.01797,
-    "projectedMonthly": 1.02,
-    "projectedYearly": 12.36,
-    "daysTracked": 12
+    "totalCalls": 26,
+    "avgPerCall": 0.01652,
+    "projectedMonthly": 0.68,
+    "projectedYearly": 8.27,
+    "daysTracked": 19
   },
   "guardianLastRun": null,
   "summary": {
-    "balance": 381.35,
+    "balance": 83.89,
     "activeDebts": [
       {
         "name": "Property Deposit (via Mum)",
@@ -3292,7 +4279,7 @@
       },
       {
         "name": "Afterpay — Concert Tickets",
-        "amt": 93.56
+        "amt": 31.19
       },
       {
         "name": "Borrowed from Michael",
@@ -3304,19 +4291,18 @@
       }
     ],
     "paidThisMonth": [
-      "2026-5-KIA Loan — Firstmac-15",
       "2026-5-Amazon Prime-3",
-      "2026-5-YouTube Premium-20",
-      "2026-5-Adobe-25",
-      "2026-5-Spotify-26",
       "2026-5-Google Microsoft-1",
       "2026-5-Teachers Health-1",
-      "2026-5-Microsoft PC Game Pass-7",
-      "2026-5-Claude Plus-9"
+      "2026-5-Pet Insurance — Bowtie-6",
+      "2026-5-Stan-7",
+      "2026-5-Netflix-10",
+      "2026-5-Claude Plus-9",
+      "2026-5-Test-11"
     ],
-    "survivalMode": "cautious",
-    "slyghtScore": 404,
-    "totalTransactions": 104,
-    "paydayIn": "10 days"
+    "survivalMode": "critical",
+    "slyghtScore": 405,
+    "totalTransactions": 130,
+    "paydayIn": "3 days"
   }
 }
