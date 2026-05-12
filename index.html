@@ -834,6 +834,10 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <input type="checkbox" class="modal-checkbox" id="bm-recurring">
       <label for="bm-recurring">Recurring every month</label>
     </div>
+    <div class="modal-checkbox-row">
+      <input type="checkbox" class="modal-checkbox" id="bm-autodebit">
+      <label for="bm-autodebit">🤖 Auto-debits from my account (don't show Pay buttons)</label>
+    </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveBill()">Save Changes</button>
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('bill-modal')">Cancel</button>
@@ -4971,6 +4975,7 @@ function openBillModal(idx) {
   const _bmt2 = $('bm-tag'); if (_bmt2) _bmt2.value = b.tag;
   const _bmrec = $('bm-recurring'); if (_bmrec) _bmrec.checked = b.recurring !== false;
   const _bmf = $('bm-freq'); if (_bmf) _bmf.value = b.freq || 'monthly';
+  const _bmad = $('bm-autodebit'); if (_bmad) _bmad.checked = b.autoDebit === true;
   // Show last paid and next due
   const extraInfo = $('bill-extra-info');
   if (extraInfo) {
@@ -5048,7 +5053,8 @@ function saveBill() {
       day: dayVal,
       tag: $('bm-tag')?.value || 'Fixed',
       recurring: true,
-      freq: ($('bm-freq')?.value) || 'monthly'
+      freq: ($('bm-freq')?.value) || 'monthly',
+      autoDebit: !!($('bm-autodebit')?.checked)
     };
     if (!newBill.name || newBill.amt <= 0) {
       showToast('Enter a bill name and amount');
@@ -5065,7 +5071,11 @@ function saveBill() {
     amt: parseFloat($('bm-amt') ? $('bm-amt').value : '') || BILLS[activeBillIdx].amt,
     day: dayVal,
     tag: $('bm-tag') ? $('bm-tag').value : (BILLS[activeBillIdx].tag || ''), recurring: true,
-    freq: ($('bm-freq') ? $('bm-freq').value : '') || 'monthly'
+    freq: ($('bm-freq') ? $('bm-freq').value : '') || 'monthly',
+    autoDebit: !!($('bm-autodebit') ? $('bm-autodebit').checked : false),
+    // Preserve other fields not in the modal (dueMonth, dueMonths, _scheduledAutoDebit, etc)
+    ...(BILLS[activeBillIdx].dueMonth !== undefined ? { dueMonth: BILLS[activeBillIdx].dueMonth } : {}),
+    ...(BILLS[activeBillIdx].dueMonths ? { dueMonths: BILLS[activeBillIdx].dueMonths } : {})
   };
   save(); closeModal('bill-modal', true); renderAll();
 }
@@ -11606,18 +11616,49 @@ const BRAIN = {
       const sevenDaysAgo = Date.now() - 7 * 24 * 3600 * 1000;
       const recentTxns = (S.txns || []).filter(t => !t.income && t.ts >= sevenDaysAgo);
       const detected = [];
+      const earlyCharged = [];
       (BILLS || []).filter(b => b.recurring !== false).forEach(b => {
         if (this.isPaid(paidBillKey(b.name, b.day))) return;
         if (this._isRecentlyUnmarked(b.name, b.day, todayM, todayY)) return;
         const matchTxn = recentTxns.find(t => this._txnMatches(t, b));
         if (!matchTxn) return;
         const r = this.markPaid(b, BRAIN.SOURCES.AUTO_DETECT, { txnTs: matchTxn.ts });
-        if (r.ok) detected.push(b.name);
+        if (r.ok) {
+          detected.push(b.name);
+          // Bundle 17.x — Step 7.5: charged-early/late notification for
+          // auto-debit bills. Only fires for monthly bills; quarterly/yearly
+          // have their own anchor logic and would false-positive in
+          // non-anchor months. Guards on bill.autoDebit so manually-paid
+          // bills with off-day txns don't trigger this (user paid when
+          // they paid).
+          if (b.autoDebit && (!b.freq || b.freq === 'monthly')) {
+            const txnDay = new Date(matchTxn.ts).getDate();
+            if (txnDay !== b.day) {
+              earlyCharged.push({ name: b.name, expectedDay: b.day, actualDay: txnDay });
+            }
+          }
+        }
       });
+      // Fire charged-early notifications (id stable per bill per month so
+      // it doesn't re-fire on each render — NOTIFY.add dedups on id).
+      if (earlyCharged.length && typeof NOTIFY !== 'undefined' && typeof NOTIFY.add === 'function') {
+        const monthKey = todayY + '-' + (todayM + 1);
+        earlyCharged.forEach(c => {
+          try {
+            NOTIFY.add({
+              id: 'autodebit-charged-' + monthKey + '-' + c.name + '-' + c.actualDay,
+              type: 'info',
+              title: '⚡ ' + c.name + ' charged day ' + c.actualDay,
+              message: 'Expected day ' + c.expectedDay + ' — auto-debit timing varies by provider. Check if this is normal for you.',
+              ts: Date.now()
+            });
+          } catch(e) {}
+        });
+      }
       if (detected.length && typeof showToast === 'function') {
         try { showToast('✓ ' + detected.join(', ') + ' auto-detected as paid'); } catch(e) {}
       }
-      return { ok: true, detected };
+      return { ok: true, detected, earlyCharged };
     },
 
     // ─── Internal: strict txn-bill matcher ──────────────────────────────
