@@ -8001,7 +8001,9 @@ function openEditPaydayBill(billName) {
 
 // ─── Debt editor ────────────────────────────────────────────────────────
 function openEditPaydayDebt(debtId) {
-  const debt = (S.debts || []).find(d => d && (d.id === debtId || d.name === debtId));
+  // Loose equality: debt.id may be a number (8) while debtId arrives as a
+  // string ("8") from the onclick string. == handles type coercion.
+  const debt = (S.debts || []).find(d => d && (d.id == debtId || d.name === debtId));
   if (!debt) return;
   const normal = +debt.amt || 0;
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
@@ -8052,15 +8054,57 @@ function openEditPaydaySavings(bucketName) {
     save: () => {
       const amt = _readQuickPickValue();
       if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      // Bundle 27 P6.2: single canonical write — overrides only. Pre-fix
+      // also wrote S.activePlan.savings as a "legacy mirror" but undo
+      // couldn't reach it, so reversals left stale totals. Override is
+      // the single source of truth now.
       const r = BRAIN.plan.setOverride('savings', bucketName, amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
       if (!r.ok) return r;
-      // Also write to S.activePlan.savings for legacy reads
-      S.activePlan.savings = S.activePlan.savings || {};
-      S.activePlan.savings[bucketName] = amt;
-      try { save(); } catch (_) {}
       renderPaydaySavings();
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
       if (typeof showToast === 'function') showToast('✓ $' + amt + ' → ' + bucketName);
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Trip allocation editor (Phase 6.2) ────────────────────────────────
+// Allocate part of this cycle's surplus toward a PLAN trip. Stored as a
+// savings:trip-<id> override so it shows up in savings.total + the canvas
+// root's "Allocated so far" subtotal.
+function openEditPaydayTripAlloc(tripId) {
+  // guardian-allow-block-start: tdz-safe-engine-access — invoked from canvas row tap, post-boot user-event call path; PLAN is fully initialized. The `typeof PLAN !== 'undefined'` is a defensive null-check, not a TDZ guard (permanent — see Settings sub-screen call paths convention)
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+  // guardian-allow-block-end: tdz-safe-engine-access
+  const trip = trips.find(t => t && t.id === tripId);
+  if (!trip) return;
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const ov = overrides['savings:trip-' + tripId];
+  const current = ov ? ov.thisCycleAmount : 0;
+  const saved = +trip.saved || 0;
+  const budget = +trip.budget || 0;
+  const remaining = Math.max(0, budget - saved);
+  const startMs = trip.startDate ? new Date(trip.startDate).getTime() : 0;
+  const weeks = startMs ? Math.max(1, Math.round((startMs - Date.now()) / (7 * 86400000))) : 4;
+  const perWeek = Math.round(remaining / weeks);
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Saved so far: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(saved).toLocaleString() + '</strong> of $' + Math.round(budget).toLocaleString() + '</div>';
+  if (remaining > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Need $' + perWeek + '/week to hit it before the trip.</div>';
+  else body += '<div style="font-size:13px;color:var(--green);margin-bottom:8px">✅ Funded.</div>';
+  body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
+  EDIT_MODAL.openCustom({
+    title: 'Allocate to ' + trip.name,
+    hint: 'This cycle\'s contribution toward the trip.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      const r = BRAIN.plan.setOverride('savings', 'trip-' + tripId, amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      if (!r.ok) return r;
+      renderPaydaySavings();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ $' + amt + ' → ' + trip.name);
       return { ok: true };
     },
   });
@@ -8283,6 +8327,31 @@ function openPaydayUnlockPlan() {
   }
   renderPaydayPlanRoot();
   if (typeof showToast === 'function') showToast('🔓 Plan unlocked — re-plan freely');
+}
+
+// ─── Safety buffer editor (Phase 6.2) ──────────────────────────────────
+function openEditPaydayBufferFloor() {
+  const snap = BRAIN.plan.getSnapshot();
+  const current = +snap.bufferFloor || 0;
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">The cushion Auto-allocate keeps aside for surprise bills or overspend. Higher = safer, less to allocate. Set $0 to allocate every dollar.</div>';
+  body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
+  EDIT_MODAL.openCustom({
+    title: 'Safety buffer',
+    hint: 'Reserve kept for surprises.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      const r = BRAIN.plan.setBufferFloor(amt, BRAIN.SOURCES.PLAN_BUFFER_FLOOR_EDIT);
+      if (!r.ok) return r;
+      renderPaydayLiving();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ Safety buffer: $' + amt);
+      return { ok: true };
+    },
+  });
 }
 
 // ─── Daily Living floor editor ─────────────────────────────────────────
@@ -8608,6 +8677,37 @@ function renderPaydaySavings() {
     html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Tap a goal below to allocate part of your free money to it this cycle.</div>';
   }
   html += '</div>';
+  // Trips section (Phase 6.2) — upcoming PLAN trips with budget targets.
+  // Treat each trip as an allocation target this cycle.
+  // guardian-allow-block-start: tdz-safe-engine-access — renderPaydaySavings is invoked at user-action time (sub-screen open or post-edit re-render), post-boot; PLAN is initialised. Defensive null check, not a TDZ guard (permanent — see openPaydayCategory call path)
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []).filter(t => t && t.endDate && new Date(t.endDate).getTime() > Date.now() && (+t.budget || 0) > 0) : [];
+  // guardian-allow-block-end: tdz-safe-engine-access
+  if (trips.length) {
+    html += '<div class="settings-group-title">Upcoming trips</div>';
+    html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">Allocate part of this cycle toward each trip\'s budget.</div>';
+    html += '<div class="settings-group-card">';
+    trips.forEach(t => {
+      const tripKey = 'savings:trip-' + t.id;
+      const ov = overrides[tripKey];
+      const amt = ov ? ov.thisCycleAmount : 0;
+      const saved = +t.saved || 0;
+      const budget = +t.budget || 0;
+      const pct = budget > 0 ? Math.round(saved / budget * 100) : 0;
+      const startMs = new Date(t.startDate).getTime();
+      const daysUntil = Math.max(1, Math.round((startMs - Date.now()) / 86400000));
+      const subParts = ['$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(budget).toLocaleString() + ' (' + pct + '%)', 'in ' + daysUntil + ' days'];
+      html += _paydayRow({
+        ticked: !!ticks['trip-' + t.id],
+        icon: t.emoji || '✈️',
+        name: t.name,
+        sub: subParts.join(' · '),
+        value: fmtC2(amt),
+        onTap: "openEditPaydayTripAlloc('" + t.id + "')",
+        onTickTap: snap.locked ? "paydayTick('savings', 'trip-" + t.id + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  }
   // Bucket rows
   if (buckets.length) {
     html += '<div class="settings-group-title">Your savings goals</div>';
@@ -8738,8 +8838,8 @@ function renderPaydayLiving() {
   html += '<div class="settings-group-card" style="padding:14px 16px">';
   html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text)">$' + perDay.toFixed(0) + '/day × ' + daysInCycle + ' days = <strong>' + fmtC2(plannedTotal) + '</strong></div>';
   html += '</div>';
-  // Floor (editable in Phase 4)
-  html += '<div class="settings-group-title">Floor</div>';
+  // Floor + safety buffer (editable)
+  html += '<div class="settings-group-title">Floors</div>';
   html += '<div class="settings-group-card">';
   html += '<button class="settings-edit-row" onclick="openEditPaydayLivingFloor()" aria-label="Minimum daily floor, tap to edit" data-brain-key="plan.dailyLivingFloor">' +
     '<span class="row-multi">' +
@@ -8747,6 +8847,14 @@ function renderPaydayLiving() {
       '<span class="row-sub">Below this triggers a warning</span>' +
     '</span>' +
     '<span class="row-value">$' + floor + '</span>' +
+    '<span class="row-chevron">›</span>' +
+  '</button>';
+  html += '<button class="settings-edit-row" onclick="openEditPaydayBufferFloor()" aria-label="Safety buffer, tap to edit" data-brain-key="plan.bufferFloor">' +
+    '<span class="row-multi">' +
+      '<span style="font-size:15px;color:var(--text)">Safety buffer</span>' +
+      '<span class="row-sub">Reserve auto-allocate keeps for surprises. Set $0 to disable.</span>' +
+    '</span>' +
+    '<span class="row-value">$' + (snap.bufferFloor || 0) + '</span>' +
     '<span class="row-chevron">›</span>' +
   '</button>';
   html += '</div>';
@@ -14437,11 +14545,16 @@ const BRAIN = {
       // S.debts.paid filter already excludes paid ones so debtsTotal IS
       // the unpaid-only total. Keep separate alias for symmetry.
       const debtsUnpaidTotal = debtsTotal;
-      // Savings (from p.savings + overrides)
-      const savingsObj = p.savings || {};
-      const savingsTotal = Object.keys(savingsObj).reduce((s, k) => {
-        const ov = (p.overrides || {})[`savings:${k}`];
-        return s + (ov ? ov.thisCycleAmount : (+savingsObj[k] || 0));
+      // Savings — Bundle 27 P6.2: iterate all real buckets (BRAIN.savings)
+      // and read from overrides primarily, p.savings legacy mirror as
+      // fallback. Pre-fix iterated only p.savings keys, so undo (which
+      // clears the override but not the mirror) showed stale totals.
+      const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets)
+        ? BRAIN.savings.getBuckets() : [];
+      const savingsTotal = allBuckets.reduce((s, b) => {
+        const ov = (p.overrides || {})['savings:' + b.name];
+        if (ov) return s + ov.thisCycleAmount;
+        return s + (+((p.savings || {})[b.name]) || 0);
       }, 0);
       // Known Upcoming
       const upcomingTotal = (p.knownUpcoming || []).reduce((s, i) => s + (+i.amount || 0), 0);
@@ -14643,7 +14756,8 @@ const BRAIN = {
           if (!downstream.ok) return { ok: false, reason: 'downstream-failed:' + (downstream.reason || 'unknown') };
         } else if (category === 'debt') {
           // Record the debt-payment txn (doesn't auto-clear debt unless paid in full)
-          const debt = (S.debts || []).find(d => d && (d.id === itemId || d.name === itemId));
+          // Loose equality: numeric debt.id vs string itemId from canvas tick wiring
+          const debt = (S.debts || []).find(d => d && (d.id == itemId || d.name === itemId));
           if (!debt) return { ok: false, reason: 'debt-not-found' };
           const ov = overrides['debt:' + (debt.id || debt.name)];
           const amt = ov ? ov.thisCycleAmount : (+debt.amt || 0);
