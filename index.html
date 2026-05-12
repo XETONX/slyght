@@ -10985,6 +10985,138 @@ const BRAIN = {
     }
   },
 
+  // ─── BRAIN.summary — cross-cutting query layer (seeded Bundle 19) ───────
+  // Single entry point for "how much spent in <range> by <category>" queries.
+  // Pre-Bundle-19 these were sprinkled across the codebase: ~20 raw
+  // `S.txns.filter(t => !t.income && ...)` sites with subtly different
+  // filters (some exclude Bills, some don't, some drop corrections, some
+  // don't drop round-ups). This is exactly the divergence that produced
+  // "4 different spent numbers visible at once" (OPEN-BUGS catalog item M1).
+  //
+  // BRAIN.summary delegates to the canonical helpers — computeSpentInRange,
+  // getDiscretionaryByCategory, todayTxnsCanonical, MODEL.cycleSpent,
+  // MODEL.weekSpent — and presents one ergonomic API: range descriptors
+  // ('today' / 'cycle' / 'week' / 'last30days' / {from,to}) instead of
+  // raw timestamps. Adds aiContext() — a standardized envelope for chat
+  // system prompts, push worker state, and any future AI-agent surface so
+  // they all describe the user's financial state with the same shape.
+  //
+  // This bubble is a READ-ONLY view layer. No state mutation. Future
+  // callers should prefer BRAIN.summary.* over raw S.txns scans.
+  summary: {
+    // ─── Range resolution ────────────────────────────────────────────────
+    // spec accepts: 'today' | 'week' (= last 7 days) | 'cycle' (payday-to-payday)
+    //               | 'last30days' | 'all' | { from: ts, to: ts }
+    _resolveRange(spec) {
+      if (spec && typeof spec === 'object' && typeof spec.from === 'number' && typeof spec.to === 'number') {
+        return { from: spec.from, to: spec.to };
+      }
+      const now = new Date();
+      const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+      if (spec === 'today') return { from: startOfToday.getTime(), to: Date.now() };
+      if (spec === 'week' || spec === 'last7days') {
+        const start = new Date(startOfToday); start.setDate(start.getDate() - 6);
+        return { from: start.getTime(), to: Date.now() };
+      }
+      if (spec === 'last30days') {
+        const start = new Date(startOfToday); start.setDate(start.getDate() - 29);
+        return { from: start.getTime(), to: Date.now() };
+      }
+      if (spec === 'cycle') {
+        const payday = S.payday || 15;
+        const today = now.getDate();
+        if (today >= payday) {
+          return {
+            from: new Date(now.getFullYear(), now.getMonth(), payday).getTime(),
+            to: new Date(now.getFullYear(), now.getMonth() + 1, payday).getTime()
+          };
+        }
+        return {
+          from: new Date(now.getFullYear(), now.getMonth() - 1, payday).getTime(),
+          to: new Date(now.getFullYear(), now.getMonth(), payday).getTime()
+        };
+      }
+      if (spec === 'all' || spec == null) return { from: 0, to: Date.now() };
+      // Unknown spec → all-time (defensive)
+      return { from: 0, to: Date.now() };
+    },
+
+    // ─── Aggregations ────────────────────────────────────────────────────
+    // Total discretionary spend in range (excludes income, non-spend cats,
+    // corrections, round-ups). Delegates to computeSpentInRange.
+    total(range) {
+      const { from, to } = this._resolveRange(range);
+      return (typeof computeSpentInRange === 'function')
+        ? computeSpentInRange(from, to)
+        : 0;
+    },
+
+    // Category breakdown — returns { cat: { total, count, txns: [] } }
+    // Delegates to getDiscretionaryByCategory (RC2 canonical).
+    byCategory(range) {
+      const { from, to } = this._resolveRange(range);
+      return (typeof getDiscretionaryByCategory === 'function')
+        ? getDiscretionaryByCategory(from, to)
+        : {};
+    },
+
+    // Flattened category totals — { cat: amount }. Convenience for callers
+    // that don't need the per-txn arrays (most chat/dashboard use cases).
+    totalsByCategory(range) {
+      const result = {};
+      const byCat = this.byCategory(range);
+      Object.keys(byCat).forEach(cat => {
+        result[cat] = byCat[cat].total;
+      });
+      return result;
+    },
+
+    // Today's discretionary transactions list (canonical). Delegates to
+    // todayTxnsCanonical so chat system prompts + push worker + analysis
+    // all see the same list.
+    todayTxns(now) {
+      return (typeof todayTxnsCanonical === 'function')
+        ? todayTxnsCanonical(now)
+        : [];
+    },
+
+    // ─── AI context envelope ─────────────────────────────────────────────
+    // Standardized "user's financial state" payload. Use this anywhere an
+    // AI surface needs to describe the user's situation — chat system
+    // prompt, push worker scheduling logic, future AI-agent prompts.
+    //
+    // Pre-Bundle-19 these consumers built divergent envelopes inline:
+    //   chat (L7212+): { balance, todaySpent, cycleTxns: slice(-N), ... }
+    //   push (L8411+): { totalIn, totalOut, todayTxns: filter(byDate) }
+    //   recent (L6168): slice(-5) with different shape
+    // Each computed slightly different "today/cycle/week" numbers. With
+    // BRAIN.summary.aiContext(), all surfaces describe the same financial
+    // state.
+    aiContext() {
+      const debts = (typeof S !== 'undefined' && Array.isArray(S.debts)) ? S.debts : [];
+      const bills = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : [];
+      const txns = (typeof S !== 'undefined' && Array.isArray(S.txns)) ? S.txns : [];
+      return {
+        bal: (typeof S !== 'undefined') ? S.bal : 0,
+        todaySpend: this.total('today'),
+        cycleSpend: this.total('cycle'),
+        weekSpend: this.total('week'),
+        categoriesThisCycle: this.totalsByCategory('cycle'),
+        categoriesLast30Days: this.totalsByCategory('last30days'),
+        activeDebts: debts.filter(d => !d.paid).length,
+        activeBills: bills.filter(b => b && b.recurring !== false).length,
+        daysToPayday: (typeof daysLeft === 'function') ? daysLeft() : null,
+        recentTxns: txns.slice(-5).reverse().map(t => ({
+          amt: t.amt,
+          cat: t.cat,
+          note: (t.note || '').slice(0, 40),
+          income: !!t.income,
+          ts: t.ts
+        }))
+      };
+    }
+  },
+
   // ─── BRAIN.dashboard — Dashboard bubble (seeded Bundle 10) ──────────────
   // First derived-view bubble. Owns the canonical "what does the user see
   // RIGHT NOW" surface — today's spend, cycle spend, week spend, the list
