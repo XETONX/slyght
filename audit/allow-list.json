@@ -1,5 +1,5 @@
 {
-  "lastGenerated": "2026-05-12T13:55:07.863Z",
+  "lastGenerated": "2026-05-12T13:57:48.887Z",
   "totalAllows": 46,
   "unusedAllows": 9,
   "byRule": {
@@ -88,7 +88,7 @@
       },
       {
         "type": "single",
-        "line": 13658,
+        "line": 13788,
         "removability": "permanent",
         "reason": "key resolved by caller via paidBillKey; structured Bundle 7+ shape carrying the txn back-reference for reversible undo",
         "condition": "BRAIN.bills internal write helper consumed by markPaid and consumePendingPay",
@@ -96,7 +96,7 @@
       },
       {
         "type": "single",
-        "line": 13743,
+        "line": 13873,
         "removability": "permanent",
         "reason": "key handed in by caller as a stored paidBills lookup; this is the canonical delete in BRAIN.bills.unmark, the un-mark equivalent of paidBillKey-based access",
         "condition": "BRAIN.bills.unmark canonical deletion",
@@ -104,7 +104,7 @@
       },
       {
         "type": "single",
-        "line": 13887,
+        "line": 14017,
         "removability": "permanent",
         "reason": "invariant scan over Object.keys; reads paidBills directly here (BRAIN.bills.isAutoDebit is the canonical reader for the flag check below)",
         "condition": "invariant logic owned by Bills, reads its own state",
@@ -270,7 +270,7 @@
       },
       {
         "type": "single",
-        "line": 14341,
+        "line": 14471,
         "removability": "permanent",
         "reason": "provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers",
         "condition": "see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS",
@@ -278,7 +278,7 @@
       },
       {
         "type": "single",
-        "line": 14471,
+        "line": 14601,
         "removability": "removable",
         "reason": "\"other bills\" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner",
         "condition": "bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2",
@@ -286,7 +286,7 @@
       },
       {
         "type": "single",
-        "line": 14735,
+        "line": 14865,
         "removability": "permanent",
         "reason": "modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view",
         "condition": "see showKiaLoanInfo design",
@@ -294,7 +294,7 @@
       },
       {
         "type": "single",
-        "line": 15125,
+        "line": 15255,
         "removability": "permanent",
         "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
         "condition": "see locked-items breakdown design",

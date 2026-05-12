@@ -13243,6 +13243,10 @@ const BRAIN = {
         forecast: this.forecast(),
         anomalies: this.anomalies(),
         health: this.healthSnapshot(),
+        // Bundle 26 Phase 0: full waterfall envelope for "what does John have
+        // left over to allocate" — the AI agent quotes this directly when
+        // John asks "can I afford X" or "how much can I put toward Y".
+        surplusWaterfall: this.surplus(),
       };
     },
     // Bundle 24 Phase 3: forecast — projected balances + key dates.
@@ -13329,6 +13333,132 @@ const BRAIN = {
     },
     // Bundle 24 Phase 3: health snapshot — single envelope of canonical
     // financial-health metrics the AI uses for proactive coaching.
+    // Bundle 26 Phase 0: canonical surplus / waterfall calculation.
+    // ONE function any surface should call to ask "how much money does
+    // John have left over to allocate this cycle?". Replaces the drift
+    // between getDynamicDailyBudget / getGenuineSurplus / checkAfford /
+    // PLAN.updateAllocation (all of which compute "surplus-ish" numbers
+    // with different formulas; map in audit/Bundle-26-Phase-0).
+    //
+    // Returns a transparent envelope John can read directly — every
+    // line of the waterfall is exposed so the UI / AI agent can render
+    // "what's coming in, what's spoken for, what's set aside, what's
+    // left over" without re-doing the math.
+    //
+    // Opts (all optional):
+    //   includeBonuses (default true) — fold S.bonuses[] into income
+    //   includeExpectedSalary (default true) — add expected next payday
+    //     net to income if before payday this cycle
+    //   livingReserveMode (default 'avg14') — 'avg14' uses 14-day actual,
+    //     'budget' uses S.weekday/weekend × days, 'zero' skips
+    //   asOf (default 'now') — 'now' = current snapshot; future-mode is
+    //     reserved for trip-aware projections (Phase 1)
+    //
+    // Envelope shape:
+    //   {
+    //     income: { current, expectedSalary, bonuses, total },
+    //     committed: { bills, debts, total, items: [...] },
+    //     livingReserve: { perDay, days, total, mode },
+    //     leftOver,        // income.total - committed.total - livingReserve.total
+    //     daysToPayday,
+    //     waterfall: [    // ordered rows for UI rendering
+    //       { kind: 'in', label, amt, note? },
+    //       { kind: 'out', label, amt, items? },
+    //       { kind: 'reserve', label, amt, hint? },
+    //       { kind: 'result', label, amt },
+    //     ],
+    //   }
+    surplus(opts) {
+      opts = opts || {};
+      const includeBonuses = opts.includeBonuses !== false;
+      const includeExpectedSalary = opts.includeExpectedSalary !== false;
+      const livingMode = opts.livingReserveMode || 'avg14';
+
+      const liveBal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
+      const daysToPayday = (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.daysToPayday === 'number')
+        ? MODEL.daysToPayday
+        : 14; // pre-MODEL fallback — should never hit in production (MODEL rebuilt each render)
+
+      // ── INCOME ─────────────────────────────────────────────────────
+      const monthlyNet = +S.income || 0;
+      const expectedSalary = (includeExpectedSalary && !S.paydayReceived) ? monthlyNet : 0;
+      const bonusesArr = Array.isArray(S.bonuses) ? S.bonuses : [];
+      const bonusesTotal = includeBonuses ? bonusesArr.reduce((s, b) => s + (+b.amt || 0), 0) : 0;
+      const incomeTotal = liveBal + expectedSalary + bonusesTotal;
+
+      // ── COMMITTED (bills + debts before payday) ─────────────────────
+      const billsList = (typeof getBillsDue === 'function') ? getBillsDue() : [];
+      const billsTotal = billsList.reduce((s, b) => s + (+b.amt || 0), 0);
+      const debtsTotal = (typeof getActiveDebtsDueBeforePayday === 'function')
+        ? getActiveDebtsDueBeforePayday()
+        : 0;
+      const debtsList = (S.debts || [])
+        .filter(d => !d.paid && !d.viaRent)
+        .filter(d => {
+          if (!d.delayDate) return true;
+          try {
+            const dd = new Date(d.delayDate).getTime();
+            const pd = (typeof getNextPaydayTs === 'function') ? getNextPaydayTs() : (Date.now() + daysToPayday * 86400000);
+            return dd <= pd;
+          } catch (_) { return true; }
+        })
+        .map(d => ({ name: d.name, amt: +d.amt || 0 }));
+      const committedTotal = billsTotal + debtsTotal;
+
+      // ── LIVING RESERVE ──────────────────────────────────────────────
+      let livingPerDay = 0;
+      if (livingMode === 'avg14') {
+        const FOURTEEN_D = 14 * 86400000;
+        const sp = this.total({ from: Date.now() - FOURTEEN_D, to: Date.now() });
+        livingPerDay = sp / 14;
+      } else if (livingMode === 'budget') {
+        // Estimate: assume 5 weekdays + 2 weekend days per 7-day stretch.
+        livingPerDay = ((5 * (+S.weekdayBudget || 60)) + (2 * (+S.weekendBudget || 180))) / 7;
+      } else if (livingMode === 'zero') {
+        livingPerDay = 0;
+      }
+      const livingTotal = livingPerDay * daysToPayday;
+
+      // ── LEFT OVER ───────────────────────────────────────────────────
+      const leftOver = parseFloat((incomeTotal - committedTotal - livingTotal).toFixed(2));
+
+      // ── WATERFALL (ordered, plain-language) ─────────────────────────
+      const waterfall = [];
+      waterfall.push({ kind: 'in', label: 'In your bank now', amt: parseFloat(liveBal.toFixed(2)) });
+      if (expectedSalary > 0) waterfall.push({ kind: 'in', label: 'Salary by next payday', amt: parseFloat(expectedSalary.toFixed(2)), note: 'Day ' + (S.payday || 15) + ' of month' });
+      if (bonusesTotal > 0) waterfall.push({ kind: 'in', label: 'Bonus this month', amt: parseFloat(bonusesTotal.toFixed(2)), note: bonusesArr.length + ' entry/entries' });
+      waterfall.push({ kind: 'subtotal', label: 'Money coming in by payday', amt: parseFloat(incomeTotal.toFixed(2)) });
+      if (billsTotal > 0) waterfall.push({ kind: 'out', label: 'Bills due before payday', amt: parseFloat(billsTotal.toFixed(2)), items: billsList.map(b => ({ name: b.name, amt: +b.amt || 0 })) });
+      if (debtsTotal > 0) waterfall.push({ kind: 'out', label: 'Debts due before payday', amt: parseFloat(debtsTotal.toFixed(2)), items: debtsList });
+      waterfall.push({ kind: 'subtotal', label: 'Spoken for', amt: parseFloat(committedTotal.toFixed(2)) });
+      if (livingTotal > 0) waterfall.push({ kind: 'reserve', label: 'Living money to payday', amt: parseFloat(livingTotal.toFixed(2)), hint: '~$' + livingPerDay.toFixed(0) + '/day × ' + daysToPayday + ' days' });
+      waterfall.push({ kind: 'result', label: 'Left over to allocate', amt: leftOver });
+
+      return {
+        income: {
+          current: parseFloat(liveBal.toFixed(2)),
+          expectedSalary: parseFloat(expectedSalary.toFixed(2)),
+          bonuses: parseFloat(bonusesTotal.toFixed(2)),
+          total: parseFloat(incomeTotal.toFixed(2)),
+        },
+        committed: {
+          bills: parseFloat(billsTotal.toFixed(2)),
+          debts: parseFloat(debtsTotal.toFixed(2)),
+          total: parseFloat(committedTotal.toFixed(2)),
+          billsList,
+          debtsList,
+        },
+        livingReserve: {
+          perDay: parseFloat(livingPerDay.toFixed(2)),
+          days: daysToPayday,
+          total: parseFloat(livingTotal.toFixed(2)),
+          mode: livingMode,
+        },
+        leftOver,
+        daysToPayday,
+        waterfall,
+      };
+    },
     healthSnapshot() {
       const hasAssets = typeof BRAIN !== 'undefined' && BRAIN.assets;
       const nw = hasAssets ? BRAIN.assets.netWorth() : 0;
