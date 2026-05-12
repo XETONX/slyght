@@ -88,7 +88,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .toggle input:checked + .toggle-track .toggle-thumb{transform:translateX(20px);background:var(--green)}
 .toggle input:focus-visible + .toggle-track{outline:2px solid var(--green);outline-offset:2px}
 /* Bundle 22 v3 Phase 4a: reusable edit-modal — center card, scroll-locked, focus-contained. */
-.edit-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:400;background:rgba(0,0,0,0.72);padding:20px;-webkit-tap-highlight-color:transparent}
+.edit-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:700;background:rgba(0,0,0,0.72);padding:20px;-webkit-tap-highlight-color:transparent}
 .edit-modal.open{display:flex;animation:edit-modal-fade .15s ease-out}
 @keyframes edit-modal-fade{from{opacity:0}to{opacity:1}}
 .edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .2s ease-out}
@@ -7769,7 +7769,7 @@ function renderPaydayPlanRoot() {
   // Per John 2026-05-13: "show what the expected monthly costs will be
   // that month and remainder after essentials paid, then like i can dig
   // deeper via the menus to understand"
-  const billsLabel = fmt(snap.bills.total) + ' · ' + snap.bills.items + ' bill' + (snap.bills.items === 1 ? '' : 's');
+  const billsLabel = fmt(snap.bills.total) + ' · ' + (snap.bills.paid || 0) + ' of ' + snap.bills.items + ' paid';
   const debtsLabel = snap.debts.items > 0 ? (fmt(snap.debts.total) + ' · ' + snap.debts.items + ' active') : 'No active debts';
   const livingLabel = fmt(snap.dailyLiving.plannedTotal) + ' · ' + fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days';
   const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
@@ -14139,20 +14139,33 @@ const BRAIN = {
       const bonusActive = !!(inc.bonus && inc.bonus.included);
       const bonusAmt = bonusActive ? (+inc.bonus.amount || 0) : 0;
       const totalToPlan = (+inc.netPay || 0) + bonusAmt;
-      // Bills + overrides
-      const billsList = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : [];
-      const billsTotal = billsList.reduce((s, b) => {
-        const k = `bill:${b.id || b.name}`;
+      // Bills + overrides — route through BRAIN.bills.getThisCycle so the
+      // canonical bills reader is the single source. Annotated with .paid
+      // so projection math can distinguish "money committed" vs "money
+      // already gone" (avoids double-counting paid bills in projectedEnd).
+      const billsList = (typeof BRAIN !== 'undefined' && BRAIN.bills && BRAIN.bills.getThisCycle)
+        ? BRAIN.bills.getThisCycle()
+        : ((typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : []);
+      const _billAmt = (b) => {
+        const k = 'bill:' + (b.id || b.name);
         const ov = (p.overrides || {})[k];
-        return s + (ov ? ov.thisCycleAmount : (+b.amt || 0));
-      }, 0);
+        return ov ? ov.thisCycleAmount : (+b.amt || 0);
+      };
+      const billsTotal = billsList.reduce((s, b) => s + _billAmt(b), 0);
+      // Unpaid-only total — used by projectedEndBalance to avoid double-
+      // counting bills that have already left the account.
+      const billsUnpaidTotal = billsList.filter(b => !b.paid).reduce((s, b) => s + _billAmt(b), 0);
       // Debts + overrides
       const debtsList = (S.debts || []).filter(d => !d.paid && !d.viaRent);
-      const debtsTotal = debtsList.reduce((s, d) => {
-        const k = `debt:${d.id || d.name}`;
+      const _debtAmt = (d) => {
+        const k = 'debt:' + (d.id || d.name);
         const ov = (p.overrides || {})[k];
-        return s + (ov ? ov.thisCycleAmount : (+d.amt || 0));
-      }, 0);
+        return ov ? ov.thisCycleAmount : (+d.amt || 0);
+      };
+      const debtsTotal = debtsList.reduce((s, d) => s + _debtAmt(d), 0);
+      // S.debts.paid filter already excludes paid ones so debtsTotal IS
+      // the unpaid-only total. Keep separate alias for symmetry.
+      const debtsUnpaidTotal = debtsTotal;
       // Savings (from p.savings + overrides)
       const savingsObj = p.savings || {};
       const savingsTotal = Object.keys(savingsObj).reduce((s, k) => {
@@ -14170,7 +14183,12 @@ const BRAIN = {
       const currentBalance = +S.bal || 0;
       // Projected end balance = current + expected income coming in (if salary not yet received) - estimated outflow
       const expectedSalaryStill = (S.paydayReceived ? 0 : (+inc.netPay || 0));
-      const projectedEndBalance = currentBalance + expectedSalaryStill + bonusAmt - (billsTotal + debtsTotal + livingTotal + upcomingTotal);
+      // Bundle 27 P4 fix: projectedEndBalance subtracts ONLY unpaid bills /
+      // debts because already-paid items have already left currentBalance.
+      // Subtracting them again would double-count. (Living + upcoming are
+      // forward-only — none of them have been spent yet at this point.)
+      const projectedEndBalance = currentBalance + expectedSalaryStill + bonusAmt - (billsUnpaidTotal + debtsUnpaidTotal + livingTotal + upcomingTotal);
+      const billsPaidThisCycle = billsList.filter(b => b.paid).length;
       const perDay = daysInCycle > 0 ? livingTotal / daysInCycle : 0;
       const availableNow = Math.max(0, freeTotal);
       return {
@@ -14181,7 +14199,7 @@ const BRAIN = {
         daysRemaining,
         income: inc,
         totalToPlan: parseFloat(totalToPlan.toFixed(2)),
-        bills: { total: parseFloat(billsTotal.toFixed(2)), items: billsList.length },
+        bills: { total: parseFloat(billsTotal.toFixed(2)), items: billsList.length, paid: billsPaidThisCycle, unpaidTotal: parseFloat(billsUnpaidTotal.toFixed(2)) },
         debts: { total: parseFloat(debtsTotal.toFixed(2)), items: debtsList.length },
         savings: { total: parseFloat(savingsTotal.toFixed(2)), items: Object.keys(savingsObj).length },
         knownUpcoming: { total: parseFloat(upcomingTotal.toFixed(2)), items: (p.knownUpcoming || []).length, list: p.knownUpcoming || [] },
@@ -15548,6 +15566,21 @@ const BRAIN = {
     },
     dueBeforePayday() {
       return (typeof getBillsDue === 'function') ? getBillsDue() : [];
+    },
+    // Bundle 27 Phase 4.5: canonical "list bills for current cycle" reader.
+    // Used by Payday Plan canvas + BRAIN.plan.getSnapshot so the canvas
+    // doesn't reach into BILLS[] directly. Returns recurring bills due
+    // this month (handles monthly + quarterly + yearly via existing
+    // isBillDueThisMonth helper). Each item annotated with .paid (bool)
+    // for tick-state rendering.
+    getThisCycle() {
+      const list = (typeof BILLS !== 'undefined' && Array.isArray(BILLS))
+        ? BILLS.filter(b => b && b.recurring !== false && (typeof isBillDueThisMonth === 'function' ? isBillDueThisMonth(b) : true))
+        : [];
+      // Annotate with paid status (legacy isThisMonthlyBillPaid)
+      return list.map(b => Object.assign({}, b, {
+        paid: (typeof isThisMonthlyBillPaid === 'function') ? isThisMonthlyBillPaid(b.name, b.day) : false,
+      }));
     },
 
     // ─── Auto-detect / Auto-match (relocated, not unified) ──────────────
