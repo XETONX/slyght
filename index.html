@@ -1540,10 +1540,29 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
     </div>
     <div class="modal-checkbox-row">
       <input type="checkbox" class="modal-checkbox" id="ql-recurring" onchange="document.getElementById('ql-recurring-fields').style.display=this.checked?'block':'none'">
-      <label for="ql-recurring">Recurring — add to bills list</label>
+      <label for="ql-recurring">🔁 Recurring — add to bills list</label>
     </div>
     <div id="ql-recurring-fields" style="display:none;margin-bottom:10px">
-      <input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-day" placeholder="Day of month (1–31)" min="1" max="31">
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <select class="modal-input" id="ql-freq" style="flex:1">
+          <option value="monthly">📅 Monthly</option>
+          <option value="fortnightly">📆 Fortnightly</option>
+          <option value="weekly">🗓️ Weekly</option>
+          <option value="quarterly">🍂 Quarterly</option>
+          <option value="yearly">🎂 Yearly</option>
+        </select>
+        <input class="modal-input" autocomplete="off" type="number" id="ql-day" placeholder="Day (1–31)" min="1" max="31" style="flex:1" inputmode="numeric">
+      </div>
+      <div id="ql-due-month-wrap" style="display:none">
+        <select class="modal-input" id="ql-due-month">
+          <option value="">Which month?</option>
+          <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+          <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+          <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+          <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:6px;line-height:1.5">This will appear in your calendar from the next due date onward.</div>
     </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="quickLogTxn()">Log It</button>
@@ -7071,14 +7090,30 @@ function openQuickLogModal() {
   if (overlay) overlay.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('quick-log-modal');
   // UX 6: Render category chips
+  // Bundle 25: chip display gets emojis for scannability (PLAN-mode UX
+  // language). VALUES preserved unchanged so historical txns stay intact.
   // guardian-allow: no-third-discretionary-filter-array - QUICK_CATS is the user-facing transaction-category picker chip list, not a discretionary-spend filter. Overlap with canonical NON_SPEND_CATS is incidental (UI shows 'Bills', 'Savings' etc. as logging options) (removable when rule is refined to distinguish UI category lists from inline filter arrays)
   const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Income / Refund \u2191','Other'];
+  const CAT_EMOJI = {
+    'Food / Coffee': '\ud83c\udf54',
+    'Transport / Fuel': '\u26fd',
+    'Shopping': '\ud83d\udecd\ufe0f',
+    'Bills': '\ud83c\udfe0',
+    'Entertainment': '\ud83c\udfac',
+    'Health': '\u2764\ufe0f',
+    'Debt repayment': '\ud83d\udcb3',
+    'Savings': '\ud83d\udc16',
+    'Income / Refund \u2191': '\ud83d\udcb0',
+    'Other': '\ud83d\udce6',
+  };
   const lastCat = localStorage.getItem('slyght_last_cat') || 'Food / Coffee';
   const chipsEl = document.getElementById('cat-chips');
   if (chipsEl) {
-    chipsEl.innerHTML = QUICK_CATS.map(c =>
-      '<button type="button" onclick="selectCat(this,\''+c.replace(/'/g,"\\'")+'\')" style="flex-shrink:0;padding:8px 12px;border-radius:20px;border:1px solid '+(c===lastCat?'var(--green)':'var(--bg5)')+';background:'+(c===lastCat?'var(--green)':'var(--bg5)')+';color:'+(c===lastCat?'#000':'var(--text2)')+';font-size:13px;cursor:pointer;white-space:nowrap;min-height:36px" data-cat="'+c+'">'+c+'</button>'
-    ).join('');
+    chipsEl.innerHTML = QUICK_CATS.map(c => {
+      const emoji = CAT_EMOJI[c] || '';
+      const display = emoji ? (emoji + ' ' + c.replace(' \u2191','')) : c;
+      return '<button type="button" onclick="selectCat(this,\''+c.replace(/'/g,"\\'")+'\')" style="flex-shrink:0;padding:8px 12px;border-radius:20px;border:1px solid '+(c===lastCat?'var(--green)':'var(--bg5)')+';background:'+(c===lastCat?'var(--green)':'var(--bg5)')+';color:'+(c===lastCat?'#000':'var(--text2)')+';font-size:14px;cursor:pointer;white-space:nowrap;min-height:36px" data-cat="'+c+'">'+display+'</button>';
+    }).join('');
   }
   // M7: remove any existing listeners before adding new ones to prevent accumulation
   if (window.visualViewport) {
@@ -7097,6 +7132,19 @@ function openQuickLogModal() {
     reposition();
   }
   setTimeout(() => { const _qa = $('ql-amt'); if (_qa) _qa.focus(); }, 150);
+  // Bundle 25: wire freq-change to surface the dueMonth picker for
+  // quarterly + yearly (those need an anchor month, monthly/fortnightly/
+  // weekly don't).
+  const _qlfreq = $('ql-freq');
+  const _qldueWrap = $('ql-due-month-wrap');
+  if (_qlfreq && _qldueWrap) {
+    const _syncDueMonth = () => {
+      const needsMonth = (_qlfreq.value === 'quarterly' || _qlfreq.value === 'yearly');
+      _qldueWrap.style.display = needsMonth ? 'block' : 'none';
+    };
+    _qlfreq.onchange = _syncDueMonth;
+    _syncDueMonth();
+  }
 }
 
 // Fix 1B: show round-up preview below amount field
@@ -7220,7 +7268,25 @@ function quickLogTxn() {
     const _destBucket = BRAIN.savings.getBucket(S.roundUpDestination);
     if (_destBucket) BRAIN.savings.addToBucket(_destBucket.name, roundUp, BRAIN.SOURCES.ROUNDUP);
   }
-  if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
+  // Bundle 25: route recurring add through BRAIN.bills.add canonical writer.
+  // Captures freq + optional dueMonth; previous path lost both (silently
+  // defaulted to monthly via downstream getExpandedBills logic).
+  if (recurring && note) {
+    const _qlf = $('ql-freq'); const _freq = _qlf ? _qlf.value : 'monthly';
+    const _qldm = $('ql-due-month'); const _dueMonth = _qldm && _qldm.value ? +_qldm.value : null;
+    const _addRes = BRAIN.bills.add({
+      name: note, amt, day,
+      tag: cat || 'Variable',
+      recurring: true,
+      freq: _freq,
+      ...(_dueMonth ? { dueMonth: _dueMonth } : {}),
+    }, BRAIN.SOURCES.QUICKLOG_ADD_BILL);
+    if (_addRes.ok) {
+      showToast('🔁 Added to bills: ' + note + ' (' + _freq + ')');
+    } else {
+      console.warn('[Quick Log] bill add rejected:', _addRes.reason);
+    }
+  }
   // Bundle 7.2.2 fix-forward: if this expense came from an "Already paid"
   // flow, flip the paidBills key for the bill we just logged. Pairs txn
   // with paidBills atomically so MI-13 doesn't fire on the just-paid bill.
@@ -12629,6 +12695,8 @@ const BRAIN = {
     // Bundle 24 Phase 0 additions (BRAIN.assets bubble)
     SETTINGS_ASSET_EDIT:     'settings-asset-edit',
     SETTINGS_LIABILITY_EDIT: 'settings-liability-edit',
+    // Bundle 25 — Quick Log overhaul
+    QUICKLOG_ADD_BILL:       'quicklog-add-bill',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -12645,6 +12713,8 @@ const BRAIN = {
     'settings-roundups-toggle',
     // Bundle 24 Phase 0 additions
     'settings-asset-edit', 'settings-liability-edit',
+    // Bundle 25 additions
+    'quicklog-add-bill',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -13463,6 +13533,48 @@ const BRAIN = {
   bills: {
     // ─── Internal state (replaces window._pendingBillPay* globals) ──────
     _pendingPay: null,
+
+    // ─── Bundle 25: canonical BILLS array writer ────────────────────────
+    // Pre-Bundle-25 the Quick Log recurring path did BILLS.push() inline
+    // with a partial bill def (no freq, no validation, no audit). Now
+    // routes here. Schema: { name, amt, day, tag, recurring, freq?,
+    // dueMonth?, note? }. Validates the shape, fills sensible defaults,
+    // and lands a typed audit entry. Returns { ok, bill, reason? }.
+    add(billDef, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!billDef || typeof billDef.name !== 'string' || !billDef.name.trim()) {
+        return { ok: false, reason: 'invalid-name' };
+      }
+      const amt = +billDef.amt;
+      if (!isFinite(amt) || amt <= 0) return { ok: false, reason: 'invalid-amount' };
+      const day = +billDef.day;
+      if (!Number.isInteger(day) || day < 1 || day > 31) return { ok: false, reason: 'invalid-day' };
+      const validFreqs = ['weekly', 'fortnightly', 'monthly', 'quarterly', 'yearly'];
+      const freq = billDef.freq || 'monthly';
+      if (!validFreqs.includes(freq)) return { ok: false, reason: 'invalid-freq:' + freq };
+      const bill = {
+        name: billDef.name.trim(),
+        amt: parseFloat(amt.toFixed(2)),
+        day,
+        tag: billDef.tag || 'Variable',
+        recurring: billDef.recurring !== false,
+        freq,
+      };
+      // dueMonth needed for yearly + quarterly anchoring.
+      if (freq === 'yearly' || freq === 'quarterly') {
+        if (billDef.dueMonth) bill.dueMonth = +billDef.dueMonth;
+      }
+      if (billDef.note) bill.note = billDef.note;
+      if (typeof BILLS === 'undefined' || !Array.isArray(BILLS)) {
+        return { ok: false, reason: 'no-bills-array' };
+      }
+      BILLS.push(bill);
+      BRAIN.audit.append({ type: 'bill_add', bill: { name: bill.name, amt: bill.amt, day: bill.day, freq: bill.freq, tag: bill.tag }, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, bill };
+    },
 
     // ─── Pending-pay context API ────────────────────────────────────────
     setPendingPay(key, opts) {
