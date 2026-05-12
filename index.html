@@ -3846,9 +3846,22 @@ function renderAnalysisTab() {
     return;
   }
 
-  const cats = {};
-  S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
-  const total = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection).reduce((s,t) => s+t.amt, 0);
+  // Bundle 22.3 (Note 8): migrated from two inline S.txns.filter calls
+  // (one for cats, one for total) to BRAIN.summary.totalsByCategory('all').
+  // Single source of truth — same filter (excludes income, _NON_SPEND_CATS,
+  // corrections, round-ups) used by computeSpentInRange + dashboard +
+  // analysis pivot. Eliminates a class of "renderTrend disagrees with
+  // dashboard" bugs documented in OPEN-BUGS #6.
+  const cats = (typeof BRAIN !== 'undefined' && BRAIN.summary)
+    ? BRAIN.summary.totalsByCategory('all')
+    : (() => {
+        // Fallback if BRAIN not initialized yet (boot-time render edge case)
+        const out = {};
+        (S.txns || []).filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat||'Other') && !t._isCorrection && !t._isRoundup)
+          .forEach(t => { const k = t.cat || 'Other'; out[k] = (out[k]||0) + t.amt; });
+        return out;
+      })();
+  const total = Object.values(cats).reduce((s, v) => s + v, 0);
   const income = S.income || 7282;
   const days = MODEL.daysToPayday;
   const liveBal = getLiveBal();
@@ -11994,6 +12007,24 @@ const BRAIN = {
       const amt = b.amt || 0;
       const tolerance = amt <= 20 ? 0.50 : 1.00;
       if (Math.abs((t.amt || 0) - amt) > tolerance) return false;
+      // Bundle 22.3 (Note 6 fix): require txn date to be within ±5 days of
+      // the bill's expected payment date in the CURRENT cycle. Pre-fix the
+      // matcher checked only amount + keyword, so a $34 "Claude" txn from
+      // 14 days ago could match this month's Claude Plus bill (re-creating
+      // the auto-flag treadmill killed in Bundle 7.2.3). Date guard
+      // disambiguates which cycle the txn belongs to. Quarterly/yearly bills
+      // (freq + dueMonth/dueMonths) are skipped here — autoDetect's outer
+      // freq guard handles those.
+      if (typeof t.ts === 'number' && typeof b.day === 'number' &&
+          (!b.freq || b.freq === 'monthly' || b.freq === 'fortnightly' || b.freq === 'weekly')) {
+        const txnDate = new Date(t.ts);
+        const today = new Date();
+        // Compute expected bill date: this month if b.day >= today, else past month
+        const expectedMonth = (b.day >= today.getDate()) ? today.getMonth() : today.getMonth() - 1;
+        const expectedDate = new Date(today.getFullYear(), expectedMonth, b.day);
+        const daysDelta = Math.abs((txnDate - expectedDate) / 86400000);
+        if (daysDelta > 5) return false;
+      }
       const keyword = (b.name || '').toLowerCase().split(/[\s\-—]+/)
         .filter(w => w.length >= 4)
         .sort((a, x) => x.length - a.length)[0];
