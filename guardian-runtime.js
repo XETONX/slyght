@@ -679,6 +679,42 @@ test('WEATHER uses Sydney coordinates', () => {
   };
 });
 
+// Bundle 27 hotfix: Payday Plan canvas wiring smoke-test. Catches the
+// kind of click-does-nothing failure that guardian-static can't see.
+test('Payday Plan canvas wiring is intact', () => {
+  // Defensive class-first activation: inside openPaydayPlan body, the
+  // classList.add('payday-active') should come BEFORE renderPaydayPlanRoot()
+  // so render failures don't hide the canvas.
+  let classFirst = false;
+  const fnMatch = html.match(/function openPaydayPlan\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+  if (fnMatch) {
+    const body = fnMatch[0];
+    const activateIdx = body.indexOf("classList.add('payday-active')");
+    const renderIdx = body.indexOf('renderPaydayPlanRoot()');
+    classFirst = activateIdx > 0 && renderIdx > 0 && activateIdx < renderIdx;
+  }
+  const checks = {
+    'openPaydayPlan defined':        /function openPaydayPlan\s*\(/.test(html),
+    'renderPaydayPlanRoot defined':  /function renderPaydayPlanRoot\s*\(/.test(html),
+    '#pg-payday-plan element':       /id="pg-payday-plan"/.test(html),
+    '.payday-active CSS rule':       /#pg-payday-plan\.payday-active/.test(html),
+    'tile onclick wires open fn':    /onclick="openPaydayPlan\(\)"/.test(html),
+    'BRAIN.plan.getSnapshot defined':/getSnapshot\s*\(\s*\)\s*\{/.test(html),
+    'BRAIN.bills.getThisCycle def':  /getThisCycle\s*\(\s*\)\s*\{/.test(html),
+    '5 sub-screens scaffolded':      ['bills','debts','savings','upcoming','living'].every(s => html.includes('id="payday-' + s + '"')),
+    'edit-modal z-index ≥ 510':      /\.edit-modal\{[^}]*z-index:(7\d\d|6\d\d|5[1-9]\d)/.test(html),
+    'defensive class-first activation': classFirst,
+    'boot self-test installed':       /\[Boot self-test\]/.test(html),
+  };
+  const missing = Object.keys(checks).filter(k => !checks[k]);
+  return {
+    pass: missing.length === 0,
+    detail: missing.length === 0
+      ? 'All ' + Object.keys(checks).length + ' canvas wiring checks present'
+      : 'Missing: ' + missing.join(' / '),
+  };
+});
+
 test('PUSH workerUrl points to johndounas.workers.dev', () => {
   const match = html.match(/workerUrl:\s*['"]([^'"]+)['"]/);
   return {

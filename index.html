@@ -7678,23 +7678,38 @@ function runDiagnosticCheck(kind, opts) {
 // ─── Bundle 27 Phases 1+2: Payday Plan Canvas open/close + render ─────────
 function openPaydayPlan() {
   const el = document.getElementById('pg-payday-plan');
-  if (!el) return;
-  // Ensure S.activePlan exists (lazy init on first open).
-  if (!S.activePlan) {
-    S.activePlan = _emptyActivePlan();
-    try { save(); } catch (_) {}
-  }
-  // Bundle 27 Phase 6.1: cycle rollover.
+  if (!el) { console.error('[openPaydayPlan] #pg-payday-plan element missing'); return; }
+  // Bundle 27 hotfix: activate canvas FIRST so even if any downstream
+  // render throws, the user still sees the canvas open. Pre-fix had
+  // renderPaydayPlanRoot before classList.add — any thrown exception
+  // (e.g. BRAIN.plan.getSnapshot crash on a corrupted activePlan)
+  // would propagate up + the class was never applied → "Clicking
+  // payday plan does nothing" from the user's POV.
+  el.scrollTop = 0;
+  el.classList.add('payday-active');
+  // Lazy init activePlan
+  try {
+    if (!S.activePlan) {
+      S.activePlan = _emptyActivePlan();
+      save();
+    }
+  } catch (e) { console.error('[openPaydayPlan] _emptyActivePlan failed:', e); }
+  // Cycle rollover (Phase 6.1) — silent fail-safe
   try {
     const r = BRAIN.plan.rolloverIfNeeded();
     if (r && r.ok && r.carried && r.carried.length) {
       if (typeof showToast === 'function') showToast('🔁 New cycle started — ' + r.carried.length + ' deferred item(s) carried over');
     }
-  } catch (_) {}
-  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
-  el.scrollTop = 0;
-  el.classList.add('payday-active');
-  // Bundle 27 Phase 8: first-open onboarding overlay (one-time).
+  } catch (e) { console.error('[openPaydayPlan] rolloverIfNeeded failed:', e); }
+  // Render — wrapped so any error shows in console but the canvas stays open
+  try {
+    if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  } catch (e) {
+    console.error('[openPaydayPlan] renderPaydayPlanRoot failed:', e);
+    const content = document.getElementById('payday-root-content');
+    if (content) content.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px;line-height:1.6">Couldn\'t render the canvas — check the JS console for details.<br><br>Tap back and try again, or use Settings → Diagnostics to inspect state.</div>';
+  }
+  // First-open onboarding overlay (one-time)
   try {
     if (!localStorage.getItem('slyght_payday_canvas_seen')) {
       setTimeout(() => {
@@ -9422,6 +9437,52 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen, .plan-subscreen, .payday-subscreen, #pg-payday-plan')
     .forEach(el => observer.observe(el, { attributes: true, attributeFilter: ['class'] }));
+});
+
+// Bundle 27 hotfix: BOOT SELF-TEST — runs key BRAIN bubbles to confirm
+// they don't throw on startup state. Logs failures to console + BRAIN.audit
+// so the user/dev can see catch-the-canary issues that guardian-static
+// can't (function-call-failure-at-runtime). Phase 8 polish would add a
+// dashboard surface for these but for now console + audit is enough.
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(() => {
+    const failures = [];
+    const tests = [
+      ['BRAIN.plan exists', () => !!(typeof BRAIN !== 'undefined' && BRAIN.plan)],
+      ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
+      ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
+      ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
+      ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
+      ['BRAIN.assets.netWorth callable', () => { BRAIN.assets.netWorth(); return true; }],
+      ['openPaydayPlan reachable', () => typeof openPaydayPlan === 'function'],
+      ['renderPaydayPlanRoot reachable', () => typeof renderPaydayPlanRoot === 'function'],
+      ['#pg-payday-plan exists in DOM', () => !!document.getElementById('pg-payday-plan')],
+      ['#pg-payday-plan has CSS transform', () => {
+        const el = document.getElementById('pg-payday-plan');
+        if (!el) return false;
+        const cs = window.getComputedStyle(el);
+        return cs && cs.transform !== 'none' && cs.transform !== '';
+      }],
+    ];
+    tests.forEach(([name, fn]) => {
+      try {
+        const r = fn();
+        if (r !== true) failures.push(name + ' (returned ' + r + ')');
+      } catch (e) {
+        failures.push(name + ' threw: ' + (e && e.message));
+      }
+    });
+    if (failures.length) {
+      console.error('[Boot self-test] ' + failures.length + ' failure(s):', failures);
+      try {
+        if (BRAIN && BRAIN.audit) {
+          BRAIN.audit.append({ type: 'boot_self_test_fail', failures, ts: Date.now() });
+        }
+      } catch (_) {}
+    } else if (window.SLYGHT_DEBUG) {
+      console.log('[Boot self-test] all checks passed');
+    }
+  }, 500);
 });
 
 // ─── Bundle 22 v3 Phase 4b: Reset All Data — 3-stage flow ─────────────────
