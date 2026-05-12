@@ -111,6 +111,17 @@ body.edit-modal-open{overflow:hidden}
 /* Bundle 22 v3 Phase 5: 44x44 tap-target utility — apply where existing
    inline styles don't already satisfy WCAG minimum. */
 .tappable{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+/* Bundle 26 Phase 1.5b: Plan-mode sub-screen pattern (slide-in inside the
+   plan-mode container, mirrors the Settings sub-screen mechanic). Used by
+   the new Allocate Payday flow to keep the heavy waterfall + sliders +
+   coaching off the main PLAN scroll. */
+.plan-subscreen{position:absolute;top:0;left:0;right:0;bottom:0;background:#0a0f1a;transform:translateX(100%);transition:transform 280ms ease-out;z-index:20;overflow-y:auto;overscroll-behavior:contain;visibility:hidden;display:flex;flex-direction:column}
+.plan-subscreen.plan-subscreen-active{transform:translateX(0);visibility:visible}
+.plan-subscreen-header{position:sticky;top:0;background:#0a0f1a;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.08);z-index:1}
+.plan-subscreen-back{background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:#fff;padding:8px 16px;font-size:14px;cursor:pointer;min-height:44px}
+.plan-subscreen-title{color:#fff;font-size:16px;font-weight:700;letter-spacing:0.5px}
+.plan-subscreen-body{flex:1;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#plan-mode.has-active-subscreen{overflow:hidden}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -7979,6 +7990,12 @@ function _slyghtCloseTopmostModal() {
     if (typeof closeSettingsCategory === 'function') closeSettingsCategory(subscreen.id);
     return true;
   }
+  // Bundle 26 Phase 1.5b: PLAN mode allocate sub-screen
+  const planSub = document.querySelector('.plan-subscreen.plan-subscreen-active');
+  if (planSub) {
+    if (typeof closeAllocateSubscreen === 'function') closeAllocateSubscreen();
+    return true;
+  }
   return false;
 }
 window.addEventListener('popstate', () => { _slyghtCloseTopmostModal(); });
@@ -7989,15 +8006,17 @@ window.addEventListener('DOMContentLoaded', () => {
       const el = m.target;
       const isOpen = el.classList.contains('open') || el.classList.contains('settings-active');
       const wasOpen = el._slyghtWasOpen;
-      if (isOpen && !wasOpen) {
+      const isPlanSub = el.classList.contains('plan-subscreen-active');
+      const fullyOpen = isOpen || isPlanSub;
+      if (fullyOpen && !wasOpen) {
         try { history.pushState({ slyghtModalGuard: true }, ''); } catch (_) {}
         el._slyghtWasOpen = true;
-      } else if (!isOpen && wasOpen) {
+      } else if (!fullyOpen && wasOpen) {
         el._slyghtWasOpen = false;
       }
     }
   });
-  document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen')
+  document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen, .plan-subscreen')
     .forEach(el => observer.observe(el, { attributes: true, attributeFilter: ['class'] }));
 });
 
@@ -12792,6 +12811,10 @@ const BRAIN = {
     SETTINGS_LIABILITY_EDIT: 'settings-liability-edit',
     // Bundle 25 — Quick Log overhaul
     QUICKLOG_ADD_BILL:       'quicklog-add-bill',
+    // Bundle 26 Phase 1.5b — Allocate Payday flow (BRAIN.allocation)
+    PLAN_ALLOCATE_SLIDER:    'plan-allocate-slider',
+    PLAN_LOCK_PAYDAY:        'plan-lock-payday',
+    PLAN_UNLOCK_PAYDAY:      'plan-unlock-payday',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -12810,6 +12833,8 @@ const BRAIN = {
     'settings-asset-edit', 'settings-liability-edit',
     // Bundle 25 additions
     'quicklog-add-bill',
+    // Bundle 26 Phase 1.5b additions
+    'plan-allocate-slider', 'plan-lock-payday', 'plan-unlock-payday',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -12920,6 +12945,67 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'roundups_enabled_change', old, new: flag, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: flag };
+    },
+  },
+
+  // ─── BRAIN.allocation — Payday allocation bubble (seeded Bundle 26.1.5b) ─
+  // Owns the per-payday "where does my surplus go" plan. Pre-Bundle-26.1.5b
+  // updateAllocation + lockPaydayPlan wrote directly to localStorage
+  // 'slyght_payday_plan' with no audit trail; this bubble routes every
+  // write through here so the AI agent can answer "what did John allocate
+  // last cycle" from BRAIN.audit.
+  //
+  // Plan shape (persisted in localStorage 'slyght_payday_plan'):
+  //   { china, apartment, freedom, darwin, ... goal-id → $amt,
+  //     lockedAt: ts | null, lockedSnapshot: { ... } }
+  allocation: {
+    _STORAGE: 'slyght_payday_plan',
+    _readRaw() {
+      try { return JSON.parse(localStorage.getItem(this._STORAGE) || '{}'); }
+      catch (_) { return {}; }
+    },
+    _writeRaw(plan) {
+      try { localStorage.setItem(this._STORAGE, JSON.stringify(plan)); } catch (_) {}
+    },
+    getPlan() { return this._readRaw(); },
+    getAllocation(slug) {
+      const p = this._readRaw();
+      return +p[slug] || 0;
+    },
+    setAllocation(slug, amt, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (typeof slug !== 'string' || !slug.trim()) return { ok: false, reason: 'invalid-slug' };
+      const n = +amt;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-amount', value: amt };
+      const plan = this._readRaw();
+      const old = +plan[slug] || 0;
+      plan[slug] = n;
+      this._writeRaw(plan);
+      BRAIN.audit.append({ type: 'allocation_change', slug, old, new: n, source, ts: Date.now() });
+      return { ok: true, slug, old, new: n };
+    },
+    isLocked() {
+      const p = this._readRaw();
+      return !!p.lockedAt;
+    },
+    lock(snapshot, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const plan = this._readRaw();
+      plan.lockedAt = Date.now();
+      plan.lockedSnapshot = snapshot || null;
+      this._writeRaw(plan);
+      BRAIN.audit.append({ type: 'payday_plan_locked', snapshot, source, ts: Date.now() });
+      return { ok: true, lockedAt: plan.lockedAt };
+    },
+    unlock(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const plan = this._readRaw();
+      const wasLocked = !!plan.lockedAt;
+      plan.lockedAt = null;
+      plan.lockedSnapshot = null;
+      this._writeRaw(plan);
+      BRAIN.audit.append({ type: 'payday_plan_unlocked', wasLocked, source, ts: Date.now() });
+      return { ok: true, wasLocked };
     },
   },
 
@@ -15220,13 +15306,14 @@ function renderPlanMode() {
   // ── WRX STATUS CARD ──────────────────────────────────────
   html += renderWrxCard();
 
-  // ── Bundle 26 Phase 1: surplus waterfall + always-on coaching + trip nudges
-  if (typeof renderSurplusWaterfall === 'function') html += renderSurplusWaterfall();
-  if (typeof renderSmartCoaching === 'function') html += renderSmartCoaching();
-  if (typeof renderUpcomingTripsNudges === 'function') html += renderUpcomingTripsNudges();
+  // ── Bundle 26 Phase 1.5b: Allocate Payday tile (opens the slide-in
+  //    sub-screen with the full waterfall + coaching + sliders + lock).
+  //    Replaces the long inline scroll of waterfall + payday allocation
+  //    that previously cluttered PLAN mode root.
+  if (typeof renderAllocateTile === 'function') html += renderAllocateTile();
 
-  // ── SECTIONS ─────────────────────────────────────────────
-  if (typeof renderPaydayAllocation === 'function') html += renderPaydayAllocation();
+  // ── Trip nudges stay on the root — they're context, not allocation flow
+  if (typeof renderUpcomingTripsNudges === 'function') html += renderUpcomingTripsNudges();
   if (typeof renderTrips === 'function') html += renderTrips(trips);
   if (typeof renderGoalCards === 'function') html += renderGoalCards(goals, surplus);
   if (typeof renderSuperCard === 'function') html += renderSuperCard();
@@ -15253,6 +15340,71 @@ function renderPlanMode() {
 }
 
 // ─── SECTION 4 — PAYDAY ALLOCATION PLANNER ──────────────────────────────────
+// Bundle 26 Phase 1.5b: Allocate Payday sub-screen — slides in inside the
+// PLAN mode container. Centralises the heavy allocation flow (waterfall +
+// non-negotiables + smart coaching + sliders + lock) so PLAN mode root
+// stays scannable.
+function openAllocateSubscreen() {
+  const sub = document.getElementById('plan-allocate-subscreen');
+  const planEl = document.getElementById('plan-mode');
+  if (!sub || !planEl) return;
+  // Build / refresh body content
+  if (typeof renderAllocateSubscreenBody === 'function') {
+    const body = document.getElementById('plan-allocate-body');
+    if (body) body.innerHTML = renderAllocateSubscreenBody();
+  }
+  // Lock plan-mode scroll while subscreen is open
+  planEl.scrollTop = 0;
+  planEl.classList.add('has-active-subscreen');
+  sub.classList.add('plan-subscreen-active');
+  // Wire sliders after the markup lands in the DOM
+  if (typeof wirePaydaySliders === 'function') wirePaydaySliders();
+}
+function closeAllocateSubscreen() {
+  const sub = document.getElementById('plan-allocate-subscreen');
+  const planEl = document.getElementById('plan-mode');
+  if (sub) sub.classList.remove('plan-subscreen-active');
+  if (planEl) planEl.classList.remove('has-active-subscreen');
+}
+
+// Build the sub-screen body in plain order:
+//   1. Surplus waterfall (where money stands)
+//   2. Smart coaching banner (always-on, plain language)
+//   3. Existing renderPaydayAllocation (sliders, lock — preserves wirePaydaySliders)
+function renderAllocateSubscreenBody() {
+  let html = '';
+  if (typeof renderSurplusWaterfall === 'function') html += renderSurplusWaterfall();
+  if (typeof renderSmartCoaching === 'function') html += renderSmartCoaching();
+  if (typeof renderPaydayAllocation === 'function') html += renderPaydayAllocation();
+  return html;
+}
+
+// Compact tile shown on PLAN mode root that opens the sub-screen. Shows the
+// headline number (Left over) so the user can scan their position without
+// drilling in unless they want to act.
+function renderAllocateTile() {
+  if (typeof BRAIN === 'undefined' || !BRAIN.summary) return '';
+  let w;
+  try { w = BRAIN.summary.surplus(); } catch (_) { return ''; }
+  const isLocked = !!(BRAIN.allocation && BRAIN.allocation.isLocked && BRAIN.allocation.isLocked());
+  const left = w.leftOver;
+  const isPositive = left >= 0;
+  const col = isPositive ? '#4ECDC4' : '#E74C3C';
+  const fmt = '$' + Math.abs(Math.round(left)).toLocaleString();
+  return `
+    <button onclick="openAllocateSubscreen()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
+      <div style="flex:1">
+        <div style="font-size:13px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📋 Allocate Your Payday${isLocked ? ' · 🔒 locked' : ''}</div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-family:var(--mono);font-size:26px;font-weight:800;color:${col}">${isPositive ? '' : '-'}${fmt}</span>
+          <span style="font-size:13px;color:rgba(255,255,255,0.5)">left to allocate</span>
+        </div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${w.daysToPayday} days until next payday · tap to see breakdown + adjust</div>
+      </div>
+      <span style="font-size:24px;color:rgba(255,255,255,0.4);margin-left:8px">›</span>
+    </button>`;
+}
+
 // Bundle 26 Phase 1.5a: plain-language tooltips for non-financially-literate
 // users. Every financial term in the UI gets an optional ℹ️ button that
 // opens a short explanation. Centralised here so the wording is consistent
@@ -15729,9 +15881,8 @@ function updateAllocation(id, value) {
     }
   }
 
-  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
-  stored[id] = val;
-  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  // Bundle 26.1.5b: route through BRAIN.allocation canonical writer.
+  BRAIN.allocation.setAllocation(id, val, BRAIN.SOURCES.PLAN_ALLOCATE_SLIDER);
 }
 
 // #49 — Pure helper for affordability decision; covered by tests/core.test.js.
@@ -15788,11 +15939,25 @@ function lockPaydayPlan() {
 }
 
 function confirmLockPaydayPlan() {
+  // Bundle 26.1.5b: route lock through BRAIN.allocation. Snapshot captures
+  // the locked plan shape for audit history. PLAN.saveGoal mirrors retained
+  // below for backwards compat with PLAN goal monthly fields.
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
-  stored.locked = true;
-  stored.lockedAt = new Date().toISOString();
-  stored.payday = S.payday;
-  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  const snapshot = {
+    payday: S.payday,
+    china: stored.china || 0,
+    apartment: stored.apartment || 0,
+    freedom: stored.freedom || 0,
+    darwin: stored.darwin || 0,
+  };
+  BRAIN.allocation.lock(snapshot, BRAIN.SOURCES.PLAN_LOCK_PAYDAY);
+  // Legacy stored.locked flag preserved for non-BRAIN consumers (e.g.,
+  // existing UI conditional checks). BRAIN.allocation.isLocked is the
+  // canonical reader.
+  const reread = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+  reread.locked = true;
+  reread.payday = S.payday;
+  localStorage.setItem('slyght_payday_plan', JSON.stringify(reread));
 
   const goals = PLAN.getGoals();
   if (stored.china) {
@@ -17022,6 +17187,17 @@ document.getElementById('plan-modal-overlay')
     <div style="width:70px"></div>
   </div>
   <div id="plan-content" style="padding:16px"></div>
+
+  <!-- Bundle 26 Phase 1.5b: Allocate Payday sub-screen (slide-in inside plan-mode) -->
+  <div id="plan-allocate-subscreen" class="plan-subscreen" role="dialog" aria-label="Allocate Your Payday">
+    <div class="plan-subscreen-header">
+      <button class="plan-subscreen-back" onclick="closeAllocateSubscreen()" aria-label="Back to Plan Mode">‹ Back</button>
+      <span class="plan-subscreen-title">📋 Allocate Your Payday</span>
+      <div style="width:70px"></div>
+    </div>
+    <div class="plan-subscreen-body" id="plan-allocate-body"></div>
+  </div>
+
   <!-- EXPECTED EXTRA INCOME (relocated from Bills tab — belongs in Plan Mode) -->
   <div style="padding:0 16px 24px">
     <div style="background:rgba(255,255,255,0.05);border-radius:16px;padding:16px">
