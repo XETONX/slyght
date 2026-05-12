@@ -1,9 +1,9 @@
 {
-  "timestamp": "2026-05-06T06:14:22.797Z",
-  "balance": 381.35,
+  "timestamp": "2026-05-12T11:53:13.516Z",
+  "balance": 84.89,
   "summary": {
-    "passed": 47,
-    "failed": 3,
+    "passed": 50,
+    "failed": 0,
     "total": 50
   },
   "sections": [
@@ -14,19 +14,19 @@
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "getLiveBal() equals TEST_S.bal",
           "pass": true,
-          "detail": "got $381.35 expected $381.35"
+          "detail": "got $84.89 expected $84.89"
         },
         {
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "TEST_S.bal is valid positive number",
           "pass": true,
-          "detail": "TEST_S.bal = 381.35"
+          "detail": "TEST_S.bal = 84.89"
         },
         {
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "TEST_S.bal is positive (synthetic: ~$1,500.34)",
           "pass": true,
-          "detail": "real state: $381.35 (positive ✓)"
+          "detail": "real state: $84.89 (positive ✓)"
         }
       ]
     },
@@ -43,12 +43,13 @@
           "section": "SECTION 2 — DEBT STATE VERIFICATION",
           "name": "All debts have required fields (synthetic: known names paid)",
           "pass": true,
-          "detail": "5 debts all valid"
+          "detail": "4 debts all valid"
         },
         {
           "section": "SECTION 2 — DEBT STATE VERIFICATION",
-          "name": "Owed to Mum has viaRent:true",
-          "detail": "not found"
+          "name": "Property Deposit (via Mum) has viaRent:true",
+          "pass": true,
+          "detail": "{\"name\":\"Property Deposit (via Mum)\",\"paid\":false,\"viaRent\":true}"
         },
         {
           "section": "SECTION 2 — DEBT STATE VERIFICATION",
@@ -112,7 +113,7 @@
           "section": "SECTION 4 — SURPLUS AND MAX/DAY",
           "name": "getGenuineSurplus() <= TEST_S.bal",
           "pass": true,
-          "detail": "surplus=$0 bal=$381.35"
+          "detail": "surplus=$0 bal=$84.89"
         },
         {
           "section": "SECTION 4 — SURPLUS AND MAX/DAY",
@@ -159,7 +160,7 @@
           "section": "SECTION 5 — SPENDING CALCULATIONS",
           "name": "getAvgDailySpend() excludes income",
           "pass": true,
-          "detail": "avg=$60.00/day income=$9772.42"
+          "detail": "avg=$60.00/day income=$9843.08"
         },
         {
           "section": "SECTION 5 — SPENDING CALCULATIONS",
@@ -203,7 +204,7 @@
         },
         {
           "section": "SECTION 7 — DATA INTEGRITY",
-          "name": "All bills have valid day (1-28)",
+          "name": "All bills have valid day (1-31)",
           "pass": true,
           "detail": "OK"
         },
@@ -233,9 +234,9 @@
         },
         {
           "section": "SECTION 7 — DATA INTEGRITY",
-          "name": "paydayReceived = true (paid on 14 Apr)",
-          "pass": false,
-          "detail": "paydayReceived=false"
+          "name": "paydayReceived flag matches calendar position",
+          "pass": true,
+          "detail": "paydayReceived=false · today=12 · payday=15"
         }
       ]
     },
@@ -244,15 +245,15 @@
       "results": [
         {
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
-          "name": "SCENARIO: Mark Pet Insurance paid → debtsDue decreases",
-          "pass": false,
-          "detail": "Pet Insurance debt not found"
+          "name": "SCENARIO: Mark Afterpay paid → debtsDue decreases",
+          "pass": true,
+          "detail": "before=$120.47 after=$0.00 (target: decrease)"
         },
         {
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
           "name": "SCENARIO: Log $50 expense → balance decreases",
           "pass": true,
-          "detail": "before=$381.35 after=$331.35"
+          "detail": "before=$84.89 after=$34.89"
         },
         {
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
@@ -270,7 +271,7 @@
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
           "name": "SCENARIO: WRX sale at $21k → clears all active debts",
           "pass": true,
-          "detail": "WRX net=$23000 activeDebt=$593.56 — WRX sale clears everything"
+          "detail": "WRX net=$23000 activeDebt=$531.19 — WRX sale clears everything"
         }
       ]
     },
@@ -281,7 +282,7 @@
           "section": "SECTION 9 — AUDIT LOG ANALYSIS",
           "name": "Audit log loaded from real state",
           "pass": true,
-          "detail": "9 audit entries loaded"
+          "detail": "44 audit entries loaded"
         },
         {
           "section": "SECTION 9 — AUDIT LOG ANALYSIS",
@@ -339,7 +340,7 @@
           "section": "SECTION 11 — NEW SYSTEMS RUNTIME CHECKS",
           "name": "getDaysToCity2Surf returns positive number before Aug 2026",
           "pass": true,
-          "detail": "days to City2Surf 2026-08-09: 95"
+          "detail": "days to City2Surf 2026-08-09: 89"
         },
         {
           "section": "SECTION 11 — NEW SYSTEMS RUNTIME CHECKS",
@@ -362,23 +363,5 @@
       ]
     }
   ],
-  "failedTests": [
-    {
-      "section": "SECTION 2 — DEBT STATE VERIFICATION",
-      "name": "Owed to Mum has viaRent:true",
-      "detail": "not found"
-    },
-    {
-      "section": "SECTION 7 — DATA INTEGRITY",
-      "name": "paydayReceived = true (paid on 14 Apr)",
-      "pass": false,
-      "detail": "paydayReceived=false"
-    },
-    {
-      "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
-      "name": "SCENARIO: Mark Pet Insurance paid → debtsDue decreases",
-      "pass": false,
-      "detail": "Pet Insurance debt not found"
-    }
-  ]
+  "failedTests": []
 }

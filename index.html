@@ -621,7 +621,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div id="app-controls" style="display:none;padding:12px 0">
           <div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:8px">
             <div style="display:flex;justify-content:space-between;align-items:center">
-              <div><div style="color:var(--text);font-size:14px;font-weight:600">Round-ups</div><div style="color:var(--text3);font-size:11px">Add cents to China Holiday</div></div>
+              <div><div style="color:var(--text);font-size:14px;font-weight:600">Round-ups</div><div id="s-roundups-subtitle" style="color:var(--text3);font-size:11px">Add cents to China Holiday</div></div>
               <button onclick="toggleRoundUps()" style="padding:8px 16px;border-radius:20px;border:1px solid var(--border2);font-size:13px;min-height:44px;background:var(--bg2);color:var(--text)" id="roundups-btn">On/Off</button>
             </div>
           </div>
@@ -1233,7 +1233,8 @@ let S = {
   debtStrategy: 'avalanche',
   chatHistory: [],
   apiKey: '',
-  apiAlertThreshold: 15
+  apiAlertThreshold: 15,
+  roundUpDestination: 'China Holiday'
 };
 
 let BILLS = [
@@ -4277,6 +4278,12 @@ function renderAll() {
   if ($('s-car-original')) $('s-car-original').value = S.carloanOriginal != null ? S.carloanOriginal : 37400;
   if ($('s-cc-limit')) $('s-cc-limit').value = S.ccLimit != null ? S.ccLimit : 6000;
   if ($('s-debt-strategy')) $('s-debt-strategy').value = S.debtStrategy || 'avalanche';
+  // Bundle 22 v3 Phase 0: round-up subtitle reads destination name dynamically.
+  const _roundupSubEl = $('s-roundups-subtitle');
+  if (_roundupSubEl) {
+    const _destName = BRAIN.savings.getRoundUpDestinationName();
+    _roundupSubEl.textContent = _destName ? ('Add cents to ' + _destName) : 'Add cents to your savings goal';
+  }
   const _explEl = $('strategy-explain');
   if (_explEl) {
     const _strat = S.debtStrategy || 'avalanche';
@@ -5935,7 +5942,7 @@ function renderChinaHolidayTracker(b, i) {
   html += '<div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:10px"><div style="width:'+pctBar+'%;height:8px;background:var(--blue);border-radius:4px;transition:width .6s"></div></div>';
   const rate = getGenuineSurplus();
   if (needed <= 0) {
-    html += '<div style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:8px">✅ Goal reached — China Holiday funded!</div>';
+    html += '<div style="font-size:12px;color:var(--green);font-weight:700;margin-bottom:8px">✅ Goal reached — ' + b.name + ' funded!</div>';
   } else if (monthlyNeeded > 0) {
     html += '<div style="font-size:12px;color:var(--text2);margin-bottom:8px"><span style="color:var(--text3)">Need: </span><strong>'+fmtC(monthlyNeeded)+'/month</strong> or <strong>'+fmtC(weeklyNeeded)+'/week</strong> to hit Dec 2026</div>';
     html += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Days to Dec 2026: <strong style="color:var(--text)">'+daysToGoal+'</strong></div>';
@@ -6389,7 +6396,7 @@ function updateRoundUpPreview() {
   }
   const roundUp = parseFloat((Math.ceil(amt) - amt).toFixed(2));
   if (roundUp > 0 && roundUp < 1) {
-    $('ql-roundup-label').textContent = '🏦 Round-up: +$' + roundUp.toFixed(2) + ' → China Holiday';
+    $('ql-roundup-label').textContent = '🏦 Round-up: +$' + roundUp.toFixed(2) + ' → ' + BRAIN.savings.getRoundUpDestinationName();
     preview.style.display = 'flex';
   } else {
     preview.style.display = 'none';
@@ -6478,19 +6485,26 @@ function quickLogTxn() {
     const msg = HABIT_MSGS[Math.floor(Math.random()*HABIT_MSGS.length)](flag, bal, debt);
     setTimeout(() => alert('HABIT CHECK\n\n' + msg), 100);
   }
-  // Fix 1B: round-up micro-transaction — only on manual expense entries with cents
+  // Fix 1B: round-up micro-transaction — only on manual expense entries with cents.
+  // Bundle 22 v3 Phase 0.F: this is the Quick Log expense round-up path (path #1).
+  // The parallel path #2 at the chat-action handler (see executeChatAction case
+  // 'log_txn') is intentional — same logic but no per-txn toggle and a CHAT
+  // source tag on the bucket update so AI-driven round-ups are distinguishable.
   const roundUp = parseFloat((Math.ceil(amt) - amt).toFixed(2));
   const ruToggle = $('ql-roundup-toggle');
   const roundUpOn = ruToggle ? ruToggle.checked : false;
   if (roundUp > 0 && roundUp < 1 && roundUpOn && S.roundUpsEnabled !== false) {
     S.bal = parseFloat((S.bal - roundUp).toFixed(2));
+    const _destName = BRAIN.savings.getRoundUpDestinationName();
     BRAIN.transaction.record(
-      { amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
+      { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
       BRAIN.SOURCES.ROUNDUP
     );
     // Bundle 8: route round-up bucket write through BRAIN.savings.
-    const chinaHol = (S.savingsBuckets||[]).find(b => b.name.toLowerCase().includes('china'));
-    if (chinaHol) BRAIN.savings.addToBucket(chinaHol.name, roundUp, BRAIN.SOURCES.ROUNDUP);
+    // Bundle 22 v3 Phase 0: bucket lookup uses S.roundUpDestination instead of
+    // hardcoded 'china' substring match.
+    const _destBucket = BRAIN.savings.getBucket(S.roundUpDestination);
+    if (_destBucket) BRAIN.savings.addToBucket(_destBucket.name, roundUp, BRAIN.SOURCES.ROUNDUP);
   }
   if (recurring && note) BILLS.push({name:note, amt, day, tag:cat||'Fixed', recurring:true});
   // Bundle 7.2.2 fix-forward: if this expense came from an "Already paid"
@@ -6637,19 +6651,24 @@ function saveSettings() {
   if (incErr) incErr.style.display = 'none';
   if (!paydayV || paydayV < 1 || paydayV > 28) { if (pdErr) pdErr.style.display = 'block'; return; }
   if (pdErr) pdErr.style.display = 'none';
-  S.income = incomeV;
-  S.payday = paydayV;
-  // L5: 0 is valid for loan balances (paid off) and vehicle value (no car)
+  // Bundle 22 v3 Phase 0: route income/payday through BRAIN.config.
+  BRAIN.config.setIncome(incomeV, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+  BRAIN.config.setPayday(paydayV, BRAIN.SOURCES.SETTINGS_PAYDAY_EDIT);
+  // L5: 0 is valid for loan balances (paid off) and vehicle value (no car).
+  // Vehicle + CC balance fields still write direct — domain not yet bubbled
+  // (Bundle 16.5 candidate: BRAIN.assets / BRAIN.debts.setBalances extraction).
   const _scar = $('s-car'); const carV = _scar ? +_scar.value : NaN;
   const _scc = $('s-cc'); const ccV = _scc ? +_scc.value : NaN;
   if (!isNaN(carV) && carV >= 0) S.carloan = carV;
   if (!isNaN(ccV) && ccV >= 0) S.cc = ccV;
-  const _swdb = $('s-weekday-budget'); S.weekdayBudget = _swdb ? (+_swdb.value || 60) : 60;
-  const _sweb = $('s-weekend-budget'); S.weekendBudget = _sweb ? (+_sweb.value || 180) : 180;
+  // Bundle 22 v3 Phase 0: budgets through BRAIN.config.
+  const _swdb = $('s-weekday-budget'); BRAIN.config.setWeekdayBudget(_swdb ? (+_swdb.value || 60) : 60, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT);
+  const _sweb = $('s-weekend-budget'); BRAIN.config.setWeekendBudget(_sweb ? (+_sweb.value || 180) : 180, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT);
   // (s-wrx-value settings field deleted; WRX value editing moved to Plan Mode renderWrxCard)
   if ($('s-car-original')) { const v = +$('s-car-original').value; if (v > 0) S.carloanOriginal = v; }
   if ($('s-cc-limit')) { const v = +$('s-cc-limit').value; if (v > 0) S.ccLimit = v; }
-  if ($('s-debt-strategy')) S.debtStrategy = $('s-debt-strategy').value;
+  // Bundle 22 v3 Phase 0: debt strategy through BRAIN.debts.setStrategy.
+  if ($('s-debt-strategy')) BRAIN.debts.setStrategy($('s-debt-strategy').value, BRAIN.SOURCES.SETTINGS_DEBT_STRATEGY);
   // Update strategy explanation
   const explEl = $('strategy-explain');
   if (explEl) {
@@ -6666,8 +6685,9 @@ function saveSettings() {
 function saveBudgets() {
   const wd = parseFloat($('s-weekday-budget')?.value);
   const we = parseFloat($('s-weekend-budget')?.value);
-  if (!isNaN(wd) && wd > 0) S.weekdayBudget = wd;
-  if (!isNaN(we) && we > 0) S.weekendBudget = we;
+  // Bundle 22 v3 Phase 0: budgets through BRAIN.config.
+  if (!isNaN(wd) && wd > 0) BRAIN.config.setWeekdayBudget(wd, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT);
+  if (!isNaN(we) && we > 0) BRAIN.config.setWeekendBudget(we, BRAIN.SOURCES.SETTINGS_BUDGET_EDIT);
   onStateChange('budget-save');
   const msg = $('budget-save-msg');
   if (msg) { msg.style.display = 'block'; setTimeout(() => { msg.style.display = 'none'; }, 2500); }
@@ -6684,7 +6704,12 @@ function toggleSection(id) {
 
 function saveIncome() {
   const v = parseFloat(document.getElementById('set-income')?.value);
-  if (!isNaN(v) && v > 0) { S.income = v; onStateChange('income_saved'); showToast('Income saved'); }
+  // Bundle 22 v3 Phase 0: route through BRAIN.config (set-income is a
+  // separate Settings input from s-income; both feed S.income).
+  if (!isNaN(v) && v > 0) {
+    const r = BRAIN.config.setIncome(v, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+    if (r.ok) { onStateChange('income_saved'); showToast('Income saved'); }
+  }
 }
 
 function saveWrxValue() {
@@ -7173,7 +7198,7 @@ function buildSystemPrompt() {
     '- Has a WRX to list for sale this week \u2014 this is his debt exit strategy\n'+
     '- Working on reducing weed spending and impulse purchases\n'+
     '- Building SLYGHT himself \u2014 technically capable, appreciates directness\n'+
-    '- China Holiday savings goal: $4,000 by Dec 2026 (currently $67.22 saved)\n'+
+    '- China Holiday savings goal: $4,000 by Dec 2026 (currently $'+((S.savingsBuckets||[]).find(b=>b.name==='China Holiday')?.saved||0).toFixed(2)+' saved)\n'+
     '- Month-to-date debt payments: $'+mtdDebtPaid.toFixed(2)+' \u2014 keep this energy\n\n'+
     'IMPORTANT: You are an AI tool, not a licensed financial advisor. For major financial decisions, always recommend consulting a qualified professional.';
 
@@ -7536,13 +7561,19 @@ function executeChatAction(action) {
         );
         S.bal = parseFloat((S.bal - action.amt).toFixed(2));
         if (roundUp > 0 && roundUp < 1 && S.roundUpsEnabled) {
+          // Bundle 22 v3 Phase 0.F: chat-action round-up path (path #2). Twin
+          // of the Quick Log path at quickLogTxn; kept separate because the
+          // AI has no per-txn toggle and bucket update uses CHAT source tag
+          // so audit can distinguish AI-driven round-ups.
+          const _destName = BRAIN.savings.getRoundUpDestinationName();
           BRAIN.transaction.record(
-            { amt: roundUp, note: 'Round-up → China Holiday', cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
+            { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
             BRAIN.SOURCES.ROUNDUP
           );
           S.bal = parseFloat((S.bal - roundUp).toFixed(2));
           // Bundle 8: route through BRAIN.savings.
-          const bucket = S.savingsBuckets?.find(b => b.name === 'China Holiday');
+          // Bundle 22 v3 Phase 0: bucket lookup via canonical helper.
+          const bucket = BRAIN.savings.getBucket(S.roundUpDestination);
           if (bucket) BRAIN.savings.addToBucket(bucket.name, roundUp, BRAIN.SOURCES.CHAT);
         }
         onStateChange('chat_logged_txn');
@@ -8353,6 +8384,35 @@ const REAL_STATE_V17 = {
       }
     }
   } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV22 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+
+// Seed v23 (Bundle 22 v3 Phase 0): set S.roundUpDestination default for
+// existing installs. New installs get the default via the `let S = {...}`
+// initializer at the top. Idempotent — only writes if the field is
+// absent. Bucket name (not id) because BRAIN.savings keys by name.
+(function seedV23() {
+  const flag = 'slyght_seeded_v23';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    if (S.roundUpDestination === undefined || S.roundUpDestination === null) {
+      S.roundUpDestination = 'China Holiday';
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV23-roundup-destination-default',
+        source: 'migration',
+        bundle: '22-v3-phase-0',
+        value: 'China Holiday',
+        ts: Date.now()
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV23 error', e); }
   localStorage.setItem(flag, '1');
 })();
 // guardian-allow-block-end: no-direct-paidbills-access
@@ -11295,6 +11355,13 @@ const BRAIN = {
     DELETE_DEBT:     'delete-debt',
     WRX_ALLOCATE:    'wrx-allocate',
     RECONCILE_CORRECTION: 'reconcile-correction',
+    // BRAIN.config + BRAIN.savings.setRoundUpDestination (Bundle 22 v3 Phase 0)
+    SETTINGS_INCOME_EDIT:    'settings-income-edit',
+    SETTINGS_PAYDAY_EDIT:    'settings-payday-edit',
+    SETTINGS_BUDGET_EDIT:    'settings-budget-edit',
+    SETTINGS_DEBT_STRATEGY:  'settings-debt-strategy',
+    SETTINGS_ROUNDUP_DEST:   'settings-roundup-dest',
+    QUICKLOG_ROUNDUP_DEST:   'quicklog-roundup-dest',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -11304,6 +11371,9 @@ const BRAIN = {
     'unmark-bill', 'auto-match', 'auto-detect',
     'add-debt', 'clear-debt', 'unmark-debt', 'update-debt',
     'delete-debt', 'wrx-allocate', 'reconcile-correction',
+    // Bundle 22 v3 Phase 0 additions
+    'settings-income-edit', 'settings-payday-edit', 'settings-budget-edit',
+    'settings-debt-strategy', 'settings-roundup-dest', 'quicklog-roundup-dest',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -11319,6 +11389,67 @@ const BRAIN = {
     recent(n) {
       return (S._auditLog || []).slice(-(n || 20));
     }
+  },
+
+  // ─── BRAIN.config — Config bubble (seeded Bundle 22 v3) ────────────────
+  // Owns income / payday / weekday-budget / weekend-budget. Pre-Bundle-22-v3
+  // these wrote directly to S.* from saveSettings() at L6630. Now routed
+  // through canonical writers so every edit lands in BRAIN.audit with a
+  // typed source tag. Return envelope { ok, old, new, reason? } matches
+  // existing bubbles. Callers MUST check `ok`.
+  config: {
+    setIncome(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +v;
+      if (!isFinite(n) || n <= 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.income;
+      S.income = n;
+      BRAIN.audit.append({ type: 'income_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setPayday(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +v;
+      if (!Number.isInteger(n) || n < 1 || n > 28) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.payday;
+      S.payday = n;
+      BRAIN.audit.append({ type: 'payday_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setWeekdayBudget(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.weekdayBudget;
+      S.weekdayBudget = n;
+      BRAIN.audit.append({ type: 'weekday_budget_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setWeekendBudget(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.weekendBudget;
+      S.weekendBudget = n;
+      BRAIN.audit.append({ type: 'weekend_budget_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
   },
 
   // ─── BRAIN.savings — canonical bucket writer ────────────────────────────
@@ -11382,7 +11513,69 @@ const BRAIN = {
       const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
       if (!bucket) return { ok: false, reason: 'no-bucket', bucketName };
       return this.setBucketSaved(bucketName, (bucket.saved || 0) + delta, source);
+    },
+    // ─── Readers + round-up destination (Bundle 22 v3 Phase 0) ──────────
+    // Buckets are keyed by name (string), not id. getBucket accepts either
+    // for defensiveness against legacy callers that pass numeric id.
+    getBuckets() {
+      return S.savingsBuckets || [];
+    },
+    getBucket(nameOrId) {
+      const list = S.savingsBuckets || [];
+      return list.find(b => b.name === nameOrId)
+          || list.find(b => b.id === nameOrId)
+          || null;
+    },
+    // Resolves S.roundUpDestination → display name. Single read for every
+    // round-up display surface (subtitle, Quick Log preview, txn note).
+    // Falls back to first bucket if destination is orphaned. Empty if no
+    // buckets exist.
+    // guardian-allow-block-start: tdz-safe-engine-access — getRoundUpDestinationName + setRoundUpDestination are methods on BRAIN.savings called only at user-event time (render, edit, txn save), never during boot; PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard (permanent — see UI handler call paths)
+    getRoundUpDestinationName() {
+      const dest = S.roundUpDestination;
+      if (!dest) {
+        const first = (S.savingsBuckets || [])[0];
+        return first ? first.name : '';
+      }
+      const b = this.getBucket(dest);
+      if (b) return b.name;
+      // Could be a PLAN goal/trip id — try resolving via PLAN.
+      if (typeof PLAN !== 'undefined') {
+        const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
+        const goal = goals.find(g => g.id === dest);
+        if (goal) return goal.name || goal.label || dest;
+        const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+        const trip = trips.find(t => t.id === dest);
+        if (trip) return trip.name || trip.label || dest;
+      }
+      // Last resort — return raw dest so an orphan is visible, not silent.
+      return dest;
+    },
+    // target = bucket name (preferred — buckets key by name) OR
+    //          PLAN goal/trip id (for routing round-ups to a PLAN entry).
+    setRoundUpDestination(target, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.savings] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!target) return { ok: false, reason: 'empty-destination' };
+      const validBucket = !!this.getBucket(target);
+      let validPlanEntry = false;
+      if (!validBucket && typeof PLAN !== 'undefined') {
+        const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
+        const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+        validPlanEntry = goals.some(g => g.id === target) || trips.some(t => t.id === target);
+      }
+      if (!validBucket && !validPlanEntry) {
+        return { ok: false, reason: 'unknown-destination', target };
+      }
+      const old = S.roundUpDestination;
+      S.roundUpDestination = target;
+      BRAIN.audit.append({ type: 'roundup_destination_change', old, new: target, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: target };
     }
+    // guardian-allow-block-end: tdz-safe-engine-access
   },
 
   // ─── BRAIN.summary — cross-cutting query layer (seeded Bundle 19) ───────
@@ -12194,6 +12387,25 @@ const BRAIN = {
       });
       try { save(); } catch (_) {}
       return { ok: true, removed };
+    },
+
+    // ─── Canonical writer: setStrategy (Bundle 22 v3 Phase 0) ──────────
+    // Owns S.debtStrategy ('snowball' | 'avalanche'). Pre-Bundle-22-v3
+    // saveSettings wrote directly. Routing through here gives an audit
+    // entry per strategy switch — useful for understanding why a user's
+    // payoff ordering changed retroactively.
+    setStrategy(value, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (value !== 'snowball' && value !== 'avalanche') {
+        return { ok: false, reason: 'invalid-strategy', value };
+      }
+      const old = S.debtStrategy;
+      S.debtStrategy = value;
+      BRAIN.audit.append({ type: 'debt_strategy_change', old, new: value, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: value };
     },
 
     // ─── Readers ────────────────────────────────────────────────────────
