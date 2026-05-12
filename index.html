@@ -7541,23 +7541,7 @@ function openEditMumAccount() {
     field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '3000' },
     currentValue: S.mumAccountBalance || '',
     validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
-    save: (v) => {
-      // No BRAIN.assets bubble yet (Bundle 16.5 candidate). Direct write + audit-log.
-      const n = +v;
-      const old = S.mumAccountBalance;
-      S.mumAccountBalance = n;
-      BRAIN.audit.append({ type: 'mum_account_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      // Preserve PLAN apartment-goal mirror (Bundle 9 logic).
-      if (typeof PLAN !== 'undefined') {
-        try {
-          const goals = PLAN.getGoals();
-          const apGoal = goals.find(g => g.id === 'apartment');
-          if (apGoal) PLAN.saveGoal(apGoal);
-        } catch (_) {}
-      }
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setMumAccount(+v, BRAIN.SOURCES.SETTINGS_ASSET_EDIT),
   });
 }
 function openEditSuper() {
@@ -7567,14 +7551,7 @@ function openEditSuper() {
     field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '63429' },
     currentValue: S.superBalance || '',
     validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
-    save: (v) => {
-      const n = +v;
-      const old = S.superBalance;
-      S.superBalance = n;
-      BRAIN.audit.append({ type: 'super_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setSuperBalance(+v, BRAIN.SOURCES.SETTINGS_ASSET_EDIT),
   });
 }
 function openEditCarloan() {
@@ -7584,14 +7561,7 @@ function openEditCarloan() {
     field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '23214' },
     currentValue: S.carloan != null ? S.carloan : '',
     validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number (0 is valid if paid off)' }; },
-    save: (v) => {
-      const n = +v;
-      const old = S.carloan;
-      S.carloan = n;
-      BRAIN.audit.append({ type: 'carloan_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setCarloan(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
   });
 }
 function openEditCarloanOriginal() {
@@ -7601,14 +7571,7 @@ function openEditCarloanOriginal() {
     field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '37400' },
     currentValue: S.carloanOriginal || '',
     validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
-    save: (v) => {
-      const n = +v;
-      const old = S.carloanOriginal;
-      S.carloanOriginal = n;
-      BRAIN.audit.append({ type: 'carloan_original_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setCarloanOriginal(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
   });
 }
 function openEditCC() {
@@ -7618,14 +7581,7 @@ function openEditCC() {
     field: { type: 'number', inputMode: 'decimal', step: '0.01', min: 0, placeholder: '0' },
     currentValue: S.cc != null ? S.cc : '',
     validate: (v) => { const n = +v; return (isFinite(n) && n >= 0) ? { ok: true } : { ok: false, reason: 'Enter a non-negative number' }; },
-    save: (v) => {
-      const n = +v;
-      const old = S.cc;
-      S.cc = n;
-      BRAIN.audit.append({ type: 'cc_balance_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setCC(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
   });
 }
 function openEditCCLimit() {
@@ -7635,14 +7591,7 @@ function openEditCCLimit() {
     field: { type: 'number', inputMode: 'decimal', step: '1', min: 0, placeholder: '6000' },
     currentValue: S.ccLimit || '',
     validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
-    save: (v) => {
-      const n = +v;
-      const old = S.ccLimit;
-      S.ccLimit = n;
-      BRAIN.audit.append({ type: 'cc_limit_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
-    },
+    save: (v) => BRAIN.assets.setCCLimit(+v, BRAIN.SOURCES.SETTINGS_LIABILITY_EDIT),
   });
 }
 
@@ -12554,6 +12503,9 @@ const BRAIN = {
     QUICKLOG_ROUNDUP_DEST:   'quicklog-roundup-dest',
     // Bundle 22 v3 Phase 3b additions
     SETTINGS_ROUNDUPS_TOGGLE:'settings-roundups-toggle',
+    // Bundle 24 Phase 0 additions (BRAIN.assets bubble)
+    SETTINGS_ASSET_EDIT:     'settings-asset-edit',
+    SETTINGS_LIABILITY_EDIT: 'settings-liability-edit',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -12568,6 +12520,8 @@ const BRAIN = {
     'settings-debt-strategy', 'settings-roundup-dest', 'quicklog-roundup-dest',
     // Bundle 22 v3 Phase 3b additions
     'settings-roundups-toggle',
+    // Bundle 24 Phase 0 additions
+    'settings-asset-edit', 'settings-liability-edit',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -12658,6 +12612,141 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'roundups_enabled_change', old, new: flag, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: flag };
+    },
+  },
+
+  // ─── BRAIN.assets — Assets + Liabilities bubble (seeded Bundle 24) ──────
+  // Owns the six balance fields previously written direct from saveSettings /
+  // EDIT_MODAL: S.mumAccountBalance, S.superBalance, S.carloan,
+  // S.carloanOriginal, S.cc, S.ccLimit. Pre-Bundle-24 each modal save did
+  // its own direct write + audit-log; this bubble centralizes them so the
+  // canonical-writer pattern is complete across the Settings surface, and
+  // so the Net Worth calc has a single source.
+  //
+  // mumAccount writer mirrors into the PLAN apartment goal (Bundle 9
+  // logic) — apartment goal's `saved` is derived from S.mumAccountBalance
+  // via PLAN.readSavedFromSource, so we just call PLAN.saveGoal to nudge
+  // the goal definition.
+  //
+  // netWorth() / liquidNet() / totalAssets() / totalLiabilities() are the
+  // canonical readers. Existing calculateNetWorth in the calc layer is a
+  // thin wrapper around these (refactored in Phase 1 of Bundle 24).
+  assets: {
+    // ─── Setters ────────────────────────────────────────────────────────
+    setMumAccount(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.assets] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.mumAccountBalance;
+      S.mumAccountBalance = n;
+      BRAIN.audit.append({ type: 'mum_account_balance_change', old, new: n, source, ts: Date.now() });
+      // Mirror into PLAN apartment goal (Bundle 9: goal's `saved` is derived
+      // from S.mumAccountBalance, so this nudge propagates the new value).
+      // guardian-allow-block-start: tdz-safe-engine-access — BRAIN.assets.setMumAccount is invoked from EDIT_MODAL save handlers which only fire post-boot (user taps a Settings row); PLAN is fully initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive null-check, not a TDZ guard (permanent — see Settings edit-modal save call path)
+      if (typeof PLAN !== 'undefined') {
+        try {
+          const goals = PLAN.getGoals();
+          const apGoal = goals.find(g => g.id === 'apartment');
+          if (apGoal) PLAN.saveGoal(apGoal);
+        } catch (_) {}
+      }
+      // guardian-allow-block-end: tdz-safe-engine-access
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setSuperBalance(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.superBalance;
+      S.superBalance = n;
+      BRAIN.audit.append({ type: 'super_balance_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setCarloan(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.carloan;
+      S.carloan = n;
+      BRAIN.audit.append({ type: 'carloan_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setCarloanOriginal(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n <= 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.carloanOriginal;
+      S.carloanOriginal = n;
+      BRAIN.audit.append({ type: 'carloan_original_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setCC(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.cc;
+      S.cc = n;
+      BRAIN.audit.append({ type: 'cc_balance_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+    setCCLimit(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n <= 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.ccLimit;
+      S.ccLimit = n;
+      BRAIN.audit.append({ type: 'cc_limit_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+
+    // ─── Readers ────────────────────────────────────────────────────────
+    getMumAccount() { return +S.mumAccountBalance || 0; },
+    getSuperBalance() { return +S.superBalance || 0; },
+    getCarloan() { return +S.carloan || 0; },
+    getCarloanOriginal() { return +S.carloanOriginal || 0; },
+    getCC() { return +S.cc || 0; },
+    getCCLimit() { return +S.ccLimit || 0; },
+    getWrxValue() { return +S.wrxValue || 0; },  // WRX writes live in Plan Mode; read available here for net worth
+
+    // ─── Canonical net-worth calculation ────────────────────────────────
+    // Pre-Bundle-24 there were multiple sites doing slightly different
+    // assets-minus-liabilities math (calculateNetWorth + a couple of
+    // ad-hoc readers in Analysis + the persistent strip). This is now
+    // the single source. Excludes viaRent debts (rent-routed obligations
+    // tracked through the deposit flow, not standalone liabilities).
+    netWorth() {
+      return this.totalAssets() - this.totalLiabilities();
+    },
+    // Liquid net = assets you could actually touch (excludes super lock-in).
+    liquidNet() {
+      return (this.totalAssets() - this.getSuperBalance()) - this.totalLiabilities();
+    },
+    totalAssets() {
+      const bal = +S.bal || 0;
+      const buckets = (S.savingsBuckets || []).reduce((sum, b) => sum + (+b.saved || 0), 0);
+      return bal
+        + buckets
+        + this.getMumAccount()
+        + this.getSuperBalance()
+        + this.getWrxValue();
+    },
+    totalLiabilities() {
+      const cc = this.getCC();
+      const carloan = this.getCarloan();
+      // Active S.debts excluding viaRent (rent-routed; tracked elsewhere).
+      const debts = (S.debts || [])
+        .filter(d => !d.paid && !d.viaRent)
+        .reduce((sum, d) => sum + (+d.amt || 0), 0);
+      return cc + carloan + debts;
     },
   },
 
