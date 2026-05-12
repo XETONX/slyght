@@ -5748,10 +5748,28 @@ function calDayClick(day) {
   const debts = items.filter(it => it.type === 'debt');
   const bills = items.filter(it => it.type === 'bill');
   debts.forEach(it => {
+    // Bundle 21.x: previously hardcoded "Covers overdue + current month" on
+    // every debt regardless of state. Now reflects actual due date relative
+    // to today: overdue → "Overdue · pay ASAP", today/this week → "Due
+    // soon", future → just the due date.
+    const _debtSub = (() => {
+      const debt = it.debt || {};
+      const dueStr = debt.delayDate || '';
+      if (!dueStr) return 'Debt — pay before payday';
+      const dueDate = new Date(dueStr);
+      if (isNaN(dueDate.getTime())) return 'Debt';
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((dueDate - today) / 86400000);
+      if (diffDays < 0) return '⚠ Overdue ' + Math.abs(diffDays) + 'd · pay ASAP';
+      if (diffDays === 0) return 'Due today';
+      if (diffDays <= 7) return 'Due in ' + diffDays + 'd';
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return 'Due ' + dueDate.getDate() + ' ' + months[dueDate.getMonth()];
+    })();
     html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">' +
       '<div><div style="font-size:14px;color:var(--red);font-weight:600">' + esc(it.name) +
       '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 5px;margin-left:6px">DEBT</span></div>' +
-      '<div style="font-size:11px;color:var(--text3)">Covers overdue + current month</div></div>' +
+      '<div style="font-size:11px;color:var(--text3)">' + _debtSub + '</div></div>' +
       '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--red)">$' + it.amt.toFixed(2) + '</div></div>';
   });
   // Render bills with Pay Now / Already Paid buttons
