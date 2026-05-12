@@ -1,6 +1,6 @@
 # SLYGHT — Architecture Overview
 
-> Living document. Last revamp: 2026-05-12 post-Bundle-22.2.
+> Living document. Last revamp: 2026-05-12 post-Bundle-22-v3 (Settings IA refactor complete).
 > Maintainer: keep in sync as bubbles shift / canonical writers move.
 > John uses this as a software-consultant mental model of his own app.
 
@@ -31,9 +31,11 @@ flowchart TB
     BBills["bills<br/>Bundle 14"]
     BTxn["transaction<br/>Bundle 11"]
     BDebts["debts<br/>Bundle 15"]
-    BSavings["savings<br/>Bundle 8"]
+    BSavings["savings<br/>Bundle 8 + 22v3"]
     BDash["dashboard<br/>Bundle 10"]
     BAudit["audit<br/>Bundle 8"]
+    BConfig["config<br/>Bundle 22 v3"]
+    BAssets["assets<br/>(Bundle 16.5 — pending)"]:::pending
   end
 
   subgraph CALC[Calc helpers]
@@ -110,16 +112,17 @@ flowchart TB
 | `_planScrollSavedY` | number (scroll px) | Bundle 16.6 — captured by PLAN_MODAL.open, restored by close |
 | `MathInvariants.invariants[]` | rule registry | Constant array |
 
-## 4. BRAIN layer (7 bubbles)
+## 4. BRAIN layer (8 bubbles after Bundle 22 v3)
 
-Each bubble is a sub-object on `BRAIN` (defined at index.html L11284). Cross-cutting bubbles act as canonical writers/readers for state. Tab bubbles own their UI tab's read/write surface.
+Each bubble is a sub-object on `BRAIN` (defined at index.html L11284). Cross-cutting bubbles act as canonical writers/readers for state. Tab bubbles own their UI tab's read/write surface. **Bundle 22 v3** added `BRAIN.config` (income / payday / budgets / round-ups-enabled) and extended `BRAIN.savings` with round-up destination + read helpers — every Settings edit now flows through a canonical writer with audit logging and typed source-tag validation.
 
 ### Cross-cutting (shared services)
 
 | Bubble | Bundle | Methods | Owns |
 |---|---|---|---|
 | `BRAIN.audit` | 8 | `append(entry)` · `recent(n)` | Append-only event log — every canonical writer logs source tag |
-| `BRAIN.savings` | 8 | `setBucketSaved(name, val, src)` · `addToBucket(name, delta, src)` | Single source for `S.savingsBuckets[i].saved` writes |
+| `BRAIN.config` | **22 v3** | `setIncome` · `setPayday` · `setWeekdayBudget` · `setWeekendBudget` · `setRoundUpsEnabled` | Single source for income / payday / budgets / round-ups on-off. Replaced 5+ direct `S.x = ...` write sites |
+| `BRAIN.savings` | 8 + 22 v3 | `setBucketSaved` · `addToBucket` · `getBuckets` · `getBucket(nameOrId)` · `getRoundUpDestinationName` · `setRoundUpDestination(target, src)` | Buckets + round-up destination. Resolver routes name → bucket OR PLAN trip/goal id |
 | `BRAIN.summary` | 19 | `total(range)` · `byCategory(range)` · `totalsByCategory(range)` · `todayTxns(now)` · `aiContext()` | Precomputed rollups + AI envelope. Delegates to canonical filter helpers. |
 
 ### Tab bubbles
@@ -127,18 +130,25 @@ Each bubble is a sub-object on `BRAIN` (defined at index.html L11284). Cross-cut
 | Bubble | Bundle | Methods | Tab |
 |---|---|---|---|
 | `BRAIN.dashboard` | 10 | `todaySpend(now)` · `todayTxns(now)` · `cycleSpend()` · `weekSpend()` | Dashboard "NOW screen" |
-| `BRAIN.transaction` | 11 | `record(txn, src)` · `removeByTs(ts)` · `findByTs(ts)` | Quick Log + txn list |
+| `BRAIN.transaction` | 11 | `record(txn, src)` · `recordCorrection(diff, reason)` · `removeByTs(ts)` · `findByTs(ts)` · `list(predicate)` | Quick Log + txn list. `recordCorrection` is the Bundle 15.1 wrapper used by balance reconciliation |
 | `BRAIN.bills` | 14 | `markPaid(bill, src, opts)` · `unmark(key, src)` · `setPendingPay()` · `consumePendingPay()` · `isPaid()` · `isAutoDebit()` · `autoMatch()` · `autoDetect()` · `dueBeforePayday()` | Bills tab + paid/unpaid lifecycle |
-| `BRAIN.debts` | 15 | `add(debt, src)` · `clear(id, src)` · `unmark(id, src)` · `update(id, patch, src)` · `recordCorrection()` · `allocateWrxProceeds()` | Immediate Debts + WRX sale flow |
+| `BRAIN.debts` | 15 + 22 v3 | `add` · `markPaid` · `unmark` · `update` · `delete` · `setStrategy` · `findById` · `active` · `total` · `isViaRent` · `allocateWrxProceeds` | Debts + WRX sale + strategy. `setStrategy` added 22 v3 (snowball/avalanche) |
 
 ### Source tag vocabulary (BRAIN.SOURCES)
 
-Frozen enum. Every canonical writer takes a `source` arg validated against this set. Pre-Bundle-11 these were stringly-typed — Bundle 11 froze the vocabulary.
+Frozen enum. Every canonical writer takes a `source` arg validated against `_SOURCE_SET`. Pre-Bundle-11 these were stringly-typed — Bundle 11 froze the vocabulary. Bundle 22 v3 added 7 new tags for Settings paths.
 
 ```
-ROUNDUP · UNDO_ROUNDUP · PLAN_ADD · PLAN_EDIT · MANUAL · RECONCILE · MIGRATION · CHAT
-LOG_EXPENSE · LOG_INCOME · LOG_FROM_PERSON · PAY_BILL_NOW · MARK_BILL_PAID · BUCKET_QUICK_ADD
-UNMARK_BILL · AUTO_MATCH · AUTO_DETECT · ADD_DEBT · CLEAR_DEBT · UNMARK_DEBT · UPDATE_DEBT
+Bundle 8–15 baseline:
+  ROUNDUP · UNDO_ROUNDUP · PLAN_ADD · PLAN_EDIT · MANUAL · RECONCILE · MIGRATION · CHAT
+  LOG_EXPENSE · LOG_INCOME · LOG_FROM_PERSON · PAY_BILL_NOW · MARK_BILL_PAID · BUCKET_QUICK_ADD
+  UNMARK_BILL · AUTO_MATCH · AUTO_DETECT · ADD_DEBT · CLEAR_DEBT · UNMARK_DEBT · UPDATE_DEBT
+  DELETE_DEBT · WRX_ALLOCATE · RECONCILE_CORRECTION
+
+Bundle 22 v3 additions:
+  SETTINGS_INCOME_EDIT · SETTINGS_PAYDAY_EDIT · SETTINGS_BUDGET_EDIT
+  SETTINGS_DEBT_STRATEGY · SETTINGS_ROUNDUP_DEST · SETTINGS_ROUNDUPS_TOGGLE
+  QUICKLOG_ROUNDUP_DEST (reserved)
 ```
 
 ## 5. Calc layer — canonical helpers
@@ -317,7 +327,7 @@ The flow has ~20 side-effect steps per Quick Log. Most are defensive (multiple s
 
 3. **No real plan-vs-actual variance tracking.** PLAN's "locked plan" is decoration — nothing measures spending against the plan (Bundle 18+ candidate).
 
-4. **Settings hidden compat shims** (Bundle 22) — debt strategy + car loan inputs still live in a hidden div behind Managed Elsewhere. Should migrate to PLAN/Dashboard surfaces.
+4. **Settings hidden compat shims** (Bundle 22 v3) — legacy Settings markup remains in DOM `display:none` to preserve input IDs the existing render fns write to. Phase 5 removed the user-facing toggle; full removal needs renderAll refactor (Bundle 24+ candidate).
 
 5. **Hot/warm/cold data tiering missing** (Bundle 20). At 5,000+ txns localStorage will start groaning. Bundle 20 designed but not built.
 
@@ -327,9 +337,10 @@ The flow has ~20 side-effect steps per Quick Log. Most are defensive (multiple s
 
 | Bundle | Scope | Status |
 |---|---|---|
+| 16.5 | `BRAIN.assets` bubble extraction (Mum account, super, vehicle, CC) | Pending — Bundle 22 v3 audit-logs direct writes as a stopgap |
 | 18 / 18.5 | PLAN bubble + provisions sinking fund | Specced, deferred — PLAN module is heavyweight |
 | 20 | Archive tiering (hot/warm/cold for S.txns) | Specced |
-| 22.x | Settings density refinements (still hidden shims) | Started Bundle 22 |
+| 22.x | Quick Log frequency / recurring / bill-flag / type cleanup | John 2026-05-12 ask — see slyght_quicklog_freq_recurring.md memory |
 | 23 | Cloud sync via GitHub Gist | Specced. Per Opus: wait until Note 7 migrated + snapshots proven firing 1-2 weeks in production. |
 | 24+ | renderAll refactor — targeted DOM updates | Not yet scoped |
 | ∞ | True AI agent (Mission I — interaction layer) | Specced in MISSION-INTERACTION-LAYER.md, not built |
@@ -346,18 +357,26 @@ The flow has ~20 side-effect steps per Quick Log. Most are defensive (multiple s
 ## 13. Roadmap from here
 
 ```
-NEXT (waiting for John's phone-verify of snapshot fix):
-  ✓ 22.1 — clean baseline tests
-  ✓ 22.2 — orphaned compat shim removal
-  ↓ Bundle 22.3 — Note 6 (autoDetect month guard) + Note 7 (RECONCILER + chat to BRAIN.summary)
-  ↓ Bundle 22.4 — Note 8 (Analysis tab → BRAIN.summary)
-  ↓ Hold: phone-verify snapshots fire daily for 1-2 weeks
+SHIPPED (Bundle 22 v3 — Settings IA refactor, 2026-05-12):
+  ✓ Phase 0 — backend prerequisites (BRAIN.config + setStrategy + savings getters + setRoundUpDestination + 7 source tags + seedV23)
+  ✓ Phase 1 — Samsung-style root navigator
+  ✓ Phase 2 — sub-screen scaffolding + slide animations
+  ✓ Phase 2.1 — scroll-leak fix + global font +1px bump
+  ✓ Phase 3a — Financial Data / Strategies / AI Assistant rows
+  ✓ Phase 3b — Notifications + reusable toggle + BRAIN-wired round-ups
+  ✓ Phase 3c — Data & Backup + Diagnostics (with destination dropdown + import/export)
+  ✓ Phase 4a — reusable edit modal + 13 Settings edit modals
+  ✓ Phase 4b — Reset All 3-stage flow (kills native confirm chain)
+  ✓ Phase 4c — universal modal scroll-lock via :has() (every modal in the app focus-locks now)
+  ✓ Phase 5  — system back-button intercept + legacy escape hatch removed
 
-Then:
-  18 / 18.5 — PLAN bubble + provisions sinking fund
-  20 — archive tiering
-  23 — cloud sync via GitHub Gist (depends on stable foundation)
-  22.5+ — Settings + transactions virtualization
+NEXT:
+  ↓ Bundle 22.x — Quick Log frequency / recurring / bill-flag / type cleanup (John ask)
+  ↓ Bundle 16.5 — BRAIN.assets extraction (Mum / super / vehicle / CC)
+  ↓ Bundle 18 / 18.5 — PLAN bubble + provisions sinking fund
+  ↓ Bundle 20  — archive tiering
+  ↓ Bundle 23  — cloud sync via GitHub Gist
+  ↓ Bundle 24+ — renderAll refactor (lets legacy Settings markup come fully out)
 ```
 
 ## 14. How to read this doc
