@@ -7692,6 +7692,16 @@ function openPaydayCategory(subId) {
   parent.scrollTop = 0;
   parent.classList.add('has-active-subscreen');
   sub.classList.add('payday-active');
+  // Bundle 27 Phase 3: render the sub-screen body on open with live data.
+  const rendererMap = {
+    'payday-bills': renderPaydayBills,
+    'payday-debts': renderPaydayDebts,
+    'payday-savings': renderPaydaySavings,
+    'payday-upcoming': renderPaydayUpcoming,
+    'payday-living': renderPaydayLiving,
+  };
+  const fn = rendererMap[subId];
+  if (typeof fn === 'function') fn();
 }
 function closePaydayCategory(subId) {
   const sub = document.getElementById(subId);
@@ -7784,6 +7794,374 @@ function renderPaydayPlanRoot() {
   html += '<button class="payday-nav-row" onclick="alert(\'Lock / re-plan — Phase 6\')" aria-label="' + lockLabel + '" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '"><span class="row-icon">' + (isLocked ? '🔓' : '🔒') + '</span><span class="row-text"><span class="row-title" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">' + lockLabel + '</span><span class="row-subtitle">' + lockSub + '</span></span><span class="row-chevron" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">›</span></button>';
   html += '</div>';
   el.innerHTML = html;
+}
+
+// ─── Bundle 27 Phase 3: per-sub-screen render functions ─────────────────
+// All five sub-screens render read-only rows. Edit-on-tap surfaces an
+// "edit modal coming Phase 4" alert. Tick actions surface a "lock plan
+// first" hint pre-lock (Phase 5 wires post-lock ticks).
+const _PAYDAY_TICK_HINT_PRE = "Lock your plan to start ticking items off.";
+const _PAYDAY_TICK_HINT_POST = "Tick to mark this done — Phase 5 wires the real transaction.";
+
+function _fmtCycleDay(day) {
+  // Format day-of-month into "May 1" using current cycle month.
+  const snap = (typeof BRAIN !== 'undefined' && BRAIN.plan) ? BRAIN.plan.getSnapshot() : null;
+  if (!snap || !snap.cycleStartDate) return 'Day ' + day;
+  const start = new Date(snap.cycleStartDate);
+  const d = new Date(start.getFullYear(), start.getMonth(), day);
+  // If day < start day, it's in the next month of the cycle.
+  if (day < start.getDate()) d.setMonth(d.getMonth() + 1);
+  return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+}
+
+function _paydayRow(opts) {
+  // opts: { ticked, icon, name, sub, value, valueWarn, onTap, onTickTap }
+  const tickGlyph = opts.ticked ? '☑' : '☐';
+  const tickCol = opts.ticked ? 'var(--green)' : 'var(--text3)';
+  const valueCol = opts.valueWarn ? 'var(--amber)' : 'var(--text)';
+  const warnGlyph = opts.valueWarn ? ' <span style="color:var(--amber)">⚠️</span>' : '';
+  return '<button class="settings-edit-row" onclick="' + (opts.onTap || '') + '" style="padding:12px 14px">' +
+    '<span onclick="event.stopPropagation();' + (opts.onTickTap || '') + '" style="font-size:20px;color:' + tickCol + ';margin-right:12px;min-width:24px;cursor:pointer">' + tickGlyph + '</span>' +
+    '<span class="row-multi">' +
+      '<span style="font-size:15px;color:var(--text)">' + (opts.icon ? (opts.icon + ' ') : '') + opts.name + '</span>' +
+      (opts.sub ? ('<span class="row-sub">' + opts.sub + '</span>') : '') +
+    '</span>' +
+    '<span class="row-value" style="color:' + valueCol + '">' + opts.value + warnGlyph + '</span>' +
+    '<span class="row-chevron">›</span>' +
+  '</button>';
+}
+
+function _paydayShellHeader(snap, kind) {
+  // Returns the "$X · N of M paid" header line per spec.
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  const ticks = (snap.locked && S.activePlan && S.activePlan.ticks) ? S.activePlan.ticks : {};
+  const tickedCount = (cat) => Object.keys(ticks[cat] || {}).length;
+  if (kind === 'bill') {
+    const total = snap.bills.items;
+    const paid = tickedCount('bill');
+    return fmtC2(snap.bills.total) + ' · ' + paid + ' of ' + total + (total === 1 ? ' paid' : ' paid');
+  }
+  if (kind === 'debt') {
+    const total = snap.debts.items;
+    const paid = tickedCount('debt');
+    return fmtC2(snap.debts.total) + ' · ' + paid + ' of ' + total;
+  }
+  if (kind === 'savings') {
+    return fmtC2(snap.savings.total) + ' allocated';
+  }
+  if (kind === 'upcoming') {
+    const total = snap.knownUpcoming.items;
+    const paid = tickedCount('upcoming');
+    return fmtC2(snap.knownUpcoming.total) + ' · ' + paid + ' of ' + total;
+  }
+  if (kind === 'living') {
+    return '$' + snap.dailyLiving.floor + '/day × ' + snap.daysInCycle + ' days';
+  }
+  return '';
+}
+
+function renderPaydayBills() {
+  const body = document.getElementById('payday-bills-body');
+  if (!body) return;
+  const snap = BRAIN.plan.getSnapshot();
+  const billsDue = (typeof getBillsDue === 'function') ? getBillsDue() : [];
+  const payday = +S.payday || 15;
+  const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.bill) || {};
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  // Compute ticked/total for progress
+  const totalCount = billsDue.length;
+  const totalDollars = billsDue.reduce((s, b) => {
+    const ov = overrides['bill:' + b.name];
+    return s + (ov ? ov.thisCycleAmount : +b.amt || 0);
+  }, 0);
+  const tickedCount = Object.keys(ticks).filter(k => billsDue.some(b => b.name === k)).length;
+  const paidDollars = Object.keys(ticks).reduce((s, k) => {
+    const b = billsDue.find(x => x.name === k);
+    if (!b) return s;
+    const ov = overrides['bill:' + b.name];
+    return s + (ov ? ov.thisCycleAmount : +b.amt || 0);
+  }, 0);
+  const progressPct = totalDollars > 0 ? (paidDollars / totalDollars * 100).toFixed(1) : 0;
+  // Build deferred list
+  const deferred = Object.entries(overrides).filter(([k, v]) => k.startsWith('bill:') && v.deferred > 0).map(([k, v]) => ({
+    name: k.replace('bill:', ''),
+    deferred: v.deferred,
+    reason: v.reason,
+  }));
+  // Split before/after payday
+  const before = billsDue.filter(b => b.day < payday).sort((a, b) => a.day - b.day);
+  const after = billsDue.filter(b => b.day >= payday).sort((a, b) => a.day - b.day);
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  let html = '';
+  // Header summary
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'bill') + '</div>';
+  // Progress
+  html += '<div class="settings-group-title">Progress</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px">';
+  html += '<div style="height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;margin-bottom:8px"><div style="height:100%;background:var(--green);width:' + progressPct + '%;transition:width .4s"></div></div>';
+  html += '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text3)"><span><strong style="font-family:var(--mono);color:var(--text)">' + fmtC2(paidDollars) + '</strong> paid</span><span><strong style="font-family:var(--mono);color:var(--text)">' + fmtC2(totalDollars) + '</strong> total</span></div>';
+  html += '</div>';
+  // Deferred this cycle
+  if (deferred.length) {
+    html += '<div class="settings-group-title" style="color:var(--amber)">Deferred this cycle</div>';
+    html += '<div class="settings-group-card" style="padding:12px 14px">';
+    deferred.forEach(d => {
+      html += '<div style="font-size:14px;color:var(--text2);padding:4px 0">' + fmtC2(d.deferred) + ' <span style="color:var(--amber)">⚠️</span> ' + d.name + (d.reason ? ' — ' + d.reason : '') + '</div>';
+    });
+    html += '</div>';
+  }
+  // Before payday
+  if (before.length) {
+    html += '<div class="settings-group-title">Before payday</div>';
+    html += '<div class="settings-group-card">';
+    before.forEach(b => {
+      const key = 'bill:' + b.name;
+      const ov = overrides[key];
+      const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
+      html += _paydayRow({
+        ticked: !!ticks[b.name],
+        name: b.name,
+        sub: _fmtCycleDay(b.day),
+        value: fmtC2(amt),
+        valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
+        onTap: "alert('Edit modal — Phase 4. Will let you change the amount or defer this bill.')",
+        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  }
+  // After payday
+  if (after.length) {
+    html += '<div class="settings-group-title">After payday</div>';
+    html += '<div class="settings-group-card">';
+    after.forEach(b => {
+      const key = 'bill:' + b.name;
+      const ov = overrides[key];
+      const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
+      html += _paydayRow({
+        ticked: !!ticks[b.name],
+        name: b.name,
+        sub: _fmtCycleDay(b.day),
+        value: fmtC2(amt),
+        valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
+        onTap: "alert('Edit modal — Phase 4.')",
+        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  }
+  if (!before.length && !after.length) {
+    html += '<div class="subscreen-placeholder">No bills due this cycle.<br><br>Recurring bills come from the Bills tab. Add or edit them there.</div>';
+  }
+  // Footer pointer
+  html += '<div class="settings-section-hint">Bills come from the Bills tab.</div>';
+  html += '<div class="settings-pointer-row"><a onclick="closePaydayPlan(); goPage(\'pg-cal\');">Go to Bills →</a></div>';
+  body.innerHTML = html;
+}
+
+function renderPaydayDebts() {
+  const body = document.getElementById('payday-debts-body');
+  if (!body) return;
+  const snap = BRAIN.plan.getSnapshot();
+  const debts = (S.debts || []).filter(d => !d.paid && !d.viaRent);
+  const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.debt) || {};
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  let html = '';
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'debt') + '</div>';
+  if (debts.length) {
+    html += '<div class="settings-group-title">Minimum payments</div>';
+    html += '<div class="settings-group-card">';
+    debts.forEach(d => {
+      const key = 'debt:' + (d.id || d.name);
+      const ov = overrides[key];
+      const amt = ov ? ov.thisCycleAmount : (+d.amt || 0);
+      const subParts = [];
+      if (d.rate) subParts.push(d.rate + '% APR');
+      if (d.delayDate) subParts.push('due ' + new Date(d.delayDate).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }));
+      html += _paydayRow({
+        ticked: !!ticks[d.id || d.name],
+        name: d.name,
+        sub: subParts.join(' · '),
+        value: fmtC2(amt),
+        valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
+        onTap: "alert('Edit modal — Phase 4.')",
+        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  } else {
+    html += '<div class="subscreen-placeholder">No active debt minimums to cover this cycle. 🎉</div>';
+  }
+  html += '<div class="settings-group-title">Extra payments</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px;font-size:14px;color:var(--text2);line-height:1.6">Set extra debt payments under <strong>Savings plan → KIA extra</strong>. They\'re discretionary, so they live in the savings allocation.</div>';
+  html += '<div class="settings-pointer-row"><a onclick="closePaydayCategory(\'payday-debts\');setTimeout(function(){openPaydayCategory(\'payday-savings\')},50);">Go to Savings →</a></div>';
+  body.innerHTML = html;
+}
+
+function renderPaydaySavings() {
+  const body = document.getElementById('payday-savings-body');
+  if (!body) return;
+  const snap = BRAIN.plan.getSnapshot();
+  const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+  const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.savings) || {};
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const planSavings = (S.activePlan && S.activePlan.savings) || {};
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  let html = '';
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'savings') + '</div>';
+  // Pool summary
+  const freeTotal = snap.derived.freeTotal;
+  const allocated = snap.savings.total;
+  const unallocated = Math.max(0, freeTotal);
+  html += '<div class="settings-group-title">Pool</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px">';
+  html += '<div style="font-family:var(--mono);font-size:18px;color:var(--text)"><strong>' + fmtC2(allocated) + '</strong> of <strong>' + fmtC2(allocated + unallocated) + '</strong> free</div>';
+  html += '<div style="font-size:13px;color:var(--text3);margin-top:4px">' + fmtC2(unallocated) + ' still unallocated</div>';
+  html += '</div>';
+  // Bucket rows
+  if (buckets.length) {
+    html += '<div class="settings-group-title">Buckets</div>';
+    html += '<div class="settings-group-card">';
+    buckets.forEach(b => {
+      const key = 'savings:' + b.name;
+      const ov = overrides[key];
+      const amt = ov ? ov.thisCycleAmount : (+planSavings[b.name] || 0);
+      const saved = (+b.saved || 0);
+      const target = (+b.goal || 0);
+      const subParts = [];
+      subParts.push('saved $' + Math.round(saved).toLocaleString());
+      if (target > 0) subParts.push('target $' + Math.round(target).toLocaleString());
+      // Per-bucket emoji
+      const bucketEmoji = /china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /rego|insurance/i.test(b.name) ? '🚗' : /gift/i.test(b.name) ? '🎁' : '💰';
+      html += _paydayRow({
+        ticked: !!ticks[b.name],
+        icon: bucketEmoji,
+        name: b.name,
+        sub: subParts.join(' · '),
+        value: fmtC2(amt),
+        onTap: "alert('Edit modal — Phase 4. Quick-pick allocation with Take-from selector.')",
+        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  }
+  // KIA extra slot
+  const kiaCarloan = +S.carloan || 0;
+  if (kiaCarloan > 0) {
+    html += '<div class="settings-group-title">Extra debt payment</div>';
+    html += '<div class="settings-group-card">';
+    const key = 'kia-extra:KIA';
+    const ov = overrides[key];
+    const amt = ov ? ov.thisCycleAmount : 0;
+    html += _paydayRow({
+      ticked: !!(((S.activePlan && S.activePlan.ticks && S.activePlan.ticks['kia-extra']) || {})['KIA']),
+      icon: '🚗',
+      name: 'KIA extra',
+      sub: 'pay over the minimum · ' + (S.debtStrategy === 'snowball' ? 'snowball strategy' : 'avalanche strategy'),
+      value: fmtC2(amt),
+      onTap: "alert('Edit modal — Phase 4.')",
+      onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+    });
+    html += '</div>';
+  }
+  // Footer
+  html += '<div class="settings-section-hint">Add new buckets in the Plan tab.</div>';
+  html += '<div class="settings-pointer-row"><a onclick="closePaydayPlan(); goPage(\'pg-spend\');">+ Add bucket →</a></div>';
+  body.innerHTML = html;
+}
+
+function renderPaydayUpcoming() {
+  const body = document.getElementById('payday-upcoming-body');
+  if (!body) return;
+  const snap = BRAIN.plan.getSnapshot();
+  const list = snap.knownUpcoming.list || [];
+  const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.upcoming) || {};
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  // Category emoji
+  const catEmoji = (cat) => ({ gift: '🎁', essentials: '🧴', subscription: '📺', event: '🎟️', family: '👨‍👩‍👧', health: '❤️', 'one-off': '🧾', other: '📦' })[cat] || '📦';
+  let html = '';
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'upcoming') + '</div>';
+  if (list.length) {
+    html += '<div class="settings-group-title">Items</div>';
+    html += '<div class="settings-group-card">';
+    list.forEach(item => {
+      const dateLabel = item.date ? new Date(item.date).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }) : 'No date';
+      html += _paydayRow({
+        ticked: !!ticks[item.id],
+        icon: catEmoji(item.category || 'other'),
+        name: item.name,
+        sub: dateLabel + (item.notes ? ' · ' + item.notes : ''),
+        value: fmtC2(item.amount || 0),
+        onTap: "alert('Edit modal — Phase 4. Will let you change amount, category, date, or remove.')",
+        onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+      });
+    });
+    html += '</div>';
+  } else {
+    html += '<div class="subscreen-placeholder">No upcoming items yet.<br><br>Things you know you\'ll need to buy this cycle — gifts, essentials, events, one-offs. Tap below to add.</div>';
+  }
+  html += '<div class="settings-pointer-row"><a onclick="alert(\'Add item — Phase 4.\')">+ Add item</a></div>';
+  html += '<div class="settings-section-hint" style="margin-top:14px">Things you know you\'ll need to buy this cycle. The AI will know about these when you ask "can I afford X."</div>';
+  body.innerHTML = html;
+}
+
+function renderPaydayLiving() {
+  const body = document.getElementById('payday-living-body');
+  if (!body) return;
+  const snap = BRAIN.plan.getSnapshot();
+  const floor = snap.dailyLiving.floor;
+  const perDay = snap.dailyLiving.perDay;
+  const daysInCycle = snap.daysInCycle;
+  const plannedTotal = snap.dailyLiving.plannedTotal;
+  const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  // 3-cycle avg (rough — needs monthlyHistory, fallback to last30days avg)
+  let avgLabel = '—';
+  try {
+    if (typeof BRAIN !== 'undefined' && BRAIN.summary && BRAIN.summary.total) {
+      const last30Spend = BRAIN.summary.total('last30days');
+      avgLabel = '$' + (last30Spend / 30).toFixed(0) + '/day (last 30 days)';
+    }
+  } catch (_) {}
+  // Status
+  let statusLabel = '✅ Healthy', statusCol = 'var(--green)';
+  if (perDay < floor) { statusLabel = '⚠️ Below floor'; statusCol = 'var(--red)'; }
+  else if (perDay < floor * 1.2) { statusLabel = '👀 Tight'; statusCol = 'var(--amber)'; }
+  let html = '';
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + fmtC2(plannedTotal) + '</div>';
+  // Current
+  html += '<div class="settings-group-title">Current</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px">';
+  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text)">$' + perDay.toFixed(0) + '/day × ' + daysInCycle + ' days = <strong>' + fmtC2(plannedTotal) + '</strong></div>';
+  html += '</div>';
+  // Floor (editable in Phase 4)
+  html += '<div class="settings-group-title">Floor</div>';
+  html += '<div class="settings-group-card">';
+  html += '<button class="settings-edit-row" onclick="alert(\'Floor editor — Phase 4. Quick-pick $20 / $25 / $30 / $35 / $40 / $50 / custom.\')" aria-label="Minimum daily floor, tap to edit" data-brain-key="plan.dailyLivingFloor">' +
+    '<span class="row-multi">' +
+      '<span style="font-size:15px;color:var(--text)">Minimum daily</span>' +
+      '<span class="row-sub">Below this triggers a warning</span>' +
+    '</span>' +
+    '<span class="row-value">$' + floor + '</span>' +
+    '<span class="row-chevron">›</span>' +
+  '</button>';
+  html += '</div>';
+  // Context
+  html += '<div class="settings-group-title">Context</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px;font-size:14px;line-height:2;color:var(--text2)">';
+  html += '<div style="display:flex;justify-content:space-between"><span>Status</span><strong style="color:' + statusCol + '">' + statusLabel + '</strong></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span>Floor</span><strong style="font-family:var(--mono);color:var(--text)">$' + floor + '/day</strong></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span>Planned</span><strong style="font-family:var(--mono);color:var(--text)">$' + perDay.toFixed(0) + '/day</strong></div>';
+  html += '<div style="display:flex;justify-content:space-between"><span>Recent average</span><strong style="font-family:var(--mono);color:var(--text)">' + avgLabel + '</strong></div>';
+  html += '</div>';
+  // About
+  html += '<div class="settings-group-title">About</div>';
+  html += '<div class="settings-group-card" style="padding:14px 16px;font-size:14px;color:var(--text2);line-height:1.6">';
+  html += '<p style="margin:0 0 10px 0">Daily living is what you spend on day-to-day stuff that <em>isn\'t</em> a known upcoming item — groceries, fuel, coffee, transport.</p>';
+  html += '<p style="margin:0 0 10px 0">It\'s computed:<br><span style="font-family:var(--mono);font-size:13px;color:var(--text3)">(To plan − Bills − Debts − Savings − Known upcoming) ÷ days</span></p>';
+  html += '<p style="margin:0;color:var(--text3)">To increase your daily, reduce one of the categories above.</p>';
+  html += '</div>';
+  body.innerHTML = html;
 }
 
 // ─── Bundle 27 Phase 0: BRAIN.plan helpers ────────────────────────────────
