@@ -3697,6 +3697,33 @@ const MathInvariants = {
       },
       message(v) { return 'Payday distance disagrees between MODEL and daysLeft(): ' + v.details + '. Forecast tiles will diverge.'; },
     },
+    // ─── Bundle 24 Phase 1: net-worth-monthly-history-schema ────────────
+    // Each monthlyHistory entry must carry `nw` once schemaVersion >= 2.
+    // Catches accidental schema regression (e.g., a future seed migration
+    // that re-pushes legacy-shape entries). v1 entries are tolerated; the
+    // trend renderer detects them and shows "building" hint instead of a
+    // garbage delta.
+    {
+      name: 'monthly-history-schema',
+      tier: 'consistency',
+      anchor: 'monthly-history',
+      check() {
+        const hist = S.monthlyHistory || [];
+        for (let i = 0; i < hist.length; i++) {
+          const h = hist[i];
+          if (!h || typeof h !== 'object') {
+            return { displayValue: 'entry[' + i + '] = ' + h, expected: 'object',
+              details: 'monthlyHistory[' + i + '] is not an object' };
+          }
+          if (h.schemaVersion >= 2 && typeof h.nw !== 'number') {
+            return { displayValue: 'entry[' + i + '].nw missing', expected: 'number',
+              details: 'monthlyHistory[' + i + '] tagged schemaVersion ' + h.schemaVersion + ' but missing nw field' };
+          }
+        }
+        return null;
+      },
+      message(v) { return 'monthlyHistory shape regression: ' + v.details + '. NW trend will mis-read.'; },
+    },
   ],
 
   // Run all invariants. Returns array of violation objects.
@@ -4494,35 +4521,38 @@ function renderAnalysisTab() {
   // (rendered by renderEmergencyFundStatus) remains as the single home for the dynamic
   // 90-day calc. Plan Mode's Freedom Buffer goal is left untouched (different target).
 
-  // --- FA6: Net worth trend ---
+  // --- FA6: Net worth trend (Bundle 24 Phase 1 — schema v2 aware) ---
   const nwHistory = S.monthlyHistory || [];
   if (nwHistory.length >= 1) {
     const latest = nwHistory[nwHistory.length - 1];
     const nw = getNetWorth();
-    const prevNW = latest.bal ? latest.bal - (S.carloan + S.cc) : null;
+    // Schema v2 entries carry `nw` (full breakdown). Legacy entries have
+    // only `bal` — those are unreliable (per Bundle 24 Phase 1 audit:
+    // pre-WRX/super entries make the delta explode). Trend reads `nw`
+    // directly when present; otherwise shows the "building" hint.
+    const prevNW = (latest && typeof latest.nw === 'number') ? latest.nw : null;
     html += '<div class="card"><div class="card-hdr"><div class="card-title">Net Worth Trend</div></div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
     [['Assets', nw.assets, 'var(--green)'], ['Liabilities', nw.liabilities, 'var(--red)'], ['Net Worth', nw.net, nw.net >= 0 ? 'var(--green)' : 'var(--red)']].forEach(([lbl, val, col]) => {
-      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">'+lbl+'</div><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+col+'">'+(val >= 0 ? '' : '-')+fmt(Math.abs(val))+'</div></div>';
+      html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">'+lbl+'</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+col+'">'+(val >= 0 ? '' : '-')+fmt(Math.abs(val))+'</div></div>';
     });
     html += '</div>';
     if (prevNW !== null) {
       const delta = nw.net - prevNW;
-      // Bundle 17: prevNW formula was `latest.bal − (S.carloan + S.cc)` — used
-      // CURRENT debts against an old balance, missed WRX/super/deposit assets
-      // entirely. When those big assets got entered later, the trend exploded
-      // (+$90,506 visible in 2026-05-12 audit). Sanity-clamp: if delta is
-      // implausibly large for a monthly trend (>$15k or >50% of current NW),
-      // show "Historical comparison building" instead. Proper fix (full NW
-      // snapshot in monthlyHistory schema) deferred to a later bundle.
+      // Defensive sanity clamp retained: even with v2 schema, a brand-new
+      // major asset entered mid-month would still skew the delta. Surface
+      // the value when plausible (≤ $15k AND ≤ 50% of current NW); show
+      // the building hint otherwise.
       const SANITY_CAP = 15000;
       const isPlausible = Math.abs(delta) < SANITY_CAP && Math.abs(delta) < Math.abs(nw.net || 1) * 0.5;
       if (isPlausible) {
         const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
-        html += '<div style="font-size:14px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
+        html += '<div style="font-size:15px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
       } else {
-        html += '<div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:4px">Historical comparison building — needs more monthly snapshots with full NW shape (assets entered after prior snapshot skew the delta).</div>';
+        html += '<div style="font-size:13px;color:var(--text3);font-style:italic;margin-top:4px">Trend stabilising — a recent asset entry skewed the delta. Will normalise after the next monthly snapshot.</div>';
       }
+    } else {
+      html += '<div style="font-size:13px;color:var(--text3);font-style:italic;margin-top:4px">Building monthly history — first full-NW snapshot lands at next month rollover.</div>';
     }
     html += '</div>';
   }
@@ -4640,12 +4670,22 @@ function renderAll() {
     const prevMonth = S._lastSnapMonth;
     const alreadySnapped = S.monthlyHistory.some(h => h.month === prevMonth);
     if (!alreadySnapped) {
+      // Bundle 24 Phase 1: capture FULL net-worth breakdown (not just bal).
+      // Pre-Bundle-24 schema stored only `bal` — when WRX/super/mum were
+      // entered later, the trend calc exploded (used current debts against
+      // a pre-asset bal). Full breakdown lets trend read `nw` directly
+      // and fall back to "building" if legacy entries are encountered.
+      const _nwSnap = (typeof BRAIN !== 'undefined' && BRAIN.assets)
+        ? { nw: BRAIN.assets.netWorth(), liquidNet: BRAIN.assets.liquidNet(), totalAssets: BRAIN.assets.totalAssets(), totalLiabilities: BRAIN.assets.totalLiabilities() }
+        : {};
       S.monthlyHistory.push({
         month: prevMonth,
         bal: getLiveBal(),
         spent: getTxnSpent(),
         surplus: getGenuineSurplus(),
-        ts: Date.now()
+        ts: Date.now(),
+        ..._nwSnap,
+        schemaVersion: 2,
       });
       save();
     }
