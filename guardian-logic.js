@@ -86,12 +86,17 @@ const checks = [
     }
   },
 
-  // daysLeft used in getGenuineSurplus living reserve
-  { name: 'Living reserve uses daysLeft() in getGenuineSurplus',
+  // Bundle 22.1: getGenuineSurplus uses MODEL.daysToPayday now, not the
+  // standalone daysLeft() function. Both are time-adjusted; the test was
+  // checking the wrong identifier. Accept either to keep the original
+  // intent (living reserve is days-to-payday-aware).
+  { name: 'Living reserve is time-adjusted in getGenuineSurplus',
     test: () => {
       const match = html.match(/function getGenuineSurplus[\s\S]*?\nfunction /);
       if (!match) return 'MISSING';
-      return match[0].includes('daysLeft') ? 'OK' : 'BROKEN — living reserve not time-adjusted';
+      const body = match[0];
+      const hasTimeAdjustment = body.includes('daysLeft') || body.includes('daysToPayday');
+      return hasTimeAdjustment ? 'OK' : 'BROKEN — living reserve not time-adjusted';
     }
   },
 

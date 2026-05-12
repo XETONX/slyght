@@ -303,12 +303,15 @@ const checks = [
     }
   },
 
-  // Export strips API key
+  // Bundle 22.1: stripping happens in buildFullExport (which copyExport
+  // calls), not in copyExport itself. Test was looking in the wrong
+  // function. buildFullExport at L6839 explicitly deletes apiKey, pin,
+  // pinHash, chatHistory, _prevState.
   { name: 'Export strips API key',
     test: () => {
-      const exportFn = html.match(/function copyExport[\s\S]*?^}/m);
-      if (!exportFn) return 'WARNING — copyExport function not found';
-      return exportFn[0].includes('delete') && exportFn[0].includes('apiKey') ? 'OK' : 'BROKEN — API key not stripped from export';
+      const buildFn = html.match(/function buildFullExport[\s\S]*?^}/m);
+      if (!buildFn) return 'WARNING — buildFullExport function not found';
+      return buildFn[0].includes('delete') && buildFn[0].includes('apiKey') ? 'OK' : 'BROKEN — API key not stripped from export';
     }
   },
 

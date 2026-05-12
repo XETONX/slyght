@@ -2,12 +2,16 @@ const fs = require('fs');
 const html = fs.readFileSync('index.html', 'utf8');
 
 const checks = [
-  // All 6 nav tabs present (Settings added to nav so it's reachable from every screen)
-  { name: 'Bottom nav has exactly 6 tabs',
+  // Bundle 22.1: was "exactly 6 tabs / count===5" — Settings was removed
+  // from bottom nav (commit b89ae76). Current reality: 4 nav-btn elements
+  // (Dashboard, Bills, Chat, Analysis) + 1 separate nav-center-btn FAB.
+  { name: 'Bottom nav has 4 tabs + center FAB',
     test: () => {
       const navItems = html.match(/class="nav-btn/g) || [];
-      const count = navItems.length;
-      return count === 5 ? 'OK' : 'BROKEN — found ' + count + ' nav-btn items, expected 5 (+ 1 center FAB)';
+      const fab = html.match(/class="nav-center-btn/g) || [];
+      return (navItems.length === 4 && fab.length === 1)
+        ? 'OK'
+        : 'BROKEN — found ' + navItems.length + ' nav-btn (expected 4) + ' + fab.length + ' nav-center-btn (expected 1)';
     }
   },
 
