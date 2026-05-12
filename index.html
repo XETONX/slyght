@@ -7684,10 +7684,7 @@ function openPaydayPlan() {
     S.activePlan = _emptyActivePlan();
     try { save(); } catch (_) {}
   }
-  // Bundle 27 Phase 6.1: cycle rollover. If we're past the previous
-  // cycleEndDate, close out the old plan (archive to S.planHistory) and
-  // open a new cycle, carrying forward any deferred bills as Known
-  // Upcoming items.
+  // Bundle 27 Phase 6.1: cycle rollover.
   try {
     const r = BRAIN.plan.rolloverIfNeeded();
     if (r && r.ok && r.carried && r.carried.length) {
@@ -7697,6 +7694,20 @@ function openPaydayPlan() {
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
   el.scrollTop = 0;
   el.classList.add('payday-active');
+  // Bundle 27 Phase 8: first-open onboarding overlay (one-time).
+  try {
+    if (!localStorage.getItem('slyght_payday_canvas_seen')) {
+      setTimeout(() => {
+        if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+          EDIT_MODAL.openInfo({
+            title: '👋 Welcome to Payday Plan',
+            body: 'This is your monthly planning canvas.\n\n1. See what\'s coming in (net pay + bonus).\n2. Subtract essentials (bills + debts + daily living).\n3. The remainder is yours to allocate — savings goals, upcoming purchases, extra debt payments.\n4. Lock the plan when you\'re happy.\n5. After locking, tick items as you handle them — real transactions fire and your balance updates.\n\nMistake? Tap ↩️ in the header to undo your most recent change.',
+          });
+          localStorage.setItem('slyght_payday_canvas_seen', '1');
+        }
+      }, 400);
+    }
+  } catch (_) {}
 }
 
 // Bundle 27 Phase 6.1: Canvas-wide undo wrapper. Calls BRAIN.plan.undoLast
@@ -7793,8 +7804,32 @@ function renderPaydayPlanRoot() {
     + seg(snap.knownUpcoming.total, 'var(--amber)')
     + seg(snap.dailyLiving.plannedTotal, 'var(--text3)')
     + '</div>';
-  // Hero
+  // Bundle 27 Phase 7: drift detection banner. When locked, if cycle is
+  // N% elapsed but ticked-paid bills are < (N - driftSensitivity)%, the
+  // user is falling behind. Surface as a warning banner. Local fallback
+  // for the CF worker drift cron (which we'll wire later).
   let html = '';
+  if (snap.locked && snap.lockedAt) {
+    try {
+      const startMs = new Date(snap.cycleStartDate).getTime();
+      const endMs = new Date(snap.cycleEndDate).getTime();
+      const elapsedPct = Math.max(0, Math.min(1, (Date.now() - startMs) / (endMs - startMs)));
+      const progress = (typeof BRAIN !== 'undefined' && BRAIN.allocation && BRAIN.allocation.getLockedProgress)
+        ? BRAIN.allocation.getLockedProgress() : null;
+      if (progress && progress.bills && progress.bills.total > 0) {
+        const paidPct = progress.bills.paid / progress.bills.total;
+        const sensitivity = +snap.driftSensitivity || 0.15;
+        if (elapsedPct > 0.3 && paidPct < elapsedPct - sensitivity) {
+          const pctOff = Math.round((elapsedPct - paidPct) * 100);
+          html += '<div style="background:rgba(255,165,0,0.1);border:1px solid rgba(255,165,0,0.3);border-radius:10px;padding:12px;margin-bottom:14px;display:flex;gap:10px;align-items:flex-start">';
+          html += '<span style="font-size:20px;flex-shrink:0">⚠️</span>';
+          html += '<div style="flex:1;font-size:13px;color:var(--text2);line-height:1.5">You\'re behind on bills this cycle — about <strong>' + pctOff + '%</strong> off pace. Tick items as you pay them, or tap Re-plan if your plan needs adjusting.</div>';
+          html += '</div>';
+        }
+      }
+    } catch (_) {}
+  }
+  // Hero
   html += '<div class="payday-hero">';
   html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in</div>';
   html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
@@ -10013,7 +10048,31 @@ function buildSystemPrompt() {
     '- Month-to-date debt payments: $'+mtdDebtPaid.toFixed(2)+' \u2014 keep this energy\n\n'+
     'IMPORTANT: You are an AI tool, not a licensed financial advisor. For major financial decisions, always recommend consulting a qualified professional.';
 
-  return part1 + part2 + part3 + part4 + part5 + part6;
+  // Bundle 27 Phase 7: append Payday Plan context if an active plan exists.
+  // AI agent can now answer "can I afford X this cycle" or "how does my
+  // Darwin trip allocation look" from the canonical BRAIN.plan snapshot.
+  let part7 = '';
+  try {
+    if (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.getSnapshot && S.activePlan) {
+      const snap = BRAIN.plan.getSnapshot();
+      const fmt = (n) => '$' + Math.round(+n || 0).toLocaleString();
+      part7 = '\n\n━━ PAYDAY PLAN CONTEXT (this cycle) ━━\n' +
+        'Cycle: ' + snap.cycleStartDate + ' → ' + snap.cycleEndDate + ' (' + snap.daysRemaining + ' days left)\n' +
+        'Locked: ' + (snap.locked ? ('Yes, since ' + new Date(snap.lockedAt).toLocaleDateString('en-AU')) : 'No (still planning)') + '\n' +
+        'Money coming in: ' + fmt(snap.totalToPlan) + ' (net pay ' + fmt(snap.income.netPay) + ' + bonus ' + fmt((snap.income.bonus && snap.income.bonus.included) ? snap.income.bonus.amount : 0) + ')\n' +
+        'Bills this cycle: ' + fmt(snap.bills.total) + ' (' + (snap.bills.paid || 0) + ' of ' + snap.bills.items + ' paid)\n' +
+        'Debts this cycle: ' + fmt(snap.debts.total) + '\n' +
+        'Savings allocated: ' + fmt(snap.savings.total) + '\n' +
+        'Known upcoming: ' + fmt(snap.knownUpcoming.total) + ' (' + snap.knownUpcoming.items + ' item' + (snap.knownUpcoming.items === 1 ? '' : 's') + ')\n' +
+        'Daily living budget: ' + fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days = ' + fmt(snap.dailyLiving.plannedTotal) + '\n' +
+        'Remainder after essentials: ' + fmt(snap.derived.freeTotal) + '\n' +
+        'Safety buffer floor: ' + fmt(snap.bufferFloor) + '\n' +
+        'Projected balance when next pay hits: ' + fmt(snap.derived.projectedEndBalance) + '\n\n' +
+        'When John asks "can I afford X" — use BRAIN.plan.queryAffordability or reason from this envelope. Use plain language. Reference real numbers from this context, not invented ones.';
+    }
+  } catch (_) {}
+
+  return part1 + part2 + part3 + part4 + part5 + part6 + part7;
 }
 
 function renderChatTab() {
