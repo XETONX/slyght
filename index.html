@@ -729,7 +729,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
             <span style="font-size:20px;color:var(--text3);margin-left:8px">›</span>
           </button>
 
-          <button onclick="alert('Coming soon — three-stage Reset flow lands in Phase 4. For now use the legacy Reset button (scroll to bottom of legacy Settings).')" aria-label="Reset all data" style="display:flex;align-items:center;padding:16px;background:var(--bg2);border:none;color:var(--red);min-height:56px;text-align:left;cursor:pointer;width:100%">
+          <button onclick="RESET_FLOW.start()" aria-label="Reset all data" style="display:flex;align-items:center;padding:16px;background:var(--bg2);border:none;color:var(--red);min-height:56px;text-align:left;cursor:pointer;width:100%">
             <span style="font-size:22px;margin-right:14px;width:28px;text-align:center">⚠️</span>
             <span style="flex:1;display:flex;flex-direction:column">
               <span style="font-size:15px;font-weight:600;color:var(--red)">Reset All Data</span>
@@ -1245,6 +1245,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
     <!-- ═══ End sub-screen scaffolding ═══ -->
 
+  </div>
+
+  <!-- Bundle 22 v3 Phase 4b: 3-stage Reset All Data flow (replaces native confirm chain). -->
+  <div class="edit-modal" id="reset-flow-modal" role="dialog" aria-modal="true" aria-labelledby="reset-flow-title" onclick="if(event.target===this)RESET_FLOW.cancel()">
+    <div class="edit-modal-card" id="reset-flow-card"></div>
   </div>
 
   <!-- Bundle 22 v3 Phase 4a: single reusable edit modal (content set dynamically by EDIT_MODAL.open). -->
@@ -7700,6 +7705,118 @@ function openEditApiThreshold() {
   });
 }
 
+// ─── Bundle 22 v3 Phase 4b: Reset All Data — 3-stage flow ─────────────────
+// Stage 1: type RESET (uppercase) to enable Continue
+// Stage 2: show concrete impact numbers — what gets deleted
+// Stage 3: 3-second countdown with Cancel; on completion → execute reset
+// Replaces native confirm() chain in legacy resetAll().
+const RESET_FLOW = {
+  _countdownInterval: null,
+  start() { this.showStage1(); },
+  cancel() {
+    if (this._countdownInterval) { clearInterval(this._countdownInterval); this._countdownInterval = null; }
+    const root = document.getElementById('reset-flow-modal');
+    if (root) root.classList.remove('open');
+    document.body.classList.remove('edit-modal-open');
+  },
+  _open() {
+    const root = document.getElementById('reset-flow-modal');
+    if (!root) return;
+    root.classList.add('open');
+    document.body.classList.add('edit-modal-open');
+  },
+  showStage1() {
+    const card = document.getElementById('reset-flow-card');
+    if (!card) return;
+    card.innerHTML =
+      '<div class="edit-modal-title" id="reset-flow-title" style="color:var(--red)">⚠️ Reset All Data</div>' +
+      '<div class="edit-modal-hint">This will permanently delete all your data — transactions, bills, debts, snapshots, goals, everything.<br><br><strong style="color:var(--red)">There is no undo.</strong><br><br>Type <strong>RESET</strong> in capital letters to continue.</div>' +
+      '<input id="reset-flow-input" class="edit-modal-input" type="text" placeholder="Type RESET" autocomplete="off" autocapitalize="characters" oninput="RESET_FLOW._validateStage1()">' +
+      '<div class="edit-modal-actions">' +
+        '<button class="btn-cancel" onclick="RESET_FLOW.cancel()">Cancel</button>' +
+        '<button class="btn-danger" id="reset-flow-continue" onclick="RESET_FLOW.showStage2()" disabled style="opacity:0.5;cursor:not-allowed">Continue</button>' +
+      '</div>';
+    this._open();
+    setTimeout(() => { const i = document.getElementById('reset-flow-input'); if (i) i.focus(); }, 60);
+  },
+  _validateStage1() {
+    const input = document.getElementById('reset-flow-input');
+    const btn = document.getElementById('reset-flow-continue');
+    if (!input || !btn) return;
+    const ok = input.value === 'RESET';
+    btn.disabled = !ok;
+    btn.style.opacity = ok ? '1' : '0.5';
+    btn.style.cursor = ok ? 'pointer' : 'not-allowed';
+  },
+  showStage2() {
+    const card = document.getElementById('reset-flow-card');
+    if (!card) return;
+    // guardian-allow-block-start: tdz-safe-engine-access — RESET_FLOW.showStage2 only fires after the user types RESET in stage 1 (post-boot, user-initiated); PLAN is fully initialized. The `typeof PLAN !== 'undefined'` checks are defensive null-guards, not TDZ guards (permanent — see RESET_FLOW.start call path: user tap on red Reset row)
+    const stats = {
+      bal: (typeof fmtC === 'function') ? fmtC(S.bal || 0) : ('$' + (S.bal || 0)),
+      txns: (S.txns || []).length,
+      snapshots: (typeof SNAPSHOTS !== 'undefined') ? (SNAPSHOTS.load() || []).length : 0,
+      bills: (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.length : 0,
+      debts: (S.debts || []).filter(d => !d.paid).length,
+      trips: ((typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : []).length,
+      goals: ((typeof PLAN !== 'undefined' && PLAN.getGoals) ? (PLAN.getGoals() || []) : []).length,
+    };
+    // guardian-allow-block-end: tdz-safe-engine-access
+    card.innerHTML =
+      '<div class="edit-modal-title" style="color:var(--red)">Last chance</div>' +
+      '<div class="edit-modal-hint">You will permanently lose:</div>' +
+      '<div style="font-size:14px;color:var(--text);line-height:2;margin:6px 0 16px">' +
+        '• Current balance: <strong>' + stats.bal + '</strong><br>' +
+        '• Transactions: <strong>' + stats.txns + '</strong><br>' +
+        '• Snapshots: <strong>' + stats.snapshots + '</strong><br>' +
+        '• Bills: <strong>' + stats.bills + '</strong><br>' +
+        '• Active debts: <strong>' + stats.debts + '</strong><br>' +
+        '• Trips &amp; goals: <strong>' + (stats.trips + stats.goals) + '</strong>' +
+      '</div>' +
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:14px;line-height:1.5">Everything goes back to first-launch state. Your API key will also be cleared.</div>' +
+      '<div class="edit-modal-actions">' +
+        '<button class="btn-cancel" onclick="RESET_FLOW.cancel()">Cancel</button>' +
+        '<button class="btn-danger" onclick="RESET_FLOW.showStage3()">Yes, delete everything</button>' +
+      '</div>';
+  },
+  showStage3() {
+    const card = document.getElementById('reset-flow-card');
+    if (!card) return;
+    let seconds = 3;
+    card.innerHTML =
+      '<div style="text-align:center;padding:8px 0">' +
+        '<div style="color:var(--text3);font-size:14px;margin-bottom:8px">Resetting in</div>' +
+        '<div id="reset-flow-countdown" style="color:var(--red);font-size:64px;font-family:var(--mono);font-weight:700;line-height:1">' + seconds + '</div>' +
+      '</div>' +
+      '<div class="edit-modal-actions" style="justify-content:center;margin-top:18px">' +
+        '<button class="btn-cancel" onclick="RESET_FLOW.cancel()" style="flex:0 0 70%">Cancel</button>' +
+      '</div>';
+    this._countdownInterval = setInterval(() => {
+      seconds--;
+      const el = document.getElementById('reset-flow-countdown');
+      if (seconds <= 0) {
+        clearInterval(this._countdownInterval);
+        this._countdownInterval = null;
+        this._executeReset();
+      } else {
+        if (el) el.textContent = seconds;
+      }
+    }, 1000);
+  },
+  _executeReset() {
+    try {
+      saveUndoState();
+      BRAIN.audit.append({ type: 'reset_all_execute', source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
+      localStorage.removeItem(STORAGE_KEY);
+      if (typeof SEED_FLAGS !== 'undefined') SEED_FLAGS.forEach(f => localStorage.removeItem(f));
+      // Clear API key too — design decision: single confirmation gate, no
+      // second 'also clear API key?' prompt. User can re-enter on next session.
+      localStorage.removeItem('slyght_api_key');
+    } catch (e) { console.warn('reset error', e); }
+    location.reload();
+  }
+};
+
 function saveIncome() {
   const v = parseFloat(document.getElementById('set-income')?.value);
   // Bundle 22 v3 Phase 0: route through BRAIN.config (set-income is a
@@ -8005,17 +8122,20 @@ function doImport() {
 
 // C4: clear all seed flags so onboarding shows after a reset
 function resetAll() {
+  // Bundle 22 v3 Phase 4b: route through RESET_FLOW (3-stage in-app modal).
+  // Replaces the chained native confirm() prompts. Same end behavior —
+  // clears state + API key + reloads — but with a gated UX that surfaces
+  // concrete impact numbers and gives an undo-window via countdown cancel.
+  if (typeof RESET_FLOW !== 'undefined') {
+    RESET_FLOW.start();
+    return;
+  }
+  // Fallback if RESET_FLOW somehow missing (shouldn't happen in production).
   if (confirm('Reset all Slyght data? This cannot be undone.')) {
     saveUndoState();
     localStorage.removeItem(STORAGE_KEY);
     SEED_FLAGS.forEach(f => localStorage.removeItem(f));
-    // Ask separately about API key
-    if (S.apiKey || localStorage.getItem('slyght_api_key')) {
-      if (confirm('Also clear your AI API key? (You\'ll need to re-enter it to use chat)')) {
-        localStorage.removeItem('slyght_api_key');
-        S.apiKey = '';
-      }
-    }
+    localStorage.removeItem('slyght_api_key');
     location.reload();
   }
 }
