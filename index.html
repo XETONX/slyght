@@ -7684,9 +7684,50 @@ function openPaydayPlan() {
     S.activePlan = _emptyActivePlan();
     try { save(); } catch (_) {}
   }
+  // Bundle 27 Phase 6.1: cycle rollover. If we're past the previous
+  // cycleEndDate, close out the old plan (archive to S.planHistory) and
+  // open a new cycle, carrying forward any deferred bills as Known
+  // Upcoming items.
+  try {
+    const r = BRAIN.plan.rolloverIfNeeded();
+    if (r && r.ok && r.carried && r.carried.length) {
+      if (typeof showToast === 'function') showToast('🔁 New cycle started — ' + r.carried.length + ' deferred item(s) carried over');
+    }
+  } catch (_) {}
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
   el.scrollTop = 0;
   el.classList.add('payday-active');
+}
+
+// Bundle 27 Phase 6.1: Canvas-wide undo wrapper. Calls BRAIN.plan.undoLast
+// then re-renders the canvas + any open sub-screens.
+function paydayUndoLast() {
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan) return;
+  if (!confirm('Undo your most recent change to this plan?')) return;
+  const r = BRAIN.plan.undoLast(BRAIN.SOURCES.PLAN_UNTICK);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Nothing to undo' + (r.reason ? ' (' + r.reason + ')' : ''));
+    return;
+  }
+  // Re-render everything
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  const activeSub = document.querySelector('.payday-subscreen.payday-active');
+  if (activeSub) {
+    const renderers = {
+      'payday-bills': renderPaydayBills,
+      'payday-debts': renderPaydayDebts,
+      'payday-savings': renderPaydaySavings,
+      'payday-upcoming': renderPaydayUpcoming,
+      'payday-living': renderPaydayLiving,
+    };
+    const fn = renderers[activeSub.id];
+    if (typeof fn === 'function') fn();
+  }
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof showToast === 'function') {
+    const t = (r.reversed && r.reversed.type) || 'change';
+    showToast('↩️ Reversed: ' + t.replace(/_/g, ' '));
+  }
 }
 function closePaydayPlan() {
   const el = document.getElementById('pg-payday-plan');
@@ -8442,6 +8483,7 @@ function renderPaydayBills() {
     deferred.forEach(d => {
       html += '<div style="font-size:14px;color:var(--text2);padding:4px 0">' + fmtC2(d.deferred) + ' <span style="color:var(--amber)">⚠️</span> ' + d.name + (d.reason ? ' — ' + d.reason : '') + '</div>';
     });
+    html += '<div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;font-style:italic">These deferred amounts will carry over to next month\'s Known Upcoming when the cycle rolls over.</div>';
     html += '</div>';
   }
   // Before payday
@@ -8646,11 +8688,14 @@ function renderPaydayUpcoming() {
     html += '<div class="settings-group-card">';
     list.forEach(item => {
       const dateLabel = item.date ? new Date(item.date).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }) : 'No date';
+      const carried = item.source === BRAIN.SOURCES.CARRIED_FROM_PRIOR_CYCLE;
+      const icon = carried ? '🔁' : catEmoji(item.category || 'other');
+      const subLabel = (carried ? 'Carried from last cycle · ' : '') + dateLabel + (item.notes ? ' · ' + item.notes : '');
       html += _paydayRow({
         ticked: !!ticks[item.id],
-        icon: catEmoji(item.category || 'other'),
+        icon,
         name: item.name,
-        sub: dateLabel + (item.notes ? ' · ' + item.notes : ''),
+        sub: subLabel,
         value: fmtC2(item.amount || 0),
         onTap: "openEditPaydayUpcoming('" + item.id + "')",
         onTickTap: "paydayTick('upcoming', '" + item.id + "', BRAIN.SOURCES.PLAN_UPCOMING_TICK)",
@@ -14770,6 +14815,85 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'canvas_auto_apply', applied, source, ts: Date.now() });
       return { ok: true, applied };
     },
+    // ─── CYCLE ROLLOVER (Bundle 27 Phase 6.1) ─────────────────────────
+    // Fires when current date is past the active plan's cycleEndDate.
+    // Closes out the old cycle + opens a new one. Deferred bills (overrides
+    // with deferAction === 'create_known_upcoming_next_cycle' and
+    // deferred > 0) carry over as Known Upcoming items in the new plan
+    // so the make-up obligation stays visible. Plan history archived
+    // under S.planHistory.
+    rolloverIfNeeded() {
+      if (!S.activePlan || !S.activePlan.cycleEndDate) return { ok: false, reason: 'no-active-plan' };
+      const now = Date.now();
+      const endMs = new Date(S.activePlan.cycleEndDate).getTime();
+      if (now < endMs) return { ok: false, reason: 'not-yet' };
+      // Snapshot previous plan to history
+      const prevPlan = S.activePlan;
+      if (!S.planHistory) S.planHistory = [];
+      S.planHistory.push({
+        cycleId: prevPlan.cycleId,
+        cycleStartDate: prevPlan.cycleStartDate,
+        cycleEndDate: prevPlan.cycleEndDate,
+        income: prevPlan.income,
+        overrides: prevPlan.overrides,
+        savings: prevPlan.savings,
+        knownUpcoming: prevPlan.knownUpcoming,
+        ticks: prevPlan.ticks,
+        lockedAt: prevPlan.lockedAt,
+        archivedAt: now,
+      });
+      // Cap history at 24 cycles (~2 years)
+      if (S.planHistory.length > 24) S.planHistory = S.planHistory.slice(-24);
+      // Collect items to carry forward
+      const carryItems = [];
+      const overrides = prevPlan.overrides || {};
+      Object.keys(overrides).forEach(key => {
+        const ov = overrides[key];
+        if (ov && ov.deferred > 0 && ov.deferAction === 'create_known_upcoming_next_cycle') {
+          const billOrDebtName = key.replace(/^bill:|^debt:|^savings:|^kia-extra:/, '');
+          carryItems.push({
+            name: billOrDebtName + ' shortfall (' + prevPlan.cycleId + ')',
+            amount: ov.deferred,
+            category: 'one-off',
+            notes: 'Carried from previous cycle. Reason: ' + (ov.reason || 'underpaid'),
+          });
+        }
+      });
+      // Create new active plan
+      const newPlan = _emptyActivePlan();
+      // Preserve preferences from previous plan
+      newPlan.dailyLivingFloor = prevPlan.dailyLivingFloor || newPlan.dailyLivingFloor;
+      newPlan.bufferFloor = prevPlan.bufferFloor || newPlan.bufferFloor;
+      newPlan.driftSensitivity = prevPlan.driftSensitivity || newPlan.driftSensitivity;
+      newPlan.streak = +prevPlan.streak || 0;  // preserve streak across cycles
+      // Seed carried-over items into new plan's knownUpcoming
+      carryItems.forEach(item => {
+        const id = 'ku-carry-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+        newPlan.knownUpcoming.push({
+          id,
+          name: item.name,
+          amount: item.amount,
+          category: item.category,
+          notes: item.notes,
+          status: 'planned',
+          createdAt: Date.now(),
+          source: BRAIN.SOURCES.CARRIED_FROM_PRIOR_CYCLE,
+          carriedFromCycle: prevPlan.cycleId,
+        });
+      });
+      S.activePlan = newPlan;
+      BRAIN.audit.append({
+        type: 'plan_cycle_rollover',
+        previousCycle: prevPlan.cycleId,
+        newCycle: newPlan.cycleId,
+        carriedCount: carryItems.length,
+        carriedTotal: carryItems.reduce((s, i) => s + (+i.amount || 0), 0),
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, previousCycle: prevPlan.cycleId, newCycle: newPlan.cycleId, carried: carryItems };
+    },
+
     // ─── AI PROPOSAL FLOW ─────────────────────
     proposeAdjustment(changes, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
@@ -14807,6 +14931,58 @@ const BRAIN = {
       try { save(); } catch (_) {}
       return { ok: true, applied };
     },
+    // ─── UNDO LAST (Bundle 27 Phase 6.1) ──────────────────────────────
+    // Reverses the most recent plan-write action in BRAIN.audit. Safer
+    // than asking the user to manually find which override / tick to
+    // reverse. Reads audit log backwards, reverses the first reversible
+    // entry, returns { ok, reversed }.
+    undoLast(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const log = (S._auditLog || []);
+      // Walk backwards looking for the most recent reversible plan/canvas event.
+      const REVERSIBLE_TYPES = ['plan_tick', 'plan_override_set', 'plan_bonus_edit', 'known_upcoming_add', 'known_upcoming_update', 'plan_daily_floor_edit', 'plan_buffer_floor_edit'];
+      for (let i = log.length - 1; i >= 0; i--) {
+        const e = log[i];
+        if (!e || !REVERSIBLE_TYPES.includes(e.type)) continue;
+        try {
+          if (e.type === 'plan_tick') {
+            const r = this.untickItem(e.category, e.itemId, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'plan_override_set') {
+            const parts = (e.key || '').split(':');
+            if (parts.length === 2) {
+              const r = this.clearOverride(parts[0], parts[1], source);
+              return { ok: true, reversed: e, downstream: r };
+            }
+          }
+          if (e.type === 'plan_bonus_edit' && e.old) {
+            const r = this.setBonus(e.old, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'known_upcoming_add') {
+            const r = this.removeKnownUpcoming(e.id, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'known_upcoming_update' && e.old) {
+            const r = this.updateKnownUpcoming(e.id, e.old, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'plan_daily_floor_edit') {
+            const r = this.setDailyLivingFloor(e.old, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'plan_buffer_floor_edit') {
+            const r = this.setBufferFloor(e.old, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+        } catch (err) {
+          return { ok: false, reason: 'undo-exception:' + (err && err.message) };
+        }
+      }
+      return { ok: false, reason: 'no-reversible-action' };
+    },
+
     rejectProposal(proposalId, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       const list = (S.activePlan && S.activePlan.pendingProposals) || [];
@@ -19047,7 +19223,7 @@ document.getElementById('plan-modal-overlay')
       <div style="color:var(--text);font-size:16px;font-weight:700;letter-spacing:0.5px">📋 Payday Plan</div>
       <div id="payday-cycle-label" style="color:var(--text3);font-size:12px;margin-top:2px">—</div>
     </div>
-    <div style="width:44px"></div>
+    <button onclick="paydayUndoLast()" aria-label="Undo last change" title="Undo your most recent plan change" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);color:var(--text2);font-size:18px;line-height:1;padding:0;width:40px;height:40px;border-radius:50%;cursor:pointer">↩️</button>
   </div>
 
   <!-- Root navigator content (re-rendered on open) -->
