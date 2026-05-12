@@ -7722,13 +7722,46 @@ const EDIT_MODAL = {
     this._save = null;
     this._validate = null;
     this._onAfter = null;
+    // Restore cancel button (openInfo hides it)
+    if (root) {
+      const cancelBtn = root.querySelector('.btn-cancel');
+      if (cancelBtn) cancelBtn.style.display = '';
+    }
   },
   showError(msg) {
     const errEl = document.getElementById('edit-modal-err');
     if (errEl) { errEl.textContent = msg; errEl.classList.add('show'); }
   },
+  // Bundle 26 Phase 1.5a: info-only variant — no input, just an explanation
+  // and a "Got it" button. Used by the ℹ️ helpers throughout the app to
+  // explain financial terms in plain English to non-financially-literate
+  // users. Reuses .edit-modal CSS so the focus-lock + scroll-lock + back-
+  // button intercept all apply.
+  openInfo(cfg) {
+    const root = document.getElementById('edit-modal');
+    if (!root) return;
+    document.getElementById('edit-modal-title').textContent = cfg.title || '';
+    document.getElementById('edit-modal-hint').textContent = '';  // body goes into input-area as static HTML
+    const area = document.getElementById('edit-modal-input-area');
+    area.innerHTML = '<div style="font-size:14px;color:var(--text2);line-height:1.6;padding:4px 0 8px;white-space:pre-line">' + (cfg.body || '') + '</div>';
+    this._save = null;
+    this._validate = null;
+    this._onAfter = null;
+    const saveBtn = document.getElementById('edit-modal-save-btn');
+    if (saveBtn) { saveBtn.textContent = 'Got it'; saveBtn.className = 'btn-save'; }
+    // Hide cancel — info has only one path out
+    const cancelBtn = root.querySelector('.btn-cancel');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    const errEl = document.getElementById('edit-modal-err');
+    if (errEl) { errEl.textContent = ''; errEl.classList.remove('show'); }
+    root.classList.add('open');
+    document.body.classList.add('edit-modal-open');
+  },
   attemptSave() {
     const input = document.getElementById('edit-modal-input');
+    // Bundle 26 Phase 1.5a: info-only mode has no input + no save fn — just
+    // close on "Got it" tap.
+    if (!input && !this._save) { this.close(); return; }
     if (!input) return;
     const val = input.value;
     if (this._validate) {
@@ -15170,6 +15203,7 @@ function renderPlanMode() {
   <div style="text-align:center;padding:24px 0 8px">
     <div style="font-size:13px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">
       Liquid Net Worth
+      <button onclick="showInfoTip('liquid-nw')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle" aria-label="What is liquid net worth?">ℹ️</button>
     </div>
     <div style="font-size:44px;font-weight:800;color:${liquidColour};font-variant-numeric:tabular-nums;line-height:1">
       ${liquidDisplay}
@@ -15219,6 +15253,82 @@ function renderPlanMode() {
 }
 
 // ─── SECTION 4 — PAYDAY ALLOCATION PLANNER ──────────────────────────────────
+// Bundle 26 Phase 1.5a: plain-language tooltips for non-financially-literate
+// users. Every financial term in the UI gets an optional ℹ️ button that
+// opens a short explanation. Centralised here so the wording is consistent
+// everywhere it appears.
+const INFO_TIPS = {
+  'liquid-nw': {
+    title: 'Liquid Net Worth',
+    body: 'What you can actually touch right now.\n\nYour bank balance + savings buckets + your WRX value, minus what you owe on credit cards and the KIA loan.\n\nDoes NOT include super because you can\'t access it until ~age 60. The "total" number that includes super lives in the Super bubble — useful for retirement planning, not day-to-day decisions.',
+  },
+  'total-nw': {
+    title: 'Total Net Worth (incl super)',
+    body: 'The long-term view of your wealth: everything you own (bank, savings, WRX, super) minus everything you owe.\n\nSuper is included here because it\'s real money you\'ve earned — you just can\'t spend it yet. Useful for retirement progress, not for "can I afford this today" decisions.',
+  },
+  'surplus': {
+    title: 'Left over to allocate',
+    body: 'What\'s free after your bills, debts, and estimated living costs are covered.\n\nThis is the money you can put toward trips, savings goals, or extra debt payments.\n\nIf this number is positive — you have flex. If it\'s negative — you\'re short and need to trim a goal or shift a bill before locking your plan.',
+  },
+  'spoken-for': {
+    title: 'Spoken for',
+    body: 'Money that\'s already committed — recurring bills (rent, subscriptions, insurance) and any debts due before your next payday.\n\nThese come out of your account whether you do anything or not. The waterfall subtracts them first so you see what\'s actually free.',
+  },
+  'living-money': {
+    title: 'Living money',
+    body: 'Estimated cash you\'ll need for food, coffee, transport, and other day-to-day spending between now and next payday.\n\nBased on your monthly average spending (last 30 days). Your weekday + weekend budgets and last-14-day actual are shown below it as comparison points.',
+  },
+  'bills-before-payday': {
+    title: 'Bills due before payday',
+    body: 'Recurring bills that hit your account between today and your next payday.\n\nIncludes rent + deposit savings, subscriptions, utilities, insurance. The breakdown lists each one with its amount and day of the month.',
+  },
+  'debts-before-payday': {
+    title: 'Debts due before payday',
+    body: 'Specific debt payments scheduled before next payday — usually one-off catch-up amounts or quarterly bills.\n\nDoes NOT include the KIA loan principal (that\'s ongoing — counted in long-term liabilities not short-term cash drain).',
+  },
+  'salary-payday': {
+    title: 'Salary by next payday',
+    body: 'Your expected monthly salary (after tax) landing on your next payday.\n\nIf you\'ve already been paid this cycle, this shows $0 — the money is already in your bank.',
+  },
+  'bonus-month': {
+    title: 'Bonus this month',
+    body: 'Extra income you\'re expecting on top of your salary — a quarterly bonus, refund, money from a friend, etc.\n\nAdd them in Plan mode under "Bonus" so the surplus + allocation flow knows about them.',
+  },
+};
+function showInfoTip(key) {
+  const tip = INFO_TIPS[key];
+  if (!tip) return;
+  if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+    EDIT_MODAL.openInfo({ title: tip.title, body: tip.body });
+  } else {
+    alert(tip.title + '\n\n' + tip.body);
+  }
+}
+
+// Bundle 26 Phase 1.5a: plain-language labels for transaction categories +
+// BILLS tags. Smart coaching uses these instead of the raw category slug
+// so John doesn't see jargon like "Streaming" without context.
+const CAT_PLAIN = {
+  'Food / Coffee': 'food and coffee',
+  'Transport / Fuel': 'fuel and transport',
+  'Shopping': 'shopping',
+  'Bills': 'bills',
+  'Entertainment': 'going out',
+  'Health': 'health',
+  'Debt repayment': 'debt payments',
+  'Savings': 'savings transfers',
+  'Income / Refund ↑': 'income',
+  'Other': 'other spending',
+  'Streaming': 'streaming services (Netflix, Spotify, YouTube etc.)',
+  'Subscription': 'subscriptions',
+  'Subscriptions': 'subscriptions',
+  'Fixed': 'fixed bills',
+  'Variable': 'variable bills',
+  'Loan': 'loan payments',
+  'Transport': 'transport',
+};
+function catPlain(cat) { return (CAT_PLAIN && CAT_PLAIN[cat]) || (cat || 'this category').toLowerCase(); }
+
 // Bundle 26 Phase 1: surplus waterfall — plain-language version of the
 // canonical BRAIN.summary.surplus() envelope. Designed for a user with
 // no financial literacy: every line names a real thing, every number
@@ -15229,10 +15339,25 @@ function renderSurplusWaterfall() {
   const w = BRAIN.summary.surplus();
   const fmt0 = (n) => (n >= 0 ? '+$' : '-$') + Math.abs(Math.round(n)).toLocaleString();
   const fmt0Plain = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  // Map row labels to info-tip keys so ℹ️ buttons surface plain-language help.
+  const infoKeyFor = (lbl) => {
+    if (/Salary by next payday/i.test(lbl)) return 'salary-payday';
+    if (/Bonus this month/i.test(lbl)) return 'bonus-month';
+    if (/Bills due before payday/i.test(lbl)) return 'bills-before-payday';
+    if (/Debts due before payday/i.test(lbl)) return 'debts-before-payday';
+    if (/Spoken for/i.test(lbl)) return 'spoken-for';
+    if (/Living money/i.test(lbl)) return 'living-money';
+    if (/Left over/i.test(lbl)) return 'surplus';
+    return null;
+  };
+  const infoBtn = (key) => key
+    ? `<button onclick="showInfoTip('${key}')" style="background:none;border:none;color:rgba(255,255,255,0.3);cursor:pointer;font-size:13px;padding:0 4px;margin-left:2px" aria-label="What is this?">ℹ️</button>`
+    : '';
   const _rows = w.waterfall.map(row => {
+    const infoKey = infoKeyFor(row.label);
     if (row.kind === 'in') {
       return `<div style="display:flex;justify-content:space-between;padding:6px 0;color:rgba(255,255,255,0.75);font-size:14px">
-        <span>${row.label}${row.note ? ` <span style="color:rgba(255,255,255,0.35);font-size:12px">(${row.note})</span>` : ''}</span>
+        <span>${row.label}${row.note ? ` <span style="color:rgba(255,255,255,0.35);font-size:12px">(${row.note})</span>` : ''}${infoBtn(infoKey)}</span>
         <span style="font-family:var(--mono);color:#4ECDC4;font-weight:600">+${fmt0Plain(row.amt)}</span>
       </div>`;
     }
@@ -15242,21 +15367,21 @@ function renderSurplusWaterfall() {
         : '';
       return `<div style="padding:6px 0">
         <div style="display:flex;justify-content:space-between;color:rgba(255,255,255,0.75);font-size:14px">
-          <span>${row.label}</span>
+          <span>${row.label}${infoBtn(infoKey)}</span>
           <span style="font-family:var(--mono);color:#FF6B35;font-weight:600">−${fmt0Plain(row.amt)}</span>
         </div>${itemsHtml}
       </div>`;
     }
     if (row.kind === 'subtotal') {
       return `<div style="display:flex;justify-content:space-between;padding:8px 0 8px;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;color:rgba(255,255,255,0.85);font-size:14px;font-weight:600">
-        <span>${row.label}</span>
+        <span>${row.label}${infoBtn(infoKey)}</span>
         <span style="font-family:var(--mono)">${fmt0Plain(row.amt)}</span>
       </div>`;
     }
     if (row.kind === 'reserve') {
       return `<div style="padding:6px 0">
         <div style="display:flex;justify-content:space-between;color:rgba(255,255,255,0.75);font-size:14px">
-          <span>${row.label}</span>
+          <span>${row.label}${infoBtn(infoKey)}</span>
           <span style="font-family:var(--mono);color:#FFA500;font-weight:600">−${fmt0Plain(row.amt)}</span>
         </div>${row.hint ? `<div style="font-size:12px;color:rgba(255,255,255,0.35);padding:4px 0 0 0">${row.hint}</div>` : ''}
       </div>`;
@@ -15265,7 +15390,7 @@ function renderSurplusWaterfall() {
       const isPositive = row.amt >= 0;
       const col = isPositive ? '#4ECDC4' : '#E74C3C';
       return `<div style="margin-top:12px;padding:14px;background:${isPositive ? 'rgba(78,205,196,0.08)' : 'rgba(231,76,60,0.08)'};border:1px solid ${isPositive ? 'rgba(78,205,196,0.25)' : 'rgba(231,76,60,0.25)'};border-radius:10px">
-        <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🎯 ${row.label}</div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🎯 ${row.label}${infoBtn(infoKey)}</div>
         <div style="font-family:var(--mono);font-size:32px;font-weight:800;color:${col}">${fmt0(row.amt)}</div>
         <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-top:4px">${isPositive ? 'Free money to put toward your goals below.' : 'You\'re short. Tighten living money or shift some bills.'}</div>
       </div>`;
@@ -15288,44 +15413,55 @@ function renderSurplusWaterfall() {
     </div>`;
 }
 
-// Bundle 26 Phase 1: always-on smart coaching. Reads waterfall + anomalies
-// and produces a banner. Encouragement when leftOver > 0 and no flags;
-// honest pushback when over-budget streak or category spikes detected.
+// Bundle 26 Phase 1.5a: always-on smart coaching, plain-English. No jargon.
+// Real-world examples instead of category slugs ("streaming services like
+// Netflix and Spotify" not just "Streaming"). Concrete dollar amounts.
+// Honest about what the number means and what to do next.
 function renderSmartCoaching() {
   if (typeof BRAIN === 'undefined' || !BRAIN.summary) return '';
   let waterfall, anomalies;
   try { waterfall = BRAIN.summary.surplus(); } catch (_) { return ''; }
   try { anomalies = BRAIN.summary.anomalies(); } catch (_) { anomalies = { overBudgetStreak: 0, categorySpikes: [] }; }
   const leftOver = waterfall.leftOver;
+  const days = waterfall.daysToPayday;
   const streak = anomalies.overBudgetStreak || 0;
   const spikes = anomalies.categorySpikes || [];
   let icon = '💡', msg, tone = 'neutral';
   if (leftOver < 0) {
     icon = '⚠️'; tone = 'warn';
-    msg = `You're short by <strong>$${Math.abs(Math.round(leftOver)).toLocaleString()}</strong> this cycle. Trim a goal allocation or shift a bill before locking your plan.`;
+    const shortBy = Math.abs(Math.round(leftOver)).toLocaleString();
+    msg = `<strong>You’re short $${shortBy}</strong> this cycle. After bills and your usual daily spending, there isn’t enough money to cover everything before payday.<br><br><strong>What to do:</strong> reduce a goal allocation below (move money out of a trip or savings target) OR move a bill to next cycle if possible.`;
   } else if (streak >= 3) {
     icon = '🚧'; tone = 'warn';
-    msg = `<strong>${streak} days in a row over your daily budget.</strong> Before allocating $${Math.round(leftOver)} to goals, leave a little extra in living money — last 14 days suggest you'll need it.`;
+    const safeAllocate = Math.max(0, Math.round(leftOver - (streak * 30)));
+    msg = `You’ve spent more than your daily budget <strong>${streak} days in a row</strong>. That’s a pattern worth noticing.<br><br>Before putting $${Math.round(leftOver).toLocaleString()} into goals, consider leaving an extra cushion for everyday spending — maybe only allocate $${safeAllocate.toLocaleString()} and keep the rest for food / coffee / fuel.`;
   } else if (spikes.length > 0) {
     icon = '👀'; tone = 'caution';
     const top = spikes[0];
-    msg = `Heads up — <strong>${top.cat}</strong> spend is ${(top.ratio).toFixed(1)}× your 30-day average ($${Math.round(top.last7)} last 7 days vs $${Math.round(top.last30/30*7)} typical). Worth a glance before allocating?`;
-  } else if (leftOver > 200) {
+    const plainCat = catPlain(top.cat);
+    const last7Amt = Math.round(top.last7);
+    const typicalWeekly = Math.round(top.last30 / 30 * 7);
+    const overBy = last7Amt - typicalWeekly;
+    msg = `Heads up — your <strong>${plainCat}</strong> spending is higher than usual this week.<br><br>You spent <strong>$${last7Amt.toLocaleString()}</strong> on it in the last 7 days. Normally you spend around <strong>$${typicalWeekly.toLocaleString()}</strong> — that’s $${overBy.toLocaleString()} more.<br><br><strong>Not a problem on its own</strong>, just worth glancing at before you allocate $${Math.round(leftOver).toLocaleString()} to goals. Will this trend continue?`;
+  } else if (leftOver > 500) {
     icon = '🎉'; tone = 'good';
-    msg = `Nice — <strong>$${Math.round(leftOver).toLocaleString()}</strong> free this cycle. Put it where it counts. Sliders below.`;
-  } else if (leftOver > 0) {
+    msg = `Nice — you have <strong>$${Math.round(leftOver).toLocaleString()} free</strong> after bills and ${days} days of living costs.<br><br>This is real money you can put toward your trips or savings goals without affecting your day-to-day. Slide the goals below to allocate.`;
+  } else if (leftOver > 100) {
     icon = '👍'; tone = 'good';
-    msg = `<strong>$${Math.round(leftOver).toLocaleString()}</strong> left over. Tight but workable — every dollar to goals counts.`;
+    msg = `<strong>$${Math.round(leftOver).toLocaleString()} free</strong> after bills and your usual living costs.<br><br>It’s tight but workable — every dollar toward a goal counts. Even $50 to a trip is real progress over a few cycles.`;
+  } else if (leftOver > 0) {
+    icon = '⚖️'; tone = 'neutral';
+    msg = `<strong>Just $${Math.round(leftOver).toLocaleString()} free</strong> this cycle. Your bills and usual spending eat almost all of it.<br><br>If you allocate this to a goal, you have no buffer if anything unexpected comes up. Consider holding steady this cycle, or only allocate part of it.`;
   } else {
     icon = '⚖️'; tone = 'neutral';
-    msg = `Right on the line — $0 left after bills and living money. Hold steady this cycle.`;
+    msg = `<strong>You’re right on the line</strong> — $0 free after bills and living costs.<br><br>This isn’t bad, it just means no surplus to allocate this cycle. Hold steady and reassess next payday.`;
   }
   const bg = tone === 'good' ? 'rgba(78,205,196,0.08)' : tone === 'warn' ? 'rgba(231,76,60,0.08)' : tone === 'caution' ? 'rgba(255,165,0,0.08)' : 'rgba(255,255,255,0.05)';
   const bd = tone === 'good' ? 'rgba(78,205,196,0.25)' : tone === 'warn' ? 'rgba(231,76,60,0.3)' : tone === 'caution' ? 'rgba(255,165,0,0.3)' : 'rgba(255,255,255,0.1)';
   return `
     <div style="background:${bg};border:1px solid ${bd};border-radius:10px;padding:14px;margin:10px 0;display:flex;gap:12px;align-items:flex-start">
       <span style="font-size:22px;flex-shrink:0">${icon}</span>
-      <div style="flex:1;color:rgba(255,255,255,0.75);font-size:14px;line-height:1.5">${msg}</div>
+      <div style="flex:1;color:rgba(255,255,255,0.8);font-size:14px;line-height:1.6">${msg}</div>
     </div>`;
 }
 
