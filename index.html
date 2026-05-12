@@ -122,6 +122,21 @@ body.edit-modal-open{overflow:hidden}
 .plan-subscreen-title{color:#fff;font-size:16px;font-weight:700;letter-spacing:0.5px}
 .plan-subscreen-body{flex:1;padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #plan-mode.has-active-subscreen{overflow:hidden}
+/* Bundle 27 Phases 1+2: Payday Plan Canvas + sub-screen scaffolding. */
+#pg-payday-plan.payday-active{transform:translateX(0)}
+#pg-payday-plan.has-active-subscreen{overflow:hidden}
+.payday-subscreen{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);transform:translateX(100%);transition:transform 250ms ease-out;z-index:20;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;visibility:hidden}
+.payday-subscreen.payday-active{transform:translateX(0);visibility:visible}
+.payday-nav-row{display:flex;align-items:center;padding:16px;background:var(--bg2);border:none;color:var(--text);min-height:56px;text-align:left;cursor:pointer;width:100%}
+.payday-nav-row .row-icon{font-size:22px;margin-right:14px;width:28px;text-align:center;flex-shrink:0}
+.payday-nav-row .row-text{flex:1;display:flex;flex-direction:column;gap:2px}
+.payday-nav-row .row-title{font-size:15px;font-weight:600;color:var(--text)}
+.payday-nav-row .row-subtitle{font-size:13px;color:var(--text3)}
+.payday-nav-row .row-chevron{font-size:20px;color:var(--text3);margin-left:8px;line-height:1}
+.payday-prop-bar{display:flex;width:100%;height:14px;background:var(--bg3);border-radius:8px;overflow:hidden;margin:8px 0}
+.payday-prop-seg{height:100%;transition:width .3s ease-out}
+.payday-hero{background:var(--bg2);border-radius:14px;padding:18px 16px;margin-bottom:14px}
+.payday-action-row{display:flex;align-items:center;padding:14px 16px;background:var(--bg2);border:none;color:var(--text);min-height:52px;text-align:left;cursor:pointer;width:100%}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -7645,6 +7660,127 @@ function runDiagnosticCheck(kind, opts) {
   if (!opts.silent && typeof showToast === 'function') showToast('✓ ' + (kind === 'math-reset' ? 'Math session reset' : 'Refreshed'));
 }
 
+// ─── Bundle 27 Phases 1+2: Payday Plan Canvas open/close + render ─────────
+function openPaydayPlan() {
+  const el = document.getElementById('pg-payday-plan');
+  if (!el) return;
+  // Ensure S.activePlan exists (lazy init on first open).
+  if (!S.activePlan) {
+    S.activePlan = _emptyActivePlan();
+    try { save(); } catch (_) {}
+  }
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  el.scrollTop = 0;
+  el.classList.add('payday-active');
+}
+function closePaydayPlan() {
+  const el = document.getElementById('pg-payday-plan');
+  if (el) el.classList.remove('payday-active');
+  // Also close any active sub-screen
+  document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+  if (el) el.classList.remove('has-active-subscreen');
+}
+function openPaydayCategory(subId) {
+  const sub = document.getElementById(subId);
+  const parent = document.getElementById('pg-payday-plan');
+  if (!sub || !parent) return;
+  parent.scrollTop = 0;
+  parent.classList.add('has-active-subscreen');
+  sub.classList.add('payday-active');
+}
+function closePaydayCategory(subId) {
+  const sub = document.getElementById(subId);
+  if (sub) sub.classList.remove('payday-active');
+  const parent = document.getElementById('pg-payday-plan');
+  // Restore parent scroll only if no other payday-subscreen is still active.
+  if (parent && !document.querySelector('.payday-subscreen.payday-active')) {
+    parent.classList.remove('has-active-subscreen');
+  }
+}
+
+// Render the root navigator from BRAIN.plan.getSnapshot(). Called on open
+// + on demand after edits land (Phase 4+).
+function renderPaydayPlanRoot() {
+  const el = document.getElementById('payday-root-content');
+  if (!el) return;
+  const snap = BRAIN.plan.getSnapshot();
+  // Header cycle label
+  const cycleLabel = document.getElementById('payday-cycle-label');
+  if (cycleLabel) {
+    const startTxt = snap.cycleStartDate ? new Date(snap.cycleStartDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—';
+    const endTxt = snap.cycleEndDate ? new Date(snap.cycleEndDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—';
+    cycleLabel.textContent = 'Cycle ' + startTxt + ' → ' + endTxt + ' · ' + snap.daysRemaining + ' days left';
+  }
+  const fmt = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  const inc = snap.income || {};
+  const bonus = inc.bonus || { amount: 0, included: false, status: 'expected' };
+  const bonusBadge = bonus.included
+    ? ('<span style="color:var(--green);font-family:var(--mono);font-weight:600">+' + fmt(bonus.amount) + '</span> bonus' + (bonus.status === 'expected' ? ' <span style="color:var(--text3);font-size:12px;font-style:italic">(expected)</span>' : ''))
+    : '<span style="color:var(--text3)">no bonus this cycle</span>';
+  // Proportion bar segments
+  const total = Math.max(1, snap.derived.claimedTotal);
+  const seg = (v, color) => '<div class="payday-prop-seg" style="width:' + (Math.max(0, v) / total * 100).toFixed(1) + '%;background:' + color + '"></div>';
+  const propBar = '<div class="payday-prop-bar">'
+    + seg(snap.bills.total, 'var(--blue)')
+    + seg(snap.debts.total, 'var(--red)')
+    + seg(snap.savings.total, 'var(--green)')
+    + seg(snap.knownUpcoming.total, 'var(--amber)')
+    + seg(snap.dailyLiving.plannedTotal, 'var(--text3)')
+    + '</div>';
+  // 3-number summary line
+  const claimedFmt = fmt(snap.derived.claimedTotal);
+  const freeFmt = fmt(snap.derived.freeTotal);
+  const perDayFmt = fmt(snap.dailyLiving.perDay);
+  const freeCol = snap.derived.freeTotal >= snap.bufferFloor ? 'var(--green)' : snap.derived.freeTotal >= 0 ? 'var(--amber)' : 'var(--red)';
+  // Hero
+  let html = '';
+  html += '<div class="payday-hero">';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">To plan this cycle</div>';
+  html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
+  html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono)">' + fmt(inc.netPay || 0) + '</span> net pay · ' + bonusBadge + ' <button onclick="alert(\'Bonus editor — Phase 6\')" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button></div>';
+  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
+  html += '</div>';
+
+  // 3-number line + proportion bar
+  html += '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text2);padding:0 4px">';
+  html += '<span>Claimed <strong style="font-family:var(--mono);color:var(--text)">' + claimedFmt + '</strong></span>';
+  html += '<span>Free <strong style="font-family:var(--mono);color:' + freeCol + '">' + freeFmt + '</strong></span>';
+  html += '<span>/Day <strong style="font-family:var(--mono);color:var(--text)">' + perDayFmt + '</strong></span>';
+  html += '</div>';
+  html += propBar;
+  html += '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:18px">Bills · Debts · Savings · Upcoming · Living</div>';
+
+  // 5 category rows
+  const billsLabel = snap.bills.items > 0 ? (fmt(snap.bills.total) + ' · ' + snap.bills.items + ' bill' + (snap.bills.items === 1 ? '' : 's')) : 'No bills this cycle';
+  const debtsLabel = snap.debts.items > 0 ? (fmt(snap.debts.total) + ' · ' + snap.debts.items + ' active') : 'No active debts';
+  const savingsLabel = fmt(snap.savings.total) + ' allocated';
+  const upLabel = snap.knownUpcoming.items > 0 ? (fmt(snap.knownUpcoming.total) + ' · ' + snap.knownUpcoming.items + ' item' + (snap.knownUpcoming.items === 1 ? '' : 's')) : 'None added yet';
+  const livingLabel = fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days';
+  const navRow = (icon, title, subtitle, onclick) => '<button class="payday-nav-row" onclick="' + onclick + '" aria-label="' + title + ': ' + subtitle + '"><span class="row-icon">' + icon + '</span><span class="row-text"><span class="row-title">' + title + '</span><span class="row-subtitle">' + subtitle + '</span></span><span class="row-chevron">›</span></button>';
+  html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px">';
+  html += navRow('🏠', 'Bills', billsLabel, "openPaydayCategory('payday-bills')");
+  html += navRow('💳', 'Debts', debtsLabel, "openPaydayCategory('payday-debts')");
+  html += navRow('💰', 'Savings plan', savingsLabel, "openPaydayCategory('payday-savings')");
+  html += navRow('🎯', 'Known upcoming', upLabel, "openPaydayCategory('payday-upcoming')");
+  html += navRow('📅', 'Daily living', livingLabel, "openPaydayCategory('payday-living')");
+  html += '</div>';
+
+  // 3 action rows
+  const isLocked = !!snap.lockedAt;
+  const lockLabel = isLocked
+    ? ('🔓 Re-plan')
+    : ('🔒 Lock plan');
+  const lockSub = isLocked
+    ? ('✓ Locked ' + new Date(snap.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + (snap.streak > 0 ? ' · 🔥 ' + snap.streak + ' cycle' + (snap.streak === 1 ? '' : 's') : ''))
+    : ('Commit this plan + start ticking items off');
+  html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden">';
+  html += '<button class="payday-nav-row" onclick="alert(\'Auto-allocate — Phase 6\')" aria-label="Auto-allocate surplus"><span class="row-icon">⚙️</span><span class="row-text"><span class="row-title">Auto-allocate</span><span class="row-subtitle">Suggest sensible defaults</span></span><span class="row-chevron">›</span></button>';
+  html += '<button class="payday-nav-row" onclick="alert(\'Ask AI — Phase 7\')" aria-label="Ask AI about this plan"><span class="row-icon">💬</span><span class="row-text"><span class="row-title">Ask AI</span><span class="row-subtitle">Affordability + plan tweaks</span></span><span class="row-chevron">›</span></button>';
+  html += '<button class="payday-nav-row" onclick="alert(\'Lock / re-plan — Phase 6\')" aria-label="' + lockLabel + '" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '"><span class="row-icon">' + (isLocked ? '🔓' : '🔒') + '</span><span class="row-text"><span class="row-title" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">' + lockLabel + '</span><span class="row-subtitle">' + lockSub + '</span></span><span class="row-chevron" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">›</span></button>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
 // ─── Bundle 27 Phase 0: BRAIN.plan helpers ────────────────────────────────
 // Pure-ish utilities used by BRAIN.plan. Live outside the bubble so the
 // bubble's body stays focused on canonical writes.
@@ -8076,6 +8212,18 @@ function _slyghtCloseTopmostModal() {
     if (typeof closeAllocateSubscreen === 'function') closeAllocateSubscreen();
     return true;
   }
+  // Bundle 27 Phase 2: Payday Plan sub-screens (within #pg-payday-plan)
+  const paydaySub = document.querySelector('.payday-subscreen.payday-active');
+  if (paydaySub) {
+    if (typeof closePaydayCategory === 'function') closePaydayCategory(paydaySub.id);
+    return true;
+  }
+  // Bundle 27 Phase 1: Payday Plan root canvas
+  const paydayRoot = document.getElementById('pg-payday-plan');
+  if (paydayRoot && paydayRoot.classList.contains('payday-active')) {
+    if (typeof closePaydayPlan === 'function') closePaydayPlan();
+    return true;
+  }
   return false;
 }
 window.addEventListener('popstate', () => { _slyghtCloseTopmostModal(); });
@@ -8087,7 +8235,8 @@ window.addEventListener('DOMContentLoaded', () => {
       const isOpen = el.classList.contains('open') || el.classList.contains('settings-active');
       const wasOpen = el._slyghtWasOpen;
       const isPlanSub = el.classList.contains('plan-subscreen-active');
-      const fullyOpen = isOpen || isPlanSub;
+      const isPaydayActive = el.classList.contains('payday-active');
+      const fullyOpen = isOpen || isPlanSub || isPaydayActive;
       if (fullyOpen && !wasOpen) {
         try { history.pushState({ slyghtModalGuard: true }, ''); } catch (_) {}
         el._slyghtWasOpen = true;
@@ -8096,7 +8245,7 @@ window.addEventListener('DOMContentLoaded', () => {
       }
     }
   });
-  document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen, .plan-subscreen')
+  document.querySelectorAll('.modal-overlay, .recon-overlay, .edit-modal, .settings-subscreen, .plan-subscreen, .payday-subscreen, #pg-payday-plan')
     .forEach(el => observer.observe(el, { attributes: true, attributeFilter: ['class'] }));
 });
 
@@ -15933,14 +16082,14 @@ function renderAllocateTile() {
   const col = isPositive ? '#4ECDC4' : '#E74C3C';
   const fmt = '$' + Math.abs(Math.round(left)).toLocaleString();
   return `
-    <button onclick="openAllocateSubscreen()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
+    <button onclick="openPaydayPlan()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
       <div style="flex:1">
-        <div style="font-size:13px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📋 Allocate Your Payday${isLocked ? ' · 🔒 locked' : ''}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📋 Payday Plan${isLocked ? ' · 🔒 locked' : ''}</div>
         <div style="display:flex;align-items:baseline;gap:8px">
           <span style="font-family:var(--mono);font-size:26px;font-weight:800;color:${col}">${isPositive ? '' : '-'}${fmt}</span>
           <span style="font-size:13px;color:rgba(255,255,255,0.5)">left to allocate</span>
         </div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${w.daysToPayday} days until next payday · tap to see breakdown + adjust</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${w.daysToPayday} days until next payday · open full plan canvas</div>
       </div>
       <span style="font-size:24px;color:rgba(255,255,255,0.4);margin-left:8px">›</span>
     </button>`;
@@ -17753,5 +17902,79 @@ document.getElementById('plan-modal-overlay')
     <div id="plan-modal-content" style="background:#0f1623;border-radius:24px 24px 0 0;padding:24px 24px 40px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-sizing:border-box"></div>
   </div>
 </div>
+
+<!-- ═══ Bundle 27: Payday Plan Canvas (slide-over peer of plan-mode) ═══ -->
+<div id="pg-payday-plan" style="position:fixed;inset:0;background:var(--bg);z-index:510;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;background:var(--bg);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);z-index:10">
+    <button onclick="closePaydayPlan()" aria-label="Back" style="background:transparent;border:none;color:var(--text);font-size:28px;line-height:1;padding:6px 10px;min-height:44px;min-width:44px;cursor:pointer">‹</button>
+    <div style="text-align:center;flex:1">
+      <div style="color:var(--text);font-size:16px;font-weight:700;letter-spacing:0.5px">📋 Payday Plan</div>
+      <div id="payday-cycle-label" style="color:var(--text3);font-size:12px;margin-top:2px">—</div>
+    </div>
+    <div style="width:44px"></div>
+  </div>
+
+  <!-- Root navigator content (re-rendered on open) -->
+  <div id="payday-root-content" style="padding:16px;padding-bottom:120px"></div>
+
+  <!-- ═══ Sub-screen containers (Phase 2 scaffolding — empty bodies) ═══ -->
+  <div class="payday-subscreen" id="payday-bills" role="dialog" aria-label="Bills">
+    <div class="subscreen-header">
+      <button class="subscreen-back" onclick="closePaydayCategory('payday-bills')" aria-label="Back to Payday Plan">‹</button>
+      <span class="subscreen-title">🏠 Bills</span>
+      <div style="width:44px"></div>
+    </div>
+    <div class="subscreen-body" id="payday-bills-body">
+      <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>bills grouped by before/after payday, with checkboxes + per-cycle override editor.</div>
+    </div>
+  </div>
+
+  <div class="payday-subscreen" id="payday-debts" role="dialog" aria-label="Debts">
+    <div class="subscreen-header">
+      <button class="subscreen-back" onclick="closePaydayCategory('payday-debts')" aria-label="Back to Payday Plan">‹</button>
+      <span class="subscreen-title">💳 Debts</span>
+      <div style="width:44px"></div>
+    </div>
+    <div class="subscreen-body" id="payday-debts-body">
+      <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>minimum debt payments due this cycle + KIA loan info.</div>
+    </div>
+  </div>
+
+  <div class="payday-subscreen" id="payday-savings" role="dialog" aria-label="Savings plan">
+    <div class="subscreen-header">
+      <button class="subscreen-back" onclick="closePaydayCategory('payday-savings')" aria-label="Back to Payday Plan">‹</button>
+      <span class="subscreen-title">💰 Savings plan</span>
+      <div style="width:44px"></div>
+    </div>
+    <div class="subscreen-body" id="payday-savings-body">
+      <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>buckets + KIA extra payment with quick-pick allocation editor.</div>
+    </div>
+  </div>
+
+  <div class="payday-subscreen" id="payday-upcoming" role="dialog" aria-label="Known upcoming">
+    <div class="subscreen-header">
+      <button class="subscreen-back" onclick="closePaydayCategory('payday-upcoming')" aria-label="Back to Payday Plan">‹</button>
+      <span class="subscreen-title">🎯 Known upcoming</span>
+      <div style="width:44px"></div>
+    </div>
+    <div class="subscreen-body" id="payday-upcoming-body">
+      <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>upcoming purchases (gifts, essentials, events) with date + category + amount.</div>
+    </div>
+  </div>
+
+  <div class="payday-subscreen" id="payday-living" role="dialog" aria-label="Daily living">
+    <div class="subscreen-header">
+      <button class="subscreen-back" onclick="closePaydayCategory('payday-living')" aria-label="Back to Payday Plan">‹</button>
+      <span class="subscreen-title">📅 Daily living</span>
+      <div style="width:44px"></div>
+    </div>
+    <div class="subscreen-body" id="payday-living-body">
+      <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>daily floor editor + per-day pace + context.</div>
+    </div>
+  </div>
+
+</div>
+<!-- ═══ End Payday Plan Canvas ═══ -->
+
 </body>
 </html>
