@@ -142,6 +142,16 @@ body.edit-modal-open{overflow:hidden}
 .payday-prop-seg{height:100%;transition:width .3s ease-out}
 .payday-hero{background:var(--bg2);border-radius:14px;padding:18px 16px;margin-bottom:14px}
 .payday-action-row{display:flex;align-items:center;padding:14px 16px;background:var(--bg2);border:none;color:var(--text);min-height:52px;text-align:left;cursor:pointer;width:100%}
+/* Bundle 27 Phase 4: quick-pick amount grid (used inside edit-modal custom body). */
+.quickpick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
+.quickpick{min-height:44px;border-radius:8px;background:var(--bg3);border:2px solid transparent;color:var(--text);font-family:var(--mono);font-size:15px;cursor:pointer;padding:0 4px}
+.quickpick.active{border-color:var(--green);background:var(--green-dim);color:var(--green);font-weight:700}
+.quickpick.custom{font-style:italic;background:transparent;border:1px dashed var(--border2);color:var(--text2);font-family:inherit;font-size:14px}
+.payday-dropdown{display:flex;flex-direction:column;gap:4px;margin:14px 0 6px}
+.payday-dropdown-label{font-size:13px;color:var(--text3)}
+.payday-dropdown-select{min-height:44px;padding:0 12px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:15px;font-family:inherit}
+.payday-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;margin:6px 0}
+.payday-toggle-label{flex:1;font-size:14px;color:var(--text2)}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -7824,6 +7834,265 @@ function renderPaydayPlanRoot() {
   el.innerHTML = html;
 }
 
+// ─── Bundle 27 Phase 4: Payday Plan editor modals (interactive) ──────────
+// Reuses EDIT_MODAL.openCustom for the focus-lock + back-button + scroll-
+// lock plumbing. Each editor builds its own bodyHtml with quick-pick grid
+// + optional dropdowns/toggles, and a save callback that reads from the
+// DOM and routes through BRAIN.plan.* canonical writers.
+
+function _roundNice(n) {
+  if (n <= 0) return 0;
+  if (n < 10) return Math.round(n);
+  if (n < 100) return Math.round(n / 5) * 5;
+  return Math.round(n / 10) * 10;
+}
+function _generateQuickPicks(category, normalAmount) {
+  if (category === 'bill' || category === 'debt') {
+    const base = (+normalAmount || 0);
+    return [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5].map(p => _roundNice(base * p));
+  }
+  if (category === 'savings') return [0, 100, 200, 300, 500, 750, 1000];
+  if (category === 'upcoming') return [20, 40, 50, 80, 100, 150, 200];
+  if (category === 'floor') return [20, 25, 30, 35, 40, 50, 75];
+  return [0, 25, 50, 100, 200, 500, 1000];
+}
+function _buildQuickPickGrid(picks, currentValue) {
+  const pillHtml = picks.map(p => {
+    const active = (Math.round(+currentValue) === p) ? ' active' : '';
+    return '<button type="button" class="quickpick' + active + '" data-quickpick="' + p + '">$' + p.toLocaleString() + '</button>';
+  }).join('');
+  return '<div class="quickpick-grid" id="quickpick-grid">' + pillHtml + '<button type="button" class="quickpick custom" id="quickpick-custom-btn">Custom</button></div>' +
+    '<input type="number" id="quickpick-custom-input" inputmode="decimal" placeholder="Custom amount" style="display:none;width:100%;padding:12px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px;font-family:var(--mono);margin-top:6px">';
+}
+function _wireQuickPickGrid() {
+  // Called from onReady — wires pill taps + custom input toggle.
+  const grid = document.getElementById('quickpick-grid');
+  if (!grid) return;
+  grid.querySelectorAll('.quickpick[data-quickpick]').forEach(b => {
+    b.addEventListener('click', () => {
+      grid.querySelectorAll('.quickpick').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const customInput = document.getElementById('quickpick-custom-input');
+      if (customInput) { customInput.style.display = 'none'; customInput.value = ''; }
+    });
+  });
+  const customBtn = document.getElementById('quickpick-custom-btn');
+  const customInput = document.getElementById('quickpick-custom-input');
+  if (customBtn && customInput) {
+    customBtn.addEventListener('click', () => {
+      grid.querySelectorAll('.quickpick').forEach(x => x.classList.remove('active'));
+      customBtn.classList.add('active');
+      customInput.style.display = 'block';
+      customInput.focus();
+    });
+  }
+}
+function _readQuickPickValue() {
+  // Returns the currently-selected amount (pill or custom).
+  const customInput = document.getElementById('quickpick-custom-input');
+  if (customInput && customInput.style.display !== 'none' && customInput.value !== '') {
+    const v = +customInput.value;
+    if (isFinite(v) && v >= 0) return v;
+  }
+  const active = document.querySelector('#quickpick-grid .quickpick.active[data-quickpick]');
+  if (active) return +active.dataset.quickpick;
+  return null;
+}
+
+const _PAYDAY_REASON_OPTIONS = [
+  { value: 'no-change', label: 'No change' },
+  { value: 'tight-month', label: 'Tight month' },
+  { value: 'trip-expense', label: 'Trip expense' },
+  { value: 'unexpected-cost', label: 'Unexpected cost' },
+  { value: 'bill-went-up', label: 'Bill went up' },
+  { value: 'bill-went-down', label: 'Bill went down' },
+  { value: 'other', label: 'Other' },
+];
+const _UPCOMING_CATEGORY_OPTIONS = [
+  { value: 'gift', label: '🎁 Gift' },
+  { value: 'essentials', label: '🧴 Essentials' },
+  { value: 'subscription', label: '📺 Subscription' },
+  { value: 'event', label: '🎟️ Event' },
+  { value: 'family', label: '👨‍👩‍👧 Family' },
+  { value: 'health', label: '❤️ Health' },
+  { value: 'one-off', label: '🧾 One-off' },
+  { value: 'other', label: '📦 Other' },
+];
+function _buildDropdown(label, id, options, currentValue) {
+  const opts = options.map(o => '<option value="' + o.value + '"' + (o.value === currentValue ? ' selected' : '') + '>' + o.label + '</option>').join('');
+  return '<div class="payday-dropdown"><label class="payday-dropdown-label" for="' + id + '">' + label + '</label><select class="payday-dropdown-select" id="' + id + '">' + opts + '</select></div>';
+}
+
+// ─── Bill editor ────────────────────────────────────────────────────────
+function openEditPaydayBill(billName) {
+  const bill = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.find(b => b && b.name === billName) : null;
+  if (!bill) return;
+  const normal = +bill.amt || 0;
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const ov = overrides['bill:' + billName];
+  const current = ov ? ov.thisCycleAmount : normal;
+  const currentReason = (ov && ov.reason) || 'no-change';
+  const fmt = '$' + Math.round(normal).toLocaleString();
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Normal amount: <strong style="font-family:var(--mono);color:var(--text2)">' + fmt + '</strong></div>';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Paying this cycle:</div>';
+  body += _buildQuickPickGrid(_generateQuickPicks('bill', normal), current);
+  body += _buildDropdown('Reason for the change', 'bill-edit-reason', _PAYDAY_REASON_OPTIONS, currentReason);
+  EDIT_MODAL.openCustom({
+    title: 'Edit ' + billName + ' — this cycle',
+    hint: 'Adjust the amount you\'re paying this cycle. Defaults to the normal amount.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount or enter custom' };
+      const reason = document.getElementById('bill-edit-reason')?.value || 'no-change';
+      const deferAction = (amt < normal) ? 'create_known_upcoming_next_cycle' : 'none';
+      const r = BRAIN.plan.setOverride('bill', billName, amt, { reason, deferAction }, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      if (!r.ok) return r;
+      renderPaydayBills();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ ' + billName + ' set to $' + amt + ' this cycle');
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Debt editor ────────────────────────────────────────────────────────
+function openEditPaydayDebt(debtId) {
+  const debt = (S.debts || []).find(d => d && (d.id === debtId || d.name === debtId));
+  if (!debt) return;
+  const normal = +debt.amt || 0;
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const key = 'debt:' + (debt.id || debt.name);
+  const ov = overrides[key];
+  const current = ov ? ov.thisCycleAmount : normal;
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Balance: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(normal).toLocaleString() + '</strong></div>';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Paying this cycle:</div>';
+  body += _buildQuickPickGrid(_generateQuickPicks('debt', normal), current);
+  EDIT_MODAL.openCustom({
+    title: 'Edit ' + debt.name + ' — this cycle',
+    hint: 'Adjust how much you\'re putting toward this debt this cycle.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      const r = BRAIN.plan.setOverride('debt', (debt.id || debt.name), amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      if (!r.ok) return r;
+      renderPaydayDebts();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ ' + debt.name + ' set to $' + amt + ' this cycle');
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Savings editor ─────────────────────────────────────────────────────
+function openEditPaydaySavings(bucketName) {
+  const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+  const bucket = buckets.find(b => b && b.name === bucketName);
+  if (!bucket) return;
+  const planSavings = (S.activePlan && S.activePlan.savings) || {};
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const ov = overrides['savings:' + bucketName];
+  const current = ov ? ov.thisCycleAmount : (+planSavings[bucketName] || 0);
+  const monthly = +bucket.monthly || 0;
+  let body = '';
+  if (monthly > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Monthly target: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(monthly).toLocaleString() + '</strong></div>';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Allocate this cycle:</div>';
+  body += _buildQuickPickGrid(_generateQuickPicks('savings', monthly), current);
+  EDIT_MODAL.openCustom({
+    title: 'Allocate to ' + bucketName,
+    hint: 'How much of your remainder goes to this goal this cycle.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      const r = BRAIN.plan.setOverride('savings', bucketName, amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      if (!r.ok) return r;
+      // Also write to S.activePlan.savings for legacy reads
+      S.activePlan.savings = S.activePlan.savings || {};
+      S.activePlan.savings[bucketName] = amt;
+      try { save(); } catch (_) {}
+      renderPaydaySavings();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ $' + amt + ' → ' + bucketName);
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Known Upcoming add/edit ───────────────────────────────────────────
+function openEditPaydayUpcoming(itemId) {
+  const list = (S.activePlan && S.activePlan.knownUpcoming) || [];
+  const item = itemId ? list.find(i => i.id === itemId) : null;
+  const isAdd = !item;
+  const current = item ? (+item.amount || 0) : 0;
+  const currentCat = item ? (item.category || 'other') : 'other';
+  const currentName = item ? item.name : '';
+  const currentDate = item ? (item.date || '') : '';
+  let body = '';
+  body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="upcoming-name">Name</label><input type="text" class="payday-dropdown-select" id="upcoming-name" placeholder="e.g. Mum\'s day gift" value="' + currentName.replace(/"/g, '&quot;') + '" autocomplete="off"></div>';
+  body += _buildDropdown('Category', 'upcoming-category', _UPCOMING_CATEGORY_OPTIONS, currentCat);
+  body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="upcoming-date">When?</label><input type="date" class="payday-dropdown-select" id="upcoming-date" value="' + currentDate + '"></div>';
+  body += '<div style="font-size:13px;color:var(--text3);margin-top:8px;margin-bottom:8px">Amount:</div>';
+  body += _buildQuickPickGrid(_generateQuickPicks('upcoming', 0), current);
+  EDIT_MODAL.openCustom({
+    title: isAdd ? 'Add upcoming item' : ('Edit ' + currentName),
+    hint: isAdd ? 'Something you know you\'ll need to buy this cycle.' : 'Adjust this upcoming item.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    saveLabel: isAdd ? 'Add' : 'Save',
+    save: () => {
+      const name = (document.getElementById('upcoming-name')?.value || '').trim();
+      if (!name) return { ok: false, reason: 'Give it a name' };
+      const cat = document.getElementById('upcoming-category')?.value || 'other';
+      const date = document.getElementById('upcoming-date')?.value || null;
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      let r;
+      if (isAdd) {
+        r = BRAIN.plan.addKnownUpcoming({ name, amount: amt, category: cat, date }, BRAIN.SOURCES.PLAN_UPCOMING_ADD);
+      } else {
+        r = BRAIN.plan.updateKnownUpcoming(itemId, { name, amount: amt, category: cat, date }, BRAIN.SOURCES.PLAN_UPCOMING_UPDATE);
+      }
+      if (!r.ok) return r;
+      renderPaydayUpcoming();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ ' + (isAdd ? 'Added ' : 'Updated ') + name);
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Daily Living floor editor ─────────────────────────────────────────
+function openEditPaydayLivingFloor() {
+  const snap = BRAIN.plan.getSnapshot();
+  const current = snap.dailyLiving.floor;
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Below this triggers a warning. Sets the minimum cushion you want per day for food, fuel, coffee, etc.</div>';
+  body += _buildQuickPickGrid(_generateQuickPicks('floor', current), current);
+  EDIT_MODAL.openCustom({
+    title: 'Daily minimum',
+    hint: 'How tight is too tight per day?',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      const r = BRAIN.plan.setDailyLivingFloor(amt, BRAIN.SOURCES.PLAN_DAILY_FLOOR_EDIT);
+      if (!r.ok) return r;
+      renderPaydayLiving();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ Daily floor: $' + amt);
+      return { ok: true };
+    },
+  });
+}
+
 // ─── Bundle 27 Phase 3: per-sub-screen render functions ─────────────────
 // All five sub-screens render read-only rows. Edit-on-tap surfaces an
 // "edit modal coming Phase 4" alert. Tick actions surface a "lock plan
@@ -7963,7 +8232,7 @@ function renderPaydayBills() {
         sub: _fmtCycleDay(b.day),
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
-        onTap: "alert('Edit modal — Phase 4. Will let you change the amount or defer this bill.')",
+        onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
@@ -7983,7 +8252,7 @@ function renderPaydayBills() {
         sub: _fmtCycleDay(b.day),
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
-        onTap: "alert('Edit modal — Phase 4.')",
+        onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
@@ -8024,7 +8293,7 @@ function renderPaydayDebts() {
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
-        onTap: "alert('Edit modal — Phase 4.')",
+        onTap: "openEditPaydayDebt('" + (d.id || d.name).toString().replace(/'/g, "\\'") + "')",
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
@@ -8096,7 +8365,7 @@ function renderPaydaySavings() {
         name: b.name,
         sub: subParts.join(' · '),
         value: fmtC2(amt),
-        onTap: "alert('Edit modal — Phase 4. Quick-pick allocation with Take-from selector.')",
+        onTap: "openEditPaydaySavings('" + b.name.replace(/'/g, "\\'") + "')",
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
@@ -8157,7 +8426,7 @@ function renderPaydayUpcoming() {
         name: item.name,
         sub: dateLabel + (item.notes ? ' · ' + item.notes : ''),
         value: fmtC2(item.amount || 0),
-        onTap: "alert('Edit modal — Phase 4. Will let you change amount, category, date, or remove.')",
+        onTap: "openEditPaydayUpcoming('" + item.id + "')",
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
@@ -8165,7 +8434,7 @@ function renderPaydayUpcoming() {
   } else {
     html += '<div class="subscreen-placeholder">No upcoming items yet.<br><br>Things you know you\'ll need to buy this cycle — gifts, essentials, events, one-offs. Tap below to add.</div>';
   }
-  html += '<div class="settings-pointer-row"><a onclick="alert(\'Add item — Phase 4.\')">+ Add item</a></div>';
+  html += '<div class="settings-pointer-row"><a onclick="openEditPaydayUpcoming(null)">+ Add item</a></div>';
   html += '<div class="settings-section-hint" style="margin-top:14px">Things you know you\'ll need to buy this cycle. The AI will know about these when you ask "can I afford X."</div>';
   body.innerHTML = html;
 }
@@ -8201,7 +8470,7 @@ function renderPaydayLiving() {
   // Floor (editable in Phase 4)
   html += '<div class="settings-group-title">Floor</div>';
   html += '<div class="settings-group-card">';
-  html += '<button class="settings-edit-row" onclick="alert(\'Floor editor — Phase 4. Quick-pick $20 / $25 / $30 / $35 / $40 / $50 / custom.\')" aria-label="Minimum daily floor, tap to edit" data-brain-key="plan.dailyLivingFloor">' +
+  html += '<button class="settings-edit-row" onclick="openEditPaydayLivingFloor()" aria-label="Minimum daily floor, tap to edit" data-brain-key="plan.dailyLivingFloor">' +
     '<span class="row-multi">' +
       '<span style="font-size:15px;color:var(--text)">Minimum daily</span>' +
       '<span class="row-sub">Below this triggers a warning</span>' +
@@ -8396,6 +8665,7 @@ const EDIT_MODAL = {
     this._save = null;
     this._validate = null;
     this._onAfter = null;
+    this._isCustom = false;  // Bundle 27 Phase 4: reset custom-mode flag
     // Restore cancel button (openInfo hides it)
     if (root) {
       const cancelBtn = root.querySelector('.btn-cancel');
@@ -8432,6 +8702,19 @@ const EDIT_MODAL = {
     document.body.classList.add('edit-modal-open');
   },
   attemptSave() {
+    // Bundle 27 Phase 4: custom mode — _customBuilder owns the body; save
+    // takes no arg (reads from custom DOM directly).
+    if (this._isCustom) {
+      if (this._save) {
+        const r = this._save();
+        if (r && r.ok === false) { this.showError(r.reason || 'Save failed'); return; }
+      }
+      const afterCb = this._onAfter;
+      this.close();
+      if (typeof afterCb === 'function') afterCb();
+      if (typeof renderAll === 'function') renderAll();
+      return;
+    }
     const input = document.getElementById('edit-modal-input');
     // Bundle 26 Phase 1.5a: info-only mode has no input + no save fn — just
     // close on "Got it" tap.
@@ -8450,6 +8733,37 @@ const EDIT_MODAL = {
     this.close();
     if (typeof afterCb === 'function') afterCb();
     if (typeof renderAll === 'function') renderAll();
+  },
+  // Bundle 27 Phase 4: custom-body mode. cfg = { title, hint, bodyHtml,
+  // onReady, save, saveLabel, danger, onAfter }. save() reads values from
+  // the bodyHtml DOM directly (no single-input shortcut). Same focus-lock,
+  // back-button intercept, scroll-lock as openInfo/open.
+  openCustom(cfg) {
+    const root = document.getElementById('edit-modal');
+    if (!root) return;
+    document.getElementById('edit-modal-title').textContent = cfg.title || '';
+    document.getElementById('edit-modal-hint').textContent = cfg.hint || '';
+    const area = document.getElementById('edit-modal-input-area');
+    area.innerHTML = cfg.bodyHtml || '';
+    this._isCustom = true;
+    this._save = cfg.save || null;
+    this._validate = null;
+    this._onAfter = cfg.onAfter || null;
+    const saveBtn = document.getElementById('edit-modal-save-btn');
+    if (saveBtn) {
+      saveBtn.textContent = cfg.saveLabel || 'Save';
+      saveBtn.className = cfg.danger ? 'btn-danger' : 'btn-save';
+    }
+    const cancelBtn = root.querySelector('.btn-cancel');
+    if (cancelBtn) cancelBtn.style.display = '';
+    const errEl = document.getElementById('edit-modal-err');
+    if (errEl) { errEl.textContent = ''; errEl.classList.remove('show'); }
+    root.classList.add('open');
+    document.body.classList.add('edit-modal-open');
+    // Wire up post-DOM-insert handlers.
+    if (typeof cfg.onReady === 'function') {
+      setTimeout(() => { try { cfg.onReady(area); } catch (_) {} }, 30);
+    }
   }
 };
 
