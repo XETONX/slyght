@@ -1223,26 +1223,28 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div class="settings-group-title">Data health</div>
         <div class="settings-group-card" style="padding:12px 14px">
           <div id="sub-health-content"></div>
-          <button onclick="HEALTH.render()" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check now</button>
+          <button onclick="runDiagnosticCheck('health')" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check now</button>
         </div>
 
         <div class="settings-group-title">Math health</div>
         <div class="settings-group-card" style="padding:12px 14px">
           <div id="sub-math-health-content" style="font-size:14px;color:var(--text2);line-height:1.6"></div>
           <div style="display:flex;gap:8px;margin-top:10px">
-            <button onclick="renderMathHealth()" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check</button>
-            <button onclick="MathInvariants.resetSession(); renderMathHealth();" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;min-height:44px;cursor:pointer">Reset session</button>
+            <button onclick="runDiagnosticCheck('math')" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run check</button>
+            <button onclick="runDiagnosticCheck('math-reset')" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;min-height:44px;cursor:pointer">Reset session</button>
           </div>
         </div>
 
         <div class="settings-group-title">UX intelligence</div>
         <div class="settings-group-card" style="padding:12px 14px">
           <div id="sub-ux-report-content"></div>
+          <button onclick="runDiagnosticCheck('ux')" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Refresh report</button>
         </div>
 
         <div class="settings-group-title">Activity log</div>
         <div class="settings-group-card" style="padding:12px 14px">
           <div id="sub-audit-log-content"></div>
+          <button onclick="runDiagnosticCheck('audit')" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Refresh log</button>
         </div>
 
       </div>
@@ -1835,6 +1837,16 @@ function load() {
   } catch(e) {}
   // FIX 9: sanitize balance floating point on every load
   S.bal = parseFloat((S.bal || 0).toFixed(2));
+  // Bundle 26.1: API key resilience — restore from the separate
+  // 'slyght_api_key' localStorage key if S.apiKey was lost via import-merge,
+  // seed-migration state-replace, push-sync overwrite, or other path that
+  // can drop the field. Single source of truth at boot, always.
+  try {
+    const _persistedKey = localStorage.getItem('slyght_api_key');
+    if (_persistedKey && _persistedKey.startsWith('sk-ant') && !S.apiKey) {
+      S.apiKey = _persistedKey;
+    }
+  } catch (_) {}
   // Clean stale notifications for paid debts on load
   if (S.notifications) {
     S.notifications = S.notifications.filter(n => {
@@ -7502,6 +7514,14 @@ function openSettingsCategory(subscreenId) {
   if (subscreenId === 'sub-data' && typeof populateRoundupDestinationDropdown === 'function') {
     populateRoundupDestinationDropdown();
   }
+  // Bundle 26.1: Diagnostics open hook — render all 4 panels so first-view
+  // shows live content (was: empty until user tapped each button).
+  if (subscreenId === 'sub-diagnostics' && typeof runDiagnosticCheck === 'function') {
+    runDiagnosticCheck('health', { silent: true });
+    runDiagnosticCheck('math', { silent: true });
+    runDiagnosticCheck('ux', { silent: true });
+    runDiagnosticCheck('audit', { silent: true });
+  }
 }
 function closeSettingsCategory(subscreenId) {
   const el = document.getElementById(subscreenId);
@@ -7576,6 +7596,42 @@ function populateRoundupDestinationDropdown() {
   sel.value = S.roundUpDestination || '';
 }
 // guardian-allow-block-end: tdz-safe-engine-access
+// Bundle 26.1: Diagnostics sub-screen button dispatcher. Render fns write
+// to the legacy IDs (display:none); the renderAll mirror copies the result
+// into the sub-screen targets. Button onclicks call into here so we can run
+// the right render fn AND fire the mirror inline (no need to wait for the
+// next renderAll). Fixes "buttons do nothing" report.
+function runDiagnosticCheck(kind, opts) {
+  opts = opts || {};
+  try {
+    if (kind === 'health' && typeof HEALTH !== 'undefined' && HEALTH.render) HEALTH.render();
+    else if (kind === 'math' && typeof renderMathHealth === 'function') renderMathHealth();
+    else if (kind === 'math-reset') {
+      if (typeof MathInvariants !== 'undefined' && MathInvariants.resetSession) MathInvariants.resetSession();
+      if (typeof renderMathHealth === 'function') renderMathHealth();
+    }
+    else if (kind === 'ux' && typeof UX !== 'undefined' && UX.renderReport) UX.renderReport();
+    else if (kind === 'audit' && typeof renderAuditLog === 'function') renderAuditLog();
+  } catch (e) { console.warn('[Diagnostics]', kind, 'failed:', e); }
+  // Mirror the freshly-rendered legacy HTML into the sub-screen target
+  // immediately so the user sees the result without waiting for the next
+  // renderAll tick.
+  const mirrorMap = {
+    health: ['health-content', 'sub-health-content'],
+    math: ['math-health-content', 'sub-math-health-content'],
+    'math-reset': ['math-health-content', 'sub-math-health-content'],
+    ux: ['ux-report-content', 'sub-ux-report-content'],
+    audit: ['audit-log-content', 'sub-audit-log-content'],
+  };
+  const pair = mirrorMap[kind];
+  if (pair) {
+    const src = document.getElementById(pair[0]);
+    const dst = document.getElementById(pair[1]);
+    if (src && dst) dst.innerHTML = src.innerHTML;
+  }
+  if (!opts.silent && typeof showToast === 'function') showToast('✓ ' + (kind === 'math-reset' ? 'Math session reset' : 'Refreshed'));
+}
+
 function doImportFromSub() {
   const subArea = document.getElementById('sub-import-area');
   const subMsg = document.getElementById('sub-import-msg');
@@ -8311,7 +8367,13 @@ function doImport() {
       const existingKeys = new Set(S.txns.map(t => t.id != null ? t.id : t.ts));
       const incoming = (p.S.txns || []).filter(t => !existingKeys.has(t.id != null ? t.id : t.ts));
       const mergedTxns = [...S.txns, ...incoming];
+      // Bundle 26.1: preserve sensitive fields the export strips. buildFullExport
+      // deletes apiKey before exporting (security); if the user re-imports their
+      // own export, the spread {...S, ...p.S} would overwrite S.apiKey with
+      // undefined. Snapshot + restore so import never wipes the key.
+      const _preservedApiKey = S.apiKey || localStorage.getItem('slyght_api_key') || '';
       S = {...S, ...p.S, txns: mergedTxns};
+      if (_preservedApiKey && !S.apiKey) S.apiKey = _preservedApiKey;
     }
     // L2: validate imported BILLS schema — skip invalid entries and warn
     if (p.BILLS) {

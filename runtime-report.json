@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-12T13:57:49.330Z",
+  "timestamp": "2026-05-12T14:06:57.853Z",
   "balance": 84.89,
   "summary": {
     "passed": 50,
@@ -236,7 +236,7 @@
           "section": "SECTION 7 — DATA INTEGRITY",
           "name": "paydayReceived flag matches calendar position",
           "pass": true,
-          "detail": "paydayReceived=false · today=12 · payday=15"
+          "detail": "paydayReceived=false · today=13 · payday=15"
         }
       ]
     },
