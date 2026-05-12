@@ -7757,7 +7757,7 @@ function renderPaydayPlanRoot() {
   html += '<div class="payday-hero">';
   html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in</div>';
   html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
-  html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono)">' + fmt(inc.netPay || 0) + '</span> net pay · ' + bonusBadge + ' <button onclick="alert(\'Bonus editor — Phase 6\')" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button></div>';
+  html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono)">' + fmt(inc.netPay || 0) + '</span> net pay · ' + bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button></div>';
   html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
   html += '</div>';
 
@@ -7827,9 +7827,9 @@ function renderPaydayPlanRoot() {
     ? ('✓ Locked ' + new Date(snap.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) + (snap.streak > 0 ? ' · 🔥 ' + snap.streak + ' cycle' + (snap.streak === 1 ? '' : 's') : ''))
     : ('Commit this plan + start ticking items off');
   html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden">';
-  html += '<button class="payday-nav-row" onclick="alert(\'Auto-allocate — Phase 6\')" aria-label="Auto-allocate surplus"><span class="row-icon">⚙️</span><span class="row-text"><span class="row-title">Auto-allocate</span><span class="row-subtitle">Suggest sensible defaults</span></span><span class="row-chevron">›</span></button>';
-  html += '<button class="payday-nav-row" onclick="alert(\'Ask AI — Phase 7\')" aria-label="Ask AI about this plan"><span class="row-icon">💬</span><span class="row-text"><span class="row-title">Ask AI</span><span class="row-subtitle">Affordability + plan tweaks</span></span><span class="row-chevron">›</span></button>';
-  html += '<button class="payday-nav-row" onclick="alert(\'Lock / re-plan — Phase 6\')" aria-label="' + lockLabel + '" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '"><span class="row-icon">' + (isLocked ? '🔓' : '🔒') + '</span><span class="row-text"><span class="row-title" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">' + lockLabel + '</span><span class="row-subtitle">' + lockSub + '</span></span><span class="row-chevron" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">›</span></button>';
+  html += '<button class="payday-nav-row" onclick="openPaydayAutoAllocate()" aria-label="Auto-allocate surplus"><span class="row-icon">⚙️</span><span class="row-text"><span class="row-title">Auto-allocate</span><span class="row-subtitle">Suggest sensible defaults</span></span><span class="row-chevron">›</span></button>';
+  html += '<button class="payday-nav-row" onclick="openPaydayAskAI()" aria-label="Ask AI about this plan"><span class="row-icon">💬</span><span class="row-text"><span class="row-title">Ask AI</span><span class="row-subtitle">Affordability + plan tweaks</span></span><span class="row-chevron">›</span></button>';
+  html += '<button class="payday-nav-row" onclick="' + (isLocked ? 'openPaydayUnlockPlan()' : 'openPaydayLockPlan()') + '" aria-label="' + lockLabel + '" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '"><span class="row-icon">' + (isLocked ? '🔓' : '🔒') + '</span><span class="row-text"><span class="row-title" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">' + lockLabel + '</span><span class="row-subtitle">' + lockSub + '</span></span><span class="row-chevron" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">›</span></button>';
   html += '</div>';
   el.innerHTML = html;
 }
@@ -8066,6 +8066,182 @@ function openEditPaydayUpcoming(itemId) {
       return { ok: true };
     },
   });
+}
+
+// ─── Bonus modal (Phase 6) ─────────────────────────────────────────────
+// Edit net pay + bonus amount + include toggle + status. Save fires the
+// full recompute via setBonus + re-renders everything that uses it.
+function openEditPaydayBonus() {
+  const snap = BRAIN.plan.getSnapshot();
+  const inc = snap.income || {};
+  const bonus = inc.bonus || { amount: 0, included: false, status: 'expected' };
+  let body = '';
+  body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="bonus-netpay">Net pay this cycle</label>';
+  body += '<input type="number" inputmode="decimal" class="payday-dropdown-select" id="bonus-netpay" value="' + (inc.netPay || '') + '" style="font-family:var(--mono)"></div>';
+  body += '<div class="payday-toggle-row" style="margin:14px 0 6px"><span class="payday-toggle-label">Include bonus?</span>';
+  body += '<label class="toggle" aria-label="Include bonus"><input type="checkbox" id="bonus-include"' + (bonus.included ? ' checked' : '') + '><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
+  body += '<div id="bonus-amount-section">';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Bonus amount:</div>';
+  body += _buildQuickPickGrid([500, 800, 1000, 1200, 1500, 2000, 3000], bonus.amount || 0);
+  body += _buildDropdown('Status', 'bonus-status', [
+    { value: 'expected', label: 'Expected (not in account yet)' },
+    { value: 'confirmed', label: 'Confirmed (already landed)' },
+  ], bonus.status || 'expected');
+  body += '</div>';
+  body += '<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Bonuses vary with company performance. Adjust this anytime as your expectation changes.</div>';
+  EDIT_MODAL.openCustom({
+    title: 'Pay & bonus this cycle',
+    hint: 'Set your expected income for this cycle.',
+    bodyHtml: body,
+    onReady: (area) => {
+      _wireQuickPickGrid();
+      // Toggle on/off shows/hides bonus amount section
+      const toggle = document.getElementById('bonus-include');
+      const section = document.getElementById('bonus-amount-section');
+      const sync = () => { if (section) section.style.opacity = toggle.checked ? '1' : '0.4'; };
+      if (toggle) { toggle.addEventListener('change', sync); sync(); }
+    },
+    save: () => {
+      const netPay = +document.getElementById('bonus-netpay')?.value || 0;
+      const included = !!document.getElementById('bonus-include')?.checked;
+      const status = document.getElementById('bonus-status')?.value || 'expected';
+      const amt = _readQuickPickValue();
+      if (netPay < 0) return { ok: false, reason: 'Net pay must be ≥ 0' };
+      // Update income.netPay separately (BRAIN.config writer used for the
+      // underlying S.income; setBonus handles bonus fields)
+      if (netPay !== (snap.income && snap.income.netPay)) {
+        BRAIN.config.setIncome(netPay, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+        if (S.activePlan && S.activePlan.income) S.activePlan.income.netPay = netPay;
+      }
+      const r = BRAIN.plan.setBonus({ amount: amt || 0, included, status }, BRAIN.SOURCES.PLAN_BONUS_EDIT);
+      if (!r.ok) return r;
+      renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ Pay + bonus updated');
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Auto-allocate flow (Phase 6) ──────────────────────────────────────
+function openPaydayAutoAllocate() {
+  const rec = BRAIN.plan.recommendAllocation();
+  if (!rec.ok) {
+    if (rec.reason === 'shortfall') {
+      EDIT_MODAL.openInfo({
+        title: '🚨 Can\'t auto-allocate',
+        body: 'You\'re $' + Math.abs(rec.deficit).toFixed(0) + ' short for essentials + buffer this cycle.\n\nOptions:\n• Reduce a Bill / Debt override\n• Defer a bill to next cycle\n• Lower your daily-living floor in Settings',
+      });
+      return;
+    }
+    if (typeof showToast === 'function') showToast('Auto-allocate failed: ' + rec.reason);
+    return;
+  }
+  // Build summary HTML showing what will be applied
+  const fmt = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  const lines = Object.keys(rec.bucketAllocations).map(name => {
+    const amt = rec.bucketAllocations[name];
+    return '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + '</span><span style="font-family:var(--mono);color:var(--green)">' + fmt(amt) + '</span></div>';
+  }).join('');
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:10px">Suggested allocation across your savings goals, keeping a $' + Math.round(rec.leftAsBuffer) + ' safety buffer.</div>';
+  body += '<div style="background:var(--bg);border-radius:8px;padding:8px 14px;margin-bottom:8px">' + (lines || '<div style="color:var(--text3);font-size:13px;padding:4px 0">No buckets to allocate to.</div>') + '</div>';
+  body += '<div style="font-size:12px;color:var(--text3);margin-top:8px">Total to allocate: <strong style="font-family:var(--mono);color:var(--text2)">' + fmt(rec.allocatable) + '</strong></div>';
+  EDIT_MODAL.openCustom({
+    title: '⚙️ Auto-allocate',
+    hint: 'Apply this suggested allocation?',
+    bodyHtml: body,
+    saveLabel: 'Apply',
+    save: () => {
+      const r = BRAIN.plan.applyRecommendation(BRAIN.SOURCES.CANVAS_AUTO_APPLY);
+      if (!r.ok) return r;
+      renderPaydayPlanRoot();
+      renderPaydaySavings();
+      if (typeof showToast === 'function') showToast('✓ Auto-allocated across ' + r.applied.length + ' goal' + (r.applied.length === 1 ? '' : 's'));
+      return { ok: true };
+    },
+  });
+}
+
+// ─── Lock / Unlock flow (Phase 6) ──────────────────────────────────────
+function openPaydayLockPlan() {
+  const snap = BRAIN.plan.getSnapshot();
+  const remainder = snap.derived.freeTotal;
+  const buffer = snap.bufferFloor;
+  // If free < 0, lock disabled
+  if (remainder < 0) {
+    EDIT_MODAL.openInfo({
+      title: 'Can\'t lock yet',
+      body: 'You\'re $' + Math.abs(Math.round(remainder)).toLocaleString() + ' over your plan. Trim a goal allocation or shift a bill before locking.',
+    });
+    return;
+  }
+  const tight = remainder < buffer;
+  let body = '';
+  body += '<div style="font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:14px">After locking:</div>';
+  body += '<div style="font-size:13px;color:var(--text2);line-height:1.9;margin-bottom:10px">';
+  body += '✓ Bills, Debts, Savings amounts committed — change requires Re-plan or Ask AI.<br>';
+  body += '✓ Known Upcoming stays editable.<br>';
+  body += '✓ Tick boxes activate for real transactions.<br>';
+  body += '</div>';
+  if (tight) {
+    body += '<div style="background:rgba(255,165,0,0.1);border:1px solid rgba(255,165,0,0.3);border-radius:8px;padding:10px;font-size:13px;color:var(--amber);margin-bottom:6px">⚠️ Buffer is tight ($' + Math.round(remainder) + ' vs $' + buffer + ' floor)</div>';
+  }
+  EDIT_MODAL.openCustom({
+    title: '🔒 Lock this cycle\'s plan?',
+    hint: 'Once locked, your overrides commit. Tick items as you handle them.',
+    bodyHtml: body,
+    saveLabel: 'Lock',
+    danger: false,
+    save: () => {
+      const snapshot = {
+        cycleId: snap.cycleId,
+        lockedAt: Date.now(),
+        totalToPlan: snap.totalToPlan,
+        billsTotal: snap.bills.total,
+        debtsTotal: snap.debts.total,
+        savingsTotal: snap.savings.total,
+        upcomingTotal: snap.knownUpcoming.total,
+        livingTotal: snap.dailyLiving.plannedTotal,
+        bufferFloor: buffer,
+      };
+      const r = BRAIN.allocation.lock(snapshot, BRAIN.SOURCES.CANVAS_LOCK);
+      if (!r.ok) return r;
+      // Also stamp lockedAt onto S.activePlan so BRAIN.plan.getSnapshot reflects.
+      if (S.activePlan) {
+        S.activePlan.lockedAt = Date.now();
+        S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
+        try { save(); } catch (_) {}
+      }
+      // Optional manual snapshot for restore safety
+      if (typeof SNAPSHOTS !== 'undefined' && SNAPSHOTS.take) {
+        try { SNAPSHOTS.take('payday-plan-locked', { cycleId: snap.cycleId }); } catch (_) {}
+      }
+      renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('🔒 Plan locked — tick items as you handle them');
+      return { ok: true };
+    },
+  });
+}
+// Phase 6 stub for Ask AI — navigates to chat tab; Phase 7 will wire the
+// full plan-context system-prompt extension via BRAIN.plan.getSnapshot().
+function openPaydayAskAI() {
+  closePaydayPlan();
+  if (typeof goPage === 'function') goPage('pg-chat');
+  if (typeof showToast === 'function') showToast('Ask the AI about your plan — full context wiring lands Phase 7');
+}
+function openPaydayUnlockPlan() {
+  if (!confirm('Re-plan? Your allocations will become editable again. Ticked items stay ticked.')) return;
+  const r = BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Unlock failed: ' + r.reason);
+    return;
+  }
+  if (S.activePlan) {
+    S.activePlan.lockedAt = null;
+    try { save(); } catch (_) {}
+  }
+  renderPaydayPlanRoot();
+  if (typeof showToast === 'function') showToast('🔓 Plan unlocked — re-plan freely');
 }
 
 // ─── Daily Living floor editor ─────────────────────────────────────────
