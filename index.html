@@ -3763,6 +3763,34 @@ const MathInvariants = {
       },
       message(v) { return 'KIA lifetime-paid consistency: ' + v.details + ' Update Settings → Financial Data → KIA lifetime paid.'; },
     },
+    // ─── Bundle 24.1: liquid-vs-total-nw sanity ─────────────────────────
+    // When super balance > 0, liquidNet must equal netWorth minus super.
+    // If they're equal (or liquidNet > netWorth), the calculation merged
+    // super into the wrong bucket. This protects the post-24.1 UX guarantee
+    // that the headline figure is what John can actually touch.
+    {
+      name: 'liquid-vs-total-nw-consistency',
+      tier: 'consistency',
+      anchor: 'net-worth',
+      check() {
+        if (typeof BRAIN === 'undefined' || !BRAIN.assets) return null;
+        const superBal = BRAIN.assets.getSuperBalance();
+        if (superBal <= 0) return null;  // no super, no constraint
+        const total = BRAIN.assets.netWorth();
+        const liquid = BRAIN.assets.liquidNet();
+        const expectedLiquid = total - superBal;
+        if (Math.abs(liquid - expectedLiquid) > 0.5) {
+          return {
+            displayValue: '$' + liquid.toFixed(2),
+            expected: '$' + expectedLiquid.toFixed(2) + ' (total − super)',
+            details: 'liquidNet=' + liquid.toFixed(2) + ' but should be netWorth(' + total.toFixed(2) +
+              ') − super(' + superBal.toFixed(2) + ') = ' + expectedLiquid.toFixed(2),
+          };
+        }
+        return null;
+      },
+      message(v) { return 'Liquid vs total NW math drift: ' + v.details + '. Headline figure may mislead.'; },
+    },
   ],
 
   // Run all invariants. Returns array of violation objects.
@@ -4560,30 +4588,29 @@ function renderAnalysisTab() {
   // (rendered by renderEmergencyFundStatus) remains as the single home for the dynamic
   // 90-day calc. Plan Mode's Freedom Buffer goal is left untouched (different target).
 
-  // --- FA6: Net worth trend (Bundle 24 Phase 1 — schema v2 aware) ---
+  // --- FA6: Net worth trend (Bundle 24 Phase 1+24.1 — liquid first) ---
+  // Bundle 24.1 (John 2026-05-12 feedback): super is locked-away retirement,
+  // not "money you have". Leading with total NW that includes super gave
+  // a false sense of comfort ($67k while broke). Now leads with Liquid Net
+  // (what you can actually touch); super shown as a small annotation.
+  // Delta compares liquidNet ↔ liquidNet from snapshots (not total).
   const nwHistory = S.monthlyHistory || [];
   if (nwHistory.length >= 1) {
     const latest = nwHistory[nwHistory.length - 1];
     const nw = getNetWorth();
-    // Schema v2 entries carry `nw` (full breakdown). Legacy entries have
-    // only `bal` — those are unreliable (per Bundle 24 Phase 1 audit:
-    // pre-WRX/super entries make the delta explode). Trend reads `nw`
-    // directly when present; otherwise shows the "building" hint.
-    const prevNW = (latest && typeof latest.nw === 'number') ? latest.nw : null;
+    const superBal = nw.breakdown ? (nw.breakdown.superBalance || 0) : 0;
+    // Schema v2 entries carry `liquidNet`. Legacy entries lacked it.
+    const prevLiquid = (latest && typeof latest.liquidNet === 'number') ? latest.liquidNet : null;
     html += '<div class="card"><div class="card-hdr"><div class="card-title">Net Worth Trend</div></div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">';
-    [['Assets', nw.assets, 'var(--green)'], ['Liabilities', nw.liabilities, 'var(--red)'], ['Net Worth', nw.net, nw.net >= 0 ? 'var(--green)' : 'var(--red)']].forEach(([lbl, val, col]) => {
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">';
+    [['Liquid Assets', nw.liquidAssets || (nw.assets - superBal), 'var(--green)'], ['Liabilities', nw.liabilities, 'var(--red)'], ['Liquid Net', nw.liquidNet, nw.liquidNet >= 0 ? 'var(--green)' : 'var(--red)']].forEach(([lbl, val, col]) => {
       html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;text-align:center"><div style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;text-transform:uppercase">'+lbl+'</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:'+col+'">'+(val >= 0 ? '' : '-')+fmt(Math.abs(val))+'</div></div>';
     });
     html += '</div>';
-    if (prevNW !== null) {
-      const delta = nw.net - prevNW;
-      // Defensive sanity clamp retained: even with v2 schema, a brand-new
-      // major asset entered mid-month would still skew the delta. Surface
-      // the value when plausible (≤ $15k AND ≤ 50% of current NW); show
-      // the building hint otherwise.
+    if (prevLiquid !== null) {
+      const delta = nw.liquidNet - prevLiquid;
       const SANITY_CAP = 15000;
-      const isPlausible = Math.abs(delta) < SANITY_CAP && Math.abs(delta) < Math.abs(nw.net || 1) * 0.5;
+      const isPlausible = Math.abs(delta) < SANITY_CAP && Math.abs(delta) < Math.abs(nw.liquidNet || 1) * 0.5;
       if (isPlausible) {
         const deltaCol = delta >= 0 ? 'var(--green)' : 'var(--red)';
         html += '<div style="font-size:15px;color:var(--text2)">vs last month: <span style="font-family:var(--mono);font-weight:700;color:'+deltaCol+'">'+(delta>=0?'+':'')+fmt(delta)+'</span></div>';
@@ -4591,7 +4618,12 @@ function renderAnalysisTab() {
         html += '<div style="font-size:13px;color:var(--text3);font-style:italic;margin-top:4px">Trend stabilising — a recent asset entry skewed the delta. Will normalise after the next monthly snapshot.</div>';
       }
     } else {
-      html += '<div style="font-size:13px;color:var(--text3);font-style:italic;margin-top:4px">Building monthly history — first full-NW snapshot lands at next month rollover.</div>';
+      html += '<div style="font-size:13px;color:var(--text3);font-style:italic;margin-top:4px">Building monthly history — first liquid-net snapshot lands at next month rollover.</div>';
+    }
+    // Super annotation — secondary, small, neutral. Reframes the total NW
+    // as long-term-only rather than the headline figure.
+    if (superBal > 0) {
+      html += '<div style="font-size:12px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);line-height:1.5">+ <strong style="color:var(--text2);font-family:var(--mono)">'+fmt(superBal)+'</strong> in Aware Super (locked until ~60) · total long-term: <strong style="font-family:var(--mono);color:var(--text2)">'+fmt(nw.net)+'</strong></div>';
     }
     html += '</div>';
   }
@@ -8387,7 +8419,8 @@ function buildSystemPrompt() {
     'Genuine surplus NOW: $'+surplus.toFixed(2)+'\n'+
     'Surplus breakdown: $'+liveBal.toFixed(2)+' balance \u2212 $'+allBillsDueAmt.toFixed(2)+' bills \u2212 $'+getActiveDebtsDueBeforePayday().toFixed(2)+' debts due \u2212 $'+bucketTotal.toFixed(2)+' savings buckets \u2212 $'+livingReserve+' living reserve ('+avgDaily.toFixed(0)+'/day \xd7 '+days+' days) \u2212 $'+getDynamicBuffer()+' buffer = $'+surplus.toFixed(2)+'\n\n'+
     'Safe to spend today: '+safeToday+'\n'+
-    'Net worth: $'+nw.net.toFixed(2)+' (assets $'+nw.assets.toFixed(2)+' \u2212 liabilities $'+nw.liabilities.toFixed(2)+')\n'+
+    'Liquid net worth: $'+nw.liquidNet.toFixed(2)+' (liquid assets $'+(nw.liquidAssets||(nw.assets - (nw.breakdown?.superBalance||0))).toFixed(2)+' \u2212 liabilities $'+nw.liabilities.toFixed(2)+'). This is the "what John can actually touch right now" figure \u2014 what should drive any spend/save/afford recommendation.\n'+
+    'Long-term net worth incl super: $'+nw.net.toFixed(2)+' (super $'+(nw.breakdown?.superBalance||0).toFixed(2)+' locked until ~age 60 \u2014 do not treat as available cash).\n'+
     'Avg daily discretionary spend: $'+avgDaily.toFixed(2)+'/day\n'+
     'Month phase: '+getMonthPhase()+'\n'+
     'Days to next payday: '+(S.paydayReceived?'Paid this cycle \u2014 next approx '+(S.payday||15)+'th next month':days+' days')+'\n\n'+
@@ -13231,6 +13264,7 @@ const BRAIN = {
       const nw = hasAssets ? BRAIN.assets.netWorth() : 0;
       const liquidNet = hasAssets ? BRAIN.assets.liquidNet() : 0;
       const liabilities = hasAssets ? BRAIN.assets.totalLiabilities() : 0;
+      const superBal = hasAssets ? BRAIN.assets.getSuperBalance() : 0;
       const income = (typeof S !== 'undefined') ? (+S.income || 0) : 0;
       const debtToIncome = (income > 0) ? parseFloat((liabilities / (income * 12)).toFixed(3)) : null;
       const ccUsed = (+S.cc || 0);
@@ -13238,14 +13272,21 @@ const BRAIN = {
       const ccUtilisation = (ccLimit > 0) ? parseFloat((ccUsed / ccLimit).toFixed(3)) : null;
       const bucketTotal = (S.savingsBuckets || []).reduce((s, b) => s + (+b.saved || 0), 0);
       return {
-        netWorth: parseFloat(nw.toFixed(2)),
+        // Bundle 24.1: liquidNet is the PRIMARY metric for any "how am I
+        // doing now" assessment. AI consumers should prefer this for
+        // affordability / spend / save decisions. netWorth (incl super) is
+        // the long-term picture only.
         liquidNet: parseFloat(liquidNet.toFixed(2)),
+        netWorthLongTerm: parseFloat(nw.toFixed(2)),
+        superLocked: parseFloat(superBal.toFixed(2)),
         totalLiabilities: parseFloat(liabilities.toFixed(2)),
         savingsTotal: parseFloat(bucketTotal.toFixed(2)),
         debtToAnnualIncomeRatio: debtToIncome,
         ccUtilisation,
         roundUpsEnabled: !!(S.roundUpsEnabled),
         roundUpDestination: S.roundUpDestination || null,
+        // Back-compat: keep `netWorth` key for older consumers; aliases liquidNet.
+        netWorth: parseFloat(liquidNet.toFixed(2)),
       };
     },
   },
