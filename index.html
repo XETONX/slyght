@@ -59,6 +59,21 @@ button,input,select,textarea{font-family:var(--sans)}
 .subscreen-title{font-size:17px;font-weight:600;color:var(--text);margin-left:4px}
 .subscreen-body{flex:1;padding:16px 20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .subscreen-placeholder{color:var(--text3);font-size:14px;text-align:center;padding:40px 20px;line-height:1.6}
+/* Bundle 22 v3 Phase 3a: edit-on-tap row + group patterns. Used inside subscreen-body. */
+.settings-group-title{font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin:18px 6px 8px}
+.settings-group-title:first-child{margin-top:6px}
+.settings-group-card{background:var(--bg2);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.settings-edit-row{display:flex;align-items:center;padding:14px 16px;background:transparent;border:none;color:var(--text);min-height:56px;text-align:left;cursor:pointer;width:100%;border-bottom:1px solid var(--border)}
+.settings-edit-row:last-child{border-bottom:none}
+.settings-edit-row:active{background:var(--bg3)}
+.settings-edit-row .row-label{flex:1;font-size:15px;color:var(--text)}
+.settings-edit-row .row-value{font-family:var(--mono);font-size:14px;color:var(--text2);margin-right:10px;font-weight:600}
+.settings-edit-row .row-chevron{font-size:20px;color:var(--text3);line-height:1}
+.settings-edit-row .row-multi{flex:1;display:flex;flex-direction:column;gap:2px}
+.settings-edit-row .row-multi .row-sub{font-size:12px;color:var(--text3)}
+.settings-section-hint{font-size:12px;color:var(--text3);padding:8px 6px 16px;line-height:1.5}
+.settings-pointer-row{display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 4px}
+.settings-pointer-row a{display:inline-block;padding:8px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;text-decoration:none;cursor:pointer;min-height:38px;line-height:22px}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -883,7 +898,80 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">Financial Data</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>income, payday, assets, liabilities groups with edit-on-tap rows.</div>
+
+        <div class="settings-group-title">Income</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now (toggle on root nav).')" aria-label="Monthly salary, tap to edit" data-brain-key="config.income">
+            <span class="row-label">Monthly salary</span>
+            <span class="row-value" id="sub-row-income">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Payday, tap to edit" data-brain-key="config.payday">
+            <span class="row-label">Payday</span>
+            <span class="row-value" id="sub-row-payday">—</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+
+        <div class="settings-group-title">Assets</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Deposit account managed by Mum, tap to edit" data-brain-key="assets.mumAccount">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">Mum account</span>
+              <span class="row-sub">Property deposit savings</span>
+            </span>
+            <span class="row-value" id="sub-row-mum">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Aware Super balance, tap to edit" data-brain-key="assets.super">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">Super balance</span>
+              <span class="row-sub">Aware Super, High Growth</span>
+            </span>
+            <span class="row-value" id="sub-row-super">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+
+        <div class="settings-group-title">Liabilities</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="KIA loan current balance, tap to edit" data-brain-key="debts.carloan">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">KIA loan</span>
+              <span class="row-sub">Firstmac, current balance</span>
+            </span>
+            <span class="row-value" id="sub-row-carloan">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="KIA loan original principal, tap to edit" data-brain-key="debts.carloanOriginal">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">KIA original</span>
+              <span class="row-sub">Loan starting principal</span>
+            </span>
+            <span class="row-value" id="sub-row-carloan-orig">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Credit card balance, tap to edit" data-brain-key="debts.cc">
+            <span class="row-label">Credit card</span>
+            <span class="row-value" id="sub-row-cc">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Credit card limit, tap to edit" data-brain-key="debts.ccLimit">
+            <span class="row-label">CC limit</span>
+            <span class="row-value" id="sub-row-cc-limit">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+
+        <div class="settings-section-hint">
+          WRX, bills, debts and goals are managed in their own tabs.
+        </div>
+        <div class="settings-pointer-row">
+          <a onclick="goPage('pg-spend')">Plan →</a>
+          <a onclick="goPage('pg-cal')">Bills →</a>
+          <a onclick="goPage('pg-dash')">Debts →</a>
+        </div>
+
       </div>
     </div>
 
@@ -893,7 +981,32 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">Strategies</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>weekday + weekend budget; debt payoff strategy (snowball vs avalanche).</div>
+
+        <div class="settings-group-title">Daily budgets</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Weekday budget, tap to edit" data-brain-key="config.weekdayBudget">
+            <span class="row-label">Weekday</span>
+            <span class="row-value" id="sub-row-weekday-budget">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Weekend budget, tap to edit" data-brain-key="config.weekendBudget">
+            <span class="row-label">Weekend</span>
+            <span class="row-value" id="sub-row-weekend-budget">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+        <div class="settings-section-hint">Max discretionary spend per day.</div>
+
+        <div class="settings-group-title">Debt payoff</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Debt payoff strategy, tap to edit" data-brain-key="debts.strategy">
+            <span class="row-label">Strategy</span>
+            <span class="row-value" id="sub-row-strategy">—</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+        <div class="settings-section-hint" id="sub-strategy-explain">—</div>
+
       </div>
     </div>
 
@@ -913,7 +1026,45 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <span class="subscreen-title">AI Assistant</span>
       </div>
       <div class="subscreen-body">
-        <div class="subscreen-placeholder">Sub-screen scaffolding active.<br><br>Content lands in Phase 3:<br>API key (masked), usage this month, alert threshold.</div>
+
+        <div class="settings-group-title">API key</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="Anthropic API key, tap to edit" data-brain-key="config.apiKey">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">Anthropic key</span>
+              <span class="row-sub" id="sub-row-apikey-masked">Not set</span>
+            </span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+
+        <div class="settings-group-title">Usage this month</div>
+        <div class="settings-group-card" style="padding:14px 16px">
+          <div style="font-family:var(--mono);font-size:24px;font-weight:700;color:var(--text);margin-bottom:6px" id="sub-ai-spend">$0.00</div>
+          <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:10px">
+            <div id="sub-ai-spend-bar" style="height:100%;background:var(--green);width:0%;transition:width .3s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text3)">
+            <span id="sub-ai-calls">0 calls all-time</span>
+            <span id="sub-ai-projected">— /month</span>
+          </div>
+        </div>
+        <div class="settings-section-hint">
+          Top up at <a href="https://console.anthropic.com/account/keys" target="_blank" rel="noopener" style="color:var(--green)">console.anthropic.com</a>.
+        </div>
+
+        <div class="settings-group-title">Alert threshold</div>
+        <div class="settings-group-card">
+          <button class="settings-edit-row" onclick="alert('Edit modal lands in Phase 4. Use legacy Settings for now.')" aria-label="API spend alert threshold, tap to edit" data-brain-key="config.apiAlertThreshold">
+            <span class="row-multi">
+              <span style="font-size:15px;color:var(--text)">Warn at</span>
+              <span class="row-sub">Monthly spend that triggers a heads-up</span>
+            </span>
+            <span class="row-value" id="sub-row-api-threshold">$0</span>
+            <span class="row-chevron">›</span>
+          </button>
+        </div>
+
       </div>
     </div>
 
@@ -4492,6 +4643,47 @@ function renderAll() {
   // Bundle 22 v3 Phase 1: Settings root balance hero — live read from S.bal.
   const _sBalDispEl = $('settings-balance-display');
   if (_sBalDispEl) _sBalDispEl.textContent = fmtC(S.bal || 0);
+  // Bundle 22 v3 Phase 3a: Settings sub-screen value displays (Financial,
+  // Strategies, AI Assistant). Each row's row-value span is updated here
+  // so values stay live when the user opens a sub-screen.
+  const _fmtPayday = (n) => {
+    if (!n) return '—';
+    const s = n + ''; const last = +s.slice(-1);
+    const suf = (n >= 11 && n <= 13) ? 'th' : (last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th');
+    return n + suf;
+  };
+  if ($('sub-row-income')) $('sub-row-income').textContent = fmtC(S.income || 0);
+  if ($('sub-row-payday')) $('sub-row-payday').textContent = _fmtPayday(S.payday);
+  if ($('sub-row-mum')) $('sub-row-mum').textContent = fmtC(S.mumAccountBalance || 0);
+  if ($('sub-row-super')) $('sub-row-super').textContent = fmtC(S.superBalance || 0);
+  if ($('sub-row-carloan')) $('sub-row-carloan').textContent = fmtC(S.carloan || 0);
+  if ($('sub-row-carloan-orig')) $('sub-row-carloan-orig').textContent = fmtC(S.carloanOriginal || 0);
+  if ($('sub-row-cc')) $('sub-row-cc').textContent = fmtC(S.cc || 0);
+  if ($('sub-row-cc-limit')) $('sub-row-cc-limit').textContent = fmtC(S.ccLimit || 0);
+  if ($('sub-row-weekday-budget')) $('sub-row-weekday-budget').textContent = fmtC(S.weekdayBudget || 0);
+  if ($('sub-row-weekend-budget')) $('sub-row-weekend-budget').textContent = fmtC(S.weekendBudget || 0);
+  const _strat = S.debtStrategy || 'avalanche';
+  if ($('sub-row-strategy')) $('sub-row-strategy').textContent = _strat === 'snowball' ? 'Snowball' : 'Avalanche';
+  if ($('sub-strategy-explain')) {
+    $('sub-strategy-explain').textContent = _strat === 'snowball'
+      ? 'Snowball: pay smallest debt first. Builds momentum with quick wins.'
+      : 'Avalanche: pay highest interest rate first. Saves the most money long-term.';
+  }
+  // AI Assistant sub-screen — read from API_COSTS + S.
+  if ($('sub-row-apikey-masked')) {
+    const _ak = S.apiKey || '';
+    $('sub-row-apikey-masked').textContent = _ak ? (_ak.slice(0, 7) + '…' + _ak.slice(-4)) : 'Not set';
+  }
+  if (typeof API_COSTS !== 'undefined') {
+    const _t = API_COSTS.totals();
+    const _thr = S.apiAlertThreshold || 15;
+    const _pct = Math.min(100, (_t.thisMonth / _thr) * 100);
+    if ($('sub-ai-spend')) $('sub-ai-spend').textContent = '$' + _t.thisMonth.toFixed(2) + ' USD';
+    if ($('sub-ai-spend-bar')) $('sub-ai-spend-bar').style.width = _pct.toFixed(1) + '%';
+    if ($('sub-ai-calls')) $('sub-ai-calls').textContent = _t.totalCalls + ' calls all-time';
+    if ($('sub-ai-projected')) $('sub-ai-projected').textContent = '$' + _t.projectedMonthly.toFixed(2) + ' /month projected';
+  }
+  if ($('sub-row-api-threshold')) $('sub-row-api-threshold').textContent = '$' + (S.apiAlertThreshold || 15);
   const _explEl = $('strategy-explain');
   if (_explEl) {
     const _strat = S.debtStrategy || 'avalanche';
