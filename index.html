@@ -14942,8 +14942,7 @@ function renderPlanMode() {
   const _planEl = document.getElementById('plan-mode');
   const _liveY = _planEl ? _planEl.scrollTop : 0;
 
-  const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305 };
-  const nwNet = nw.net;
+  const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305, liquidNet: -7305 };
   const wrxImpact = PLAN.getWrxImpact();
   const surplus = PLAN.getPostWrxSurplus();
   const trips = PLAN.getTrips();
@@ -14952,26 +14951,29 @@ function renderPlanMode() {
 
   let html = '';
 
-  // ── NET WORTH HEADER ─────────────────────────────────────
-  const nwData = calculateNetWorth();
-  const nwVal = nwData.net !== undefined ? nwData.net : nwData;
-  const nwPositive = nwVal >= 0;
-  const nwDisplay = (nwPositive ? '+' : '-') + '$' +
-    Math.abs(Math.round(nwVal)).toLocaleString();
-  const nwColour = nwPositive ? '#4ECDC4' : '#E74C3C';
+  // ── NET WORTH HEADER (Bundle 25.1: liquid first) ───────────────
+  // John 2026-05-12: "stick to liquid networth throughout the app as
+  // that's realistic". Super is shown only inside its own bubble.
+  const liquidVal = (typeof nw.liquidNet === 'number') ? nw.liquidNet : nw.net;
+  const superVal = (nw.breakdown && nw.breakdown.superBalance) || 0;
+  const liquidPositive = liquidVal >= 0;
+  const liquidDisplay = (liquidPositive ? '+' : '-') + '$' +
+    Math.abs(Math.round(liquidVal)).toLocaleString();
+  const liquidColour = liquidPositive ? '#4ECDC4' : '#E74C3C';
 
   html += `
   <div style="text-align:center;padding:24px 0 8px">
-    <div style="font-size:12px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">
-      Net Worth Today
+    <div style="font-size:13px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px">
+      Liquid Net Worth
     </div>
-    <div style="font-size:44px;font-weight:800;color:${nwColour};font-variant-numeric:tabular-nums;line-height:1">
-      ${nwDisplay}
+    <div style="font-size:44px;font-weight:800;color:${liquidColour};font-variant-numeric:tabular-nums;line-height:1">
+      ${liquidDisplay}
     </div>
     <div style="font-size:13px;color:rgba(255,255,255,0.35);margin-top:8px">
-      Your Real Financial Position
+      What you can actually touch today
     </div>
-    <button onclick="showNetWorthBreakdown()" style="margin-top:10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:rgba(255,255,255,0.5);padding:6px 16px;font-size:13px;cursor:pointer">
+    ${superVal > 0 ? `<div style="font-size:12px;color:rgba(255,255,255,0.3);margin-top:6px">+ $${Math.round(superVal).toLocaleString()} super (locked) — see super bubble for long-term picture</div>` : ''}
+    <button onclick="showNetWorthBreakdown()" style="margin-top:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:rgba(255,255,255,0.5);padding:6px 16px;font-size:13px;cursor:pointer">
       See Breakdown ›
     </button>
   </div>`;

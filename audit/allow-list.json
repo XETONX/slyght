@@ -1,5 +1,5 @@
 {
-  "lastGenerated": "2026-05-12T13:43:27.992Z",
+  "lastGenerated": "2026-05-12T13:55:07.863Z",
   "totalAllows": 46,
   "unusedAllows": 9,
   "byRule": {
@@ -294,7 +294,7 @@
       },
       {
         "type": "single",
-        "line": 15123,
+        "line": 15125,
         "removability": "permanent",
         "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
         "condition": "see locked-items breakdown design",
