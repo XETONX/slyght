@@ -4343,16 +4343,37 @@ function renderMathHealth() {
 
 function renderEmergencyFundStatus() {
   const el = $('emergency-fund-status'); if (!el) return;
-  const totalSaved = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
+  // Bundle 17.x: was conflating ALL savings buckets as emergency savings.
+  // John's only bucket is "China Holiday" — $93 earmarked for travel, not
+  // emergency reserve. Filter to emergency-purpose buckets (name-matched)
+  // so the display is honest. If no emergency bucket exists, surface that
+  // explicitly with a prompt to create one.
+  const buckets = S.savingsBuckets || [];
+  const isEmergencyBucket = (b) => {
+    const n = (b.name || '').toLowerCase();
+    return n.includes('emergency') || n.includes('buffer') || n.includes('freedom');
+  };
+  const emergencyBuckets = buckets.filter(isEmergencyBucket);
+  const emergencySaved = emergencyBuckets.reduce((s,b) => s+(b.saved||0), 0);
+  const otherSaved = buckets.filter(b => !isEmergencyBucket(b)).reduce((s,b) => s+(b.saved||0), 0);
   const recommended = Math.round(getAvgDailySpend() * 90);
-  const gap = recommended - totalSaved;
+  const gap = recommended - emergencySaved;
+
+  let body;
+  if (emergencyBuckets.length === 0) {
+    body = '<span style="color:var(--text3)">No emergency bucket yet.</span>' +
+      (otherSaved > 0 ? ' Your <strong>' + fmtC(otherSaved) + '</strong> in savings is earmarked elsewhere.' : '') + '<br>' +
+      'Recommended: <strong>' + fmtC(recommended) + '</strong> (90 days of essentials)';
+  } else {
+    body = 'Saved: <strong style="color:var(--green)">' + fmtC(emergencySaved) + '</strong>' +
+      ' (' + emergencyBuckets.map(b => b.name).join(', ') + ') · ' +
+      'Recommended: <strong>' + fmtC(recommended) + '</strong> (90 days)<br>' +
+      (gap > 0 ? '<span style="color:var(--amber)">$' + Math.round(gap).toLocaleString() + ' to go</span>' : '<span style="color:var(--green)">✓ Emergency fund covered</span>');
+  }
+
   el.innerHTML = '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;margin-bottom:10px">' +
     '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Emergency Fund</div>' +
-    '<div style="font-size:13px;color:var(--text2)">' +
-      'Saved: <strong style="color:var(--green)">' + fmtC(totalSaved) + '</strong> · ' +
-      'Recommended: <strong>' + fmtC(recommended) + '</strong> (90 days)<br>' +
-      (gap > 0 ? '<span style="color:var(--amber)">$' + Math.round(gap).toLocaleString() + ' to go</span>' : '<span style="color:var(--green)">✓ Emergency fund covered</span>') +
-    '</div></div>';
+    '<div style="font-size:13px;color:var(--text2)">' + body + '</div></div>';
 }
 
 function renderMonthlyPosition() {
@@ -8870,7 +8891,17 @@ const UX = {
       this.session.modalAbandons.forEach(m => { mc[m.modal] = (mc[m.modal]||0)+1; });
       Object.entries(mc).forEach(([modal, count]) => { if (count>1) suggestions.push('Modal "'+modal+'" abandoned '+count+' times — may be confusing'); });
     }
-    const unusedTabs = ['pg-dash','pg-cal','pg-chat','pg-spend','pg-settings'].filter(t => !this.session.tabVisits[t]);
+    // Bundle 17.x: credit the currently-active tab even if initial page load
+    // bypassed goPage() (which fires trackTabVisit). Previously caused
+    // "Unvisited tabs: dash, cal, chat, spend, settings" report while user
+    // was literally on Settings looking at the panel.
+    const _activeScreen = (typeof document !== 'undefined') ? document.querySelector('.screen.active') : null;
+    const _activeTabId = _activeScreen ? _activeScreen.id : null;
+    const _tabVisitsWithCurrent = Object.assign({}, this.session.tabVisits);
+    if (_activeTabId && !_tabVisitsWithCurrent[_activeTabId]) {
+      _tabVisitsWithCurrent[_activeTabId] = 1;
+    }
+    const unusedTabs = ['pg-dash','pg-cal','pg-chat','pg-spend','pg-settings'].filter(t => !_tabVisitsWithCurrent[t]);
     if (unusedTabs.length > 0) suggestions.push('Unvisited tabs: '+unusedTabs.map(t=>t.replace('pg-','')).join(', ')+' — content may not be discoverable');
     Object.entries(this.session.scrollDepths).forEach(([tab, depth]) => {
       if (depth < 30 && this.session.tabVisits[tab] > 0) suggestions.push('Low scroll on '+tab+' ('+depth+'%) — key info may need moving higher');
