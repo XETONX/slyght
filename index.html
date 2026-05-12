@@ -7864,24 +7864,33 @@ function renderPaydayBills() {
   const body = document.getElementById('payday-bills-body');
   if (!body) return;
   const snap = BRAIN.plan.getSnapshot();
-  const billsDue = (typeof getBillsDue === 'function') ? getBillsDue() : [];
+  // Bundle 27 P3 fix: render ALL recurring BILLS active this cycle (not just
+  // getBillsDue which excludes already-paid + filters by today→payday only).
+  // Tick state read from S.activePlan.ticks (canvas-native) OR legacy
+  // isThisMonthlyBillPaid (so paid bills show ticked).
+  const allBills = (typeof BILLS !== 'undefined' && Array.isArray(BILLS))
+    ? BILLS.filter(b => b && b.recurring !== false && (typeof isBillDueThisMonth === 'function' ? isBillDueThisMonth(b) : true))
+    : [];
   const payday = +S.payday || 15;
   const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.bill) || {};
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  // Tick state: canvas tick OR legacy paid flag
+  const isBillTicked = (b) => {
+    if (ticks[b.name]) return true;
+    if (typeof isThisMonthlyBillPaid === 'function') return isThisMonthlyBillPaid(b.name, b.day);
+    return false;
+  };
   // Compute ticked/total for progress
-  const totalCount = billsDue.length;
-  const totalDollars = billsDue.reduce((s, b) => {
+  const totalDollars = allBills.reduce((s, b) => {
     const ov = overrides['bill:' + b.name];
     return s + (ov ? ov.thisCycleAmount : +b.amt || 0);
   }, 0);
-  const tickedCount = Object.keys(ticks).filter(k => billsDue.some(b => b.name === k)).length;
-  const paidDollars = Object.keys(ticks).reduce((s, k) => {
-    const b = billsDue.find(x => x.name === k);
-    if (!b) return s;
+  const tickedBills = allBills.filter(isBillTicked);
+  const paidDollars = tickedBills.reduce((s, b) => {
     const ov = overrides['bill:' + b.name];
     return s + (ov ? ov.thisCycleAmount : +b.amt || 0);
   }, 0);
-  const progressPct = totalDollars > 0 ? (paidDollars / totalDollars * 100).toFixed(1) : 0;
+  const progressPct = totalDollars > 0 ? Math.max(0, Math.min(100, paidDollars / totalDollars * 100)).toFixed(1) : 0;
   // Build deferred list
   const deferred = Object.entries(overrides).filter(([k, v]) => k.startsWith('bill:') && v.deferred > 0).map(([k, v]) => ({
     name: k.replace('bill:', ''),
@@ -7889,12 +7898,14 @@ function renderPaydayBills() {
     reason: v.reason,
   }));
   // Split before/after payday
-  const before = billsDue.filter(b => b.day < payday).sort((a, b) => a.day - b.day);
-  const after = billsDue.filter(b => b.day >= payday).sort((a, b) => a.day - b.day);
+  const before = allBills.filter(b => b.day < payday).sort((a, b) => a.day - b.day);
+  const after = allBills.filter(b => b.day >= payday).sort((a, b) => a.day - b.day);
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   let html = '';
-  // Header summary
-  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'bill') + '</div>';
+  // Header summary — uses actual rendered bills (not snap.bills.items which
+  // counts all BILLS regardless of cycle-applicability).
+  const headerSummary = fmtC2(totalDollars) + ' · ' + tickedBills.length + ' of ' + allBills.length + ' paid';
+  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + headerSummary + '</div>';
   // Progress
   html += '<div class="settings-group-title">Progress</div>';
   html += '<div class="settings-group-card" style="padding:14px 16px">';
@@ -7919,7 +7930,7 @@ function renderPaydayBills() {
       const ov = overrides[key];
       const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
       html += _paydayRow({
-        ticked: !!ticks[b.name],
+        ticked: isBillTicked(b),
         name: b.name,
         sub: _fmtCycleDay(b.day),
         value: fmtC2(amt),
@@ -7939,7 +7950,7 @@ function renderPaydayBills() {
       const ov = overrides[key];
       const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
       html += _paydayRow({
-        ticked: !!ticks[b.name],
+        ticked: isBillTicked(b),
         name: b.name,
         sub: _fmtCycleDay(b.day),
         value: fmtC2(amt),
@@ -8003,25 +8014,39 @@ function renderPaydaySavings() {
   const body = document.getElementById('payday-savings-body');
   if (!body) return;
   const snap = BRAIN.plan.getSnapshot();
-  const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+  // Bundle 27 P3 fix: filter out annual-provision buckets (Rego/Insurance/
+  // Service). Those aren't personal savings goals — they're sinking funds
+  // for yearly costs OR bills when due this cycle. Per John 2026-05-13:
+  // "rego and insurance shouldn't be in savings buckets that should be
+  // annual provisions and then rego and insurance are debts as they are
+  // due within this months cycle."
+  const isProvisionBucket = (name) => /rego|insurance|service|provision/i.test(name || '');
+  const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+  const buckets = allBuckets.filter(b => !isProvisionBucket(b.name));
+  const provisionBuckets = allBuckets.filter(b => isProvisionBucket(b.name));
   const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.savings) || {};
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
   const planSavings = (S.activePlan && S.activePlan.savings) || {};
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   let html = '';
   html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'savings') + '</div>';
-  // Pool summary
+  // Pool summary — clearer language per John feedback
   const freeTotal = snap.derived.freeTotal;
   const allocated = snap.savings.total;
   const unallocated = Math.max(0, freeTotal);
-  html += '<div class="settings-group-title">Pool</div>';
+  html += '<div class="settings-group-title">Pool to allocate</div>';
   html += '<div class="settings-group-card" style="padding:14px 16px">';
-  html += '<div style="font-family:var(--mono);font-size:18px;color:var(--text)"><strong>' + fmtC2(allocated) + '</strong> of <strong>' + fmtC2(allocated + unallocated) + '</strong> free</div>';
-  html += '<div style="font-size:13px;color:var(--text3);margin-top:4px">' + fmtC2(unallocated) + ' still unallocated</div>';
+  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + fmtC2(unallocated) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">left to split across goals</span></div>';
+  if (allocated > 0) {
+    html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Already allocated this cycle: <strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocated) + '</strong></div>';
+  } else {
+    html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Tap a goal below to allocate part of your free money to it this cycle.</div>';
+  }
   html += '</div>';
   // Bucket rows
   if (buckets.length) {
-    html += '<div class="settings-group-title">Buckets</div>';
+    html += '<div class="settings-group-title">Your savings goals</div>';
+    html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">Lifetime targets shown for context. The amount on the right is what you\'re putting in <em>this cycle only</em>.</div>';
     html += '<div class="settings-group-card">';
     buckets.forEach(b => {
       const key = 'savings:' + b.name;
@@ -8030,10 +8055,13 @@ function renderPaydaySavings() {
       const saved = (+b.saved || 0);
       const target = (+b.goal || 0);
       const subParts = [];
-      subParts.push('saved $' + Math.round(saved).toLocaleString());
-      if (target > 0) subParts.push('target $' + Math.round(target).toLocaleString());
-      // Per-bucket emoji
-      const bucketEmoji = /china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /rego|insurance/i.test(b.name) ? '🚗' : /gift/i.test(b.name) ? '🎁' : '💰';
+      if (target > 0) {
+        const pct = Math.round(saved / target * 100);
+        subParts.push('$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(target).toLocaleString() + ' goal (' + pct + '%)');
+      } else {
+        subParts.push('$' + Math.round(saved).toLocaleString() + ' saved');
+      }
+      const bucketEmoji = /china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /gift/i.test(b.name) ? '🎁' : '💰';
       html += _paydayRow({
         ticked: !!ticks[b.name],
         icon: bucketEmoji,
@@ -8044,6 +8072,14 @@ function renderPaydaySavings() {
         onTickTap: snap.locked ? "alert('Tick wiring — Phase 5.')" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
+    html += '</div>';
+  }
+  // Annual provisions note (rego/insurance bucket filter)
+  if (provisionBuckets.length) {
+    html += '<div class="settings-group-title">Annual provisions</div>';
+    html += '<div class="settings-group-card" style="padding:14px 16px;font-size:13px;color:var(--text2);line-height:1.6">';
+    html += '<div style="margin-bottom:8px">' + provisionBuckets.map(b => '🚗 ' + b.name).join(' · ') + '</div>';
+    html += '<div style="color:var(--text3)">These are <em>sinking funds</em> for yearly costs (rego, insurance, services). They\'re managed in Plan mode under Annual Provisions — not here. When one is due this cycle it\'ll show in Bills.</div>';
     html += '</div>';
   }
   // KIA extra slot
