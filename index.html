@@ -13434,7 +13434,7 @@ const BRAIN = {
       opts = opts || {};
       const includeBonuses = opts.includeBonuses !== false;
       const includeExpectedSalary = opts.includeExpectedSalary !== false;
-      const livingMode = opts.livingReserveMode || 'avg14';
+      const livingMode = opts.livingReserveMode || 'avg30';  // monthly avg matches John's pay cycle
 
       const liveBal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
       const daysToPayday = (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.daysToPayday === 'number')
@@ -13469,7 +13469,11 @@ const BRAIN = {
 
       // ── LIVING RESERVE ──────────────────────────────────────────────
       let livingPerDay = 0;
-      if (livingMode === 'avg14') {
+      if (livingMode === 'avg30') {
+        // Bundle 26 Phase 1: monthly-avg matches John's pay cycle (default).
+        const sp = this.total('last30days');
+        livingPerDay = sp / 30;
+      } else if (livingMode === 'avg14') {
         const FOURTEEN_D = 14 * 86400000;
         const sp = this.total({ from: Date.now() - FOURTEEN_D, to: Date.now() });
         livingPerDay = sp / 14;
@@ -13480,6 +13484,14 @@ const BRAIN = {
         livingPerDay = 0;
       }
       const livingTotal = livingPerDay * daysToPayday;
+      // Also compute the comparison modes for UI calibration.
+      const _sp14 = this.total({ from: Date.now() - (14 * 86400000), to: Date.now() });
+      const _spBudget = ((5 * (+S.weekdayBudget || 60)) + (2 * (+S.weekendBudget || 180))) / 7;
+      const livingComparisons = {
+        avg30: parseFloat(((this.total('last30days') / 30)).toFixed(2)),
+        avg14: parseFloat((_sp14 / 14).toFixed(2)),
+        budget: parseFloat(_spBudget.toFixed(2)),
+      };
 
       // ── LEFT OVER ───────────────────────────────────────────────────
       const leftOver = parseFloat((incomeTotal - committedTotal - livingTotal).toFixed(2));
@@ -13515,6 +13527,7 @@ const BRAIN = {
           days: daysToPayday,
           total: parseFloat(livingTotal.toFixed(2)),
           mode: livingMode,
+          comparisons: livingComparisons,
         },
         leftOver,
         daysToPayday,
@@ -15173,6 +15186,11 @@ function renderPlanMode() {
   // ── WRX STATUS CARD ──────────────────────────────────────
   html += renderWrxCard();
 
+  // ── Bundle 26 Phase 1: surplus waterfall + always-on coaching + trip nudges
+  if (typeof renderSurplusWaterfall === 'function') html += renderSurplusWaterfall();
+  if (typeof renderSmartCoaching === 'function') html += renderSmartCoaching();
+  if (typeof renderUpcomingTripsNudges === 'function') html += renderUpcomingTripsNudges();
+
   // ── SECTIONS ─────────────────────────────────────────────
   if (typeof renderPaydayAllocation === 'function') html += renderPaydayAllocation();
   if (typeof renderTrips === 'function') html += renderTrips(trips);
@@ -15201,6 +15219,164 @@ function renderPlanMode() {
 }
 
 // ─── SECTION 4 — PAYDAY ALLOCATION PLANNER ──────────────────────────────────
+// Bundle 26 Phase 1: surplus waterfall — plain-language version of the
+// canonical BRAIN.summary.surplus() envelope. Designed for a user with
+// no financial literacy: every line names a real thing, every number
+// adds/subtracts to the line below it, the final figure is "Left over
+// to allocate".
+function renderSurplusWaterfall() {
+  if (typeof BRAIN === 'undefined' || !BRAIN.summary || !BRAIN.summary.surplus) return '';
+  const w = BRAIN.summary.surplus();
+  const fmt0 = (n) => (n >= 0 ? '+$' : '-$') + Math.abs(Math.round(n)).toLocaleString();
+  const fmt0Plain = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+  const _rows = w.waterfall.map(row => {
+    if (row.kind === 'in') {
+      return `<div style="display:flex;justify-content:space-between;padding:6px 0;color:rgba(255,255,255,0.75);font-size:14px">
+        <span>${row.label}${row.note ? ` <span style="color:rgba(255,255,255,0.35);font-size:12px">(${row.note})</span>` : ''}</span>
+        <span style="font-family:var(--mono);color:#4ECDC4;font-weight:600">+${fmt0Plain(row.amt)}</span>
+      </div>`;
+    }
+    if (row.kind === 'out') {
+      const itemsHtml = (row.items && row.items.length)
+        ? `<div style="font-size:12px;color:rgba(255,255,255,0.35);padding:4px 0 0 12px;line-height:1.7">${row.items.slice(0, 4).map(i => `· ${i.name} <span style="font-family:var(--mono)">${fmt0Plain(i.amt)}</span>`).join('<br>')}${row.items.length > 4 ? `<br>+ ${row.items.length - 4} more` : ''}</div>`
+        : '';
+      return `<div style="padding:6px 0">
+        <div style="display:flex;justify-content:space-between;color:rgba(255,255,255,0.75);font-size:14px">
+          <span>${row.label}</span>
+          <span style="font-family:var(--mono);color:#FF6B35;font-weight:600">−${fmt0Plain(row.amt)}</span>
+        </div>${itemsHtml}
+      </div>`;
+    }
+    if (row.kind === 'subtotal') {
+      return `<div style="display:flex;justify-content:space-between;padding:8px 0 8px;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;color:rgba(255,255,255,0.85);font-size:14px;font-weight:600">
+        <span>${row.label}</span>
+        <span style="font-family:var(--mono)">${fmt0Plain(row.amt)}</span>
+      </div>`;
+    }
+    if (row.kind === 'reserve') {
+      return `<div style="padding:6px 0">
+        <div style="display:flex;justify-content:space-between;color:rgba(255,255,255,0.75);font-size:14px">
+          <span>${row.label}</span>
+          <span style="font-family:var(--mono);color:#FFA500;font-weight:600">−${fmt0Plain(row.amt)}</span>
+        </div>${row.hint ? `<div style="font-size:12px;color:rgba(255,255,255,0.35);padding:4px 0 0 0">${row.hint}</div>` : ''}
+      </div>`;
+    }
+    if (row.kind === 'result') {
+      const isPositive = row.amt >= 0;
+      const col = isPositive ? '#4ECDC4' : '#E74C3C';
+      return `<div style="margin-top:12px;padding:14px;background:${isPositive ? 'rgba(78,205,196,0.08)' : 'rgba(231,76,60,0.08)'};border:1px solid ${isPositive ? 'rgba(78,205,196,0.25)' : 'rgba(231,76,60,0.25)'};border-radius:10px">
+        <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🎯 ${row.label}</div>
+        <div style="font-family:var(--mono);font-size:32px;font-weight:800;color:${col}">${fmt0(row.amt)}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.45);margin-top:4px">${isPositive ? 'Free money to put toward your goals below.' : 'You\'re short. Tighten living money or shift some bills.'}</div>
+      </div>`;
+    }
+    return '';
+  }).join('');
+  const livingComp = w.livingReserve.comparisons;
+  const compNote = `
+    <div style="font-size:11px;color:rgba(255,255,255,0.3);padding:8px 0 0 0;line-height:1.6;text-align:center">
+      Living money based on monthly average ($${livingComp.avg30}/day).
+      Last 14 days: $${livingComp.avg14}/day · Your budget: $${livingComp.budget}/day.
+    </div>`;
+  return `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:18px 16px;margin:16px 0">
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;text-align:center">
+        Where your money stands · ${w.daysToPayday} days to payday
+      </div>
+      ${_rows}
+      ${compNote}
+    </div>`;
+}
+
+// Bundle 26 Phase 1: always-on smart coaching. Reads waterfall + anomalies
+// and produces a banner. Encouragement when leftOver > 0 and no flags;
+// honest pushback when over-budget streak or category spikes detected.
+function renderSmartCoaching() {
+  if (typeof BRAIN === 'undefined' || !BRAIN.summary) return '';
+  let waterfall, anomalies;
+  try { waterfall = BRAIN.summary.surplus(); } catch (_) { return ''; }
+  try { anomalies = BRAIN.summary.anomalies(); } catch (_) { anomalies = { overBudgetStreak: 0, categorySpikes: [] }; }
+  const leftOver = waterfall.leftOver;
+  const streak = anomalies.overBudgetStreak || 0;
+  const spikes = anomalies.categorySpikes || [];
+  let icon = '💡', msg, tone = 'neutral';
+  if (leftOver < 0) {
+    icon = '⚠️'; tone = 'warn';
+    msg = `You're short by <strong>$${Math.abs(Math.round(leftOver)).toLocaleString()}</strong> this cycle. Trim a goal allocation or shift a bill before locking your plan.`;
+  } else if (streak >= 3) {
+    icon = '🚧'; tone = 'warn';
+    msg = `<strong>${streak} days in a row over your daily budget.</strong> Before allocating $${Math.round(leftOver)} to goals, leave a little extra in living money — last 14 days suggest you'll need it.`;
+  } else if (spikes.length > 0) {
+    icon = '👀'; tone = 'caution';
+    const top = spikes[0];
+    msg = `Heads up — <strong>${top.cat}</strong> spend is ${(top.ratio).toFixed(1)}× your 30-day average ($${Math.round(top.last7)} last 7 days vs $${Math.round(top.last30/30*7)} typical). Worth a glance before allocating?`;
+  } else if (leftOver > 200) {
+    icon = '🎉'; tone = 'good';
+    msg = `Nice — <strong>$${Math.round(leftOver).toLocaleString()}</strong> free this cycle. Put it where it counts. Sliders below.`;
+  } else if (leftOver > 0) {
+    icon = '👍'; tone = 'good';
+    msg = `<strong>$${Math.round(leftOver).toLocaleString()}</strong> left over. Tight but workable — every dollar to goals counts.`;
+  } else {
+    icon = '⚖️'; tone = 'neutral';
+    msg = `Right on the line — $0 left after bills and living money. Hold steady this cycle.`;
+  }
+  const bg = tone === 'good' ? 'rgba(78,205,196,0.08)' : tone === 'warn' ? 'rgba(231,76,60,0.08)' : tone === 'caution' ? 'rgba(255,165,0,0.08)' : 'rgba(255,255,255,0.05)';
+  const bd = tone === 'good' ? 'rgba(78,205,196,0.25)' : tone === 'warn' ? 'rgba(231,76,60,0.3)' : tone === 'caution' ? 'rgba(255,165,0,0.3)' : 'rgba(255,255,255,0.1)';
+  return `
+    <div style="background:${bg};border:1px solid ${bd};border-radius:10px;padding:14px;margin:10px 0;display:flex;gap:12px;align-items:flex-start">
+      <span style="font-size:22px;flex-shrink:0">${icon}</span>
+      <div style="flex:1;color:rgba(255,255,255,0.75);font-size:14px;line-height:1.5">${msg}</div>
+    </div>`;
+}
+
+// Bundle 26 Phase 1: upcoming trips — proactive nudges showing how much
+// to save per week to hit each trip's budget by its start date.
+function renderUpcomingTripsNudges() {
+  if (typeof PLAN === 'undefined' || !PLAN.getTrips) return '';
+  const trips = PLAN.getTrips() || [];
+  const now = Date.now();
+  const upcoming = trips
+    .filter(t => t && t.startDate && (new Date(t.startDate).getTime() > now))
+    .filter(t => (+t.budget || 0) > 0)
+    .map(t => {
+      const startMs = new Date(t.startDate).getTime();
+      const daysUntil = Math.max(1, Math.round((startMs - now) / 86400000));
+      const target = +t.budget || 0;
+      const saved = +t.saved || 0;
+      const remaining = Math.max(0, target - saved);
+      const weeks = Math.max(1, Math.round(daysUntil / 7));
+      const perWeek = remaining / weeks;
+      return { ...t, daysUntil, target, saved, remaining, perWeek };
+    })
+    .sort((a, b) => a.daysUntil - b.daysUntil)
+    .slice(0, 3);  // top 3 nearest
+  if (!upcoming.length) return '';
+  const cards = upcoming.map(t => {
+    const pct = t.target > 0 ? Math.min(100, Math.round((t.saved / t.target) * 100)) : 0;
+    return `
+      <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:15px;color:rgba(255,255,255,0.9);font-weight:600">${t.emoji || '✈️'} ${t.name}</div>
+          <div style="font-size:12px;color:rgba(255,255,255,0.4)">in ${t.daysUntil}d</div>
+        </div>
+        <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;margin:6px 0 8px">
+          <div style="height:100%;background:#4ECDC4;width:${pct}%;transition:width .4s"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.55)">
+          <span>$${Math.round(t.saved).toLocaleString()} / $${Math.round(t.target).toLocaleString()}</span>
+          <span>${t.remaining > 0 ? `Save <strong style="color:#FFA500">$${Math.round(t.perWeek)}/week</strong>` : '✅ Funded'}</span>
+        </div>
+      </div>`;
+  }).join('');
+  return `
+    <div style="margin:14px 0">
+      <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
+        🗓️ Coming up — pace yourself
+      </div>
+      ${cards}
+    </div>`;
+}
+
 function renderPaydayAllocation() {
   const income = PLAN.INCOME_MONTHLY;
   const bonus = S._pendingBonus || 0;
