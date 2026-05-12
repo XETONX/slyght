@@ -8530,40 +8530,136 @@ AUDITOR.load();
 
 // ─── STATE SNAPSHOTS ─────────────────────────────────────────
 const SNAPSHOTS = {
-  maxSnapshots: 30,
+  // Bundle 21 — tiered eviction per Opus's Option C plan.
+  //   - Last 24h: keep all (up to 20)
+  //   - Last 7 days: 1 per hour kept
+  //   - Last 30 days: 1 per day kept
+  //   - Older than 30 days: 1 per week kept
+  //   - Manual-tagged: forever (never evicted)
+  //   - Monthly anchors (1st of month): forever (never evicted)
+  //   Total cap: ~250 snapshots (~1-2 MB localStorage, comfortable headroom)
+  //
+  // BUG FIX from pre-Bundle-21:
+  //   save() did `(list||this.load()).slice(-10)` which kept the LAST 10
+  //   array entries. Since take() unshifts newest to index 0, slice(-10)
+  //   kept the OLDEST 10 and silently dropped every newer snapshot. That's
+  //   why John's phone showed snapshots only from 23/04/2026 even after
+  //   weeks of use — newer ones were created then immediately deleted.
+  //   Bundle 17.y force-daily override created new snapshots dutifully,
+  //   but save() then discarded them. Real fix: keep the FIRST N (newest).
+  HARD_CAP: 250,
+
   take(reason) {
     let snap;
     try { snap = {
-      ts: new Date().toISOString(), time: new Date().toLocaleTimeString('en-AU'),
-      date: new Date().toLocaleDateString('en-AU'), reason: reason || 'auto',
+      ts: new Date().toISOString(),
+      time: new Date().toLocaleTimeString('en-AU'),
+      date: new Date().toLocaleDateString('en-AU'),
+      reason: reason || 'auto',
       bal: S.bal, cc: S.cc, carloan: S.carloan,
       debts: JSON.parse(JSON.stringify(S.debts)),
       txns: JSON.parse(JSON.stringify(S.txns)),
       savingsBuckets: JSON.parse(JSON.stringify(S.savingsBuckets)),
       bills: JSON.parse(JSON.stringify(BILLS)),
-      surplus: getGenuineSurplus(), netWorth: getNetWorth(), paydayReceived: S.paydayReceived
+      surplus: getGenuineSurplus(), netWorth: getNetWorth(),
+      paydayReceived: S.paydayReceived
     }; } catch(e) { console.error('Snapshot error:', e); return null; }
     let snaps = this.load();
     snaps.unshift(snap);
-    if (snaps.length > this.maxSnapshots) snaps = snaps.slice(0, this.maxSnapshots);
     this.save(snaps);
     return snap;
   },
+
   load() {
     try { return JSON.parse(localStorage.getItem('slyght_snapshots') || '[]'); } catch(e) { return []; }
   },
+
   save(list) {
-    // Keep only 10 most recent snapshots
-    const trimmed = (list || this.load()).slice(-10);
+    const evicted = this._evict(list || this.load());
     try {
-      localStorage.setItem('slyght_snapshots', JSON.stringify(trimmed));
+      localStorage.setItem('slyght_snapshots', JSON.stringify(evicted));
     } catch(e) {
-      // If still too large, keep only 5
+      // Storage quota hit — drop to aggressive minimum (manual + monthly
+      // anchors + last 24h only). Manual tags + anchors NEVER discarded.
       try {
-        localStorage.setItem('slyght_snapshots', JSON.stringify(trimmed.slice(-5)));
-      } catch(e2) {}
+        const minimal = this._evictAggressive(evicted);
+        localStorage.setItem('slyght_snapshots', JSON.stringify(minimal));
+      } catch(e2) {
+        if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('[SNAPSHOTS] save failed', e2);
+      }
     }
   },
+
+  // Bundle 21: tiered eviction. Input: newest-first list. Output: same shape
+  // with tier rules applied (manual + monthly anchors always kept).
+  _evict(snaps) {
+    if (!Array.isArray(snaps) || snaps.length === 0) return [];
+    const now = Date.now();
+    const HOUR = 60 * 60 * 1000;
+    const DAY = 24 * HOUR;
+    const WEEK = 7 * DAY;
+    const MONTH = 30 * DAY;
+    const kept = [];
+    const seen = { hourly: new Set(), daily: new Set(), weekly: new Set(), monthly: new Set() };
+    let last24hCount = 0;
+    const LAST_24H_CAP = 20;
+
+    snaps.forEach(s => {
+      const tsMs = s.ts ? new Date(s.ts).getTime() : 0;
+      if (tsMs === 0) return;
+      const age = now - tsMs;
+      const d = new Date(tsMs);
+
+      // Forever-keep: manual tags + first-of-month anchors
+      if (s.tagged === true) { kept.push(s); return; }
+      if (d.getDate() === 1) {
+        const mKey = d.getFullYear() + '-' + (d.getMonth() + 1);
+        if (!seen.monthly.has(mKey)) { seen.monthly.add(mKey); kept.push(s); }
+        return;
+      }
+
+      if (age < DAY) {
+        // Last 24h tier — keep up to LAST_24H_CAP, newest wins (already sorted)
+        if (last24hCount < LAST_24H_CAP) { last24hCount++; kept.push(s); }
+        return;
+      }
+      if (age < WEEK) {
+        // Last 7 days — 1 per hour
+        const hKey = d.toISOString().slice(0, 13);
+        if (!seen.hourly.has(hKey)) { seen.hourly.add(hKey); kept.push(s); }
+        return;
+      }
+      if (age < MONTH) {
+        // Last 30 days — 1 per day
+        const dKey = d.toISOString().slice(0, 10);
+        if (!seen.daily.has(dKey)) { seen.daily.add(dKey); kept.push(s); }
+        return;
+      }
+      // Older than 30 days — 1 per week (ISO week-ish)
+      const yearStart = new Date(d.getFullYear(), 0, 1).getTime();
+      const wIdx = Math.floor((tsMs - yearStart) / WEEK);
+      const wKey = d.getFullYear() + '-w' + wIdx;
+      if (!seen.weekly.has(wKey)) { seen.weekly.add(wKey); kept.push(s); }
+    });
+
+    // Defensive hard cap (should rarely trigger given tier limits)
+    if (kept.length > this.HARD_CAP) return kept.slice(0, this.HARD_CAP);
+    return kept;
+  },
+
+  _evictAggressive(snaps) {
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    return snaps.filter(s => {
+      if (s.tagged === true) return true;
+      const tsMs = s.ts ? new Date(s.ts).getTime() : 0;
+      if (tsMs === 0) return false;
+      const d = new Date(tsMs);
+      if (d.getDate() === 1) return true; // monthly anchor
+      return (now - tsMs) < DAY;
+    });
+  },
+
   restore(index) {
     const snaps = this.load(), snap = snaps[index];
     if (!snap) return false;
@@ -8576,6 +8672,29 @@ const SNAPSHOTS = {
     showUndoToast('✅ Restored to ' + snap.date + ' ' + snap.time);
     return true;
   },
+
+  // Bundle 21: user-tagged snapshots are kept forever (never evicted).
+  // Click "📌 Tag" next to a snapshot to mark it.
+  tag(index) {
+    const snaps = this.load();
+    if (!snaps[index]) return false;
+    snaps[index].tagged = true;
+    snaps[index].taggedAt = Date.now();
+    this.save(snaps);
+    if (typeof renderSnapshots === 'function') renderSnapshots();
+    return true;
+  },
+
+  untag(index) {
+    const snaps = this.load();
+    if (!snaps[index]) return false;
+    delete snaps[index].tagged;
+    delete snaps[index].taggedAt;
+    this.save(snaps);
+    if (typeof renderSnapshots === 'function') renderSnapshots();
+    return true;
+  },
+
   autoSnapshot(reason) {
     const snaps = this.load(), last = snaps[0];
     // Bundle 17.x: broader dedup. Pre-fix: only 'auto' reason was deduped
@@ -8614,13 +8733,37 @@ function renderSnapshots() {
     el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:12px">No snapshots yet — taken automatically when your balance changes.</div>';
     return;
   }
-  el.innerHTML = snaps.map((s, i) =>
-    '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">' +
-      '<div><div style="color:var(--text);font-size:13px;font-weight:600">' + s.date + ' ' + s.time + '</div>' +
-      '<div style="color:var(--text3);font-size:12px">' + esc(s.reason) + ' · $' + (+s.bal).toFixed(2) + ' · surplus $' + (+s.surplus).toFixed(2) + '</div></div>' +
-      '<button onclick="SNAPSHOTS.restore(' + i + ')" style="font-size:11px;padding:4px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Restore</button>' +
-    '</div>'
-  ).join('');
+  // Bundle 21: show tier badge + tag/untag affordance per snapshot.
+  // Tier classification matches SNAPSHOTS._evict() logic.
+  const now = Date.now();
+  const HOUR = 3600 * 1000;
+  const DAY = 24 * HOUR;
+  const WEEK = 7 * DAY;
+  const MONTH = 30 * DAY;
+  el.innerHTML = snaps.map((s, i) => {
+    const tsMs = s.ts ? new Date(s.ts).getTime() : 0;
+    const age = tsMs ? now - tsMs : 0;
+    const d = tsMs ? new Date(tsMs) : null;
+    let tier, tierColor;
+    if (s.tagged) { tier = '📌 Pinned'; tierColor = 'var(--amber)'; }
+    else if (d && d.getDate() === 1) { tier = '⚓ Monthly'; tierColor = '#9b59b6'; }
+    else if (age < DAY) { tier = 'Recent'; tierColor = 'var(--green)'; }
+    else if (age < WEEK) { tier = 'Last 7d'; tierColor = 'var(--text2)'; }
+    else if (age < MONTH) { tier = 'Last 30d'; tierColor = 'var(--text3)'; }
+    else { tier = 'Archive'; tierColor = 'var(--text3)'; }
+    const tagBtn = s.tagged
+      ? '<button onclick="SNAPSHOTS.untag(' + i + ')" title="Unpin — allow auto-eviction" style="font-size:11px;padding:4px 8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:6px;color:var(--amber);cursor:pointer">📌</button>'
+      : '<button onclick="SNAPSHOTS.tag(' + i + ')" title="Pin — keep forever" style="font-size:11px;padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text3);cursor:pointer">📌</button>';
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:6px">' +
+      '<div style="min-width:0;flex:1"><div style="color:var(--text);font-size:13px;font-weight:600">' + s.date + ' ' + s.time + '</div>' +
+      '<div style="color:var(--text3);font-size:12px">' + esc(s.reason) + ' · $' + (+s.bal).toFixed(2) + ' · surplus $' + (+s.surplus).toFixed(2) + '</div>' +
+      '<div style="font-size:10px;color:' + tierColor + ';font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px">' + tier + '</div></div>' +
+      '<div style="display:flex;gap:4px;align-items:center">' +
+        tagBtn +
+        '<button onclick="SNAPSHOTS.restore(' + i + ')" style="font-size:11px;padding:4px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">Restore</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 // ─── RECONCILIATION ENGINE ────────────────────────────────────
