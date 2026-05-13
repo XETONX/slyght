@@ -5004,7 +5004,12 @@ function renderAll() {
   }
   if (_paceDisp) {
     const _weekAgo2 = Date.now() - 7*86400000;
-    const _weekSpent = getDiscretionarySpend(_weekAgo2, Date.now());
+    // Bundle 28 Phase 28.0.5: dashboard pace tile now uses STRICT discretionary
+    // (computeSpentInRange) instead of LAX getDiscretionarySpend. Pre-fix the
+    // pace tile inflated by paid bills + savings transfers, falsely showing
+    // "over pace" after a bills-heavy week even when discretionary spend was
+    // fine. Closes OPEN-BUGS #8 for this renderer.
+    const _weekSpent = computeSpentInRange(_weekAgo2, Date.now());
     const _weekAvg = _weekSpent / 7;
     const _maxD2 = getDynamicDailyBudget();
     const _diff = Math.abs(_weekAvg - _maxD2);
@@ -7044,9 +7049,15 @@ function renderTrend() {
   const c = $('trend-view'); if (!c) return;
   const history = S.monthlyHistory || [];
   if (history.length < 2) { c.innerHTML = '<div class="empty-state">Trend data builds up as you use Slyght each month.</div>'; return; }
+  // Bundle 28 Phase 28.0.5: consume canonical getDiscretionaryByCategory
+  // (strict — excludes Debt repayment / Savings / Loan / Income / corrections
+  // / roundups) instead of bare `!t.income`. Pre-fix this surface counted
+  // paid debts and savings transfers as discretionary spend, so the trend
+  // showed wild swings the cycle after a debt clearance. Closes OPEN-BUGS
+  // #6 for this renderer. All-time scope preserved (0 → now).
+  const catData = getDiscretionaryByCategory(0, Date.now());
   const cats = {};
-  // guardian-allow: no-bare-non-income-filter-on-txns — renderTrend uses bare !t.income (no category filter); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter (removable when OPEN-BUGS #6 is fixed)
-  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
   c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
     const prev = (history[history.length-1]||{})[k] || 0;
     const delta = prev > 0 ? Math.round(((v-prev)/prev)*100) : 0;
@@ -7059,9 +7070,14 @@ function renderCatBreakdown() {
   const c = $('cat-breakdown'); if (!c) return;
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   // M8: show time period label
+  // Bundle 28 Phase 28.0.5: same migration as renderTrend — consume strict
+  // discretionary helper so paid debts + savings transfers stop appearing
+  // as "spending categories". Pre-fix: a $500 debt repayment showed up as
+  // its own giant red bar in the analysis breakdown. Closes OPEN-BUGS #6
+  // for this renderer. All-time scope preserved.
+  const catData = getDiscretionaryByCategory(0, Date.now());
   const cats = {};
-  // guardian-allow: no-bare-non-income-filter-on-txns — renderCatBreakdown uses bare !t.income (all-time, all categories); should consume getDiscretionaryByCategory or _NON_SPEND_CATS strict filter (removable when OPEN-BUGS #6 is fixed)
-  S.txns.filter(t => !t.income).forEach(t => { const k = t.cat || 'Other'; cats[k] = (cats[k]||0) + t.amt; });
+  Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
   const timePeriodLabel = '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">This month (all logged)</div>';
   c.innerHTML = timePeriodLabel + Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v],i) => {
@@ -8456,11 +8472,62 @@ function openPaydayLockPlan() {
     },
   });
 }
-// Routes to chat tab. The chat system prompt embeds BRAIN.plan.getSnapshot()
-// so the AI sees the current cycle's plan context (Phase 7 of Bundle 27).
+// Routes to chat tab + auto-fills the chat input with a contextualised
+// prompt about the current cycle's plan. Bundle 27 Phase 7 already embeds
+// BRAIN.plan.getSnapshot() in the chat system prompt — AI has full context
+// regardless of what user types. Bundle 28 Phase 28.0.6 (this) adds the
+// pre-fill so the conversation starts from the user's actual current
+// situation instead of a blank box. User can edit the prompt before
+// sending — pre-fill is a starter, not forced.
 function openPaydayAskAI() {
   _paydayExitToTab('pg-chat');
-  if (typeof showToast === 'function') showToast('Ask the AI — current plan context is included');
+  // Wait for goPage transition + DOM settle before reaching into chat input
+  setTimeout(() => {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    input.value = _buildPaydayAskAIPrompt();
+    input.focus();
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+    // Auto-resize the textarea (chat-input defaults rows=1)
+    input.style.height = 'auto';
+    input.style.height = input.scrollHeight + 'px';
+  }, 250);
+  if (typeof showToast === 'function') showToast('Plan context auto-filled — edit before sending');
+}
+
+// Build the contextualised question shown in the chat input when openPaydayAskAI
+// fires. Reads from BRAIN.plan.getSnapshot — pure, no side effects. Returns a
+// fallback string if anything is unreachable so the input never lands empty.
+function _buildPaydayAskAIPrompt() {
+  try {
+    const snap = (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.getSnapshot)
+      ? BRAIN.plan.getSnapshot() : null;
+    if (!snap) return 'Walk me through this payday cycle — what should I focus on?';
+    const days = +snap.daysRemaining || 0;
+    const balance = Math.round(+snap.currentBalance || 0);
+    const free = Math.round((snap.derived && +snap.derived.freeTotal) || 0);
+    const bills = Math.round((snap.bills && +snap.bills.total) || 0);
+    const debts = Math.round((snap.debts && +snap.debts.total) || 0);
+    const savings = Math.round((snap.savings && +snap.savings.total) || 0);
+    const locked = !!snap.locked;
+    const upcoming = (snap.knownUpcoming && +snap.knownUpcoming.total) || 0;
+    const lines = [
+      'Walk me through this payday cycle.',
+      '',
+      'Right now:',
+      '- Balance $' + balance + ' · ' + days + ' days to payday',
+      '- Bills due: $' + bills + ' · debt minimums: $' + debts,
+      '- Already allocated to savings: $' + savings + (upcoming > 0 ? ' · known upcoming: $' + Math.round(upcoming) : ''),
+      free > 0 ? '- Free to allocate: $' + free : '- Over-committed (no free money)',
+      '- ' + (locked ? 'Plan is locked' : 'Plan is still open to edit'),
+      '',
+      'Where should I focus? Anything I should be cautious about this cycle?',
+    ];
+    return lines.join('\n');
+  } catch (e) {
+    if (typeof console !== 'undefined') console.error('[_buildPaydayAskAIPrompt] threw:', e);
+    return 'Walk me through this payday cycle — what should I focus on?';
+  }
 }
 function openPaydayUnlockPlan() {
   if (!confirm('Re-plan? Your allocations will become editable again. Ticked items stay ticked.')) return;
@@ -18009,12 +18076,15 @@ function renderPlanMode() {
     </button>
   </div>`;
 
+  // Bundle 28 Phase 28.2: time-axis tile order — cycle-first, long-term second.
+  // Payday Plan (this cycle, every 2 weeks) sits above WRX (long-term snapshot,
+  // changes less often) because John opens PLAN mode to answer "how am I doing
+  // right now?" before "how am I doing strategically?" Reversed Bundle 27's
+  // ordering per audit A1 §3.2 + MISSION-BUNDLE-28 §3.1.
+  if (typeof renderAllocateTile === 'function') html += renderAllocateTile();
+
   // ── WRX STATUS CARD ──────────────────────────────────────
   html += renderWrxCard();
-
-  // ── Bundle 26 Phase 1.5b → Bundle 27: Payday Plan tile opens the full
-  //    Bundle 27 canvas (was inline subscreen pre-Bundle-27).
-  if (typeof renderAllocateTile === 'function') html += renderAllocateTile();
 
   // Bundle 27 1+2 verify: removed renderUpcomingTripsNudges per John —
   // "coming up pace yourself is useless if Trips is right underneath, that
