@@ -39,7 +39,7 @@
 | Days to payday bar | `renderAll` inline (~L4985-5010) | `#pd-fill`, `#pd-lbl` | `MODEL.daysToPayday` | `BRAIN.config.setPayday` | MAX PER DAY math, Ask AI prompt |
 | Survival banner | `renderSurvivalBanner` (~L2336) | `#dash-survival-banner` | `MODEL.survivalMode`, `getLiveBal`, `getActiveDebtsDueBeforePayday` | n/a (read-only render) | Alert cards, MAX PER DAY context |
 | MAX PER DAY card | `renderAll` inline (~L5040) | `#max-day-display`, `#max-day-context`, `#pace-display` | `getDynamicDailyBudget()` (which reads S.bal, getBillsDue, getActiveDebtsDueBeforePayday, S.weekdayBudget/weekendBudget, getTodaySpent) | Cap edited via Settings → `BRAIN.config.setWeekdayBudget` / `BRAIN.config.setWeekendBudget` | Tap → `explainMaxPerDay()` modal (Bundle 28 P1) |
-| Pace tile ("Running $X over pace") | `renderAll` inline (~L5012) | `#pace-display` | `computeSpentInRange` (strict — Bundle 28 round 5) | n/a | Phase 28.0.5 closed cross-tile divergence with hero |
+| Pace tile ("Running $X over pace") | `renderAll` inline (~L5475) | `#pace-display` | `getThisWeekProjection()` (Bundle 28 round 31 — aligned with Bills tab Week Projection so both surfaces show same number) | n/a | Tappable (Bundle 28 round 34) → opens `explainWeekProjection()` math modal — same explainer the Bills tab "?" button uses |
 | Alert cards | `renderAlerts` (~L5468) | `#dash-alerts` | `MODEL.shouldShowSpendingAlert`, `MODEL.survivalMode`, debts/bills math | n/a | Survival banner suppresses these when mode ≠ 'normal' |
 | Immediate debts | `renderDebtTiles` | `#debt-grid` | `S.debts.filter(d => !d.paid && !d.viaRent)` | `BRAIN.debts.markPaid`/`unmark`/`update` | Add via `openAddDebtModal` → `saveNewDebt` → `BRAIN.debts.add` |
 | Recent Spending | `renderDashTxns` | (~txn list area) | `S.txns` recent slice | Tap row → `editTransaction` → `txn-edit-modal` → `saveEditedTransaction` (DIRECT mutation — needs `BRAIN.transaction.update` Bundle 29) / `deleteEditedTransaction` (DIRECT — needs canonical) / `convertEditedTransactionToLoan` (Bundle 28 → `BRAIN.transaction.reclassify`) | Hero today, footer, Analysis pivot all read S.txns separately |
@@ -197,5 +197,38 @@ Hero balance was REMOVED from Settings Bundle 28 round 2 — dashboard hero is s
 - `confirmDeleteBucketFromCanvas(bucketName)` → new (round 9). Wrapper for the canvas-context delete: removes bucket via BRAIN.savings.removeBucket + manual intent cascade + closes EDIT_MODAL + refreshes everywhere
 - `explainMaxPerDay` → rich HTML rebuild (round 9). Hero gradient card + progress bar with colour-by-percentage + money breakdown grid table + time math + today's outflow split + timing-aware warning card
 - `buildSpendingPivot` debt category tip → reformatted (round 9). Bulleted category list + bold total + recommendation in muted text
+
+## Rounds 29–42 additions to the map
+
+**Debt tiles (round 29):**
+- `renderDebtTiles` now includes viaRent + autoDebit debts with distinct visual modes (amber/blue themes, VIA-RENT / 🤖 AUTO badges). Round 32 split badges onto their own row above the name (round 27's 2-line clamp). IMMEDIATE total ($1,031) stays manual-only — viaRent doesn't inflate.
+- `autoSortDebts` (round 26) → custom `EDIT_MODAL.openCustom` instead of native confirm(). Score: +40 for autoDebit, +60 for viaRent (round 29) so manual-pay debts always sort first.
+
+**Schema additions (rounds 29, 35):**
+- Debts: `autoDebit` flag (round 29), `endDate` (round 35). Both surfaced in add-debt + edit-debt modals. `BRAIN.debts.update` MUTABLE allow-set extended.
+- Bills: `endDate` (round 35) for time-bounded bills. `getExpandedBills` filters expired bills via new `_isBillActiveAsOf` helper.
+
+**New helpers (rounds 35, 37, 39, 42):**
+- `_autoExpireDebts()` — scans for endDate-past debts, flips `paid:true` via canonical writer (no clearance txn). Called from `onStateChange` (action-triggered) AND post-load (round 42).
+- `buildDebtFreedomProjection()` — phased cascade replacing the pre-r37 single-number estimate. Round 39 urgency-bucket sort + round 42 daysUntil tiebreaker.
+
+**BNPL quick-add (rounds 36, 41):**
+- New `bnpl-modal` HTML + `openBnplModal()` / `_bnplRecompute()` / `saveBnpl()` / `_bnplSelect()` JS. Round 41 refactor: inputs are per-payment + remaining (not total + count) so John can backfill mid-plan Afterpay debts. Chips 1/2/3/4 (was 4/6/8).
+- Triggered by `💳 BNPL` button next to `+ Add A Bill` on Bills tab.
+
+**Quick Log type chips (rounds 34, 38, 42):**
+- Native `<select>` for txn-type replaced with chip-row pattern. Round 38 types: Expense / Savings / Income / Transfer (removed From-person + One-off; added Savings as first-class type; migrated Income from category). Round 42: category row hides when type=Income/Savings.
+- `selectTxnType` auto-syncs `ql-cat-hidden` for non-Expense types.
+- Round 34 removed auto-focus on `ql-amt` (round 38 deferred a re-add — current: no auto-focus, user taps to focus).
+
+**Dashboard pace tappable (round 34):**
+- `#pace-display` now has `cursor:pointer + onclick="explainWeekProjection()"` so the dashboard tile opens the same math modal the Bills tab "?" uses.
+- Round 31 aligned the calc with `getThisWeekProjection()` so both surfaces show the same number.
+- Round 40 added a dedicated "What does pace mean?" amber-tinted card at the top of the explainer modal.
+
+**Bill modal additions:**
+- `bm-end-date` field (round 35)
+- `bm-freq` options expanded to quarterly / biannual / yearly (round 34)
+- `bm-autodebit` checkbox (Bundle 7-era; consistent with new debt `modal-autodebit`)
 
 — end FEATURE-MAP.md —
