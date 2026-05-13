@@ -122,6 +122,42 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 49 — Bill paid/deferred toggle + debt quick-picks + auto-allocate transparency
+Phone-verify on r48: 1-7 PASS with refinement notes. Each refinement below.
+
+**49a — Bill cycle modal: Paid/Deferred toggle (was quick-pick grid)**
+
+John #3: "Bills shouldn't have the option to say how much to allocate this cycle unless deferring because it's a set amount so the numbers don't make sense. Should just be a Paid in full or Deferred, then deferred brings the text box with custom amount and then it recalculates how much is left or how it will be added onto the next month, and there should also be an option to add fees if it defers and like I have to pay a late fee etc."
+
+Rewrote `openEditPaydayBill` with a two-mode toggle:
+- **✅ Pay in full** (default, green) — sets amt = normal, no defer.
+- **↪ Defer part** (amber, opens a deferred-fields section):
+  - Amount paying this cycle (number input)
+  - Optional late-fee checkbox + amount
+  - Live preview: "Paying now $X · Carries to next cycle $Y · + Late fee $Z · Total next-cycle obligation $W"
+- Reason dropdown stays.
+- Save: if "in full" → setOverride amt=normal. If deferred → setOverride amt=entered + `lateFee` opt; shortfall creates a Known Upcoming for next cycle.
+
+**49b — Debt cycle quick-picks: 0/25/50/75/100% (was 0/25/50/75/100/125/150%)**
+
+John #4: "should make sense when suggesting how much to pay off, should be like 1/4 of total amount, 1/2 etc and then option for custom amount or paid in full right?" Pre-r49 the picks included 125% and 150% of normal — over-paying a fixed debt doesn't make sense. Dropped to [0, 25%, 50%, 75%, 100%]. Custom button stays for explicit values.
+
+**49d — Auto-allocate preview: transparent "what's covered first"**
+
+John #7: "Auto-allocate not counting all debts or all bills etc just populating like celebrations and gifts etc not using real data."
+
+Pre-r49 the auto-allocate modal led with "Suggested allocation across your savings goals" — but bills/debts/provisions/buffer were silently subtracted BEFORE the split. From the user's POV: looked like auto-allocate was only handling gifts/celebrations. Now the modal shows:
+1. **🔒 Already covered first (Essentials)** — Bills / Debts (minimums) / Daily living / Annual provisions / Safety buffer with each amount.
+2. **✋ Allocatable** — the headline $X figure after essentials.
+3. **Suggested split (urgency-weighted)** — buckets, each tagged with a 🔥/⏰/calendar urgency chip pulled from the linked trip's days-out.
+4. Footnote: "Trip buckets with closer start dates get a bigger share (round 48). Tags show how urgent each is."
+
+(Note: actual debt payments beyond minimums isn't currently part of auto-allocate's output — the urgent-debt-pay-down feature is a separate round. The fact that debts ARE subtracted before splitting is now visible to the user.)
+
+(Deferred to round 50: AU date format pass — John #5: dates should be "14th June" / day-as-number + month-as-word everywhere. Audit + standardize across BNPL preview, debt timeline, calendar dates, etc.)
+
+Gates: 0 FAILs, 58/58 tests, 51/51 runtime PASS.
+
 ### Round 48 — BNPL end-date off-by-one + pace in MAX-per-day modal + urgency-weighted auto-allocate
 Three follow-ups from John's continued phone-verify of rounds 45-47.
 

@@ -9434,9 +9434,18 @@ function _roundNice(n) {
   return Math.round(n / 10) * 10;
 }
 function _generateQuickPicks(category, normalAmount) {
+  // Bundle 28 round 49 (John feedback): debt quick-picks were [0, 25%,
+  // 50%, 75%, 100%, 125%, 150%] of normal — the 125/150% overpay rows
+  // didn't make sense for fixed debts. John: "should be like 1/4 of
+  // total amount, 1/2 etc and then option for custom amount or paid in
+  // full right?" Now [0, 25%, 50%, 75%, 100%] of normal. Custom input
+  // stays via the existing _buildQuickPickGrid Custom button.
+  // (Bills handled by openEditPaydayBill's bespoke toggle now — this
+  // function still produces a bill picker only if a caller bypasses
+  // the editor; keeping the simpler set for safety.)
   if (category === 'bill' || category === 'debt') {
     const base = (+normalAmount || 0);
-    return [0, 0.25, 0.5, 0.75, 1, 1.25, 1.5].map(p => _roundNice(base * p));
+    return [0, 0.25, 0.5, 0.75, 1].map(p => _roundNice(base * p));
   }
   if (category === 'savings') return [0, 100, 200, 300, 500, 750, 1000];
   if (category === 'upcoming') return [20, 40, 50, 80, 100, 150, 200];
@@ -9512,6 +9521,19 @@ function _buildDropdown(label, id, options, currentValue) {
 
 // ─── Bill editor ────────────────────────────────────────────────────────
 function openEditPaydayBill(billName) {
+  // Bundle 28 round 49 (John feedback): bills aren't variable amounts —
+  // they're a SET amount you either pay in full OR defer (partially or
+  // entirely). Pre-r49 the modal showed a quick-pick grid (0%, 25%, 50%,
+  // ..., 150% of normal) which made no sense for a $194 Optus bill.
+  //
+  // New flow: two-mode toggle.
+  //   ✅ Pay in full (default) — amt = normal, no defer
+  //   ↪ Defer part of this cycle — reveals amount + late-fee fields
+  //                                 + live "carries to next cycle: $X" hint
+  //
+  // Save path: if "in full" → setOverride amt=normal. If deferred →
+  // setOverride amt=entered, plus the shortfall (+ optional late fee)
+  // creates a Known Upcoming for next cycle so the obligation stays visible.
   const bill = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.find(b => b && b.name === billName) : null;
   if (!bill) return;
   const normal = +bill.amt || 0;
@@ -9519,30 +9541,109 @@ function openEditPaydayBill(billName) {
   const ov = overrides['bill:' + billName];
   const current = ov ? ov.thisCycleAmount : normal;
   const currentReason = (ov && ov.reason) || 'no-change';
+  const initialMode = (current < normal) ? 'defer' : 'full';
+  const initialDeferAmt = (initialMode === 'defer') ? Math.max(0, normal - current) : 0;
   const fmt = '$' + Math.round(normal).toLocaleString();
+
   let body = '';
-  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Normal amount: <strong style="font-family:var(--mono);color:var(--text2)">' + fmt + '</strong></div>';
-  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Paying this cycle:</div>';
-  body += _buildQuickPickGrid(_generateQuickPicks('bill', normal), current);
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:10px">Normal amount: <strong style="font-family:var(--mono);color:var(--text2)">' + fmt + '</strong></div>';
+  // Two-mode toggle
+  body += '<div style="display:flex;gap:8px;margin-bottom:14px">';
+  body += '<button type="button" id="bill-mode-full" onclick="_setBillEditMode(\'full\')" style="flex:1;padding:12px;border-radius:12px;border:1px solid ' + (initialMode === 'full' ? 'var(--green)' : 'var(--bg5)') + ';background:' + (initialMode === 'full' ? 'var(--green)' : 'var(--bg5)') + ';color:' + (initialMode === 'full' ? '#000' : 'var(--text2)') + ';font-size:14px;font-weight:700;cursor:pointer;line-height:1.4">✅<br>Pay in full</button>';
+  body += '<button type="button" id="bill-mode-defer" onclick="_setBillEditMode(\'defer\')" style="flex:1;padding:12px;border-radius:12px;border:1px solid ' + (initialMode === 'defer' ? 'var(--amber)' : 'var(--bg5)') + ';background:' + (initialMode === 'defer' ? 'var(--amber)' : 'var(--bg5)') + ';color:' + (initialMode === 'defer' ? '#000' : 'var(--text2)') + ';font-size:14px;font-weight:700;cursor:pointer;line-height:1.4">↪<br>Defer part</button>';
+  body += '</div>';
+  // Defer fields — hidden when full
+  body += '<div id="bill-defer-fields" style="display:' + (initialMode === 'defer' ? 'block' : 'none') + ';background:rgba(245,158,11,0.08);border:1px solid var(--amber-border);border-radius:10px;padding:12px;margin-bottom:14px">';
+  body += '<div class="modal-field"><label>Amount paying this cycle ($)</label><input class="modal-input" type="number" id="bill-defer-amt" inputmode="decimal" value="' + (initialMode === 'defer' ? (normal - initialDeferAmt).toFixed(2) : '0.00') + '" oninput="_updateBillDeferPreview(' + normal + ')"></div>';
+  body += '<div class="modal-checkbox-row" style="margin-top:6px"><input type="checkbox" class="modal-checkbox" id="bill-defer-hasfee" onchange="document.getElementById(\'bill-defer-fee-row\').style.display=this.checked?\'block\':\'none\';_updateBillDeferPreview(' + normal + ')"><label for="bill-defer-hasfee">Add a late fee for next cycle</label></div>';
+  body += '<div class="modal-field" id="bill-defer-fee-row" style="display:none;margin-top:6px"><label>Late fee ($)</label><input class="modal-input" type="number" id="bill-defer-fee" inputmode="decimal" value="0" oninput="_updateBillDeferPreview(' + normal + ')"></div>';
+  body += '<div id="bill-defer-preview" style="margin-top:10px;padding:8px 10px;background:rgba(0,0,0,0.18);border-radius:6px;font-size:13px;color:var(--text2);line-height:1.5"></div>';
+  body += '</div>';
   body += _buildDropdown('Reason for the change', 'bill-edit-reason', _PAYDAY_REASON_OPTIONS, currentReason);
+
   EDIT_MODAL.openCustom({
     title: 'Edit ' + billName + ' — this cycle',
-    hint: 'Adjust the amount you\'re paying this cycle. Defaults to the normal amount.',
+    hint: 'Bills are a set amount. Pay in full or defer part to next cycle.',
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      // Initial preview render so user sees the math
+      try { _updateBillDeferPreview(normal); } catch (_) {}
+    },
     save: () => {
-      const amt = _readQuickPickValue();
-      if (amt === null) return { ok: false, reason: 'Pick an amount or enter custom' };
+      const modeEl = document.getElementById('bill-mode-full');
+      // Active button has bg=var(--green); we use the data-set-via-handler global
+      const mode = (window._billEditMode || initialMode);
+      let amt = normal;
+      let lateFee = 0;
+      let deferShortfall = 0;
+      if (mode === 'defer') {
+        const enteredAmt = parseFloat(document.getElementById('bill-defer-amt')?.value);
+        if (isNaN(enteredAmt) || enteredAmt < 0) return { ok: false, reason: 'Enter a valid amount' };
+        if (enteredAmt > normal) return { ok: false, reason: 'Amount can\'t exceed the normal bill ($' + Math.round(normal) + ')' };
+        amt = enteredAmt;
+        deferShortfall = parseFloat((normal - enteredAmt).toFixed(2));
+        if (document.getElementById('bill-defer-hasfee')?.checked) {
+          lateFee = parseFloat(document.getElementById('bill-defer-fee')?.value) || 0;
+        }
+      }
       const reason = document.getElementById('bill-edit-reason')?.value || 'no-change';
       const deferAction = (amt < normal) ? 'create_known_upcoming_next_cycle' : 'none';
-      const r = BRAIN.plan.setOverride('bill', billName, amt, { reason, deferAction }, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      const r = BRAIN.plan.setOverride('bill', billName, amt, { reason, deferAction, lateFee }, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
       if (!r.ok) return r;
       renderPaydayBills();
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
-      if (typeof showToast === 'function') showToast('✓ ' + billName + ' set to $' + amt + ' this cycle');
+      if (typeof showToast === 'function') {
+        if (mode === 'full') showToast('✓ ' + billName + ' paid in full');
+        else showToast('↪ ' + billName + ' deferred $' + deferShortfall + (lateFee > 0 ? ' (+ $' + lateFee + ' late fee)' : '') + ' to next cycle');
+      }
       return { ok: true };
     },
   });
+  // Default mode tracker
+  window._billEditMode = initialMode;
+}
+
+// Bundle 28 round 49: helpers for the new bill defer-toggle UI
+function _setBillEditMode(mode) {
+  window._billEditMode = mode;
+  const fullBtn = document.getElementById('bill-mode-full');
+  const defBtn  = document.getElementById('bill-mode-defer');
+  const fields  = document.getElementById('bill-defer-fields');
+  if (!fullBtn || !defBtn) return;
+  if (mode === 'full') {
+    fullBtn.style.background = 'var(--green)';
+    fullBtn.style.borderColor = 'var(--green)';
+    fullBtn.style.color = '#000';
+    defBtn.style.background = 'var(--bg5)';
+    defBtn.style.borderColor = 'var(--bg5)';
+    defBtn.style.color = 'var(--text2)';
+    if (fields) fields.style.display = 'none';
+  } else {
+    fullBtn.style.background = 'var(--bg5)';
+    fullBtn.style.borderColor = 'var(--bg5)';
+    fullBtn.style.color = 'var(--text2)';
+    defBtn.style.background = 'var(--amber)';
+    defBtn.style.borderColor = 'var(--amber)';
+    defBtn.style.color = '#000';
+    if (fields) fields.style.display = 'block';
+  }
+}
+function _updateBillDeferPreview(normal) {
+  const amtEl = document.getElementById('bill-defer-amt');
+  const preview = document.getElementById('bill-defer-preview');
+  if (!amtEl || !preview) return;
+  const amt = parseFloat(amtEl.value);
+  if (isNaN(amt) || amt < 0) { preview.innerHTML = '<span style="color:var(--text3)">Enter an amount to see the carry-over</span>'; return; }
+  const shortfall = Math.max(0, normal - amt);
+  const hasFee = document.getElementById('bill-defer-hasfee')?.checked;
+  const fee = hasFee ? (parseFloat(document.getElementById('bill-defer-fee')?.value) || 0) : 0;
+  const total = shortfall + fee;
+  if (shortfall === 0) { preview.innerHTML = '<span style="color:var(--green)">Paid in full — nothing carries over.</span>'; return; }
+  preview.innerHTML =
+    '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Paying now</span><strong style="font-family:var(--mono);color:var(--text)">$' + amt.toFixed(2) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Carries to next cycle</span><strong style="font-family:var(--mono);color:var(--amber)">$' + shortfall.toFixed(2) + '</strong></div>' +
+    (fee > 0 ? '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>+ Late fee</span><strong style="font-family:var(--mono);color:var(--red)">$' + fee.toFixed(2) + '</strong></div>' : '') +
+    '<div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border)"><span style="font-weight:600">Total next cycle obligation</span><strong style="font-family:var(--mono);color:var(--text);font-size:14px">$' + total.toFixed(2) + '</strong></div>';
 }
 
 // ─── Debt editor ────────────────────────────────────────────────────────
@@ -9858,19 +9959,65 @@ function openPaydayAutoAllocate() {
     if (typeof showToast === 'function') showToast('Auto-allocate failed: ' + rec.reason);
     return;
   }
-  // Build summary HTML showing what will be applied
+  // Bundle 28 round 49d (John feedback): pre-r49 preview said only
+  // "Suggested allocation across your savings goals" — John didn't see
+  // that bills/debts/provisions/living were ALREADY covered before the
+  // split. He thought auto-allocate was "not counting all debts or
+  // bills etc just populating like celebrations and gifts." Now the
+  // preview leads with the "what's already covered" breakdown so the
+  // bucket split is in context.
+  const snap = BRAIN.plan.getSnapshot();
+  let _provs = 0;
+  try { _provs = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
   const fmt = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
+
+  // Urgency annotation per bucket — pulled from the same intent linkage
+  // that recommendAllocation uses, so the user can see WHY Darwin gets
+  // more than China this round.
+  const _nowMs = Date.now();
+  const _bucketUrgencyTag = (bucketName) => {
+    try {
+      if (!BRAIN.plan.intent || !BRAIN.plan.intent.byBucket) return '';
+      const intents = BRAIN.plan.intent.byBucket(bucketName) || [];
+      const trip = intents.find(i => i && i.kind === 'trip' && i.startDate);
+      if (!trip) return '';
+      const days = Math.round((new Date(trip.startDate + 'T00:00:00').getTime() - _nowMs) / 86400000);
+      if (days < 0) return '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--red-dim);color:var(--red)">overdue</span>';
+      if (days <= 30) return '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--red-dim);color:var(--red)">🔥 ' + days + 'd</span>';
+      if (days <= 90) return '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--amber-dim);color:var(--amber)">⏰ ' + days + 'd</span>';
+      return '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:var(--bg4);color:var(--text3)">' + days + 'd</span>';
+    } catch (_) { return ''; }
+  };
+
   const lines = Object.keys(rec.bucketAllocations).map(name => {
     const amt = rec.bucketAllocations[name];
-    return '<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + '</span><span style="font-family:var(--mono);color:var(--green)">' + fmt(amt) + '</span></div>';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + _bucketUrgencyTag(name) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '</span></div>';
   }).join('');
+
   let body = '';
-  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:10px">Suggested allocation across your savings goals, keeping a $' + Math.round(rec.leftAsBuffer) + ' safety buffer.</div>';
-  body += '<div style="background:var(--bg);border-radius:8px;padding:8px 14px;margin-bottom:8px">' + (lines || '<div style="color:var(--text3);font-size:13px;padding:4px 0">No buckets to allocate to.</div>') + '</div>';
-  body += '<div style="font-size:12px;color:var(--text3);margin-top:8px">Total to allocate: <strong style="font-family:var(--mono);color:var(--text2)">' + fmt(rec.allocatable) + '</strong></div>';
+  // Covered breakdown (transparent — these aren't "allocated to buckets",
+  // they're already-committed before the bucket split happens).
+  body += '<div style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);line-height:1.7">';
+  body += '<div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">🔒 Already covered first (Essentials)</div>';
+  body += '<div style="display:flex;justify-content:space-between"><span>🏠 Bills</span><span style="font-family:var(--mono);color:var(--text)">' + fmt(snap.bills.total) + '</span></div>';
+  body += '<div style="display:flex;justify-content:space-between"><span>💳 Debts (minimums)</span><span style="font-family:var(--mono);color:var(--text)">' + fmt(snap.debts.total) + '</span></div>';
+  body += '<div style="display:flex;justify-content:space-between"><span>📅 Daily living</span><span style="font-family:var(--mono);color:var(--text)">' + fmt(snap.dailyLiving.plannedTotal) + '</span></div>';
+  if (_provs > 0) body += '<div style="display:flex;justify-content:space-between"><span>🏦 Annual provisions</span><span style="font-family:var(--mono);color:var(--text)">' + fmt(_provs) + '</span></div>';
+  body += '<div style="display:flex;justify-content:space-between"><span>🛡 Safety buffer</span><span style="font-family:var(--mono);color:var(--text)">' + fmt(rec.leftAsBuffer) + '</span></div>';
+  body += '</div>';
+  // Allocatable headline
+  body += '<div style="background:rgba(34,197,94,0.08);border:1px solid var(--green-border);border-radius:8px;padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:baseline">';
+  body += '<span style="font-size:13px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em">✋ Allocatable</span>';
+  body += '<span style="font-family:var(--mono);font-size:18px;font-weight:800;color:var(--green)">' + fmt(rec.allocatable) + '</span>';
+  body += '</div>';
+  // Bucket split
+  body += '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;padding:0 2px">Suggested split (urgency-weighted)</div>';
+  body += '<div style="background:var(--bg3);border-radius:8px;padding:8px 14px">' + (lines || '<div style="color:var(--text3);font-size:13px;padding:4px 0">No buckets to allocate to.</div>') + '</div>';
+  body += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4;font-style:italic">Trip buckets with closer start dates get a bigger share (round 48). Tags show how urgent each is.</div>';
+
   EDIT_MODAL.openCustom({
     title: '⚙️ Auto-allocate',
-    hint: 'Apply this suggested allocation?',
+    hint: 'Bills/debts/provisions are covered first. This splits what\'s left.',
     bodyHtml: body,
     saveLabel: 'Apply',
     save: () => {
