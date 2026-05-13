@@ -1975,6 +1975,50 @@ const HABIT_MSGS = [
 const fmt = n => (n == null || isNaN(n)) ? '\u2014' : '$' + Math.round(Math.abs(n)).toLocaleString('en-AU');
 const fmtS = n => (n == null || isNaN(n)) ? '\u2014' : (n < 0 ? '-' : '') + fmt(n);
 const fmtC = n => (n == null || isNaN(n)) ? '\u2014' : (n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-AU', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+// Bundle 28 round 50 (John feedback #5 from r48): AU-style date formatter.
+// "Dates should always follow AUS time formatting so day then month then
+// year so it makes it easier for me to read and better to put the day as
+// number and month as description so like 14th June so it's easier for
+// me to recognise."
+//
+// Accepts a Date, ISO 'YYYY-MM-DD' string, or millis number.
+// opts.style: 'short' (default \u2014 '2 Jul') | 'long' ('2nd July')
+// opts.year: include trailing year ('2 Jul 2026'); default false unless
+//            the date is more than 6 months out.
+const _AU_MONTH_LONG  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const _AU_MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _auOrdinal(n) {
+  if (n >= 11 && n <= 13) return n + 'th';
+  const s = n % 10;
+  return n + (s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th');
+}
+function fmtAuDate(d, opts) {
+  opts = opts || {};
+  let date;
+  if (typeof d === 'string') {
+    date = new Date(d.length === 10 ? d + 'T00:00:00' : d);
+  } else if (typeof d === 'number') {
+    date = new Date(d);
+  } else if (d instanceof Date) {
+    date = d;
+  } else {
+    return '';
+  }
+  if (isNaN(date.getTime())) return '';
+  const day = date.getDate();
+  const monthIdx = date.getMonth();
+  const year = date.getFullYear();
+  const style = opts.style || 'short';
+  // Auto-include year when date is more than 6 months away (or any year != current)
+  const includeYear = opts.year != null
+    ? opts.year
+    : (year !== new Date().getFullYear());
+  if (style === 'long') {
+    return _auOrdinal(day) + ' ' + _AU_MONTH_LONG[monthIdx] + (includeYear ? ' ' + year : '');
+  }
+  return day + ' ' + _AU_MONTH_SHORT[monthIdx] + (includeYear ? ' ' + year : '');
+}
 const $ = id => document.getElementById(id);
 
 function save() {
@@ -6228,7 +6272,8 @@ function renderDebtTiles() {
     const col = isViaRent ? 'warn' : (d.delayed ? 'warn' : 'bad');
     const pct = Math.min(100, Math.round((d.amt/(total || 1))*100));
     const fillCol = isViaRent ? 'var(--amber)' : (d.delayed ? 'var(--amber)' : 'var(--red)');
-    const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
+    // Bundle 28 round 50: AU date format on debt cards ("14 May" not "14/05")
+    const dueStr = d.delayDate ? fmtAuDate(d.delayDate) : 'ASAP';
     let dueUrgency = 'default';
     if (d.delayDate) {
       const dueD = new Date(d.delayDate);
@@ -6753,7 +6798,9 @@ function buildDebtFreedomProjection() {
       debtAmt: +debt.amt || 0,
       surplus: runningSurplus,
       months,
-      clearDateStr: clearDate.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
+      // Bundle 28 round 50: AU date format ("Aug 2027" — short style since
+      // these can be years out and Y axis is what matters for clearance dates)
+      clearDateStr: _AU_MONTH_SHORT[clearDate.getMonth()] + ' ' + clearDate.getFullYear(),
       frees,
       dueDays: Number.isFinite(dueDays) ? Math.round(dueDays) : null,
       delayDate: debt.delayDate || null,
@@ -6848,12 +6895,13 @@ function _bnplRecompute() {
     String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
     String(endDate.getDate()).padStart(2, '0');
   const freqLabel = freq === 'weekly' ? 'weekly' : freq === 'fortnightly' ? 'fortnightly' : 'monthly';
+  // Bundle 28 round 50: AU date format ("21 May 2026" not "2026-05-21")
   preview.innerHTML =
     '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Per payment</span><strong style="font-family:var(--mono);color:var(--text)">$' + perInst.toFixed(2) + '</strong></div>' +
     '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Remaining schedule</span><strong style="color:var(--text)">' + remaining + ' × ' + freqLabel + '</strong></div>' +
     '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Total left to pay</span><strong style="font-family:var(--mono);color:var(--text)">$' + totalRemaining.toFixed(2) + '</strong></div>' +
-    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Next payment</span><strong style="color:var(--text)">' + startStr + '</strong></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Last payment (auto-stop)</span><strong style="color:var(--blue)">' + endStr + '</strong></div>';
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Next payment</span><strong style="color:var(--text)">' + fmtAuDate(startStr, { style: 'long', year: true }) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Last payment (auto-stop)</span><strong style="color:var(--blue)">' + fmtAuDate(endStr, { style: 'long', year: true }) + '</strong></div>';
 }
 
 function saveBnpl() {
@@ -7480,8 +7528,17 @@ function renderBillsGrouped() {
 
     return '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title '+cls+'">'+title+'</div><div class="bills-group-total" style="color:'+tc+'">'+fmt(gt)+'</div></div><div class="card" style="'+cardStyle+'">'+rows+afterNote+'</div></div>';
   }
-  // Combined monthly summary — split unpaid (visible) from paid (collapsed)
-  const upcomingAll = [...grouped.next, ...grouped.later]
+  // Combined monthly summary — split unpaid (visible) from paid (collapsed).
+  // Bundle 28 round 50 (John feedback): pre-r50 this list pulled only
+  // `next + later` groups, so bills already in the urgency-focused Today /
+  // This Week sections above weren't appearing in the comprehensive
+  // monthly schedule below. John: "monthly bills is not capturing all my
+  // bills including ones showing in This Week." Now includes ALL groups
+  // sorted by day so the Monthly Bills section is the master schedule —
+  // even though some bills also appear in the Today/Week urgency cards.
+  // The duplication is intentional: Today/Week are focus highlights;
+  // Monthly Bills is the complete month-at-a-glance.
+  const upcomingAll = [...grouped.today, ...grouped.week, ...grouped.next, ...grouped.later]
     .filter(b => !isBillCoveredByDebt(b))
     .sort((a,b) => a.day - b.day);
   const upcomingUnpaid = upcomingAll.filter(b => {
@@ -9594,7 +9651,7 @@ function openEditPaydayBill(billName) {
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
       if (typeof showToast === 'function') {
         if (mode === 'full') showToast('✓ ' + billName + ' paid in full');
-        else showToast('↪ ' + billName + ' deferred $' + deferShortfall + (lateFee > 0 ? ' (+ $' + lateFee + ' late fee)' : '') + ' to next cycle');
+        else showToast('↪ ' + billName + ' deferred $' + deferShortfall.toFixed(2) + (lateFee > 0 ? ' (+ $' + lateFee.toFixed(2) + ' late fee)' : '') + ' to next cycle');
       }
       return { ok: true };
     },
@@ -10576,7 +10633,8 @@ function renderPaydayDebts() {
       if (d.viaRent) subParts.push('🏠 VIA RENT');
       if (d.autoDebit && !d.viaRent) subParts.push('🤖 AUTO');
       if (d.rate) subParts.push(d.rate + '% APR');
-      if (d.delayDate) subParts.push('due ' + new Date(d.delayDate).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }));
+      // Bundle 28 round 50: AU date format
+      if (d.delayDate) subParts.push('due ' + fmtAuDate(d.delayDate));
       if (d.viaRent && d.monthlyPayment) subParts.push('$' + d.monthlyPayment + '/mo via salary');
       html += _paydayRow({
         ticked: !!ticks[d.id || d.name],

@@ -1297,6 +1297,59 @@ test('BNPL end-date: single-payment plan (remaining=1) end equals start', () => 
   expect(_bnplEndDate('2026-05-21', 1, 'fortnightly')).toBe('2026-05-21');
 });
 
+// ── Bundle 28 round 50 regression: AU date formatter ──
+// Anchor John's format preference ("14th June" / "14 Jun" style — day
+// as number, month as word). Mirrors the production fmtAuDate fn.
+const _AU_MONTH_LONG_TEST  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const _AU_MONTH_SHORT_TEST = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _auOrdinalTest(n) {
+  if (n >= 11 && n <= 13) return n + 'th';
+  const s = n % 10;
+  return n + (s === 1 ? 'st' : s === 2 ? 'nd' : s === 3 ? 'rd' : 'th');
+}
+function fmtAuDateTest(d, opts) {
+  opts = opts || {};
+  let date;
+  if (typeof d === 'string') date = new Date(d.length === 10 ? d + 'T00:00:00' : d);
+  else if (typeof d === 'number') date = new Date(d);
+  else date = d;
+  if (!date || isNaN(date.getTime())) return '';
+  const day = date.getDate();
+  const monthIdx = date.getMonth();
+  const year = date.getFullYear();
+  const style = opts.style || 'short';
+  const includeYear = opts.year != null ? opts.year : (year !== new Date().getFullYear());
+  if (style === 'long') return _auOrdinalTest(day) + ' ' + _AU_MONTH_LONG_TEST[monthIdx] + (includeYear ? ' ' + year : '');
+  return day + ' ' + _AU_MONTH_SHORT_TEST[monthIdx] + (includeYear ? ' ' + year : '');
+}
+
+test('fmtAuDate: short style produces "21 May 2026"', () => {
+  expect(fmtAuDateTest('2026-05-21', { year: true })).toBe('21 May 2026');
+});
+
+test('fmtAuDate: long style produces "14th June 2026"', () => {
+  expect(fmtAuDateTest('2026-06-14', { style: 'long', year: true })).toBe('14th June 2026');
+});
+
+test('fmtAuDate: ordinals — 1st, 2nd, 3rd, 4th, 11th, 21st, 22nd, 23rd', () => {
+  // The custom expect helper in this file doesn't have toContain — use
+  // toBeTruthy on indexOf instead.
+  expect(fmtAuDateTest('2026-05-01', { style: 'long' }).indexOf('1st') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-02', { style: 'long' }).indexOf('2nd') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-03', { style: 'long' }).indexOf('3rd') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-04', { style: 'long' }).indexOf('4th') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-11', { style: 'long' }).indexOf('11th') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-21', { style: 'long' }).indexOf('21st') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-22', { style: 'long' }).indexOf('22nd') >= 0).toBeTruthy();
+  expect(fmtAuDateTest('2026-05-23', { style: 'long' }).indexOf('23rd') >= 0).toBeTruthy();
+});
+
+test('fmtAuDate: invalid input returns empty string', () => {
+  expect(fmtAuDateTest('not-a-date')).toBe('');
+  expect(fmtAuDateTest(null)).toBe('');
+  expect(fmtAuDateTest(undefined)).toBe('');
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

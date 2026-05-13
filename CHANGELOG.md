@@ -122,6 +122,33 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 50 — AU date format + Monthly Bills now comprehensive
+Two follow-ups while John was reviewing r49.
+
+**50a — Monthly Bills section was excluding This-Week bills**
+
+John (mid-review): "Just noticed monthly bills is not capturing all my bills including ones showing in This week."
+
+Pre-r50 `renderBillsGrouped` built the Monthly section from `[...grouped.next, ...grouped.later]` — bills in the urgency-focused Today/Week sections were excluded from the comprehensive monthly schedule. Now: `[...grouped.today, ...grouped.week, ...grouped.next, ...grouped.later]` — all month's bills sorted by day in the Monthly Bills section. Duplication with the urgency cards above is intentional — Today/Week are focus highlights; Monthly Bills is the full month-at-a-glance.
+
+**50b — AU date format helper + first-pass apply**
+
+John #5 from r48 phone-verify: "The dates should always follow AUS time formatting so day then month then year so it makes it easier for me to read and better to put the day as number and month as description so like 14th June so it's easier for me to recognise."
+
+- New `fmtAuDate(d, opts)` helper. Accepts Date / ISO string / millis. `opts.style: 'short'` (default — `21 May`) or `'long'` (`21st May`). `opts.year` includes trailing year; defaults to true when the date is in a different year from now.
+- Ordinal handling: 1st / 2nd / 3rd / 4th–10th / 11th-13th / 21st / 22nd / 23rd / 24th-30th / 31st.
+- 4 regression tests added (62/62 passing).
+
+First-pass application of `fmtAuDate` to highest-traffic user-facing surfaces:
+- **BNPL preview** — "Next payment" + "Last payment (auto-stop)" now `21st May 2026` / `2nd July 2026` instead of `2026-05-21` / `2026-07-02`.
+- **Dashboard debt cards** — "Due 14/05" → "Due 14 May".
+- **Canvas Debt sub-screen** — "due 14 May" via fmtAuDate (already AU but standardised through the helper now).
+- **Debt Freedom Timeline "Clear by"** — uses the short-month helper directly so "Aug 2027" stays consistent.
+
+(Calendar tiles + Bills tab month labels + other surfaces still use their existing formats — they read OK and don't have the day-as-ordinal complexity. Future date-format pass can sweep them if needed.)
+
+Gates: 0 FAILs, 62/62 tests, 51/51 runtime PASS.
+
 ### Round 49 — Bill paid/deferred toggle + debt quick-picks + auto-allocate transparency
 Phone-verify on r48: 1-7 PASS with refinement notes. Each refinement below.
 
