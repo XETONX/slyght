@@ -122,6 +122,33 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 51 — Darwin allocation surfacing + Monthly Bills compactness
+Phone-verify on r49+r50: 1/2/4/5/6/7 PASS, #3 PASS-with-question (Darwin missing from auto-allocate output), and a follow-up on #4 ("now it's just this massive list, needs to be more compactable better").
+
+**51a — Darwin trip never showed up in auto-allocate**
+
+John: "PASS but Darwin never shows up but that trip is so soon within this monthly cycle of $900 — it needs money allocated, why it's not first on list to allocate towards I'm not sure."
+
+Root cause from his state file: Darwin trip has `bucketHint: ''` AND no bucket with a matching name exists. The bucket allocation iterates `BRAIN.savings.getBuckets()` — nothing to allocate to → Darwin silently absent from output.
+
+Two-part fix:
+- **Name-substring fallback in `_bucketWeight`**: if `intent.byBucket` doesn't link, walk `PLAN.getTrips()` and match by trip-name substring (e.g. bucket "Darwin Holiday" matches trip "Darwin"). Catches cases where bucketHint isn't set but a name-matching bucket exists.
+- **Unlinked-trips section in auto-allocate modal**: `recommendAllocation()` now returns `unlinkedTrips` (trips with no findable bucket, sorted by urgency). The modal shows them in an amber-tinted card with `[+ Bucket]` button → `_createBucketForTrip()` creates the bucket via `BRAIN.savings.addBucket` canonical writer, sets `bucketHint` on the trip via `PLAN.saveTrip`, then re-opens the modal so Darwin appears in the allocation list.
+
+**51b — Monthly Bills row compactness**
+
+John: "PASS but now it's just this massive list, needs to be more compactable better." After r50 merged Today/Week bills into the Monthly section, the list got long. Tightened per-row:
+- Padding `14px 0` → `8px 0`
+- Chip `36×36` → `32×32`, font `14px` → `13px`
+- Bill name font `14px` → `13px`
+- Subline font `12px` → `11px`, margin-top `3px` → `1px`
+- "(same as debt above)" → "(·debt)" — shorter tag
+- Amount font `15px` → `14px`
+
+Net: row height ~56px → ~42px. About 25% denser without losing legibility.
+
+Gates: 0 FAILs, 62/62 tests, 51/51 runtime PASS.
+
 ### Round 50 — AU date format + Monthly Bills now comprehensive
 Two follow-ups while John was reviewing r49.
 
