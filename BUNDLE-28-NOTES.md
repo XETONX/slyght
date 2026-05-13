@@ -28,7 +28,8 @@
 | `8d3dea8` | round 10 | Canonical writers `BRAIN.transaction.update` + `BRAIN.transaction.removeByTsWithBalance` + migrated `saveEditedTransaction` + `deleteEditedTransaction`. Closes the biggest remaining ❌ in the canonical-writer audit. OPEN-BUGS #42 logged for suspect-sign math direction (math preserved for now, flip after phone-verify confirms). |
 | `5473366` | round 11 | Phone-verified OPEN-BUGS #42 confirmed (John: "editing to $80 brings it back up instead of further down"). One-line sign flip in `BRAIN.transaction.update`. Centralisation from round 10 made this a single-site change instead of touching every caller. |
 | `a2094d5` | round 12 | OPEN-BUGS #43 — txn delete idempotency. John saw $200 drift from one rapid-tap delete. Pre-round-12 modal stored array idx; after first splice idx pointed at different row; second tap deleted wrong row + bumped balance again. Fix: migrate hidden field idx → stable ts + clear-on-delete + silent no-op on not-found. Drift recovery path documented in OPEN-BUGS #42/#43 (dashboard hero balance edit → `recordCorrection`). |
-| `<next>` | round 13 | WRX state canonical writers: `BRAIN.assets.setWrxValue` + `BRAIN.assets.setWrxStatus`. Migrated 3 sites (`setWrxStatus` global function, `saveWrxValue`, chat actions `mark_wrx_listed` + `mark_wrx_sold`). Audit log now captures WRX lifecycle (listed → sold → KIA cleared) — John's highest-stakes flow with zero observability pre-Bundle-28. |
+| `71375d1` | round 13 | WRX state canonical writers: `BRAIN.assets.setWrxValue` + `BRAIN.assets.setWrxStatus`. Migrated 3 sites (`setWrxStatus` global function, `saveWrxValue`, chat actions `mark_wrx_listed` + `mark_wrx_sold`). Audit log now captures WRX lifecycle (listed → sold → KIA cleared) — John's highest-stakes flow with zero observability pre-Bundle-28. |
+| `<next>` | round 14 | New `BRAIN.chat` bubble (12th bubble): `addUser` / `addAssistant` / `clear` / `list`. Migrated 7 push sites in `sendChatMessage` (1 user, 4 error, 1 success, 1 catch) + 1 clear in `clearChat`. AI integration pathway is now on the canonical writer + audit. Privacy: audit stores message `length` not `content` (audit log holds 500 entries, chat content stays in `S.chatHistory` capped at 50). |
 
 ---
 
@@ -200,7 +201,7 @@ session.
 | `S.tripDefs` / `S.goalDefs` | `PLAN.saveTrip` / `PLAN.saveGoal` (legacy non-BRAIN) | ⚠️ legacy shim — Bundle 29 migrate to BRAIN.plan.intent |
 | `S.notifications` | Multiple direct filters/pushes (NOTIFY module) | `NOTIFY.add` / `NOTIFY.dismiss` | ⚠️ partial (NOTIFY isn't a BRAIN bubble yet) |
 | `S.reconLog` | Direct push in `confirmRecon` (~L2800) | None | ❌ Bundle 29 candidate |
-| `S.chatHistory` | Direct push in `sendChatMessage` (~L10377) | None — chat needs BRAIN.chat bubble | ❌ Bundle 29+ |
+| `S.chatHistory` | `sendChatMessage` 🔄 (7 sites) + `clearChat` 🔄 | New `BRAIN.chat` bubble — `addUser` / `addAssistant` / `clear` / `list` (Bundle 28 round 14). Audit captures length not content for privacy. | ✓ this session |
 
 **Scalar fields (single value)**
 

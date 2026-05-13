@@ -10964,11 +10964,10 @@ async function sendChatMessage(userMessage) {
 
   if (input) { input.value = ''; input.style.height = ''; }
 
-  if (!S.chatHistory) S.chatHistory = [];
-  S.chatHistory.push({role:'user', content:text, ts:Date.now()});
-  if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+  // Bundle 28 round 14: routed through BRAIN.chat.addUser (canonical writer
+  // emits chat_user_msg audit + auto-caps to HISTORY_CAP=50 + persists).
+  BRAIN.chat.addUser(text, BRAIN.SOURCES.CHAT_USER_SEND);
   updateChatActivity();
-  save();
 
   _chatRendering = true;
   renderChatMessages();
@@ -11148,19 +11147,16 @@ no_spend: {"action":"no_spend"}
       reply = (data.content && data.content[0] && data.content[0].text) || 'No response received.';
     } else if (resp.status === 401) {
       reply = 'API key invalid — tap Settings to update it.';
-      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
-      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
-      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+      BRAIN.chat.addAssistant(reply, { isError: true }, BRAIN.SOURCES.CHAT_ASSISTANT_ERROR);
+      _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else if (resp.status === 429) {
       reply = 'Too many messages — wait a moment and try again.';
-      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
-      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
-      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+      BRAIN.chat.addAssistant(reply, { isError: true }, BRAIN.SOURCES.CHAT_ASSISTANT_ERROR);
+      _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     } else {
       reply = 'Couldn\'t reach SLYGHT AI — check your connection.';
-      S.chatHistory.push({role:'assistant', content:reply, ts:Date.now(), _isError:true});
-      if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
-      save(); _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
+      BRAIN.chat.addAssistant(reply, { isError: true }, BRAIN.SOURCES.CHAT_ASSISTANT_ERROR);
+      _chatRendering = false; if (btn) btn.disabled = false; renderChatMessages(); scrollChatToBottom(); return;
     }
 
     const actionMatch = reply.match(/\[ACTION:(.*?)\]/s);
@@ -11172,14 +11168,11 @@ no_spend: {"action":"no_spend"}
       } catch(e) {}
     }
 
-    S.chatHistory.push({role:'assistant', content:reply, ts:Date.now()});
-    if (S.chatHistory.length > 50) S.chatHistory = S.chatHistory.slice(-50);
+    BRAIN.chat.addAssistant(reply, {}, BRAIN.SOURCES.CHAT_ASSISTANT_REPLY);
     updateChatActivity();
-    save();
   } catch(e) {
     hideTypingIndicator();
-    S.chatHistory.push({role:'assistant', content:'Couldn\'t reach SLYGHT AI — check your connection.', ts:Date.now(), _isError:true});
-    save();
+    BRAIN.chat.addAssistant('Couldn\'t reach SLYGHT AI — check your connection.', { isError: true }, BRAIN.SOURCES.CHAT_ASSISTANT_ERROR);
   }
 
   _chatRendering = false;
@@ -11306,8 +11299,9 @@ function sendQuickPrompt(text) {
 function clearChat() {
   if (!(S.chatHistory && S.chatHistory.length)) return;
   if (!confirm('Clear chat history? Previous conversations will be lost.')) return;
-  S.chatHistory = [];
-  save();
+  // Bundle 28 round 14: routed through BRAIN.chat.clear (canonical writer
+  // emits chat_clear audit with the cleared count for forensics).
+  BRAIN.chat.clear(BRAIN.SOURCES.CHAT_CLEAR);
   renderChatMessages();
 }
 
@@ -15285,6 +15279,11 @@ const BRAIN = {
     // Bundle 28 round 13 — WRX state canonical writers
     WRX_VALUE_EDIT:            'wrx-value-edit',
     WRX_STATUS_CHANGE:         'wrx-status-change',
+    // Bundle 28 round 14 — BRAIN.chat canonical writers
+    CHAT_USER_SEND:            'chat-user-send',
+    CHAT_ASSISTANT_REPLY:      'chat-assistant-reply',
+    CHAT_ASSISTANT_ERROR:      'chat-assistant-error',
+    CHAT_CLEAR:                'chat-clear',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -15325,6 +15324,8 @@ const BRAIN = {
     'txn-edit', 'txn-delete',
     // Bundle 28 round 13
     'wrx-value-edit', 'wrx-status-change',
+    // Bundle 28 round 14
+    'chat-user-send', 'chat-assistant-reply', 'chat-assistant-error', 'chat-clear',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -16558,6 +16559,87 @@ const BRAIN = {
         .filter(d => !d.paid && !d.viaRent)
         .reduce((sum, d) => sum + (+d.amt || 0), 0);
       return cc + carloan + debts;
+    },
+  },
+
+  // ─── BRAIN.chat — canonical chatHistory writer (Bundle 28 round 14) ─────
+  // chatHistory had 7 direct-mutation sites in sendChatMessage + 1 in
+  // clearChat. AI integration is one of John's emphasized pathways and
+  // chat is its primary surface — every user/assistant message + every
+  // error message should be on the audit log so the AI agent can
+  // observe its own activity through BRAIN.audit (not just S.chatHistory)
+  // and reason about prior interactions.
+  //
+  // Privacy: audit stores `length` and a `role` marker, NOT the full
+  // content. The chat content lives in S.chatHistory (capped to 50);
+  // audit log keeps last 500 entries and would otherwise leak private
+  // chat across other audit consumers.
+  chat: {
+    HISTORY_CAP: 50,
+
+    _capAndSave() {
+      if (Array.isArray(S.chatHistory) && S.chatHistory.length > this.HISTORY_CAP) {
+        S.chatHistory = S.chatHistory.slice(-this.HISTORY_CAP);
+      }
+      try { save(); } catch (_) {}
+    },
+
+    addUser(content, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (typeof content !== 'string' || !content.trim()) {
+        return { ok: false, reason: 'empty-content' };
+      }
+      if (!Array.isArray(S.chatHistory)) S.chatHistory = [];
+      const ts = Date.now();
+      const msg = { role: 'user', content, ts };
+      S.chatHistory.push(msg);
+      BRAIN.audit.append({ type: 'chat_user_msg', length: content.length, source, ts });
+      this._capAndSave();
+      return { ok: true, msg };
+    },
+
+    // opts.isError marks the message as an error so the renderer can
+    // style it differently and so the audit trail distinguishes failures
+    // from real replies.
+    addAssistant(content, opts, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (typeof content !== 'string' || !content) {
+        return { ok: false, reason: 'empty-content' };
+      }
+      opts = opts || {};
+      if (!Array.isArray(S.chatHistory)) S.chatHistory = [];
+      const ts = Date.now();
+      const msg = { role: 'assistant', content, ts };
+      if (opts.isError) msg._isError = true;
+      S.chatHistory.push(msg);
+      BRAIN.audit.append({
+        type: opts.isError ? 'chat_assistant_error' : 'chat_assistant_msg',
+        length: content.length,
+        source,
+        ts,
+      });
+      this._capAndSave();
+      return { ok: true, msg };
+    },
+
+    clear(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const clearedCount = (S.chatHistory || []).length;
+      S.chatHistory = [];
+      BRAIN.audit.append({ type: 'chat_clear', clearedCount, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, clearedCount };
+    },
+
+    list(predicate) {
+      const h = S.chatHistory || [];
+      return predicate ? h.filter(predicate) : h;
     },
   },
 
