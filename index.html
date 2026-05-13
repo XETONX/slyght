@@ -7774,6 +7774,32 @@ function closePaydayPlan() {
   document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
   if (el) el.classList.remove('has-active-subscreen');
 }
+
+// Bundle 28 Phase 0.1: cleanly exit the Payday Plan canvas to a different
+// tab. Closes (1) any open Payday sub-screen, (2) the Payday Plan canvas,
+// (3) PLAN mode itself (the slide-over containing the canvas), then (4)
+// navigates to the target tab. Fixes B28-3: previously the inline pattern
+// `closePaydayPlan(); goPage('pg-cal')` left PLAN mode on top of the now-
+// active Bills tab, so the user saw PLAN mode (scrolled to Darwin trip)
+// instead of Bills. Layer 1 rule `no-nav-to-tab-without-stack-cleanup`
+// (Bundle 28 Phase 8) will enforce this helper as the only pattern.
+function _paydayExitToTab(tabId) {
+  // Step 1 — close any open Payday sub-screen
+  document.querySelectorAll('.payday-subscreen.payday-active')
+    .forEach(s => s.classList.remove('payday-active'));
+  // Step 2 — close the Payday Plan canvas
+  if (typeof closePaydayPlan === 'function') closePaydayPlan();
+  // Step 3 — close PLAN mode itself if present
+  if (typeof closePlanMode === 'function') {
+    closePlanMode();
+  } else {
+    document.body.classList.remove('plan-mode-open');
+    const pgPlan = document.getElementById('pg-plan');
+    if (pgPlan) pgPlan.classList.remove('active');
+  }
+  // Step 4 — navigate
+  if (typeof goPage === 'function') goPage(tabId);
+}
 function openPaydayCategory(subId) {
   const sub = document.getElementById(subId);
   const parent = document.getElementById('pg-payday-plan');
@@ -8134,6 +8160,45 @@ function openEditPaydaySavings(bucketName) {
   });
 }
 
+// ─── KIA Extra editor (Bundle 28 Phase 0.1) ────────────────────────────
+// Replaces the alert('Phase 6 candidate') stub at the KIA extra row inside
+// renderPaydaySavings. Lets the user set an extra payment toward the KIA
+// loan on top of the minimum (snowball/avalanche strategy). Stored as the
+// 'kia-extra:KIA' override key — same shape as bill/debt overrides so it
+// flows through BRAIN.plan.getSnapshot like any other allocation.
+function openEditPaydayKiaExtra() {
+  const overrides = (S.activePlan && S.activePlan.overrides) || {};
+  const ov = overrides['kia-extra:KIA'];
+  const current = ov ? +ov.thisCycleAmount : 0;
+  const carloan = +S.carloan || 0;
+  const strategy = S.debtStrategy === 'snowball' ? 'snowball' : 'avalanche';
+  let body = '';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">KIA balance: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(carloan).toLocaleString() + '</strong></div>';
+  body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Extra payment this cycle (' + strategy + ' strategy):</div>';
+  body += _buildQuickPickGrid([0, 50, 100, 200, 300, 500, 1000], current);
+  EDIT_MODAL.openCustom({
+    title: 'Extra toward KIA loan',
+    hint: 'Beyond the minimum. Snowball/avalanche choice is set in Settings.',
+    bodyHtml: body,
+    onReady: _wireQuickPickGrid,
+    save: () => {
+      const amt = _readQuickPickValue();
+      if (amt === null) return { ok: false, reason: 'Pick an amount' };
+      if (amt === 0) {
+        // Clear the override entirely rather than store zero
+        BRAIN.plan.clearOverride('kia-extra', 'KIA', BRAIN.SOURCES.PLAN_OVERRIDE_CLEAR);
+      } else {
+        const r = BRAIN.plan.setOverride('kia-extra', 'KIA', amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+        if (!r.ok) return r;
+      }
+      if (typeof renderPaydaySavings === 'function') renderPaydaySavings();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('✓ KIA extra ' + (amt === 0 ? 'cleared' : '→ $' + amt));
+      return { ok: true };
+    },
+  });
+}
+
 // ─── Trip allocation editor (Phase 6.2) ────────────────────────────────
 // Allocate part of this cycle's surplus toward a PLAN trip. Stored as a
 // savings:trip-<id> override so it shows up in savings.total + the canvas
@@ -8373,12 +8438,11 @@ function openPaydayLockPlan() {
     },
   });
 }
-// Phase 6 stub for Ask AI — navigates to chat tab; Phase 7 will wire the
-// full plan-context system-prompt extension via BRAIN.plan.getSnapshot().
+// Routes to chat tab. The chat system prompt embeds BRAIN.plan.getSnapshot()
+// so the AI sees the current cycle's plan context (Phase 7 of Bundle 27).
 function openPaydayAskAI() {
-  closePaydayPlan();
-  if (typeof goPage === 'function') goPage('pg-chat');
-  if (typeof showToast === 'function') showToast('Ask the AI about your plan — full context wiring lands Phase 7');
+  _paydayExitToTab('pg-chat');
+  if (typeof showToast === 'function') showToast('Ask the AI — current plan context is included');
 }
 function openPaydayUnlockPlan() {
   if (!confirm('Re-plan? Your allocations will become editable again. Ticked items stay ticked.')) return;
@@ -8480,27 +8544,9 @@ function paydayTick(category, itemId, sourceTag) {
   if (typeof renderAll === 'function') renderAll();
   if (typeof showToast === 'function') showToast('✓ Marked done');
 }
-function paydayUntick(category, itemId, sourceTag) {
-  if (typeof BRAIN === 'undefined' || !BRAIN.plan) return;
-  if (!confirm('Untick this? It will reverse the transaction.')) return;
-  const r = BRAIN.plan.untickItem(category, itemId, sourceTag || BRAIN.SOURCES.PLAN_UNTICK);
-  if (!r.ok) {
-    if (typeof showToast === 'function') showToast('Couldn\'t untick: ' + (r.reason || 'error'));
-    return;
-  }
-  const rendererMap = {
-    bill: () => typeof renderPaydayBills === 'function' && renderPaydayBills(),
-    debt: () => typeof renderPaydayDebts === 'function' && renderPaydayDebts(),
-    savings: () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
-    'kia-extra': () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
-    upcoming: () => typeof renderPaydayUpcoming === 'function' && renderPaydayUpcoming(),
-  };
-  const fn = rendererMap[category];
-  if (fn) fn();
-  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
-  if (typeof renderAll === 'function') renderAll();
-  if (typeof showToast === 'function') showToast('↩ Unticked');
-}
+// paydayUntick deleted Bundle 28 Phase 0.1 — was defined Bundle 27 but no UI
+// caller existed (verified via grep). When long-press untick lands as a real
+// feature, wire BRAIN.plan.untickItem directly from the gesture handler.
 
 function _fmtCycleDay(day) {
   // Format day-of-month into "May 1" using current cycle month.
@@ -8511,6 +8557,39 @@ function _fmtCycleDay(day) {
   // If day < start day, it's in the next month of the cycle.
   if (day < start.getDate()) d.setMonth(d.getMonth() + 1);
   return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+}
+
+// Bundle 28 Phase 0.1: reusable progress bar. CSS-only (no SVG). Used by
+// Phase 28.3's Savings sub-screen redesign (allocation pool + per-intent
+// progress + ghost segment for pending edits). Lands here ahead of the
+// big phase so callers can reference it. Pure render — no state.
+//   opts.saved        — current amount filled
+//   opts.target       — total target
+//   opts.ghost        — optional pending amount (animates in via CSS)
+//   opts.color        — fill color (defaults to --green)
+//   opts.height       — bar height in px (defaults to 8)
+//   opts.label        — optional text below the bar
+function _paydayProgressBar(opts) {
+  const target = Math.max(1, +(opts && opts.target) || 0);
+  const saved = Math.max(0, +(opts && opts.saved) || 0);
+  const ghost = Math.max(0, +(opts && opts.ghost) || 0);
+  const fillPct = Math.min(100, Math.round((saved / target) * 100));
+  const ghostPct = Math.min(100 - fillPct, Math.round((ghost / target) * 100));
+  const color = (opts && opts.color) || 'var(--green)';
+  const height = (opts && opts.height) || 8;
+  return (
+    '<div class="pb-container" style="position:relative;width:100%;height:' + height +
+      'px;background:var(--bg3);border-radius:' + (height / 2) + 'px;overflow:hidden;margin:4px 0">' +
+      '<span class="pb-fill" style="position:absolute;left:0;top:0;height:100%;width:' + fillPct +
+        '%;background:' + color + ';transition:width 0.3s ease-out"></span>' +
+      (ghost > 0
+        ? '<span class="pb-ghost" style="position:absolute;left:' + fillPct +
+          '%;top:0;height:100%;width:' + ghostPct + '%;background:' + color +
+          ';opacity:0.4;transition:width 0.15s ease-out"></span>'
+        : '') +
+    '</div>' +
+    ((opts && opts.label) ? '<div class="pb-label" style="font-size:11px;color:var(--text3);margin-top:2px">' + opts.label + '</div>' : '')
+  );
 }
 
 function _paydayRow(opts) {
@@ -8666,7 +8745,7 @@ function renderPaydayBills() {
   }
   // Footer pointer
   html += '<div class="settings-section-hint">Bills come from the Bills tab.</div>';
-  html += '<div class="settings-pointer-row"><a onclick="closePaydayPlan(); goPage(\'pg-cal\');">Go to Bills →</a></div>';
+  html += '<div class="settings-pointer-row"><a onclick="_paydayExitToTab(\'pg-cal\')">Go to Bills →</a></div>';
   body.innerHTML = html;
 }
 
@@ -8827,14 +8906,14 @@ function renderPaydaySavings() {
       name: 'KIA extra',
       sub: 'pay over the minimum · ' + (S.debtStrategy === 'snowball' ? 'snowball strategy' : 'avalanche strategy'),
       value: fmtC2(amt),
-      onTap: "alert('KIA extra editor — Phase 6 candidate. Set the amount via the override mechanism, then tick when paid.')",
+      onTap: "openEditPaydayKiaExtra()",
       onTickTap: "paydayTick('kia-extra', 'KIA', BRAIN.SOURCES.PLAN_KIA_EXTRA_TICK)",
     });
     html += '</div>';
   }
   // Footer
   html += '<div class="settings-section-hint">Add new buckets in the Plan tab.</div>';
-  html += '<div class="settings-pointer-row"><a onclick="closePaydayPlan(); goPage(\'pg-spend\');">+ Add bucket →</a></div>';
+  html += '<div class="settings-pointer-row"><a onclick="_paydayExitToTab(\'pg-spend\')">+ Add bucket →</a></div>';
   body.innerHTML = html;
 }
 
@@ -9469,6 +9548,9 @@ window.addEventListener('DOMContentLoaded', () => {
       ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
       ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
       ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
+      ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
+      ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
+      ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],
       ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
       ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
       ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
