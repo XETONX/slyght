@@ -4477,35 +4477,55 @@ function convertEditedTransactionToLoan() {
   }, 350);
 }
 function saveEditedTransaction() {
+  // Bundle 28 round 10: routed through BRAIN.transaction.update so the audit
+  // log captures the edit and the AI agent can observe it. Math direction
+  // preserved from pre-Bundle-28 (see canonical writer's comment for the
+  // suspect-sign note flagged in OPEN-BUGS).
   const idx = parseInt($('txn-edit-idx')?.value);
   if (isNaN(idx) || !S.txns[idx]) return;
   const txn = S.txns[idx];
-  const oldAmt = txn.amt;
+  const ts = txn.ts;
   const newAmt = parseFloat($('txn-edit-amt')?.value);
-  const diff = newAmt - oldAmt;
-  if (Math.abs(diff) > 0.01) {
-    if (txn.income) { S.bal = parseFloat((S.bal - diff).toFixed(2)); }
-    else { S.bal = parseFloat((S.bal + diff).toFixed(2)); }
-    AUDITOR.record('TXN_EDIT', S.bal + (txn.income ? diff : -diff), S.bal, txn.income ? -diff : diff,
-      'Edited: ' + txn.note + ' from $' + oldAmt + ' to $' + newAmt);
-  }
-  txn.amt = isNaN(newAmt) ? oldAmt : newAmt;
-  txn.note = $('txn-edit-note')?.value || txn.note;
-  txn.cat = $('txn-edit-cat')?.value || txn.cat;
+  const newNote = $('txn-edit-note')?.value;
+  const newCat = $('txn-edit-cat')?.value;
   const dateVal = $('txn-edit-date')?.value;
-  if (dateVal) txn.ts = new Date(dateVal).getTime() || txn.ts;
+
+  const patch = {};
+  if (!isNaN(newAmt) && Math.abs(newAmt - txn.amt) > 0.01) patch.amt = newAmt;
+  if (typeof newNote === 'string' && newNote !== (txn.note || '')) patch.note = newNote;
+  if (typeof newCat === 'string' && newCat && newCat !== txn.cat) patch.cat = newCat;
+  if (dateVal) {
+    const newTs = new Date(dateVal).getTime();
+    if (!isNaN(newTs) && newTs !== ts) patch.ts = newTs;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    closeModal('txn-edit-modal');
+    return; // nothing to update
+  }
+
+  const r = BRAIN.transaction.update(ts, patch, BRAIN.SOURCES.TXN_EDIT);
+  if (!r.ok) {
+    alert('Could not update transaction: ' + r.reason);
+    return;
+  }
   closeModal('txn-edit-modal');
   onStateChange('txn-edit');
   showToast('Transaction updated');
 }
 function deleteEditedTransaction() {
+  // Bundle 28 round 10: routed through BRAIN.transaction.removeByTsWithBalance
+  // (canonical delete + balance reconciliation in one atomic call with
+  // rollback on inner failure).
   const idx = parseInt($('txn-edit-idx')?.value);
   if (isNaN(idx) || !S.txns[idx]) return;
   if (!confirm('Delete this transaction? Balance will be adjusted.')) return;
-  const txn = S.txns[idx];
-  if (!txn.income) S.bal = parseFloat((S.bal + txn.amt).toFixed(2));
-  else S.bal = parseFloat((S.bal - txn.amt).toFixed(2));
-  S.txns.splice(idx, 1);
+  const ts = S.txns[idx].ts;
+  const r = BRAIN.transaction.removeByTsWithBalance(ts, BRAIN.SOURCES.TXN_DELETE);
+  if (!r.ok) {
+    alert('Could not delete transaction: ' + r.reason);
+    return;
+  }
   closeModal('txn-edit-modal');
   onStateChange('txn-delete');
   showToast('Transaction deleted');
@@ -15225,6 +15245,9 @@ const BRAIN = {
     BUCKET_CREATE:             'bucket-create',
     BUCKET_UPDATE:             'bucket-update',
     BUCKET_DELETE:             'bucket-delete',
+    // Bundle 28 round 10 — txn edit + delete canonical writers
+    TXN_EDIT:                  'txn-edit',
+    TXN_DELETE:                'txn-delete',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -15261,6 +15284,8 @@ const BRAIN = {
     // Bundle 28 forward-architecture
     'txn-reclassify',
     'bucket-create', 'bucket-update', 'bucket-delete',
+    // Bundle 28 round 10
+    'txn-edit', 'txn-delete',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -17267,6 +17292,121 @@ const BRAIN = {
       });
       try { save(); } catch (_) {}
       return { ok: true, before, after };
+    },
+
+    // Bundle 28 round 10: canonical txn-edit writer. Handles the full
+    // Recent-Spending edit flow (amt, note, cat, ts/date move). Replaces
+    // pre-Bundle-28 saveEditedTransaction's direct mutation site so the
+    // audit log captures every edit and the AI agent can observe edit
+    // events through BRAIN.audit.
+    //
+    // Allowed patch fields: amt (with balance reconciliation), note, cat,
+    // ts (date move). Other fields require reclassify() or recordCorrection.
+    //
+    // Balance math: PRESERVES the pre-Bundle-28 direction. If patch.amt
+    // changes, S.bal is adjusted by (income ? -diff : diff) where
+    // diff = newAmt - oldAmt. The sign on the expense branch is
+    // suspect — flagged in OPEN-BUGS for review under the "txn-edit
+    // amt direction" entry — but unchanged here to avoid surprising
+    // user-facing behavior changes during the migration.
+    //
+    // Returns { ok, before, after, balDelta } so callers can react and
+    // undo flows can issue a reversing update.
+    update(ts, patch, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (typeof ts !== 'number' || isNaN(ts)) {
+        return { ok: false, reason: 'invalid-ts' };
+      }
+      if (!patch || typeof patch !== 'object') {
+        return { ok: false, reason: 'missing-patch' };
+      }
+      const allowed = ['amt', 'note', 'cat', 'ts'];
+      for (const k of Object.keys(patch)) {
+        if (!allowed.includes(k)) {
+          return { ok: false, reason: 'unknown-field:' + k };
+        }
+      }
+      const txn = (S.txns || []).find(t => t.ts === ts);
+      if (!txn) return { ok: false, reason: 'not-found:' + ts };
+
+      const before = {
+        amt: txn.amt,
+        note: txn.note || null,
+        cat: txn.cat || null,
+        ts: txn.ts,
+      };
+
+      let balDelta = 0;
+      if ('amt' in patch && typeof patch.amt === 'number' && !isNaN(patch.amt)) {
+        const diff = patch.amt - txn.amt;
+        if (Math.abs(diff) > 0.01) {
+          balDelta = txn.income ? -diff : diff;
+          S.bal = parseFloat((S.bal + balDelta).toFixed(2));
+        }
+        txn.amt = patch.amt;
+      }
+      if ('note' in patch) txn.note = patch.note;
+      if ('cat' in patch) txn.cat = patch.cat;
+      if ('ts' in patch && typeof patch.ts === 'number' && !isNaN(patch.ts)) {
+        txn.ts = patch.ts;
+      }
+
+      const after = {
+        amt: txn.amt,
+        note: txn.note || null,
+        cat: txn.cat || null,
+        ts: txn.ts,
+      };
+
+      BRAIN.audit.append({
+        type: 'txn_update',
+        txnTs: ts,
+        txnTsAfter: txn.ts,
+        before, after,
+        balDelta,
+        src: source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, before, after, balDelta };
+    },
+
+    // Bundle 28 round 10: canonical txn-delete writer with balance
+    // reconciliation. Composes with removeByTs (bare splice) — that bare
+    // form is still needed for the bills.unmark composition where balance
+    // was tracked separately. THIS variant is for direct user-initiated
+    // delete from the Recent Spending edit modal: cash impact is reversed
+    // (+amt for expense, -amt for income) AND the row is removed.
+    //
+    // Rolls back balance if removeByTs fails so we don't leave half-applied
+    // state.
+    removeByTsWithBalance(ts, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const txn = (S.txns || []).find(t => t.ts === ts);
+      if (!txn) return { ok: false, reason: 'not-found:' + ts };
+
+      const balDelta = txn.income ? -txn.amt : txn.amt;
+      S.bal = parseFloat((S.bal + balDelta).toFixed(2));
+
+      const r = this.removeByTs(ts);
+      if (!r.ok) {
+        S.bal = parseFloat((S.bal - balDelta).toFixed(2));
+        return r;
+      }
+
+      BRAIN.audit.append({
+        type: 'txn_remove_balance_reconciled',
+        txnTs: ts,
+        balDelta,
+        src: source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, removed: r.removed, balDelta };
     }
   },
 

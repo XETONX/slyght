@@ -23,7 +23,9 @@
 | `977e04a` | round 7 | Debt category fragmentation tip + goal-edit refreshes canvas + Ask-AI math breakdowns + MAX PER DAY explainer rebuilt |
 | `9de16dc` | round 8 | Delete-goal full cycle (intent removal + canvas refresh — previously missed) + `FEATURE-MAP.md` directory |
 | `a1b0ce2` | round 9 | Delete affordances in canvas (trip + bucket — sibling-card audit miss) + MAX PER DAY rich HTML cards + debt-tip hierarchy reformat |
-| `<next>` | infra | Manual moved into repo (`CC-PRINCIPAL-ENGINEER-MANUAL.md`) + `docs/{adr,sdd,archive,manual-amendments,ops}/` scaffolded + `CHANGELOG.md` initialised with back-fill |
+| `315431c` | infra | Manual moved into repo (`CC-PRINCIPAL-ENGINEER-MANUAL.md`) + `docs/{adr,sdd,archive,manual-amendments,ops}/` scaffolded + `CHANGELOG.md` initialised with back-fill |
+| `57a3d72` | gate-cleanup | Cleared 2 pre-existing FAILs (`no-hardcoded-bill-name` L12118, `no-third-discretionary-filter-array` L14846) + AMENDMENT-001 (structured Noticed format) |
+| `<next>` | round 10 | Canonical writers `BRAIN.transaction.update` + `BRAIN.transaction.removeByTsWithBalance` + migrated `saveEditedTransaction` + `deleteEditedTransaction`. Closes the biggest remaining ❌ in the canonical-writer audit. OPEN-BUGS #42 logged for suspect-sign math direction (math preserved for now, flip after phone-verify confirms). |
 
 ---
 
@@ -181,9 +183,9 @@ session.
 | Field | Direct sites | Canonical writer | Status |
 |---|---|---|---|
 | `S.txns` (push) | 1 (BRAIN.transaction.record body) | `BRAIN.transaction.record` | ✓ |
-| `S.txns` (mutate field) | `saveEditedTransaction` (L4189) inline mutation | None — needs `BRAIN.transaction.update` | ❌ deferred |
+| `S.txns` (mutate field) | `saveEditedTransaction` 🔄 | `BRAIN.transaction.update` 🔄 (Bundle 28 round 10) | ✓ this session |
 | `S.txns` (reclassify) | `convertEditedTransactionToLoan` 🔄 | `BRAIN.transaction.reclassify` 🔄 | ✓ this session |
-| `S.txns` (splice) | `deleteEditedTransaction` (L4211) | `BRAIN.transaction.removeByTs` exists | ❌ migration deferred |
+| `S.txns` (splice) | `deleteEditedTransaction` 🔄 | `BRAIN.transaction.removeByTsWithBalance` 🔄 (Bundle 28 round 10) | ✓ this session |
 | `S.debts` | All canonical via `BRAIN.debts.{add,markPaid,unmark,update,delete}` | ✓ |
 | `S.paidBills` | All canonical via `BRAIN.bills.{markPaid,unmark}` + helpers | ✓ |
 | `S.savingsBuckets` (push add) | `saveNewBucket` 🔄 | `BRAIN.savings.addBucket` 🔄 | ✓ this session |
