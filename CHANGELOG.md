@@ -106,6 +106,24 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 34 — Quick wins from John's feedback batch
+Phone-verify on 31–33 returned 1/2/3/4/5 PASS. Item #3 PASS with question — "need to understand what this means - tappable or info tag etc". Plus a new feedback batch about Quick Log UX, bill frequency, and debt UX.
+
+**34a — Bill frequency: quarterly / biannual / yearly added**
+Pre-r34 the bill edit modal only offered Monthly / Fortnightly / Weekly even though `_monthlyEquivalent` already handles yearly / quarterly / biannual on the math side. Surface gap fixed — drop-down now has the full set with matching emojis to the QuickLog freq picker.
+
+**34b — Quick Log "Type" field as chip bubbles**
+John: "Type of transaction is confusing and just a text dropdown, would be cool to look a bit nicer." Replaced the native `<select>` with the same chip-row pattern the Category row already uses above it. Visual consistency + tappable bubbles. Hidden `ql-txn-type` input preserves the value contract for downstream save handlers. New `selectTxnType` helper mirrors `selectCat`.
+
+**34c — Quick Log keyboard / amount-visibility fix**
+John: "keyboard always opens on the transaction and bumps the screen up which is annoying and I can't see how much I'm entering."
+Root cause: the existing `visualViewport` reposition translates the WHOLE overlay up by the keyboard height, but the modal's internal scroll position can be anywhere — the amount field can end up above the visible window. Fix: on `ql-amt` focus, scroll the modal to top + retry after the keyboard animation settles (~320ms).
+
+**34d — Dashboard pace text is now tappable**
+John on item #3: "need to understand what this means - tappable or info tag etc". The `Running $X over pace this week` line on the dashboard MAX-per-day card now has cursor:pointer + dotted underline hint + `onclick="explainWeekProjection()"` → opens the same math explainer modal the Bills tab "?" button uses (round 30). Same explanation either side.
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Rounds 31–33 — Pace alignment, debt badge fix, Monthly Bills revamp
 John feedback after rounds 29–30 surfaced three further issues. Two new memories saved on the same turn:
 - `feedback-slyght-text-contrast` — grey-on-grey hurts; numbers always `--text`, labels `--text2`, `--text3` for decorative only

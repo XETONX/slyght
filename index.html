@@ -627,7 +627,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">MAX PER DAY <span style="font-size:10px;opacity:.5">· tap for math</span></div>
         <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
         <div style="font-size:13px;font-weight:600;margin-top:4px" id="max-day-context"></div>
-        <div style="font-size:13px;color:var(--text3);margin-top:4px" id="pace-display"></div>
+        <!-- Bundle 28 round 34: pace-display is tappable → opens the same
+             Week Projection math explainer the Bills tab uses. John flagged
+             on rounds 31-33 phone-verify: "PASS but need to understand
+             what this means - tappable or info tag etc". Now it IS tappable.
+             Subtle hint via dotted underline + cursor:pointer. -->
+        <div style="font-size:13px;color:var(--text3);margin-top:4px;cursor:pointer;text-decoration:underline dotted var(--text3);text-underline-offset:3px" id="pace-display" onclick="explainWeekProjection()" role="button" aria-label="Tap to see the math behind pace"></div>
       </div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:14px;margin:8px 0"></div>
 
@@ -1421,9 +1426,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
     </div>
     <div class="modal-field"><label>Frequency</label>
       <select class="modal-input" id="bm-freq">
-        <option value="monthly">Monthly</option>
-        <option value="fortnightly">Fortnightly</option>
-        <option value="weekly">Weekly</option>
+        <option value="monthly">📅 Monthly</option>
+        <option value="fortnightly">📆 Fortnightly</option>
+        <option value="weekly">🗓️ Weekly</option>
+        <option value="quarterly">🍂 Quarterly</option>
+        <option value="biannual">📊 Biannual (every 6 months)</option>
+        <option value="yearly">🎂 Yearly</option>
       </select>
     </div>
     <div class="modal-checkbox-row">
@@ -1605,13 +1613,18 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <option value="Income">Income / Refund ↑</option>
       </select>
     </div>
-    <div class="modal-field"><label>Type</label>
-      <select class="modal-input" id="ql-txn-type">
-        <option value="expense">💸 Expense</option>
-        <option value="transfer">🔄 Transfer</option>
-        <option value="from-person">👤 From person</option>
-        <option value="one-off">📋 One-off</option>
-      </select>
+    <!-- Bundle 28 round 34: Type as chip bubbles instead of native select.
+         Visual consistency with the Category row above + tappable bubbles.
+         Hidden input ql-txn-type stays so existing readers (quickLogTxn etc)
+         work unchanged. Default 'expense' set in openQuickLogModal. -->
+    <div class="modal-field">
+      <label>Type</label>
+      <div style="overflow-x:auto;white-space:nowrap;padding:4px 0">
+        <div id="ql-type-chips" style="display:inline-flex;gap:6px;padding:0 2px">
+          <!-- chips rendered by JS in openQuickLogModal -->
+        </div>
+      </div>
+      <input type="hidden" id="ql-txn-type" value="expense">
     </div>
     <div class="modal-checkbox-row">
       <input type="checkbox" class="modal-checkbox" id="ql-recurring" onchange="document.getElementById('ql-recurring-fields').style.display=this.checked?'block':'none'">
@@ -7967,6 +7980,23 @@ function openQuickLogModal() {
       return '<button type="button" onclick="selectCat(this,\''+c.replace(/'/g,"\\'")+'\')" style="flex-shrink:0;padding:8px 12px;border-radius:20px;border:1px solid '+(c===lastCat?'var(--green)':'var(--bg5)')+';background:'+(c===lastCat?'var(--green)':'var(--bg5)')+';color:'+(c===lastCat?'#000':'var(--text2)')+';font-size:14px;cursor:pointer;white-space:nowrap;min-height:36px" data-cat="'+c+'">'+display+'</button>';
     }).join('');
   }
+  // Bundle 28 round 34: Type chips (replaces native select). Same shape
+  // as the category chips above \u2014 visual consistency. Default 'expense'.
+  const QUICK_TYPES = [
+    { v: 'expense',     l: '\ud83d\udcb8 Expense' },
+    { v: 'transfer',    l: '\ud83d\udd04 Transfer' },
+    { v: 'from-person', l: '\ud83d\udc64 From person' },
+    { v: 'one-off',     l: '\ud83d\udccb One-off' },
+  ];
+  const typeHidden = document.getElementById('ql-txn-type');
+  const currentType = (typeHidden && typeHidden.value) || 'expense';
+  const typeChipsEl = document.getElementById('ql-type-chips');
+  if (typeChipsEl) {
+    typeChipsEl.innerHTML = QUICK_TYPES.map(t => {
+      const active = (t.v === currentType);
+      return '<button type="button" onclick="selectTxnType(this,\''+t.v+'\')" style="flex-shrink:0;padding:8px 12px;border-radius:20px;border:1px solid '+(active?'var(--green)':'var(--bg5)')+';background:'+(active?'var(--green)':'var(--bg5)')+';color:'+(active?'#000':'var(--text2)')+';font-size:14px;cursor:pointer;white-space:nowrap;min-height:36px" data-type="'+t.v+'">'+t.l+'</button>';
+    }).join('');
+  }
   // M7: remove any existing listeners before adding new ones to prevent accumulation
   if (window.visualViewport) {
     if (overlay._vvResize) {
@@ -7983,7 +8013,30 @@ function openQuickLogModal() {
     overlay._vvScroll = reposition;
     reposition();
   }
-  setTimeout(() => { const _qa = $('ql-amt'); if (_qa) _qa.focus(); }, 150);
+  // Bundle 28 round 34: improved keyboard handling for the amount field.
+  // John 2026-05-13: "keyboard always opens on the transaction and bumps
+  // the screen up so I can't see how much I'm entering." Root cause: the
+  // visualViewport reposition (above) translates the WHOLE overlay up by
+  // the keyboard height, but the modal's internal scroll position might
+  // not be on the amount field — so the amount can land above the visible
+  // window. Fix: on focus, scroll the modal to put amount at the top of
+  // the visible scroll area + retry after keyboard animation settles.
+  const _qa = $('ql-amt');
+  if (_qa) {
+    setTimeout(() => { _qa.focus(); }, 150);
+    const _scrollAmtIntoView = () => {
+      const modal = _qa.closest('.modal');
+      if (modal) modal.scrollTop = 0;
+      // Retry after the keyboard animation settles (~300ms on most
+      // mobile browsers) — the visualViewport resize event fires DURING
+      // the animation so an initial scroll lands at the wrong place.
+      setTimeout(() => {
+        try { _qa.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) {}
+      }, 320);
+    };
+    _qa.addEventListener('focus', _scrollAmtIntoView);
+    overlay._qaFocusHandler = _scrollAmtIntoView; // tracked for potential cleanup
+  }
   // Bundle 25: wire freq-change to surface the dueMonth picker for
   // quarterly + yearly (those need an anchor month, monthly/fortnightly/
   // weekly don't).
@@ -8213,6 +8266,18 @@ function setQlCat(cat) {
   document.querySelectorAll('.cat-chip').forEach(c => c.classList.toggle('active', c.textContent.includes(cat.split('/')[0].trim())));
 }
 // UX 6: selectCat for new chip scroller
+// Bundle 28 round 34: Quick Log txn-type chip selector. Matches selectCat
+// pattern — clears all chip states, paints the active one green, writes
+// the value to the hidden input that downstream save handlers read.
+function selectTxnType(btn, type) {
+  document.querySelectorAll('#ql-type-chips button').forEach(b => {
+    b.style.background = 'var(--bg5)'; b.style.borderColor = 'var(--bg5)'; b.style.color = 'var(--text2)';
+  });
+  btn.style.background = 'var(--green)'; btn.style.borderColor = 'var(--green)'; btn.style.color = '#000';
+  const hidden = document.getElementById('ql-txn-type');
+  if (hidden) hidden.value = type;
+}
+
 function selectCat(btn, cat) {
   document.querySelectorAll('#cat-chips button').forEach(b => {
     b.style.background = 'var(--bg5)'; b.style.borderColor = 'var(--bg5)'; b.style.color = 'var(--text2)';
