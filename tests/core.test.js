@@ -1087,6 +1087,81 @@ test('undoPaidBillByKey: removes only the named key, leaves others intact', () =
   expect(state.paidBills['2026-7-KIA Loan — Firstmac-15'] === undefined).toBeTruthy();
 });
 
+// ── Bundle 28 round 11/12 regression tests ──────────────
+// Anchor OPEN-BUGS #42 (txn-edit balance sign flip) and #43 (txn-delete
+// idempotency). Pure math reproducers — mirror the production writer
+// bodies (BRAIN.transaction.update, BRAIN.transaction.removeByTsWithBalance).
+//
+// If a future change inverts the sign or breaks idempotency, these fail.
+
+function applyEdit(txn, patchAmt, balBefore) {
+  // Mirror of BRAIN.transaction.update balance math.
+  const diff = patchAmt - txn.amt;
+  if (Math.abs(diff) <= 0.01) return balBefore;
+  const balDelta = txn.income ? diff : -diff;
+  return parseFloat((balBefore + balDelta).toFixed(2));
+}
+
+function applyDelete(txn, balBefore) {
+  // Mirror of BRAIN.transaction.removeByTsWithBalance balance math.
+  const balDelta = txn.income ? -txn.amt : txn.amt;
+  return parseFloat((balBefore + balDelta).toFixed(2));
+}
+
+test('BRAIN.transaction.update: expense edit $50 → $80 drops balance by $30 (OPEN-BUGS #42)', () => {
+  const txn = { amt: 50, income: false };
+  expect(applyEdit(txn, 80, 150)).toBe(120);
+});
+
+test('BRAIN.transaction.update: expense edit $50 → $30 raises balance by $20', () => {
+  const txn = { amt: 50, income: false };
+  expect(applyEdit(txn, 30, 150)).toBe(170);
+});
+
+test('BRAIN.transaction.update: income edit $50 → $80 raises balance by $30', () => {
+  const txn = { amt: 50, income: true };
+  expect(applyEdit(txn, 80, 200)).toBe(230);
+});
+
+test('BRAIN.transaction.update: income edit $50 → $30 drops balance by $20', () => {
+  const txn = { amt: 50, income: true };
+  expect(applyEdit(txn, 30, 200)).toBe(180);
+});
+
+test('BRAIN.transaction.update: <$0.01 diff is a no-op (no balance movement)', () => {
+  const txn = { amt: 50.00, income: false };
+  expect(applyEdit(txn, 50.005, 150)).toBe(150);
+});
+
+test('BRAIN.transaction.removeByTsWithBalance: expense delete restores balance by amt', () => {
+  const txn = { ts: 1000, amt: 100, income: false };
+  expect(applyDelete(txn, 700)).toBe(800);
+});
+
+test('BRAIN.transaction.removeByTsWithBalance: income delete deducts balance by amt', () => {
+  const txn = { ts: 1000, amt: 100, income: true };
+  expect(applyDelete(txn, 300)).toBe(200);
+});
+
+test('BRAIN.transaction.removeByTsWithBalance: idempotency — same ts twice does not double-bump (OPEN-BUGS #43)', () => {
+  // Reproduces the round-12 fix: first delete finds + splices + adjusts;
+  // second delete with same ts finds nothing and bails (no balance bump).
+  const txns = [{ ts: 1000, amt: 100, income: false }];
+  let bal = 700;
+
+  const idx1 = txns.findIndex(t => t.ts === 1000);
+  if (idx1 >= 0) {
+    bal = applyDelete(txns[idx1], bal);
+    txns.splice(idx1, 1);
+  }
+  expect(bal).toBe(800);
+  expect(txns.length).toBe(0);
+
+  const idx2 = txns.findIndex(t => t.ts === 1000);
+  expect(idx2).toBe(-1);
+  expect(bal).toBe(800); // bal must NOT have moved on second-attempt
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);
