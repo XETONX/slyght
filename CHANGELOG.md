@@ -106,6 +106,22 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 46 — Payday Plan Canvas: "showing Mum the plan" polish
+John on the BIG ask: "I need to confidently see in that screen I have this much and this is fixed and this remainder is what I can allocate. Right now I can't show or explain that to Mum so she thinks I'm spending money on something and doesn't trust the app."
+
+The Canvas already has the right architecture (income hero → essentials → remainder → discretionary → still-free) but the visual signposting wasn't strong enough for an audience walkthrough. Round 46 polish:
+
+- **Prominent inline `＋ Add bonus` pill** when no bonus added yet. Pre-r46 the bonus toggle was buried behind a tiny ✏️ icon — easy to miss. Now if no bonus exists, a green-bordered pill button sits inline next to the net pay so John can add the expected bonus in one tap. (Bonus IS already there once added → still has the ✏️ for edits.)
+- **Mum-readable one-line summary** below the headline figure: "Of $X coming in, $Y is FIXED (bills, debts, daily living) — $Z is yours to allocate." Plain English, totals labelled, can be read out loud.
+- **🔒 FIXED badge** on the Essentials section header — Mum sees what can't move.
+- **✋ YOURS badge** on the Allocating-the-remainder section — Mum sees what John is deciding.
+
+The Canvas already shows the proportion bar, essentials subtotal, headlined remainder tile, and still-free figure. Round 46 doesn't restructure anything — just makes the FIXED/YOURS split unmissable so the showing-Mum conversation works.
+
+(Deferred for now: ability to drag debts between FIXED and YOURS based on user override, and a "recommended-to-defer" tag on long-term debts so the canvas can suggest pushing them to next cycle. These are substantial design pieces, scoped for a separate round.)
+
+Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
+
 ### Round 45 — Two real bugs found in phone-verify of rounds 38-42 (FAIL #6)
 John FAIL on #6: "Doesn't explain PACE still. Also now when I have less than $11 it's saying I'm -$334 short before payday but I only have one bill coming out before payday of $31 so I'm actually short $20."
 

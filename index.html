@@ -9194,12 +9194,30 @@ function renderPaydayPlanRoot() {
     } catch (_) {}
   }
   // Hero
+  // Bundle 28 round 46 (John feedback "showing Mum the plan"):
+  //   - Prominent inline "+ Add bonus" pill when no bonus yet (was hidden
+  //     behind a tiny ✏️ icon).
+  //   - Mum-readable one-line summary directly below the headline number
+  //     so the breakdown is legible without scrolling.
   html += '<div class="payday-hero">';
-  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in</div>';
+  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in this cycle</div>';
   html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
-  html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono)">' + fmt(inc.netPay || 0) + '</span> net pay · ' + bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button></div>';
+  // Net pay + bonus row — bonus-add button promoted to inline pill when absent
+  const _bonusInlineCtl = bonus.included
+    ? bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button>'
+    : '<button onclick="openEditPaydayBonus()" aria-label="Add bonus" style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.10);border:1px solid var(--green-border);color:var(--green);font-size:12px;font-weight:600;padding:4px 10px;border-radius:14px;cursor:pointer;margin-left:6px">＋ Add bonus</button>';
+  html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono);color:var(--text2)">' + fmt(inc.netPay || 0) + '</span> net pay ' + _bonusInlineCtl + '</div>';
   html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
   html += '</div>';
+
+  // Mum-readable one-liner summary
+  const _essentialsForSummary = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
+  const _remainderForSummary = snap.totalToPlan - _essentialsForSummary;
+  html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.55;color:var(--text2)">'
+    + 'Of <strong style="font-family:var(--mono);color:var(--text)">' + fmt(snap.totalToPlan) + '</strong> coming in, '
+    + '<strong style="color:var(--red)">' + fmt(_essentialsForSummary) + '</strong> is FIXED (bills, debts, daily living) — '
+    + '<strong style="color:' + (_remainderForSummary >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(_remainderForSummary) + '</strong> is yours to allocate.'
+    + '</div>';
 
   // Compact proportion bar — visual context, no big claim
   html += propBar;
@@ -9215,7 +9233,9 @@ function renderPaydayPlanRoot() {
   const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
   const remainder = snap.totalToPlan - essentialsTotal;
   const navRow = (icon, title, subtitle, onclick) => '<button class="payday-nav-row" onclick="' + onclick + '" aria-label="' + title + ': ' + subtitle + '"><span class="row-icon">' + icon + '</span><span class="row-text"><span class="row-title">' + title + '</span><span class="row-subtitle">' + subtitle + '</span></span><span class="row-chevron">›</span></button>';
-  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:6px 4px 8px">Essentials this cycle</div>';
+  // Bundle 28 round 46: FIXED badge on the essentials header so Mum can
+  // immediately see what's locked vs. discretionary.
+  html += '<div style="display:flex;align-items:center;gap:8px;margin:6px 4px 8px"><span style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Essentials this cycle</span><span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);letter-spacing:.05em">🔒 FIXED</span></div>';
   html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:8px">';
   html += navRow('🏠', 'Bills', billsLabel, "openPaydayCategory('payday-bills')");
   html += navRow('💳', 'Debts', debtsLabel, "openPaydayCategory('payday-debts')");
@@ -9241,7 +9261,9 @@ function renderPaydayPlanRoot() {
   const discretionaryTotal = snap.savings.total + snap.knownUpcoming.total;
   const stillFree = remainder - discretionaryTotal;
   const stillFreeCol = stillFree >= 0 ? 'var(--green)' : 'var(--red)';
-  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin:6px 4px 8px">Allocating the remainder</div>';
+  // Bundle 28 round 46: matching badge on the discretionary section so
+  // the FIXED vs DISCRETIONARY split is visually obvious.
+  html += '<div style="display:flex;align-items:center;gap:8px;margin:6px 4px 8px"><span style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Allocating the remainder</span><span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);letter-spacing:.05em">✋ YOURS</span></div>';
   html += '<div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:8px">';
   html += navRow('💰', 'Savings goals', savingsLabel, "openPaydayCategory('payday-savings')");
   html += navRow('🎯', 'Known upcoming', upLabel, "openPaydayCategory('payday-upcoming')");
