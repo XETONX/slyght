@@ -122,6 +122,33 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 47 — Canvas/Dashboard sync + Annual Provisions in Essentials + collapse-paid + viaRent parity
+John on r46 phone-verify: Canvas tile PASS, but several sync bugs and a gap exposed across PLAN mode that misled the math. Each below was a real user-flagged issue.
+
+**47a — Dashboard PLAN tile $6,959 vs Canvas $2,516 mismatch**
+
+Pre-r47 `renderAllocateTile` used `BRAIN.summary.surplus().leftOver` while the Canvas itself used `BRAIN.plan.getSnapshot()` with a different formula (`totalToPlan - bills.total - debts.total - dailyLiving.plannedTotal`). Two parallel calcs producing different headline numbers for the same concept. Now the dashboard tile reads from the SAME `BRAIN.plan.getSnapshot()` source the Canvas uses — same essentials, same remainder, same still-free. The numbers agree.
+
+**47b — Annual Provisions missing from Essentials**
+
+John: "I don't see annual provisions anywhere in the tab essentials this cycle so again I'm allocating money that I don't have." Annual provisions ($86 Teachers Health + $42 KIA service + $39 KIA Rego + $46 Green Slip + $85 NRMA ≈ $298/mo set-aside for lumpy yearly/quarterly bills) was invisible to the Canvas. Now:
+- New 4th Essentials row "🏦 Annual provisions" showing total + count.
+- Tap → new `explainAnnualProvisions()` modal listing each provision with per-month + per-year + next-due-date.
+- Dashboard tile math also includes provisions so both surfaces agree.
+- Remainder/still-free figures now reflect the ~$298 commitment instead of overstating it.
+
+**47c — Bills sub-screen: paid bills now collapsed**
+
+John: "having PAID bills again needs to be removed or collapsed because it's not important at that stage where I'm deciding what's needed to be paid and what I can allocate." Refactored `renderPaydayBills` into a `_renderBillSection` helper that splits each section (Before/After payday) into UNPAID (visible) + PAID (collapsed `<details>`). If a section is entirely paid, shows a short ✓ summary. Collapsed paid items still accessible via expander.
+
+**47d — Debts sub-screen now matches dashboard (viaRent included)**
+
+John: "Debts subscreen doesn't sync with debt tiles — missing two debts." Pre-r47 Canvas Debts subscreen filtered `!viaRent` while dashboard Immediate Debts (round 29) shows ALL non-paid debts including viaRent with distinct styling. Now Canvas Debts also shows viaRent — sorted to the end of the list — with subline tags `🏠 VIA RENT` + `$X/mo via salary` so they're recognisable as scheduled/routed rather than needing-payment-now. autoDebit debts get `🤖 AUTO` tag.
+
+Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
+
+(Deferred for next round: auto-allocate respecting due-date urgency, trip-allocation recommendations based on urgency vs daily-living coverage.)
+
 ### Round 45 — Two real bugs found in phone-verify of rounds 38-42 (FAIL #6)
 John FAIL on #6: "Doesn't explain PACE still. Also now when I have less than $11 it's saying I'm -$334 short before payday but I only have one bill coming out before payday of $31 so I'm actually short $20."
 

@@ -2444,6 +2444,53 @@ function getMaxDay() {
 // that are interactive or clean and bold for me to understand with
 // percentages or visuals etc". Now uses HTML cards + gradient hero +
 // visual progress bar + bold $ + colour-coded sections.
+// Bundle 28 round 47: Annual Provisions info modal. Triggered from the
+// new Provisions row in Payday Plan Canvas Essentials. Shows each
+// provision (Teachers Health / KIA service / KIA Rego / Green Slip /
+// NRMA) with its monthly set-aside + annual cost, plus the running
+// total. Makes the "$298/mo I can't actually allocate" tangible.
+function explainAnnualProvisions() {
+  try {
+    if (typeof PLAN === 'undefined' || !PLAN.getAnnualProvisions) return;
+    const provisions = PLAN.getAnnualProvisions() || [];
+    if (provisions.length === 0) return;
+    const monthlyTotal = provisions.reduce((s, p) => s + (+p.monthly || 0), 0);
+    const annualTotal = provisions.reduce((s, p) => s + (+p.annual || 0), 0);
+    const rows = provisions.map(p =>
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--border);gap:8px">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:14px;font-weight:600;color:var(--text)">' + p.name + '</div>' +
+          '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + p.frequency + ' · next due ' + (p.nextDue || '—') + '</div>' +
+        '</div>' +
+        '<div style="text-align:right;white-space:nowrap">' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green)">$' + (+p.monthly || 0).toFixed(2) + '/mo</div>' +
+          '<div style="font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:2px">$' + (+p.annual || 0).toFixed(0) + '/yr</div>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+
+    const body =
+      '<div style="line-height:1.6;color:var(--text2);font-size:14px">' +
+        '<div style="background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:8px;padding:12px;margin-bottom:14px">' +
+          '<div style="font-size:13px;color:var(--text2);line-height:1.55">These are <strong style="color:var(--text)">lumpy yearly/quarterly bills</strong> (insurance, rego, services). Each month you set aside the monthly equivalent into a "provisions" bucket so the cash is ready when the big bill lands. Without this set-aside you\'ll be allocating money you don\'t actually have free.</div>' +
+        '</div>' +
+        '<div style="background:var(--bg3);border-radius:8px;padding:4px 14px;margin-bottom:10px">' +
+          rows +
+        '</div>' +
+        '<div style="background:rgba(34,197,94,0.10);border:1px solid var(--green-border);border-radius:8px;padding:12px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px"><span style="font-weight:700;color:var(--text)">Monthly total to set aside</span><span style="font-family:var(--mono);font-weight:800;color:var(--green);font-size:16px">$' + monthlyTotal.toFixed(2) + '</span></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-top:4px;color:var(--text2)"><span>Equivalent yearly outlay</span><span style="font-family:var(--mono);color:var(--text2)">$' + annualTotal.toFixed(0) + '</span></div>' +
+        '</div>' +
+      '</div>';
+
+    if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+      EDIT_MODAL.openInfo({ title: '🏦 Annual provisions', body });
+    }
+  } catch (e) {
+    console.warn('[explainAnnualProvisions] failed:', e);
+  }
+}
+
 // Bundle 28 round 33: Monthly Bills math explainer. Tap on the "?" in
 // the Monthly Bills header → opens EDIT_MODAL.openInfo describing what
 // the running balance means + how the chip colors are picked.
@@ -9210,8 +9257,20 @@ function renderPaydayPlanRoot() {
   html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
   html += '</div>';
 
+  // Bundle 28 round 47 (John feedback sync): Annual Provisions
+  // ($86 Teachers Health + $42 KIA service + $39 KIA Rego + $46 Green Slip
+  // + $85 NRMA = ~$298/mo set-aside) was MISSING from Essentials. John:
+  // "I don't see annual provisions anywhere in the tab essentials this
+  // cycle so again I'm allocating money that I don't have."
+  // Now folded into essentials as the 4th category so the Remainder
+  // figure reflects this committed savings.
+  // TDZ guard: PLAN const is declared later in the file but this render
+  // path only fires from user actions (modal open) so PLAN is initialised
+  // by then. try/catch keeps the static analyser happy.
+  let _provisionsTotal = 0;
+  try { _provisionsTotal = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
   // Mum-readable one-liner summary
-  const _essentialsForSummary = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
+  const _essentialsForSummary = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal + _provisionsTotal;
   const _remainderForSummary = snap.totalToPlan - _essentialsForSummary;
   html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.55;color:var(--text2)">'
     + 'Of <strong style="font-family:var(--mono);color:var(--text)">' + fmt(snap.totalToPlan) + '</strong> coming in, '
@@ -9230,7 +9289,13 @@ function renderPaydayPlanRoot() {
   const billsLabel = fmt(snap.bills.total) + ' · ' + (snap.bills.paid || 0) + ' of ' + snap.bills.items + ' paid';
   const debtsLabel = snap.debts.items > 0 ? (fmt(snap.debts.total) + ' · ' + snap.debts.items + ' active') : 'No active debts';
   const livingLabel = fmt(snap.dailyLiving.plannedTotal) + ' · ' + fmt(snap.dailyLiving.perDay) + '/day × ' + snap.daysInCycle + ' days';
-  const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal;
+  // Bundle 28 round 47: provisions count is fixed enumeration from PLAN.getAnnualProvisions
+  let _provisionsCount = 0;
+  try { _provisionsCount = (PLAN && PLAN.getAnnualProvisions) ? (PLAN.getAnnualProvisions() || []).length : 0; } catch (_) {}
+  const provisionsLabel = _provisionsCount > 0
+    ? (fmt(_provisionsTotal) + ' · ' + _provisionsCount + ' set-aside item' + (_provisionsCount === 1 ? '' : 's'))
+    : 'None configured';
+  const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal + _provisionsTotal;
   const remainder = snap.totalToPlan - essentialsTotal;
   const navRow = (icon, title, subtitle, onclick) => '<button class="payday-nav-row" onclick="' + onclick + '" aria-label="' + title + ': ' + subtitle + '"><span class="row-icon">' + icon + '</span><span class="row-text"><span class="row-title">' + title + '</span><span class="row-subtitle">' + subtitle + '</span></span><span class="row-chevron">›</span></button>';
   // Bundle 28 round 46: FIXED badge on the essentials header so Mum can
@@ -9240,6 +9305,13 @@ function renderPaydayPlanRoot() {
   html += navRow('🏠', 'Bills', billsLabel, "openPaydayCategory('payday-bills')");
   html += navRow('💳', 'Debts', debtsLabel, "openPaydayCategory('payday-debts')");
   html += navRow('📅', 'Daily living', livingLabel, "openPaydayCategory('payday-living')");
+  // Bundle 28 round 47: Annual provisions row — monthly set-aside for
+  // lumpy yearly/quarterly bills (insurance, rego, services). Without
+  // this row John was allocating money he didn't actually have free.
+  // Tap → info modal showing each provision's per-month + annual figure.
+  if (_provisionsTotal > 0) {
+    html += navRow('🏦', 'Annual provisions', provisionsLabel, "explainAnnualProvisions()");
+  }
   html += '</div>';
   // Essentials subtotal line
   html += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 14px 14px;font-size:13px;color:var(--text2);border-bottom:1px solid var(--border);margin-bottom:14px">';
@@ -10219,46 +10291,48 @@ function renderPaydayBills() {
     html += '<div style="font-size:12px;color:var(--text3);margin-top:8px;line-height:1.5;font-style:italic">These deferred amounts will carry over to next month\'s Known Upcoming when the cycle rolls over.</div>';
     html += '</div>';
   }
-  // Before payday
-  if (before.length) {
-    html += '<div class="settings-group-title">Before payday</div>';
-    html += '<div class="settings-group-card">';
-    before.forEach(b => {
-      const key = 'bill:' + b.name;
-      const ov = overrides[key];
-      const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
-      html += _paydayRow({
-        ticked: isBillTicked(b),
-        name: b.name,
-        sub: _fmtCycleDay(b.day),
-        value: fmtC2(amt),
-        valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
-        onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
-        onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
-      });
+  // Bundle 28 round 47 (John feedback): paid bills are visual noise when
+  // John is in the "planning what's needed and what I can allocate" phase.
+  // Split each section into UNPAID (visible) + PAID (collapsed <details>).
+  // Render helper closing over the shared row builder.
+  const _renderBillRow = (b) => {
+    const key = 'bill:' + b.name;
+    const ov = overrides[key];
+    const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
+    return _paydayRow({
+      ticked: isBillTicked(b),
+      name: b.name,
+      sub: _fmtCycleDay(b.day),
+      value: fmtC2(amt),
+      valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
+      onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
+      onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
     });
-    html += '</div>';
-  }
-  // After payday
-  if (after.length) {
-    html += '<div class="settings-group-title">After payday</div>';
-    html += '<div class="settings-group-card">';
-    after.forEach(b => {
-      const key = 'bill:' + b.name;
-      const ov = overrides[key];
-      const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
-      html += _paydayRow({
-        ticked: isBillTicked(b),
-        name: b.name,
-        sub: _fmtCycleDay(b.day),
-        value: fmtC2(amt),
-        valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
-        onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
-        onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
-      });
-    });
-    html += '</div>';
-  }
+  };
+  const _renderBillSection = (title, list) => {
+    if (!list.length) return '';
+    const unpaid = list.filter(b => !isBillTicked(b));
+    const paid   = list.filter(b => isBillTicked(b));
+    let out = '<div class="settings-group-title">' + title + '</div>';
+    out += '<div class="settings-group-card">';
+    if (unpaid.length === 0 && paid.length > 0) {
+      // Whole section already paid — short message instead of empty card
+      out += '<div style="padding:14px 16px;font-size:13px;color:var(--green);font-style:italic">✓ All ' + paid.length + ' bill' + (paid.length === 1 ? '' : 's') + ' in this section already paid</div>';
+    } else {
+      unpaid.forEach(b => { out += _renderBillRow(b); });
+    }
+    out += '</div>';
+    if (paid.length > 0 && unpaid.length > 0) {
+      // Collapsed paid section — out of the way but still accessible
+      out += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px;color:var(--text2);padding:8px 14px;list-style:none">▸ ' + paid.length + ' already paid ($' + fmtC2(paid.reduce((s, b) => { const ov = overrides['bill:' + b.name]; return s + (ov ? ov.thisCycleAmount : +b.amt || 0); }, 0)).replace('$', '') + ')</summary>';
+      out += '<div class="settings-group-card" style="margin-top:4px">';
+      paid.forEach(b => { out += _renderBillRow(b); });
+      out += '</div></details>';
+    }
+    return out;
+  };
+  html += _renderBillSection('Before payday', before);
+  html += _renderBillSection('After payday', after);
   if (!before.length && !after.length) {
     html += '<div class="subscreen-placeholder">No bills due this cycle.<br><br>Recurring bills come from the Bills tab. Add or edit them there.</div>';
   }
@@ -10272,7 +10346,18 @@ function renderPaydayDebts() {
   const body = document.getElementById('payday-debts-body');
   if (!body) return;
   const snap = BRAIN.plan.getSnapshot();
-  const debts = (S.debts || []).filter(d => !d.paid && !d.viaRent);
+  // Bundle 28 round 47 (John feedback): match the dashboard Immediate
+  // Debts visibility (round 29 — shows viaRent debts with distinct
+  // styling). Pre-r47 Canvas Debts subscreen filtered out viaRent
+  // entirely → John saw 2 debts here vs 3 on dashboard → "missing two
+  // debts" comment. Now: all non-paid debts shown, viaRent gets an
+  // amber "VIA RENT" tag + monthly contribution subline so user sees
+  // these are tracked-but-rent-routed, not actively needing payment.
+  const debts = (S.debts || []).filter(d => !d.paid).sort((a, b) => {
+    // viaRent debts sort to the end of the list
+    if (!!a.viaRent !== !!b.viaRent) return a.viaRent ? 1 : -1;
+    return (a.priority || 99) - (b.priority || 99);
+  });
   const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.debt) || {};
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
@@ -10286,8 +10371,13 @@ function renderPaydayDebts() {
       const ov = overrides[key];
       const amt = ov ? ov.thisCycleAmount : (+d.amt || 0);
       const subParts = [];
+      // Bundle 28 round 47: viaRent + autoDebit get visual tags so they're
+      // recognisable as scheduled/routed rather than user-needs-to-pay-now.
+      if (d.viaRent) subParts.push('🏠 VIA RENT');
+      if (d.autoDebit && !d.viaRent) subParts.push('🤖 AUTO');
       if (d.rate) subParts.push(d.rate + '% APR');
       if (d.delayDate) subParts.push('due ' + new Date(d.delayDate).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }));
+      if (d.viaRent && d.monthlyPayment) subParts.push('$' + d.monthlyPayment + '/mo via salary');
       html += _paydayRow({
         ticked: !!ticks[d.id || d.name],
         name: d.name,
@@ -20360,14 +20450,37 @@ function renderAllocateSubscreenBody() {
 // headline number (Left over) so the user can scan their position without
 // drilling in unless they want to act.
 function renderAllocateTile() {
-  if (typeof BRAIN === 'undefined' || !BRAIN.summary) return '';
-  let w;
-  try { w = BRAIN.summary.surplus(); } catch (_) { return ''; }
-  const isLocked = !!(BRAIN.allocation && BRAIN.allocation.isLocked && BRAIN.allocation.isLocked());
-  const left = w.leftOver;
-  const isPositive = left >= 0;
+  // Bundle 28 round 47 (John feedback sync): pre-r47 tile used
+  // BRAIN.summary.surplus().leftOver, but the Canvas itself uses
+  // BRAIN.plan.getSnapshot() with a different formula
+  // (totalToPlan - bills.total - debts.total - dailyLiving.plannedTotal).
+  // Result: PLAN dashboard said "$6,959 left to allocate" while Canvas
+  // said "$2,516 remainder after essentials" — same concept, different
+  // numbers. John flagged this on phone-verify.
+  // Now both surfaces read the same source so the headline number agrees.
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan || !BRAIN.plan.getSnapshot) return '';
+  let snap;
+  try { snap = BRAIN.plan.getSnapshot(); } catch (_) { return ''; }
+  if (!snap) return '';
+  const isLocked = !!snap.lockedAt;
+  // Same essentials calc the Canvas uses (renderPaydayPlanRoot ~L9215).
+  // Bundle 28 round 47: includes Annual Provisions (~$298/mo set-aside)
+  // so this dashboard tile matches the Canvas's "Remainder after
+  // essentials" line. Pre-r47 dashboard ignored provisions → leftOver
+  // looked $298 higher than the Canvas figure.
+  let _provisionsTotalDash = 0;
+  try { _provisionsTotalDash = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+  const essentialsTotal = (snap.bills?.total || 0) + (snap.debts?.total || 0) + (snap.dailyLiving?.plannedTotal || 0) + _provisionsTotalDash;
+  const remainder = (snap.totalToPlan || 0) - essentialsTotal;
+  const allocatedTotal = (snap.savings?.total || 0) + (snap.knownUpcoming?.total || 0);
+  const stillFree = remainder - allocatedTotal;
+  const isPositive = stillFree >= 0;
   const col = isPositive ? '#4ECDC4' : '#E74C3C';
-  const fmt = '$' + Math.abs(Math.round(left)).toLocaleString();
+  const fmt = '$' + Math.abs(Math.round(stillFree)).toLocaleString();
+  // Subline: explain the math source briefly so it's not a magic number
+  const subline = allocatedTotal > 0
+    ? `${snap.daysRemaining || 0} days until next payday · ${allocatedTotal > 0 ? '$' + Math.round(allocatedTotal).toLocaleString() + ' already allocated · ' : ''}open full plan canvas`
+    : `${snap.daysRemaining || 0} days until next payday · open full plan canvas`;
   return `
     <button onclick="openPaydayPlan()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
       <div style="flex:1">
@@ -20376,7 +20489,7 @@ function renderAllocateTile() {
           <span style="font-family:var(--mono);font-size:26px;font-weight:800;color:${col}">${isPositive ? '' : '-'}${fmt}</span>
           <span style="font-size:13px;color:rgba(255,255,255,0.5)">left to allocate</span>
         </div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${w.daysToPayday} days until next payday · open full plan canvas</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${subline}</div>
       </div>
       <span style="font-size:24px;color:rgba(255,255,255,0.4);margin-left:8px">›</span>
     </button>`;
