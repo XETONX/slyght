@@ -122,6 +122,28 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 66 — r64.B follow-through + 2 UX fixes + GO HAM polish pass
+John ask: "continue going I love all these UX polishes, I want more! go above making other UXs look nicer or cleaning up the buttons where they are tappable like removing the weird oval shading behind buttons, increasing and unifying the font size across all tiles and UIs so its easy to read just go HAM!"
+
+#### Layer V harness — 4 new modal captures
+- `49 modal-max-day-math` — TAP FOR MATH on dashboard MAX PER DAY card. Reveals the full breakdown: cash cushion math, time math (raw rate ÷ budget cap), today's total outflow. Required force-display because Playwright's fullPage screenshot mishandled the fixed-position overlay with CSS animation; workaround documented inline in capture script.
+- `50 modal-add-debt` — empty Add Debt form (3 input rows + autoDebit checkbox + Immediate/long-term selector).
+- `51 modal-edit-goal` — Property Deposit edit form (50,000 target, 2,500/month contribution, address description, Save / Delete / Cancel triplet).
+- `52 modal-add-trip` — empty Plan A New Trip form (destination, emoji, start/end dates, spending budget, notes).
+
+#### UX fixes
+- **Recon modal disabled hint** (`index.html:1813+`) — "Confirm & Continue" button greyed silently when no reason was selected. New `#recon-hint` reads "Pick or type a reason above to enable Confirm." below the button; auto-hides when ready.
+- **Quick Log chip overflow** (`index.html:1666+`) — Category and Type chip strips now sit inside a relative wrapper with a `linear-gradient(transparent → var(--bg2))` fade-right mask. Tells the user there's MORE category off-screen. Added `scroll-snap-type:x proximity` + iOS momentum scrolling.
+
+#### GO HAM polish — global UI consistency
+- **Removed dark-overlay tap-highlight** (`index.html:513`) — Was `-webkit-tap-highlight-color:rgba(0,0,0,0.1)` on every button/tappable, which painted a "weird oval shading" on top of any colored button on tap. Now `transparent` with explicit `:active` opacity-dip (0.7 over 80ms) for tap feedback, keeping iOS-style snappiness without the dark overlay.
+- **Keyboard-only focus rings** (`index.html:517`) — `button:focus-visible{outline:2px solid var(--green);outline-offset:2px}` so keyboard users get the ring, touch users don't.
+- **Unstyled button reset** (`index.html:519`) — `button:not([class]):not([style*="background"])` strips the inherited grey-rectangle look from inline buttons that forgot to set their own bg/border.
+- **Bumped tiny font sizes** — global `9px → 10px` across 6 instances (calendar daily-spend labels, DNA segment chips, notification badge, NEW BUCKET pill, ETA descriptors). 8px stayed for the calendar paid-tick glyph (✓) since it's not text.
+- **Type scale CSS variables** (`index.html:37+`) — added `--fs-micro:11px / --fs-small:13px / --fs-body:14px / --fs-emph:15px / --fs-section:12px / --fs-title:18px / --fs-large:22px / --fs-display:28px / --fs-hero:44px`. Existing inline font-size:Npx will migrate to these incrementally; new code adopts them now.
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime, 4/4 guardians green. All changes verified by local Layer V capture re-run.
+
 ### Round 65 — r64 P3 polish (calendar legend, trip math, critical CTA, NW modal, copy)
 Five UX polish items from r64 deep-sweep P3 backlog. Each addressed a specific deferred finding rather than scope expansion.
 

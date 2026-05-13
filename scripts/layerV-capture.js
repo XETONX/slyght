@@ -787,6 +787,93 @@ async function step(name, fn) {
   });
   await zoom(page, 47, 'bills-calendar', '#cal-grid', 'calendar — verify Google One day-1 strike-through (paidBills migration)');
 
+  // ─── SECTION 9 — Previously-uncaptured modals (r66) ──────────────
+  console.log('\n=== SECTION 9 — More modals ===');
+  // Hard-reset before each modal so we don't stack overlays
+  const resetToDash = async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.modal-overlay.show, .edit-modal.show, .recon-overlay.show').forEach(m => m.classList.remove('show'));
+      const tr = document.getElementById('tracer-overlay');
+      if (tr) tr.style.display = 'none';
+      if (typeof goPage === 'function') goPage('pg-dash');
+    });
+    await page.waitForTimeout(300);
+  };
+
+  // 49 — Max-Per-Day math tracer ("TAP FOR MATH" reveal)
+  // edit-modal uses position:fixed inset:0 + CSS animation that fades from
+  // opacity:0 → 1 over 150ms. On a fullPage Playwright screenshot the
+  // fixed-positioned overlay anchors to document top:0; if document has scroll
+  // height > viewport, the modal can appear at the very top of the screenshot
+  // and be cropped above the visible bills tab body. We target the element
+  // directly via zoom() rather than fullPage to capture just the modal card.
+  await step('reset + open max-day math', async () => {
+    await resetToDash();
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      if (typeof explainMaxPerDay === 'function') explainMaxPerDay();
+    });
+    await page.waitForTimeout(800);
+  });
+  // Force-show: some sequence is leaving the modal with inline display:none
+  // overriding the .open class. Explicitly clear the inline style after open.
+  await page.evaluate(() => {
+    const m = document.getElementById('edit-modal');
+    if (m) {
+      m.style.removeProperty('display');
+      m.style.display = 'flex';
+    }
+  });
+  await page.waitForTimeout(300);
+  const info = await page.evaluate(() => {
+    const m = document.getElementById('edit-modal');
+    if (!m) return 'no edit-modal el';
+    const cs = window.getComputedStyle(m);
+    const r = m.getBoundingClientRect();
+    return { display: cs.display, inlineStyle: m.getAttribute('style'), rect: { w: r.width, h: r.height } };
+  });
+  console.log('  · max-day modal state (after force):', JSON.stringify(info));
+  await page.screenshot({ path: path.join(OUT_DIR, `slyght-layerV-${DATE_TAG}-49-modal-max-day-math.png`), fullPage: false });
+  manifest.push({ idx: 49, slug: 'modal-max-day-math', file: `slyght-layerV-${DATE_TAG}-49-modal-max-day-math.png`, status: 'ok', size: fs.statSync(path.join(OUT_DIR, `slyght-layerV-${DATE_TAG}-49-modal-max-day-math.png`)).size, note: 'viewport-only' });
+  console.log('  [49] modal-max-day-math captured');
+
+  // 50 — Add Debt modal (no existing debt argument → "add new")
+  await step('reset + open add-debt', async () => {
+    await resetToDash();
+    await page.evaluate(() => { if (typeof openAddDebtModal === 'function') openAddDebtModal(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 50, 'modal-add-debt', 'add new debt — empty form');
+
+  // 51 — Edit Goal modal (Property Deposit goal from fixture)
+  await step('reset + nav plan + open edit-goal', async () => {
+    await resetToDash();
+    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-plan'); });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      // editGoal expects a goalId — pick the first goal we can find
+      if (typeof PLAN !== 'undefined' && PLAN.getGoals) {
+        const goals = PLAN.getGoals();
+        if (goals && goals.length && typeof editGoal === 'function') editGoal(goals[0].id);
+      } else if (typeof editGoal === 'function') {
+        // Fallback: try the canonical Property Deposit goalId from seedV25
+        editGoal('property-deposit');
+      }
+    });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 51, 'modal-edit-goal', 'Property Deposit goal — edit form');
+
+  // 52 — Add Trip modal
+  await step('reset + open add-trip', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.modal-overlay.show, .edit-modal.show').forEach(m => m.classList.remove('show'));
+    });
+    await page.evaluate(() => { if (typeof addNewTrip === 'function') addNewTrip(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 52, 'modal-add-trip', 'new trip — empty form');
+
   // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(OUT_DIR, 'ui-code-map.json'), JSON.stringify(uiCodeMap, null, 2));

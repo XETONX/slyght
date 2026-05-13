@@ -34,6 +34,16 @@
   --blue:#4d9fff;--blue-dim:rgba(77,159,255,0.1);
   --mono:'Space Mono',monospace;--sans:'DM Sans',sans-serif;
   --r:14px;--r-sm:9px;--r-xs:6px;
+  /* r67: type scale — adopted gradually by new code. Existing inline font-size:Npx will be migrated in a follow-up. */
+  --fs-micro:11px;   /* badges, metadata, footnotes */
+  --fs-small:13px;   /* secondary text, sublabels */
+  --fs-body:14px;    /* default body */
+  --fs-emph:15px;    /* emphasized body, list-row main text */
+  --fs-section:12px; /* uppercase section headers (with letter-spacing) */
+  --fs-title:18px;   /* card titles */
+  --fs-large:22px;   /* prominent numbers */
+  --fs-display:28px; /* tile big numbers */
+  --fs-hero:44px;    /* hero balance */
 }
 @media(prefers-color-scheme:light){:root{
   --bg:#f2f2f2;--bg2:#fff;--bg3:#ebebeb;--bg4:#dedede;--bg5:#d0d0d0;
@@ -501,7 +511,7 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 #notif-drawer{animation:slideDown .18s ease forwards}
 /* DNA BAR */
 .dna-bar{display:flex;height:26px;border-radius:8px;overflow:hidden;margin:12px 0}
-.dna-seg{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:rgba(255,255,255,0.9);transition:flex .4s ease;overflow:hidden;white-space:nowrap;min-width:3px;cursor:pointer}
+.dna-seg{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:rgba(255,255,255,0.9);transition:flex .4s ease;overflow:hidden;white-space:nowrap;min-width:3px;cursor:pointer}
 /* SCORE RING */
 .score-ring-arc{transition:stroke-dashoffset 1s ease}
 /* PREDICTOR */
@@ -510,7 +520,17 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 /* WRX COMMAND */
 .wrx-status-btn{flex:1;padding:10px 6px;border-radius:var(--r-sm);font-size:13px;font-weight:700;cursor:pointer;text-align:center;transition:all .15s}
 /* Tap targets — WCAG 2.5.5 */
-button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44px;cursor:pointer;-webkit-tap-highlight-color:rgba(0,0,0,0.1)}
+button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* r67: tap feedback via brief opacity dip on active state — replaces the
+   webkit dark-overlay "weird oval shading" that appeared on top of
+   colored buttons. Subtle, mobile-friendly. */
+button:active,[onclick]:active,.bill-row:active,.debt-tile:active,.txn-row:active,.tab-btn:active,.nav-item:active{transition:opacity .08s ease;opacity:.7}
+/* r67: keyboard-only focus ring (doesn't trigger on touch). */
+button:focus-visible,[onclick]:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+/* r67: unify default browser button reset — removes the inherited
+   white-with-grey-border button look that leaks through on inline
+   buttons missing explicit background/border styling. */
+button:not([class]):not([style*="background"]){background:transparent;border:none;color:inherit;font:inherit}
 /* PLAN MODE — slides in from right */
 .plan-open { transform: translateX(0%) !important; }
 </style>
@@ -596,7 +616,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         </div>
         <div class="icon-btn" id="notif-btn" onclick="NOTIFY.toggleDrawer()" title="Notifications" style="position:relative">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 1 6 6v3l2 3H2l2-3V8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><path d="M8 17a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
-          <div id="notif-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:9px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
+          <div id="notif-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:10px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
         </div>
         <div class="icon-btn" onclick="softRefresh()" title="Sync latest balance from Virgin Money">
           <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1664,10 +1684,16 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
          auto-determined by type; showing the chip row with no highlight
          was visually confusing). selectTxnType toggles display. -->
     <div class="modal-field" id="ql-cat-field"><label>Category</label>
-      <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;margin-bottom:8px">
-        <div id="cat-chips" style="display:inline-flex;gap:6px;padding:0 2px">
-          <!-- chips rendered by JS in openQuickLogModal -->
+      <!-- r66: scroll-affordance fade-right + scroll-snap so the user can
+           tell there's MORE category off-screen. Pre-fix the chip strip clipped
+           at the edge with no indicator. -->
+      <div style="position:relative;margin-bottom:8px">
+        <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch">
+          <div id="cat-chips" style="display:inline-flex;gap:6px;padding:0 2px">
+            <!-- chips rendered by JS in openQuickLogModal -->
+          </div>
         </div>
+        <div aria-hidden="true" style="pointer-events:none;position:absolute;right:0;top:0;bottom:0;width:32px;background:linear-gradient(90deg, transparent 0%, var(--bg2) 100%)"></div>
       </div>
       <input type="hidden" id="ql-cat-hidden" value="Food / Coffee">
       <select class="modal-input" id="ql-cat" style="display:none">
@@ -1683,10 +1709,14 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
          work unchanged. Default 'expense' set in openQuickLogModal. -->
     <div class="modal-field">
       <label>Type</label>
-      <div style="overflow-x:auto;white-space:nowrap;padding:4px 0">
-        <div id="ql-type-chips" style="display:inline-flex;gap:6px;padding:0 2px">
-          <!-- chips rendered by JS in openQuickLogModal -->
+      <!-- r66: scroll-affordance fade-right (matches category row). -->
+      <div style="position:relative">
+        <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch">
+          <div id="ql-type-chips" style="display:inline-flex;gap:6px;padding:0 2px">
+            <!-- chips rendered by JS in openQuickLogModal -->
+          </div>
         </div>
+        <div aria-hidden="true" style="pointer-events:none;position:absolute;right:0;top:0;bottom:0;width:32px;background:linear-gradient(90deg, transparent 0%, var(--bg2) 100%)"></div>
       </div>
       <input type="hidden" id="ql-txn-type" value="expense">
     </div>
@@ -1811,6 +1841,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <div id="recon-reasons" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px"></div>
       <input type="text" id="recon-custom" placeholder="Or type your own reason..." style="width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 13px;font-size:15px;color:var(--text);outline:none;margin-bottom:10px" oninput="checkReconReady()">
       <button class="submit-btn" id="recon-confirm-btn" onclick="confirmRecon()" style="opacity:.4;pointer-events:none">Confirm &amp; Continue</button>
+      <!-- r66: explanatory hint for disabled confirm button — previously the button greyed out silently when no reason was picked, leaving the user without guidance. -->
+      <div id="recon-hint" style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">Pick or type a reason above to enable Confirm.</div>
     </div>
   </div>
 </div>
@@ -3433,6 +3465,10 @@ function checkReconReady() {
   const ready = selectedReason.length > 0 || custom.length > 2;
   const _rcb = $('recon-confirm-btn');
   if (_rcb) { _rcb.style.opacity = ready ? '1' : '.4'; _rcb.style.pointerEvents = ready ? 'auto' : 'none'; }
+  // r66: hide the explanatory hint once a reason is selected — the button is
+  // active so the hint becomes noise.
+  const _rh = $('recon-hint');
+  if (_rh) _rh.style.display = ready ? 'none' : 'block';
 }
 
 function confirmRecon() {
@@ -5460,11 +5496,11 @@ function renderAnalysisTab() {
       const pct = Math.min(100, Math.round((d.spend / chartMax) * 100));
       const barColor = d.spend > dailyCap ? 'var(--red)' : d.spend > dailyCap * 0.7 ? 'var(--amber)' : 'var(--green)';
       return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">' +
-        '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">' + (d.spend > 0 ? '$' + Math.round(d.spend) : '') + '</div>' +
+        '<div style="font-size:10px;color:var(--text3);font-family:var(--mono)">' + (d.spend > 0 ? '$' + Math.round(d.spend) : '') + '</div>' +
         '<div style="flex:1;width:100%;display:flex;align-items:flex-end">' +
           '<div style="width:100%;background:' + barColor + ';border-radius:3px 3px 0 0;min-height:' + (d.spend > 0 ? '4' : '1') + 'px;height:' + pct + '%;opacity:' + (d.isToday ? '1' : '.7') + ';border:' + (d.isToday ? '1px solid ' + barColor : 'none') + '"></div>' +
         '</div>' +
-        '<div style="font-size:9px;color:' + (d.isToday ? 'var(--text)' : 'var(--text3)') + ';font-weight:' + (d.isToday ? '700' : '400') + '">' + d.label + '</div>' +
+        '<div style="font-size:10px;color:' + (d.isToday ? 'var(--text)' : 'var(--text3)') + ';font-weight:' + (d.isToday ? '700' : '400') + '">' + d.label + '</div>' +
       '</div>';
     }).join('') +
     '</div></div>';
@@ -6372,7 +6408,7 @@ function renderDebtTiles() {
         : '<div style="font-size:10px;color:var(--amber);font-family:var(--mono);font-weight:700;margin-bottom:4px">⚠️ $'+shortBy.toFixed(0)+' short of surplus</div>';
       const etaMonths = surplus > 0 ? Math.ceil(d.amt / surplus) : 0;
       etaStr = etaMonths > 0 && etaMonths <= 60
-        ? '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">~'+etaMonths+' months at surplus</div>'
+        ? '<div style="font-size:10px;color:var(--text3);font-family:var(--mono)">~'+etaMonths+' months at surplus</div>'
         : '';
     }
 
@@ -10285,7 +10321,7 @@ function openPaydayAutoAllocate() {
     const amt = rec.bucketAllocations[name];
     const isSynth = _synthSet.has(name);
     const synthTag = isSynth
-      ? '<span style="margin-left:6px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)">+ NEW BUCKET</span>'
+      ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)">+ NEW BUCKET</span>'
       : '';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + _bucketUrgencyTag(name) + synthTag + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '</span></div>';
   }).join('');
