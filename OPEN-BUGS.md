@@ -241,7 +241,24 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   MI-07-net-worth-component-sum should fire because the rendered NW
   delta won't match `MODEL.liquidNet - prevMonth.liquidNet`. Use this
   case to verify the invariant catches the regression.
-- **Status:** open (calibration target for Layer 2)
+- **Status:** mitigated (Bundle 28 round 54 investigation 2026-05-13)
+- **Bundle 28 round 54 findings:**
+  - John's monthlyHistory currently has ONE entry (April 2026,
+    `bal: $569.50`, no `liquidNet`, no `nw`, `schemaVersion: legacy`).
+  - Render logic at index.html L5462: `typeof latest.liquidNet === 'number'`
+    check — legacy entry lacks the field → `prevLiquid = null` →
+    falls through to "Building monthly history" hint at L5480.
+  - User no longer sees `+$90,739` style nonsense — instead sees the
+    correct "Building monthly history — first liquid-net snapshot lands
+    at next month rollover" message.
+  - Mitigated by two converging changes:
+    1. Bundle 24 P1 captured FULL nw breakdown (incl `liquidNet` field)
+       so future entries have the right schema.
+    2. `isPlausible` sanity cap at L5471 — suppresses any delta where
+       `abs(delta) >= $15k` OR `abs(delta) >= 50% of current liquidNet`.
+  - Self-resolves on next month-rollover (currently 2026-06-01) when a
+    fresh schemaVersion:2 entry lands with proper `liquidNet`.
+  - Closing as mitigated — no code change required.
 
 ## 14. Notification spam — nine "Net worth up $96,XXX" notifications
 - **Bug:** Within minutes John saw nine "Net worth up $96,XXX"
@@ -350,8 +367,24 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   output vs. what the calendar tile renders.
 - **Repro needed:** yes — log `buildCalendarEntries(state, now)` for
   the current month and compare against rendered DOM.
-- **Fix bundle:** Mission B (calendar marker scope)
-- **Status:** open
+- **Bundle 28 round 54 partial investigation:**
+  - `buildCalendarEntries` at index.html L3477 iterates
+    `debts.filter(d => !d.paid && !d.viaRent && d.delayDate)` →
+    pushes entries with `{ type: 'debt', name, amt, urgent: true,
+    color: 'var(--red)' }` keyed by the date ISO string.
+  - John's current debts that pass the filter:
+    - Borrowed from Michael $500 → delayDate 2026-05-16 ✓
+    - Borrowed from Mum for Bowie vet $217.50 → delayDate 2026-05-15 ✓
+  - The reported state IS yielding entries from `buildCalendarEntries`.
+    The bug — if still real — is downstream in the calendar tile
+    RENDERER reading those entries vs. ignoring debt-type entries.
+  - **Needs phone-verify with current state**: open Bills tab → tap
+    the calendar view → check whether May 15 + May 16 cells show a
+    debt marker. The original May-5 report's "Teachers Health,
+    Afterpay" no longer exist in S.debts as ad-hoc debts (Afterpay
+    moved to BILLS via BNPL flow), so the report may be stale.
+- **Status:** open (needs fresh phone-verify — investigation found
+  the data pipeline correct; renderer side untested)
 
 ## 22. Parallel implementation: 12+ inline `daysLeft(S.payday)` call sites
 - **Bug:** `daysLeft(S.payday)` and `MODEL.daysToPayday` are two
