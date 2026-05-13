@@ -98,6 +98,13 @@ Iterative round-by-round response to John's phone-verify findings.
 - `FEATURE-MAP.md` — atlas of every major surface → render fn → DOM → readers → writers → cross-references
 - `CC-PRINCIPAL-ENGINEER-MANUAL.md` — moved into repo (was in `~/Downloads/`)
 - `docs/{adr,sdd,archive,manual-amendments,ops}/` — scaffolded with READMEs
+- `docs/manual-amendments/AMENDMENT-001-noticed-action-plans.md` — proposes structured Noticed format (ACTION + WHEN)
+
+### Pre-existing guardian FAILs cleared
+Closes 2 Noticed items from `315431c` surfacing.
+- `no-hardcoded-bill-name` L12118 (`seedV25` Teachers Health) — added `guardian-allow-block` justifying TDZ-driven duplication of `PLAN.getAnnualProvisions` at boot phase
+- `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
+- Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
 ### Deferred to later bundles
 - Debt tile cut-off CSS layout (design pass)

@@ -2229,6 +2229,11 @@ function daysLeft(payday) {
 // 7-day minimum floor on daySpan; S.weekdayBudget||60 fallback if insufficient data
 const _NON_SPEND_CATS = new Set(['Debt repayment','Income','Savings','Bills','Transfer','Loan','Car Loan','CC Payment']);
 
+// Bundle 28: the debt-only subset of _NON_SPEND_CATS, used by the Analysis
+// pivot's debt-fragmentation tip (renderSpendingPivot ~L14846). Subset of
+// _NON_SPEND_CATS — keep in sync if categories are renamed.
+const _DEBT_CATEGORIES_SET = new Set(['Debt repayment', 'Loan', 'Car Loan', 'CC Payment']);
+
 // Mission C: Survival Forecast borrow-card visibility threshold. Hidden
 // when remaining > -SURVIVAL_BORROW_THRESHOLD (i.e., a tiny shortfall
 // is rounding-noise, not a real survival concern). Above this magnitude
@@ -12113,7 +12118,10 @@ const REAL_STATE_V17 = {
     }).concat(goalDefs.filter(g => g && !goalDefaults.find(d => d.id === g.id))
                     .map(g => Object.assign({ bucketHint: '', meta: {} }, g)));
 
-    // Provisions — fixed enumeration; mirror of PLAN.getAnnualProvisions at ~16909
+    // Provisions — fixed enumeration; mirror of PLAN.getAnnualProvisions at ~L18108.
+    // Must duplicate (not call PLAN.getAnnualProvisions) because seedV25 runs at
+    // boot before the PLAN const is declared; TDZ blocks the reference.
+    // guardian-allow-block-start: no-hardcoded-bill-name — seedV25 migration mirror of PLAN.getAnnualProvisions; PLAN const is in TDZ at this boot phase so duplication is unavoidable; the names ARE the canonical provision identifiers and any rename must be applied in both places (permanent — see PLAN.getAnnualProvisions design at ~L18108)
     const provisionDefaults = [
       { name: 'Teachers Health',    annual: 259.41 * 4, monthly: 86.47, frequency: 'quarterly', nextDue: '2026-08-01' },
       { name: 'Car service (KIA)',  annual: 500,        monthly: 42,    frequency: 'biannual',  nextDue: '2026-10-01' },
@@ -12121,6 +12129,7 @@ const REAL_STATE_V17 = {
       { name: 'KIA green slip',     annual: 552,        monthly: 46,    frequency: 'annual',    nextDue: '2027-04-01' },
       { name: 'KIA insurance (NRMA)', annual: 1023.06,  monthly: 85,    frequency: 'annual',    nextDue: '2027-05-01' },
     ];
+    // guardian-allow-block-end: no-hardcoded-bill-name
 
     const _slug = (s) => String(s || '').toLowerCase().trim()
       .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -14843,8 +14852,7 @@ function renderSpendingPivot() {
   // knows when the same loan (e.g. KIA Firstmac) is appearing under
   // multiple categories. Round 9 — reformatted from wall-of-text to a
   // clear hierarchy with header, total, bullet list, recommendation.
-  const _DEBT_CATS = ['Debt repayment', 'Loan', 'Car Loan', 'CC Payment'];
-  const _debtPresent = data.filter(c => _DEBT_CATS.includes(c.cat));
+  const _debtPresent = data.filter(c => _DEBT_CATEGORIES_SET.has(c.cat));
   if (_debtPresent.length > 1) {
     const _debtTotal = _debtPresent.reduce((s, c) => s + c.total, 0);
     html += '<div style="margin-bottom:14px;padding:14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px">' +

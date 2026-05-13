@@ -76,6 +76,33 @@
 
 ---
 
+## Noticed-item discipline (per AMENDMENT-001 proposal, 2026-05-13)
+
+Every end-of-session "Noticed" item now follows the structured format:
+
+`[priority] [type] <observation> → ACTION: <what> → WHEN: <this session | next code-touching round | Bundle NN | by <YYYY-MM-DD>>`
+
+- "WHEN" must be concrete. No "TBD", "later", or "soon".
+- If actionable in-session and not blocked, action it and report as shipped (not noticed).
+- Future-bundle items get echoed into that bundle's deferred table.
+
+### Retroactive application to 2026-05-13 surfacing (commit `315431c`)
+
+1. **[MEDIUM][gate-fail] `no-hardcoded-bill-name` L12118 Teachers Health**
+   → ACTION: add `guardian-allow-block` justifying TDZ-driven duplication
+   → WHEN: this session → **shipped in next commit** ✓
+2. **[MEDIUM][gate-fail] `no-third-discretionary-filter-array` L14846**
+   → ACTION: promote `_DEBT_CATS` to module-level `_DEBT_CATEGORIES_SET` canonical
+   → WHEN: this session → **shipped in next commit** ✓
+3. **[LOW][infra] 116 untracked Layer V PNGs in `captures/`, not gitignored**
+   → ACTION: decide policy — gitignore + LFS for ship-blocking ones, or commit all
+   → WHEN: Bundle 29 hygiene phase (LOW because they don't gate; storage cost only)
+4. **[LOW][debt] `scripts/bundle-15.2-cleanup.js` one-off untracked**
+   → ACTION: move to `archive/scripts/` or delete after confirming idempotent re-run not needed
+   → WHEN: Bundle 29 hygiene phase
+
+---
+
 ## Artifact discipline going forward (per manual §8 + §3 Step 7)
 
 Established 2026-05-13 alongside Bundle 28 infra commit (manual moved into repo + `docs/` scaffolded + `CHANGELOG.md` initialised).
