@@ -5834,9 +5834,14 @@ function autoSortDebts() {
 
 
 function setWrxStatus(status) {
-  S.wrxStatus = status;
-  if (status==='listed' && !S.wrxListedDate) S.wrxListedDate = new Date().toISOString().slice(0,10);
-  if (status==='unlisted') { S.wrxListedDate = null; S.wrxStatus='unlisted'; }
+  // Bundle 28 round 13: routed through BRAIN.assets.setWrxStatus canonical
+  // writer. Audit log captures the full status transition (before/after
+  // snapshot of wrxStatus, wrxListedDate, wrxSoldDate, wrxSalePrice).
+  const r = BRAIN.assets.setWrxStatus(status, {}, BRAIN.SOURCES.WRX_STATUS_CHANGE);
+  if (!r.ok) {
+    showToast('Could not set WRX status: ' + r.reason);
+    return;
+  }
   onStateChange('wrx-status');
 }
 
@@ -10307,8 +10312,13 @@ function saveIncome() {
 }
 
 function saveWrxValue() {
+  // Bundle 28 round 13: routed through BRAIN.assets.setWrxValue.
   const v = parseFloat(document.getElementById('set-wrx')?.value);
-  if (!isNaN(v) && v >= 0) { S.wrxValue = v; onStateChange('wrx_saved'); showToast('WRX value saved'); }
+  if (isNaN(v) || v < 0) return;
+  const r = BRAIN.assets.setWrxValue(v, BRAIN.SOURCES.WRX_VALUE_EDIT);
+  if (!r.ok) { showToast('Could not save: ' + r.reason); return; }
+  onStateChange('wrx_saved');
+  showToast('WRX value saved');
 }
 
 function saveSuperBalance() {
@@ -11265,15 +11275,17 @@ function executeChatAction(action) {
       // guardian-allow-block-end: tdz-safe-engine-access
       break;
     case 'mark_wrx_listed':
-      S.wrxStatus = 'listed';
-      S.wrxListedDate = new Date().toISOString().substring(0,10);
+      // Bundle 28 round 13: routed through BRAIN.assets.setWrxStatus. Source
+      // CHAT so the audit entry is distinguishable from manual UI flips.
+      BRAIN.assets.setWrxStatus('listed', {}, BRAIN.SOURCES.CHAT);
       onStateChange('wrx_listed_chat');
       showToast('✅ WRX Marked As Listed');
       break;
     case 'mark_wrx_sold':
-      S.wrxStatus = 'sold';
-      S.wrxSoldDate = new Date().toISOString().substring(0,10);
-      S.wrxSalePrice = action.salePrice || S.wrxValue || 25000;
+      // Bundle 28 round 13: routed through BRAIN.assets.setWrxStatus.
+      // opts.salePrice supplied so the canonical writer's fallback chain
+      // (opts.salePrice → S.wrxValue → 25000) matches the legacy behavior.
+      BRAIN.assets.setWrxStatus('sold', { salePrice: action.salePrice }, BRAIN.SOURCES.CHAT);
       onStateChange('wrx_sold_chat');
       if (typeof checkForWrxSaleInterception === 'function') checkForWrxSaleInterception();
       showToast('🎉 WRX SOLD — Time To Allocate The Proceeds');
@@ -15270,6 +15282,9 @@ const BRAIN = {
     // Bundle 28 round 10 — txn edit + delete canonical writers
     TXN_EDIT:                  'txn-edit',
     TXN_DELETE:                'txn-delete',
+    // Bundle 28 round 13 — WRX state canonical writers
+    WRX_VALUE_EDIT:            'wrx-value-edit',
+    WRX_STATUS_CHANGE:         'wrx-status-change',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -15308,6 +15323,8 @@ const BRAIN = {
     'bucket-create', 'bucket-update', 'bucket-delete',
     // Bundle 28 round 10
     'txn-edit', 'txn-delete',
+    // Bundle 28 round 13
+    'wrx-value-edit', 'wrx-status-change',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -16438,6 +16455,69 @@ const BRAIN = {
       return { ok: true, old, new: n };
     },
     getCarloanLifetimePaid() { return +S.carloanLifetimePaid || 0; },
+
+    // Bundle 28 round 13: WRX state canonical writers. Pre-round-13 the
+    // Settings WRX-value edit, the Plan-mode listed/unlisted toggle, and
+    // the chat "mark_wrx_listed" / "mark_wrx_sold" actions ALL mutated
+    // S.wrx{Value,Status,ListedDate,SoldDate,SalePrice} directly. Three
+    // independent sites, zero audit-log coverage. These writers route
+    // all three through BRAIN.audit so the AI agent and forensics can
+    // observe WRX lifecycle events (listed → sold → KIA cleared) which
+    // is one of John's highest-stakes flows.
+    //
+    // Internal-only: BRAIN.debts.allocateWrxProceeds composes its own
+    // S.wrxValue=0 / S.wrxStatus='sold' assignment with the proceeds
+    // distribution. Left as-is (already audited via wrx_proceeds_allocated).
+    setWrxValue(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.wrxValue;
+      S.wrxValue = n;
+      BRAIN.audit.append({ type: 'wrx_value_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
+    },
+
+    // setWrxStatus handles the multi-field status flip:
+    //   unlisted: clears wrxListedDate
+    //   listed:   sets wrxListedDate to today (or opts.listedDate)
+    //   sold:     sets wrxSoldDate (today or opts.soldDate)
+    //              + wrxSalePrice (opts.salePrice || wrxValue || 25000)
+    // Always audits before/after as a snapshot so undo and AI reasoning
+    // can replay the whole transition.
+    setWrxStatus(status, opts, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (status !== 'unlisted' && status !== 'listed' && status !== 'sold') {
+        return { ok: false, reason: 'invalid-status:' + status };
+      }
+      opts = opts || {};
+      const before = {
+        wrxStatus: S.wrxStatus || null,
+        wrxListedDate: S.wrxListedDate || null,
+        wrxSoldDate: S.wrxSoldDate || null,
+        wrxSalePrice: S.wrxSalePrice || null,
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      S.wrxStatus = status;
+      if (status === 'listed') {
+        if (!S.wrxListedDate) S.wrxListedDate = opts.listedDate || today;
+      } else if (status === 'unlisted') {
+        S.wrxListedDate = null;
+      } else if (status === 'sold') {
+        S.wrxSoldDate = opts.soldDate || today;
+        S.wrxSalePrice = +opts.salePrice || +S.wrxValue || 25000;
+      }
+      const after = {
+        wrxStatus: S.wrxStatus,
+        wrxListedDate: S.wrxListedDate || null,
+        wrxSoldDate: S.wrxSoldDate || null,
+        wrxSalePrice: S.wrxSalePrice || null,
+      };
+      BRAIN.audit.append({ type: 'wrx_status_change', before, after, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, before, after };
+    },
 
     // ─── Readers ────────────────────────────────────────────────────────
     getMumAccount() { return +S.mumAccountBalance || 0; },

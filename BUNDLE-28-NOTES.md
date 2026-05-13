@@ -27,7 +27,8 @@
 | `57a3d72` | gate-cleanup | Cleared 2 pre-existing FAILs (`no-hardcoded-bill-name` L12118, `no-third-discretionary-filter-array` L14846) + AMENDMENT-001 (structured Noticed format) |
 | `8d3dea8` | round 10 | Canonical writers `BRAIN.transaction.update` + `BRAIN.transaction.removeByTsWithBalance` + migrated `saveEditedTransaction` + `deleteEditedTransaction`. Closes the biggest remaining ❌ in the canonical-writer audit. OPEN-BUGS #42 logged for suspect-sign math direction (math preserved for now, flip after phone-verify confirms). |
 | `5473366` | round 11 | Phone-verified OPEN-BUGS #42 confirmed (John: "editing to $80 brings it back up instead of further down"). One-line sign flip in `BRAIN.transaction.update`. Centralisation from round 10 made this a single-site change instead of touching every caller. |
-| `<next>` | round 12 | OPEN-BUGS #43 — txn delete idempotency. John saw $200 drift from one rapid-tap delete. Pre-round-12 modal stored array idx; after first splice idx pointed at different row; second tap deleted wrong row + bumped balance again. Fix: migrate hidden field idx → stable ts + clear-on-delete + silent no-op on not-found. Drift recovery path documented in OPEN-BUGS #42/#43 (dashboard hero balance edit → `recordCorrection`). |
+| `a2094d5` | round 12 | OPEN-BUGS #43 — txn delete idempotency. John saw $200 drift from one rapid-tap delete. Pre-round-12 modal stored array idx; after first splice idx pointed at different row; second tap deleted wrong row + bumped balance again. Fix: migrate hidden field idx → stable ts + clear-on-delete + silent no-op on not-found. Drift recovery path documented in OPEN-BUGS #42/#43 (dashboard hero balance edit → `recordCorrection`). |
+| `<next>` | round 13 | WRX state canonical writers: `BRAIN.assets.setWrxValue` + `BRAIN.assets.setWrxStatus`. Migrated 3 sites (`setWrxStatus` global function, `saveWrxValue`, chat actions `mark_wrx_listed` + `mark_wrx_sold`). Audit log now captures WRX lifecycle (listed → sold → KIA cleared) — John's highest-stakes flow with zero observability pre-Bundle-28. |
 
 ---
 
@@ -211,7 +212,7 @@ session.
 | `S.roundUpDestination` | `BRAIN.savings.setRoundUpDestination` | ✓ Bundle 22 v3 |
 | `S.roundUpsEnabled` | `BRAIN.config.setRoundUpsEnabled` | ✓ Bundle 22 v3 |
 | `S.mumAccountBalance` / `S.superBalance` / `S.cc` / `S.ccLimit` / `S.carloan` / `S.carloanOriginal` | `BRAIN.assets.set{Mum,Super,Cc,CcLimit,Carloan,CarloanOriginal}` | ✓ Bundle 24 (pending full extraction) |
-| `S.wrxStatus` / `S.wrxValue` / `S.wrxSalePrice` / `S.wrxListedDate` / `S.wrxSoldDate` | Inline only (multiple call sites L1924, L5610, L10836-10844) | ❌ needs `BRAIN.assets.setWrxState` |
+| `S.wrxStatus` / `S.wrxValue` / `S.wrxSalePrice` / `S.wrxListedDate` / `S.wrxSoldDate` | `setWrxStatus()` 🔄, `saveWrxValue()` 🔄, chat actions 🔄 | `BRAIN.assets.setWrxStatus(status, opts, source)` + `BRAIN.assets.setWrxValue(v, source)` (Bundle 28 round 13) | ✓ this session |
 | `S.apiKey` | Direct writes (L1903, L9596, L9918, L10900) | ❌ needs `BRAIN.config.setApiKey` (secret-handling discipline) |
 | `S.paydayReceived` / `S.paydayReceivedDate` | Direct writes in balance-edit flow + seed v22 | ❌ needs `BRAIN.config.setPaydayReceived` or BRAIN.cycle |
 | `S.kiaEarlyRepayFee` | Direct UI edit | ❌ needs canonical writer |
