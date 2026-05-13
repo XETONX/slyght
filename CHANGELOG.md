@@ -122,6 +122,37 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 48 — BNPL end-date off-by-one + pace in MAX-per-day modal + urgency-weighted auto-allocate
+Three follow-ups from John's continued phone-verify of rounds 45-47.
+
+**48a — BNPL end-date wrong by one day (compared to Afterpay's own UI)**
+
+John caught a real bug. Afterpay's UI for "Stanmore Station Pharmacy ($149, $37.25 × 4 fortnightly starting May 21)" shows the final payment on **Thu 2 Jul**. The slyght BNPL modal displayed **Last payment (auto-stop): 2026-07-01** — one day early.
+
+Root cause: pre-r48 used `start.getTime() + (n-1) × 14 × 86400000` and `.toISOString().slice(0, 10)`. The `toISOString()` converts the timestamp to UTC — for Sydney (UTC+10), May 21 00:00 LOCAL becomes May 20 14:00 UTC, and Jul 2 00:00 LOCAL becomes Jul 1 14:00 UTC formatted as `2026-07-01`. UTC drift hit on every cross-month boundary.
+
+Fix: use `Date.setDate()` (calendar-aware — handles 28/30/31-day months and leap years correctly) and read back local components instead of `.toISOString()`. Also added a monthly-frequency branch using `setMonth` for proper month-clamping (e.g. May 31 + 1 month → Jun 30 not Jul 1).
+
+4 regression tests added (58/58 passing). John's exact scenario locked in.
+
+**48b — Pace explanation also shown in MAX-per-day tap modal**
+
+John #2 from r45 phone-verify: "Doesn't show specifically the what is pace calculation but has the rest of max per day in big orange etc." The dashboard pace text below MAX PER DAY was tappable → opened `explainWeekProjection` with the pace card. But tapping the BIG MAX PER DAY number itself opens `explainMaxPerDay` which didn't include the pace context. Now `explainMaxPerDay` also appends a "📈 What is pace?" card with John's concrete numbers (daily target, expected-by-today, actually-spent, OVER/UNDER result) so both entry points explain pace.
+
+**48c — Auto-allocate now includes provisions + urgency-weighted bucket split**
+
+Two issues in `BRAIN.plan.recommendAllocation()`:
+
+1. **Provisions ignored**: r47 added Annual Provisions to Essentials so the Canvas Remainder is now $298 lower, but `recommendAllocation`'s `hardClaims` didn't include them — auto-allocate was overstating allocatable by ~$298/mo. Now folded in.
+
+2. **Pure proportional split by goal target**: John on r46: "auto-allocate doesn't actually take into account what needs to be paid first... trips like Darwin with urgency the key is urgency so a check against the due date." Pre-r48 a trip starting in 30 days (Darwin) and a trip starting in 200 days (China) got proportional shares — Darwin starved. Now uses urgency weight: `weight = max(1, min(20, 365 / daysOut))` for trip-linked buckets. Imminent trips get up to ~20× pull versus far ones. Non-trip buckets stay at weight=1.
+
+Result: Darwin Jun 7 dominates over China Dec 1 within the same allocatable pool, matching John's mental model of "what needs to be paid first."
+
+(Known limitation, not fixed in r48: bills with `freq: 'fortnightly'` still use `day: number` 1-31 schema for repeating dates. Real Afterpay schedules don't repeat by day-of-month — they slide. The end-date auto-stop now matches Afterpay's final payment, but intermediate dates may not exactly match. Schema redesign for "explicit payment dates per BNPL" deferred to a future round.)
+
+Gates: 0 FAILs, 58/58 tests, 51/51 runtime PASS.
+
 ### Round 47 — Canvas/Dashboard sync + Annual Provisions in Essentials + collapse-paid + viaRent parity
 John on r46 phone-verify: Canvas tile PASS, but several sync bugs and a gap exposed across PLAN mode that misled the math. Each below was a real user-flagged issue.
 

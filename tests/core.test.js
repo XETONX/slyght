@@ -1255,6 +1255,48 @@ test('Debt freedom sort: paid debts excluded', () => {
   expect(sorted[0].name).toBe('Active');
 });
 
+// ── Bundle 28 round 48 regression: BNPL end-date calendar math ──
+// Anchor the off-by-one fix. Pre-r48 used .toISOString() which converts
+// to UTC — for Sydney (UTC+10), May 21 00:00 LOCAL → May 20 14:00 UTC,
+// and Jul 2 00:00 LOCAL → Jul 1 14:00 UTC formatted as "2026-07-01".
+// John caught it: Afterpay's UI showed final payment Jul 2, mine showed
+// Jul 1. Fix: use setDate (calendar-aware) and read local components.
+function _bnplEndDate(startStr, remaining, freq) {
+  const start = new Date(startStr + 'T00:00:00');
+  const endDate = new Date(start);
+  if (freq === 'monthly') {
+    endDate.setMonth(endDate.getMonth() + (remaining - 1));
+  } else {
+    const daysBetween = freq === 'weekly' ? 7 : 14;
+    endDate.setDate(endDate.getDate() + (remaining - 1) * daysBetween);
+  }
+  return endDate.getFullYear() + '-' +
+    String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(endDate.getDate()).padStart(2, '0');
+}
+
+test('BNPL end-date: Afterpay May 21 fortnightly 4-payments lands on Jul 2 (not Jul 1)', () => {
+  // John's actual Afterpay screenshot: Stanmore Station Pharmacy
+  // Schedule: 21 May → 4 Jun → 18 Jun → 2 Jul (every 14 days)
+  // Pre-r48 (UTC-via-toISOString) wrongly returned 2026-07-01
+  expect(_bnplEndDate('2026-05-21', 4, 'fortnightly')).toBe('2026-07-02');
+});
+
+test('BNPL end-date: weekly 4-payments starting May 21 lands on Jun 11', () => {
+  // 21 May + 3 × 7 = 21 + 21 = 42 → Jun 11 (May has 31 days: 42 - 31 = 11)
+  expect(_bnplEndDate('2026-05-21', 4, 'weekly')).toBe('2026-06-11');
+});
+
+test('BNPL end-date: monthly 3-payments survives month-of-31-vs-30 (May → Jul)', () => {
+  // Start May 31, monthly, 3 remaining → next May 31, Jun 30 (clamp), Jul 31
+  // setMonth clamps day to month-end, so this should return 2026-07-31
+  expect(_bnplEndDate('2026-05-31', 3, 'monthly')).toBe('2026-07-31');
+});
+
+test('BNPL end-date: single-payment plan (remaining=1) end equals start', () => {
+  expect(_bnplEndDate('2026-05-21', 1, 'fortnightly')).toBe('2026-05-21');
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);

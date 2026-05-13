@@ -2756,6 +2756,34 @@ function explainMaxPerDay() {
         : '') +
 
       timingWarnHtml +
+
+      // Bundle 28 round 48 (John feedback): pace section also included in
+      // this MAX-per-day modal. Pre-r48 tapping the big "$6.11 MAX PER
+      // DAY" tile opened explainMaxPerDay() which showed the daily-budget
+      // breakdown but NOT the pace explanation. The pace text below was
+      // tappable separately → explainWeekProjection() — but the user
+      // wasn't always tapping that exact line. Now the pace concept and
+      // user's actual pace numbers appear here too.
+      (function _appendPaceSection() {
+        try {
+          if (typeof getThisWeekProjection !== 'function') return '';
+          const _wkProj = getThisWeekProjection();
+          if (!_wkProj) return '';
+          const _paceOver = _wkProj.spentSoFar - _wkProj.dailyRate * _wkProj.daysSoFarInWeek;
+          const _expected = _wkProj.dailyRate * (_wkProj.daysSoFarInWeek + 1);
+          const fc = (n) => '$' + (+n || 0).toFixed(2);
+          return '<div style="background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:10px;padding:14px;margin-top:14px">' +
+            '<div style="font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📈 What is "pace"?</div>' +
+            '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:10px">Pace = how fast you\'re spending vs your daily-budget. The app picks a target based on weekday/weekend caps + days left to payday. Then watches if you\'re ahead or behind.</div>' +
+            '<div style="background:rgba(0,0,0,0.18);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--text2);line-height:1.6">' +
+              '<div>• Daily target: <strong style="font-family:var(--mono);color:var(--amber)">' + fc(_wkProj.dailyRate) + '/day</strong></div>' +
+              '<div>• Expected by today: <strong style="font-family:var(--mono);color:var(--text)">' + fc(_expected) + '</strong></div>' +
+              '<div>• Actually spent: <strong style="font-family:var(--mono);color:' + (_paceOver > 0 ? 'var(--red)' : 'var(--green)') + '">' + fc(_wkProj.spentSoFar) + '</strong></div>' +
+              '<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.08)">• Result: <strong style="color:' + (_paceOver > 0 ? 'var(--red)' : 'var(--green)') + '">' + fc(Math.abs(_paceOver)) + ' ' + (_paceOver > 0 ? 'OVER' : 'UNDER') + ' pace</strong></div>' +
+            '</div>' +
+          '</div>';
+        } catch (_) { return ''; }
+      })() +
     '</div>';
 
     if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
@@ -6786,7 +6814,14 @@ function _bnplSelect(hiddenId, val, btn, groupId) {
   _bnplRecompute();
 }
 
-// Bundle 28 round 41: inputs are per-payment + remaining (not total + count).
+// Bundle 28 round 48 (John feedback bug): off-by-one date bug fixed.
+// Pre-r48 used start.getTime() + ms math then .toISOString() which
+// converts to UTC — for Sydney (UTC+10/+11), May 21 00:00 LOCAL became
+// May 20 14:00 UTC, and the final payment Jul 2 LOCAL became Jul 1 UTC
+// in the formatted string. Afterpay UI showed Jul 2; we showed Jul 1.
+// Fix: use Date.setDate() which is calendar-aware (handles months of
+// 28/30/31 days correctly), then read back local components instead of
+// .toISOString().
 function _bnplRecompute() {
   const perInst = parseFloat($('bnpl-per')?.value) || 0;
   const remaining = parseInt($('bnpl-count')?.value) || 4;
@@ -6799,10 +6834,19 @@ function _bnplRecompute() {
     return;
   }
   const totalRemaining = perInst * remaining;
-  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30;
+  // Monthly uses setMonth (real calendar months); weekly/fortnightly
+  // uses setDate (real day-add — survives 30/31 day months).
   const start = new Date(startStr + 'T00:00:00');
-  const endMs = start.getTime() + (remaining - 1) * daysBetween * 86400000;
-  const endStr = new Date(endMs).toISOString().slice(0, 10);
+  const endDate = new Date(start);
+  if (freq === 'monthly') {
+    endDate.setMonth(endDate.getMonth() + (remaining - 1));
+  } else {
+    const daysBetween = freq === 'weekly' ? 7 : 14;
+    endDate.setDate(endDate.getDate() + (remaining - 1) * daysBetween);
+  }
+  const endStr = endDate.getFullYear() + '-' +
+    String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(endDate.getDate()).padStart(2, '0');
   const freqLabel = freq === 'weekly' ? 'weekly' : freq === 'fortnightly' ? 'fortnightly' : 'monthly';
   preview.innerHTML =
     '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Per payment</span><strong style="font-family:var(--mono);color:var(--text)">$' + perInst.toFixed(2) + '</strong></div>' +
@@ -6824,10 +6868,19 @@ function saveBnpl() {
   if (!startStr) { showToast('Pick the next-payment date'); return; }
   if (remaining < 1 || remaining > 4) { showToast('Remaining payments must be 1–4'); return; }
   const amt = parseFloat(perInst.toFixed(2));
-  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30;
+  // Bundle 28 round 48: calendar-aware date math (see _bnplRecompute
+  // comment). Pre-r48 produced a one-day-early endDate due to UTC drift.
   const start = new Date(startStr + 'T00:00:00');
-  const endMs = start.getTime() + (remaining - 1) * daysBetween * 86400000;
-  const endStr = new Date(endMs).toISOString().slice(0, 10);
+  const endDate = new Date(start);
+  if (freq === 'monthly') {
+    endDate.setMonth(endDate.getMonth() + (remaining - 1));
+  } else {
+    const daysBetween = freq === 'weekly' ? 7 : 14;
+    endDate.setDate(endDate.getDate() + (remaining - 1) * daysBetween);
+  }
+  const endStr = endDate.getFullYear() + '-' +
+    String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+    String(endDate.getDate()).padStart(2, '0');
   const newBill = {
     name,
     amt,
@@ -17136,16 +17189,51 @@ const BRAIN = {
       const snap = this.getSnapshot();
       const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
       const totalBucketTarget = buckets.reduce((s, b) => s + (+b.goal || 0), 0);
-      const hardClaims = snap.bills.total + snap.debts.total + snap.knownUpcoming.total;
+      // Bundle 28 round 48: include annual provisions in hardClaims so
+      // allocatable matches the Canvas's Remainder figure (round 47).
+      // Pre-r48 auto-allocate overstated allocatable by ~$298/mo because
+      // provisions (Teachers Health + KIA insurance/rego/service) weren't
+      // subtracted before splitting across savings buckets.
+      let _provs = 0;
+      try { _provs = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+      const hardClaims = snap.bills.total + snap.debts.total + snap.knownUpcoming.total + _provs;
       const livingReserve = snap.dailyLiving.plannedTotal * 1.1; // 10% padding
       const allocatable = snap.totalToPlan - hardClaims - livingReserve - snap.bufferFloor;
       if (allocatable < 0) {
         return { ok: false, reason: 'shortfall', deficit: parseFloat((-allocatable).toFixed(2)), snap };
       }
+      // Bundle 28 round 48: bucket prioritization by urgency.
+      // Pre-r48 split was pure share-by-goal-target — slow long-term
+      // goals (China Holiday $4k by Dec) got the same proportion as
+      // imminent ones (Darwin Jun 7). John: "trips like Darwin with
+      // urgency the key is urgency so a check against the due date."
+      // Now: trips linked to intents with a startDate get URGENCY-WEIGHTED
+      // share. Trip starting in N days → weight = max(1, 365/N). Bucket
+      // share = (goal × urgencyWeight) / Σ(goal × urgencyWeight).
+      // Non-trip buckets get weight 1. Result: Darwin Jun 7 dominates
+      // over China Dec 1 within the same allocatable pool.
+      const nowMs = Date.now();
+      const _bucketWeight = (b) => {
+        try {
+          if (this.intent && this.intent.byBucket) {
+            const intents = this.intent.byBucket(b.name) || [];
+            const trip = intents.find(i => i && i.kind === 'trip' && i.startDate);
+            if (trip) {
+              const startMs = new Date(trip.startDate + 'T00:00:00').getTime();
+              const daysOut = Math.max(1, (startMs - nowMs) / 86400000);
+              // 365 / daysOut: trip 30d out → weight ~12, 90d out → ~4, 365d out → 1
+              return Math.max(1, Math.min(20, 365 / daysOut));
+            }
+          }
+        } catch (_) {}
+        return 1;
+      };
+      const weightedTargets = buckets.map(b => ({ b, w: _bucketWeight(b), target: +b.goal || 0 }));
+      const totalWeighted = weightedTargets.reduce((s, x) => s + x.target * x.w, 0);
       const bucketAllocations = {};
-      if (totalBucketTarget > 0) {
-        buckets.forEach(b => {
-          const share = (+b.goal || 0) / totalBucketTarget;
+      if (totalWeighted > 0) {
+        weightedTargets.forEach(({ b, w, target }) => {
+          const share = (target * w) / totalWeighted;
           bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
         });
       }
