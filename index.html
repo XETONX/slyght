@@ -685,8 +685,10 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <div style="display:flex;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);flex-wrap:wrap">
           <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:50%;background:var(--red)"></div><span style="font-size:12px;color:var(--text3)">Bill</span></div>
           <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:50%;background:var(--green)"></div><span style="font-size:12px;color:var(--text3)">Payday</span></div>
-          <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:50%;background:var(--amber)"></div><span style="font-size:12px;color:var(--text3)">Multiple</span></div>
+          <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:50%;background:var(--amber)"></div><span style="font-size:12px;color:var(--text3)">Bill + debt</span></div>
         </div>
+        <!-- r65: legend hint — calendar daily totals include both recurring bills (BILLS) and immediate-debt due dates (S.debts delayDate). Previously "Multiple" was opaque; the day-15 $3,998 ($3k Rent + $780 KIA Loan + $217 Bowie debt) was confusing without this footnote. -->
+        <div style="font-size:11px;color:var(--text3);margin-top:6px;opacity:.85">Day totals include bills + any debts due that day.</div>
       </div>
       <div id="cal-day-detail" style="display:none" class="card"><div id="cal-day-detail-content"></div></div>
       <div id="cal-week-content"></div>
@@ -2888,7 +2890,9 @@ function renderSurvivalBanner(safe) {
   const dailyMax = _m.safeToSpendToday;
   const buffer = (typeof safe === 'number' && safe < 200) ? ' — ' + fmt(safe) + ' buffer after bills' : '';
   if (mode === 'critical') {
-    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br>Every dollar counts right now.</div>';
+    // r65: make CRITICAL banner tappable → bills tab. Closes the dead-text gap where the
+    // banner declared "every dollar counts" but didn't tell John what to look at next.
+    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px;cursor:pointer" onclick="goPage(\'pg-cal\')" role="button" aria-label="View upcoming bills">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br><span style="text-decoration:underline;font-size:13px">Tap to see what\'s eating your balance →</span></div>';
   } else if (mode === 'survival') {
     // Bundle 7: when dailyMax = $0 the "$0.00/day max" + "Cut weekend
     // spending" copy is meaningless — there's nothing to cut. Surface
@@ -6109,11 +6113,12 @@ function openNetWorthModal() {
     {label:'Deposit account (Mum)', val: nw.breakdown.mumAccount},
     {label:'Savings buckets', val: nw.breakdown.savings}
   ];
+  // r65: hide zero-value liability rows. $0.00 Credit Card on every NW modal was visual noise — the row still has line-divider + label + "-$0.00" eating two lines on a small screen. Keep the row only when there's a real balance to show.
   const liabRows = [
     {label:'KIA Loan (Firstmac)', val:S.carloan},
     {label:'Credit Card', val:S.cc},
     ...activeDebts.map(d => ({label:d.name, val:d.amt})),
-  ];
+  ].filter(r => Math.abs(r.val || 0) > 0.005);
   html += '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Liquid Assets</div>';
   // Mission #43 — fmtC (full $X.XX) instead of fmt (rounded). Nora flagged
   // that the breakdown rows showed "$381" while dashboard showed "$381.35".
@@ -21040,8 +21045,8 @@ function renderPlanMode() {
       What you can actually touch today
     </div>
     ${superVal > 0 ? `<div style="font-size:12px;color:rgba(255,255,255,0.3);margin-top:6px">+ $${Math.round(superVal).toLocaleString()} super (locked) — see super bubble for long-term picture</div>` : ''}
-    <button onclick="showNetWorthBreakdown()" style="margin-top:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:rgba(255,255,255,0.5);padding:6px 16px;font-size:13px;cursor:pointer">
-      See Breakdown ›
+    <button onclick="showNetWorthBreakdown()" style="margin-top:12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:20px;color:rgba(255,255,255,0.5);padding:6px 16px;font-size:13px;cursor:pointer" aria-label="View net worth breakdown by asset">
+      View NW breakdown ›
     </button>
   </div>`;
 
@@ -21941,7 +21946,13 @@ function renderTrips(trips) {
     const daysLong = Math.ceil((end - start) / 86400000) + 1;
     const monthsUntil = Math.ceil(daysUntil / 30);
     const remaining = Math.max(0, (trip.budget || 0) - (trip.saved || 0));
+    // r65: when daysUntil < 30 (e.g. Darwin in 25 days), "$900/month to reach by departure"
+    // is mathematically wrong — there isn't a full month left. Show the actual rate or the
+    // weekly equivalent for short timelines.
     const monthlyNeeded = monthsUntil > 0 ? Math.ceil(remaining / monthsUntil) : remaining;
+    const isImminent = daysUntil > 0 && daysUntil < 30;
+    const weeksUntil = Math.max(1, Math.ceil(daysUntil / 7));
+    const weeklyNeeded = isImminent ? Math.ceil(remaining / weeksUntil) : 0;
     const pct = trip.budget > 0 ? Math.min(100, ((trip.saved || 0) / trip.budget * 100)) : 0;
 
     const isActive = today >= start && today <= end;
@@ -21985,9 +21996,11 @@ function renderTrips(trips) {
         <div style="background:linear-gradient(90deg,#4ECDC4,#26d0ce);width:${pct}%;height:100%;border-radius:4px;transition:width 0.5s ease"></div>
       </div>
 
-      ${!isPast && monthlyNeeded > 0 ? `
+      ${!isPast && remaining > 0 ? `
       <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:10px">
-        Save $${monthlyNeeded}/month to reach your budget by departure
+        ${isImminent
+          ? `Save $${weeklyNeeded}/week ($${Math.ceil(remaining/Math.max(1,daysUntil))}/day) to reach your budget by departure`
+          : `Save $${monthlyNeeded}/month to reach your budget by departure`}
       </div>` : ''}
 
       ${trip.notes ? `<div style="font-size:12px;color:rgba(255,255,255,0.3);font-style:italic;margin-bottom:10px">${trip.notes}</div>` : ''}
@@ -23075,7 +23088,7 @@ document.getElementById('plan-modal-overlay')
 <!-- PLAN MODE OVERLAY -->
 <div id="plan-mode" style="position:fixed;inset:0;background:#0a0f1a;z-index:500;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);overflow-y:auto;overflow-x:hidden;padding-bottom:100px">
   <div style="position:sticky;top:0;background:#0a0f1a;padding:16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.06);z-index:10">
-    <button onclick="closePlanMode()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:#fff;padding:8px 16px;font-size:14px;cursor:pointer">‹ NOW</button>
+    <button onclick="closePlanMode()" style="background:rgba(255,255,255,0.08);border:none;border-radius:20px;color:#fff;padding:8px 16px;font-size:14px;cursor:pointer" aria-label="Back to dashboard">‹ Back</button>
     <div style="color:#fff;font-size:15px;font-weight:700;letter-spacing:1px">FUTURE PLAN</div>
     <div style="width:70px"></div>
   </div>

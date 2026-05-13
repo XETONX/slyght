@@ -122,6 +122,17 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 65 — r64 P3 polish (calendar legend, trip math, critical CTA, NW modal, copy)
+Five UX polish items from r64 deep-sweep P3 backlog. Each addressed a specific deferred finding rather than scope expansion.
+
+- **Calendar legend** (`index.html:688`) — third dot relabelled "Multiple" → "Bill + debt", added footnote "Day totals include bills + any debts due that day." Explains the day-15 $3,998 (Rent $3,000 + KIA Loan $780 + Bowie debt $217 due-date 2026-05-15) — previously users couldn't reconcile the daily total against the BILLS array alone.
+- **Trip "Save $X/month" math for imminent trips** (`index.html:21946+`) — Darwin (25 days away) was rendering "Save $900/month to reach by departure" which is mathematically impossible (no full month left). Now: when `daysUntil < 30`, switch to weekly + daily phrasing. Darwin renders "Save $225/week ($36/day) to reach your budget by departure". China (202 days away) keeps the month phrasing as before.
+- **Critical banner CTA** (`index.html:2893`) — `renderSurvivalBanner` mode='critical' was dead text ("Every dollar counts right now"). Now tappable, navigates to Bills tab, copy reads "Tap to see what's eating your balance →". Closes the gap where John knew his balance was tight but the banner didn't surface the bills causing the squeeze.
+- **NW modal hides zero liabilities** (`index.html:6116+`) — `liabRows.filter(r => Math.abs(r.val) > 0.005)` drops the "$0.00 Credit Card" row that ate 2 lines of vertical space on every modal open. Now only non-zero liabilities render.
+- **Copy clarity** (`index.html:23091`, `index.html:21048`) — `‹ NOW` button on Future Plan header → `‹ Back` (`NOW` was ambiguous with "current time"). `See Breakdown ›` button → `View NW breakdown ›` (the original didn't say WHAT was being broken down).
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime, 4/4 guardians green. All 5 changes verified visually by `npm run serve` + `node scripts/layerV-capture.js --local`.
+
 ### Round 64 — Deep Layer V sweep + harness upgrade + 4 UX fixes
 John ask: "FULL SWEEP of the app using local Layer V to understand the whole app, map out how code is visualised, continue improving where code was meant to look one way and displays another, fix data gaps, fix UX gaps." Deep-sweep every capture cross-referenced against `state-snapshot.json` (live phone dump) and `index.html`, with per-tappable critique. Doc: `docs/R64-DEEP-SWEEP-2026-05-13.md` (8,000 words, 42 captures, full code-attribution table, prioritised punch list).
 
