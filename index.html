@@ -1470,17 +1470,22 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 
 <!-- Bundle 28 round 36: BNPL / Afterpay quick-add. Captures total + count
      + frequency + start date; computes per-instalment amount and endDate
-     so the bill auto-stops after the final payment (round 35 endDate). -->
+     so the bill auto-stops after the final payment (round 35 endDate).
+     Bundle 28 round 41 (John feedback): dropped 6/8 chips (Afterpay is
+     standardised to 4 fortnightly). Added "Payments remaining" field so
+     John can backfill an existing BNPL plan he's mid-way through. The
+     per-instalment amount is now entered directly (not total / 4) — what
+     he sees on his BNPL screen is the per-payment number, not the total. -->
 <div class="modal-overlay" id="bnpl-modal" onclick="handleOverlayClick(event,'bnpl-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">💳 Add BNPL Purchase</div>
-    <div class="modal-sub">Afterpay / Klarna / Zip — splits total over instalments, auto-stops after the last one.</div>
+    <div class="modal-sub">Afterpay / Klarna / Zip — auto-stops after the last payment so you don't need to manually delete.</div>
     <div class="modal-field"><label>Purchase name</label><input class="modal-input" autocomplete="off" type="text" id="bnpl-name" placeholder="e.g. Afterpay — Concert Tickets" oninput="_bnplRecompute()"></div>
-    <div class="modal-field"><label>Total amount ($)</label><input class="modal-input" autocomplete="off" type="number" id="bnpl-total" inputmode="decimal" placeholder="0.00" oninput="_bnplRecompute()"></div>
+    <div class="modal-field"><label>Per-payment amount ($)</label><input class="modal-input" autocomplete="off" type="number" id="bnpl-per" inputmode="decimal" placeholder="0.00" oninput="_bnplRecompute()"></div>
     <div class="modal-field">
-      <label>Instalments</label>
+      <label>Payments remaining (1–4)</label>
       <div id="bnpl-count-chips" style="display:flex;gap:6px;margin-top:4px">
-        <!-- chips: 4 (default), 6, 8 — rendered by openBnplModal -->
+        <!-- chips 1, 2, 3, 4 — rendered by openBnplModal. Default 4. -->
       </div>
       <input type="hidden" id="bnpl-count" value="4">
     </div>
@@ -1491,12 +1496,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </div>
       <input type="hidden" id="bnpl-freq" value="fortnightly">
     </div>
-    <div class="modal-field"><label>First payment date</label><input class="modal-input" autocomplete="off" type="date" id="bnpl-start" oninput="_bnplRecompute()"></div>
+    <div class="modal-field"><label>Next payment date</label><input class="modal-input" autocomplete="off" type="date" id="bnpl-start" oninput="_bnplRecompute()"></div>
     <div class="modal-checkbox-row">
       <input type="checkbox" class="modal-checkbox" id="bnpl-autodebit" checked>
       <label for="bnpl-autodebit">🤖 Auto-debits each payment (typical for BNPL)</label>
     </div>
-    <!-- Live preview of computed per-instalment amount + endDate -->
+    <!-- Live preview of computed totals + last-payment date -->
     <div id="bnpl-preview" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:8px;font-size:13px;color:var(--text2);line-height:1.6">Fill in the fields to see the breakdown.</div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveBnpl()">Add as recurring bill</button>
@@ -2487,6 +2492,13 @@ function explainWeekProjection() {
 
     const body =
       '<div style="line-height:1.6;color:var(--text2);font-size:14px">' +
+        // Bundle 28 round 40: dedicated "what is pace?" header — John on
+        // r34 phone-verify: "opens math explainer but has no tile
+        // explaining what running over pace means."
+        '<div style="background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:8px;padding:12px;margin-bottom:12px">' +
+          '<div style="font-size:12px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">What does "pace" mean?</div>' +
+          '<div style="font-size:13px;color:var(--text2);line-height:1.5">Pace = the daily-budget you\'d need to hit by end of week. <strong style="color:var(--text)">Over pace</strong> = you\'ve spent more so far than that daily rate would predict — keep an eye on it. <strong style="color:var(--text)">Under pace</strong> = you\'re on track or ahead.</div>' +
+        '</div>' +
         '<div style="margin-bottom:12px">This is the projected total cash leaving the account this week — already-spent + bills coming up + projected living.</div>' +
 
         '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
@@ -5898,47 +5910,67 @@ function openNetWorthModal() {
     '<div style="font-size:12px;color:var(--text3);line-height:1.5;margin-top:4px">This number matters for your long-term picture but not for today\'s spending decisions.</div>' +
   '</div>';
   // Bundle 28 round 37: Debt Freedom Estimate redesign — time-progressive
-  // cascade. Pre-r37 calc was `ceil(totalDebt / surplus)` — i.e. "you'll
-  // pay $X/mo for the rest of your life on the same fixed bills". John
-  // 2026-05-13: that's "retarded" because it ignores (a) when individual
-  // debts clear, (b) that clearing a debt frees its monthly payment for
-  // the next debt, (c) growth in saving capacity over time. Now shows a
-  // phased timeline: clear debt 1 → freed payment joins surplus → clear
-  // debt 2 → freed payment compounds → etc.
+  // cascade. Pre-r37 calc was `ceil(totalDebt / surplus)`.
+  // Bundle 28 round 39 (John feedback):
+  //   - Sort by URGENCY (due date) first, then strategy — was recommending
+  //     Michael's loan in January when actually due Saturday.
+  //   - Add "Due in N days" badge per phase so urgency is visible.
+  //   - Clarify the "$X/mo" label — it's surplus, not investment growth.
+  //   - Reframe "financial freedom / investing $X/mo" since user has fixed
+  //     bills + isn't actually investing — "debt-free" not "rich" framing.
   const _projection = buildDebtFreedomProjection();
   html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:14px;margin-top:8px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;text-align:center">Debt Freedom Timeline</div>';
+    '<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em;text-align:center">Debt-Free Timeline</div>' +
+    '<div style="font-size:11px;color:var(--text2);text-align:center;margin-bottom:10px;line-height:1.4">Order = due-date urgency first, then your debt strategy. Each $/mo is your <strong style="color:var(--green)">free surplus</strong> for that phase.</div>';
   if (_projection.phases.length === 0) {
     html += '<div style="font-size:14px;color:var(--amber);text-align:center">Build surplus to unlock this projection</div>';
   } else {
     html += _projection.phases.map((p, i) => {
       const _isLast = (i === _projection.phases.length - 1);
       const _phaseColor = p.surplus >= 1000 ? 'var(--green)' : p.surplus >= 200 ? 'var(--amber)' : 'var(--text)';
+      // Bundle 28 round 39: due-date urgency chip
+      let _dueChip = '';
+      if (p.dueDays !== null) {
+        const _dueBg = p.dueDays < 0
+          ? 'var(--red-dim);color:var(--red);border:1px solid var(--red-border)'
+          : p.dueDays <= 7
+            ? 'var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)'
+            : 'var(--bg4);color:var(--text2);border:1px solid var(--border2)';
+        const _dueLbl = p.dueDays < 0
+          ? '⚠️ ' + Math.abs(p.dueDays) + 'd overdue'
+          : p.dueDays === 0 ? '🔥 Due today'
+          : p.dueDays === 1 ? '🔥 Due tomorrow'
+          : p.dueDays <= 7 ? '⏰ Due in ' + p.dueDays + 'd'
+          : 'Due in ' + p.dueDays + 'd';
+        _dueChip = '<span style="display:inline-block;font-size:10px;font-weight:700;padding:2px 6px;border-radius:8px;margin-left:6px;white-space:nowrap;background:' + _dueBg + '">' + _dueLbl + '</span>';
+      }
       return '<div style="display:flex;gap:10px;padding:10px 0;' + (_isLast ? '' : 'border-bottom:1px solid var(--border)') + '">' +
         '<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;min-width:28px">' +
           '<div style="width:24px;height:24px;border-radius:50%;background:var(--bg4);border:1px solid var(--green-border);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--green)">' + (i + 1) + '</div>' +
           (_isLast ? '' : '<div style="width:1px;flex:1;background:var(--border);margin:4px 0"></div>') +
         '</div>' +
         '<div style="flex:1;min-width:0">' +
-          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">' +
-            '<div style="font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + p.label + '</div>' +
-            '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:' + _phaseColor + ';white-space:nowrap;margin-left:8px">' + p.clearDateStr + '</div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px;flex-wrap:wrap">' +
+            '<div style="font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">' + p.label + _dueChip + '</div>' +
+            '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:' + _phaseColor + ';white-space:nowrap">Clear by ' + p.clearDateStr + '</div>' +
           '</div>' +
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">' +
-            'Clears <strong style="color:var(--text)">$' + Math.round(p.debtAmt).toLocaleString() + '</strong> · at <strong style="color:var(--green);font-family:var(--mono)">$' + Math.round(p.surplus).toLocaleString() + '/mo</strong> · ~<strong style="color:var(--text)">' + p.months + ' month' + (p.months === 1 ? '' : 's') + '</strong>' +
+            'Owing <strong style="color:var(--text)">$' + Math.round(p.debtAmt).toLocaleString() + '</strong> · paying <strong style="color:var(--green);font-family:var(--mono)">$' + Math.round(p.surplus).toLocaleString() + '/mo surplus</strong> · ~<strong style="color:var(--text)">' + p.months + ' month' + (p.months === 1 ? '' : 's') + '</strong>' +
           '</div>' +
           (p.frees > 0 && !_isLast
-            ? '<div style="font-size:11px;color:var(--blue);margin-top:4px">↑ Frees +$' + Math.round(p.frees).toLocaleString() + '/mo for next phase</div>'
+            ? '<div style="font-size:11px;color:var(--blue);margin-top:4px">↑ Then +$' + Math.round(p.frees).toLocaleString() + '/mo unlocks for next phase</div>'
             : '') +
         '</div>' +
       '</div>';
     }).join('');
-    // Footer: "after all clear, you can save $X/mo"
+    // Footer: "after all clear, you can save $X/mo" — reframed for John.
+    // Bundle 28 round 39: drop the "investing $X/mo" language ("financial
+    // freedom / rich"); keep it grounded as "no debt payments anymore".
     const _finalSurplus = _projection.finalSurplus;
     if (_finalSurplus > 0) {
       html += '<div style="margin-top:10px;padding:10px 12px;background:rgba(34,197,94,0.18);border:1px solid var(--green-border);border-radius:var(--r-sm);font-size:13px;line-height:1.5">' +
-        '<div style="font-weight:700;color:var(--green);margin-bottom:4px">🎉 After all debts clear</div>' +
-        '<div style="color:var(--text2)">You\'d be investing <strong style="font-family:var(--mono);color:var(--green)">$' + Math.round(_finalSurplus).toLocaleString() + '/mo</strong> instead of paying off debt. That\'s <strong>$' + Math.round(_finalSurplus * 12).toLocaleString() + '/year</strong>.</div>' +
+        '<div style="font-weight:700;color:var(--green);margin-bottom:4px">🎉 All debts cleared</div>' +
+        '<div style="color:var(--text2)">Your monthly surplus jumps to <strong style="font-family:var(--mono);color:var(--green)">$' + Math.round(_finalSurplus).toLocaleString() + '/mo</strong> — no debt payments draining it. That money can finally go to savings, investing, or whatever else (assumes today\'s income + bills stay the same).</div>' +
       '</div>';
     }
   }
@@ -6536,13 +6568,34 @@ function markDebtCovered(id) {
 //            finalSurplus, totalMonths }
 function buildDebtFreedomProjection() {
   const baseSurplus = getGenuineSurplus();
-  // Build the queue: manual-pay debts only (viaRent + auto-cleared by
-  // endDate already handled elsewhere). Sort by avalanche/snowball per
-  // user's strategy preference, falling back to priority.
+  // Bundle 28 round 39 (John feedback): sort by URGENCY first, then by
+  // user's debtStrategy. Pre-r39 sort was pure avalanche/snowball — John
+  // saw the projection recommend Michael's loan in January when it's
+  // actually due THIS SATURDAY. Urgency dominates strategy. Order:
+  //   1. Overdue debts (negative days-until)
+  //   2. Due-this-week debts (≤7 days)
+  //   3. Due-this-month debts (≤30 days)
+  //   4. Everything else, sub-sorted by strategy
   const strategy = S.debtStrategy || 'avalanche';
+  const now = Date.now();
+  const _daysUntil = d => {
+    if (!d.delayDate) return Infinity; // no date = treat as not-time-bound
+    const ms = new Date(d.delayDate + 'T00:00:00').getTime() - now;
+    return ms / 86400000;
+  };
+  const _urgencyBucket = d => {
+    const du = _daysUntil(d);
+    if (du < 0)  return 0;   // overdue
+    if (du <= 7)  return 1;  // due this week
+    if (du <= 30) return 2;  // due this month
+    return 3;                // longer horizon
+  };
   const queue = (S.debts || [])
     .filter(d => !d.paid && !d.viaRent && (+d.amt || 0) > 0)
     .sort((a, b) => {
+      const ua = _urgencyBucket(a), ub = _urgencyBucket(b);
+      if (ua !== ub) return ua - ub; // urgent buckets first
+      // Within the same urgency bucket, sub-sort by strategy
       if (strategy === 'snowball') return (+a.amt || 0) - (+b.amt || 0) || (a.priority || 99) - (b.priority || 99);
       return (+b.rate || 0) - (+a.rate || 0) || (a.priority || 99) - (b.priority || 99);
     });
@@ -6562,10 +6615,12 @@ function buildDebtFreedomProjection() {
     const clearDate = new Date(runningDate);
     clearDate.setMonth(clearDate.getMonth() + months);
     // "Frees" — the monthly payment this debt was consuming, available
-    // to the NEXT phase once cleared. Pulled from debt.monthlyPayment
-    // when set; otherwise estimated as the per-phase surplus contribution
-    // (caller can override later via a heuristic on bill linkage).
+    // to the NEXT phase once cleared.
     const frees = +debt.monthlyPayment || 0;
+    // Bundle 28 round 39: capture due-date so the renderer can show
+    // "due in N days" alongside the projected clear date — makes the
+    // urgency visible to John (was the bit he flagged as missing).
+    const dueDays = _daysUntil(debt);
 
     phases.push({
       label: debt.name,
@@ -6574,6 +6629,8 @@ function buildDebtFreedomProjection() {
       months,
       clearDateStr: clearDate.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
       frees,
+      dueDays: Number.isFinite(dueDays) ? Math.round(dueDays) : null,
+      delayDate: debt.delayDate || null,
     });
 
     // Compound: clearing this debt frees its monthly payment for the next.
@@ -6585,25 +6642,25 @@ function buildDebtFreedomProjection() {
   return { phases, finalSurplus: runningSurplus, totalMonths };
 }
 
-// Bundle 28 round 36: BNPL quick-add. Wraps the common BNPL/Afterpay
-// pattern (e.g. "$124.75 in 4 fortnightly payments of $31.19") into a
-// dedicated flow that auto-fills the awkward fields (per-instalment
-// amount, end date) so John doesn't have to do the math + remember
-// to delete after 4 weeks.
+// Bundle 28 round 36: BNPL quick-add.
+// Bundle 28 round 41 (John feedback): inputs now are per-payment + remaining
+// (not total + count). Afterpay shows per-payment amount on the user's
+// screen, not total — and John needs to backfill plans already mid-way
+// through. Remaining=1 means "just one more payment then done".
 function openBnplModal() {
   const overlay = $('bnpl-modal');
   if (!overlay) return;
   // Clear + defaults
   const _n = $('bnpl-name');     if (_n) _n.value = '';
-  const _t = $('bnpl-total');    if (_t) _t.value = '';
+  const _p = $('bnpl-per');      if (_p) _p.value = '';
   const _c = $('bnpl-count');    if (_c) _c.value = '4';
   const _f = $('bnpl-freq');     if (_f) _f.value = 'fortnightly';
   const _s = $('bnpl-start');    if (_s) _s.value = new Date().toISOString().slice(0,10);
   const _ad = $('bnpl-autodebit'); if (_ad) _ad.checked = true;
-  // Render instalment-count chips
+  // Render remaining-payments chips: 1, 2, 3, 4 (default 4)
   const _cCount = $('bnpl-count-chips');
   if (_cCount) {
-    _cCount.innerHTML = [4, 6, 8].map(n => {
+    _cCount.innerHTML = [1, 2, 3, 4].map(n => {
       const active = (n === 4);
       return '<button type="button" onclick="_bnplSelect(\'bnpl-count\',' + n + ',this,\'bnpl-count-chips\')" style="flex:1;padding:8px;border-radius:10px;border:1px solid '+(active?'var(--blue)':'var(--bg5)')+';background:'+(active?'var(--blue)':'var(--bg5)')+';color:'+(active?'#000':'var(--text2)')+';font-size:14px;font-weight:600;cursor:pointer">' + n + '</button>';
     }).join('');
@@ -6631,49 +6688,51 @@ function _bnplSelect(hiddenId, val, btn, groupId) {
   _bnplRecompute();
 }
 
+// Bundle 28 round 41: inputs are per-payment + remaining (not total + count).
 function _bnplRecompute() {
-  const total = parseFloat($('bnpl-total')?.value) || 0;
-  const count = parseInt($('bnpl-count')?.value) || 4;
+  const perInst = parseFloat($('bnpl-per')?.value) || 0;
+  const remaining = parseInt($('bnpl-count')?.value) || 4;
   const freq = $('bnpl-freq')?.value || 'fortnightly';
   const startStr = $('bnpl-start')?.value || '';
   const preview = $('bnpl-preview');
   if (!preview) return;
-  if (!total || total <= 0 || !startStr) {
+  if (!perInst || perInst <= 0 || !startStr) {
     preview.innerHTML = '<span style="color:var(--text3)">Fill in the fields to see the breakdown.</span>';
     return;
   }
-  const perInst = total / count;
-  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30; // monthly ≈ 30 for preview
+  const totalRemaining = perInst * remaining;
+  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30;
   const start = new Date(startStr + 'T00:00:00');
-  const endMs = start.getTime() + (count - 1) * daysBetween * 86400000;
-  const end = new Date(endMs);
-  const endStr = end.toISOString().slice(0, 10);
+  const endMs = start.getTime() + (remaining - 1) * daysBetween * 86400000;
+  const endStr = new Date(endMs).toISOString().slice(0, 10);
   const freqLabel = freq === 'weekly' ? 'weekly' : freq === 'fortnightly' ? 'fortnightly' : 'monthly';
   preview.innerHTML =
     '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Per payment</span><strong style="font-family:var(--mono);color:var(--text)">$' + perInst.toFixed(2) + '</strong></div>' +
-    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Schedule</span><strong style="color:var(--text)">' + count + ' × ' + freqLabel + '</strong></div>' +
-    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>First payment</span><strong style="color:var(--text)">' + startStr + '</strong></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Last payment</span><strong style="color:var(--blue)">' + endStr + '</strong></div>';
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Remaining schedule</span><strong style="color:var(--text)">' + remaining + ' × ' + freqLabel + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Total left to pay</span><strong style="font-family:var(--mono);color:var(--text)">$' + totalRemaining.toFixed(2) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Next payment</span><strong style="color:var(--text)">' + startStr + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Last payment (auto-stop)</span><strong style="color:var(--blue)">' + endStr + '</strong></div>';
 }
 
 function saveBnpl() {
   const name = ($('bnpl-name')?.value || '').trim();
-  const total = parseFloat($('bnpl-total')?.value) || 0;
-  const count = parseInt($('bnpl-count')?.value) || 4;
+  const perInst = parseFloat($('bnpl-per')?.value) || 0;
+  const remaining = parseInt($('bnpl-count')?.value) || 4;
   const freq = $('bnpl-freq')?.value || 'fortnightly';
   const startStr = $('bnpl-start')?.value || '';
   const autoDebit = !!($('bnpl-autodebit')?.checked);
   if (!name) { showToast('Enter a name for the purchase'); return; }
-  if (!total || total <= 0) { showToast('Enter the total purchase amount'); return; }
-  if (!startStr) { showToast('Pick a first-payment date'); return; }
-  const perInst = parseFloat((total / count).toFixed(2));
+  if (!perInst || perInst <= 0) { showToast('Enter the per-payment amount'); return; }
+  if (!startStr) { showToast('Pick the next-payment date'); return; }
+  if (remaining < 1 || remaining > 4) { showToast('Remaining payments must be 1–4'); return; }
+  const amt = parseFloat(perInst.toFixed(2));
   const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30;
   const start = new Date(startStr + 'T00:00:00');
-  const endMs = start.getTime() + (count - 1) * daysBetween * 86400000;
+  const endMs = start.getTime() + (remaining - 1) * daysBetween * 86400000;
   const endStr = new Date(endMs).toISOString().slice(0, 10);
   const newBill = {
     name,
-    amt: perInst,
+    amt,
     day: start.getDate(),
     tag: 'BNPL',
     recurring: true,
@@ -6685,7 +6744,7 @@ function saveBnpl() {
   save();
   closeModal('bnpl-modal', true);
   renderAll();
-  showUndoToast('💳 ' + name + ' — $' + perInst.toFixed(2) + ' × ' + count + ' ' + freq + ', ends ' + endStr);
+  showUndoToast('💳 ' + name + ' — $' + amt.toFixed(2) + ' × ' + remaining + ' ' + freq + ' left, ends ' + endStr);
 }
 
 function openAddBillModal() {
@@ -8259,8 +8318,12 @@ function openQuickLogModal() {
   // UX 6: Render category chips
   // Bundle 25: chip display gets emojis for scannability (PLAN-mode UX
   // language). VALUES preserved unchanged so historical txns stay intact.
+  // Bundle 28 round 38: dropped 'Income / Refund \u2191' from categories \u2014
+  // it's now a Type chip (below). Income txns are best-classified by type
+  // not sub-category; this removes the bait-the-user-into-misclassifying-
+  // an-income-as-an-expense-category gotcha.
   // guardian-allow: no-third-discretionary-filter-array - QUICK_CATS is the user-facing transaction-category picker chip list, not a discretionary-spend filter. Overlap with canonical NON_SPEND_CATS is incidental (UI shows 'Bills', 'Savings' etc. as logging options) (removable when rule is refined to distinguish UI category lists from inline filter arrays)
-  const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Income / Refund \u2191','Other'];
+  const QUICK_CATS = ['Food / Coffee','Transport / Fuel','Shopping','Bills','Entertainment','Health','Debt repayment','Savings','Other'];
   const CAT_EMOJI = {
     'Food / Coffee': '\ud83c\udf54',
     'Transport / Fuel': '\u26fd',
@@ -8284,11 +8347,20 @@ function openQuickLogModal() {
   }
   // Bundle 28 round 34: Type chips (replaces native select). Same shape
   // as the category chips above \u2014 visual consistency. Default 'expense'.
+  // Bundle 28 round 38 (John feedback): pruned to the 4 types that match
+  // John's mental model. Removed:
+  //   - 'from-person' (now lives as a debt tile, not a txn type)
+  //   - 'one-off' (it's just an expense \u2014 was synonym noise)
+  // Added:
+  //   - 'savings' (was conflated with category=Savings; now first-class)
+  //   - 'income' (migrated from category 'Income / Refund')
+  // selectTxnType also auto-syncs category for type=income / type=savings
+  // so the user doesn't have to set category separately.
   const QUICK_TYPES = [
-    { v: 'expense',     l: '\ud83d\udcb8 Expense' },
-    { v: 'transfer',    l: '\ud83d\udd04 Transfer' },
-    { v: 'from-person', l: '\ud83d\udc64 From person' },
-    { v: 'one-off',     l: '\ud83d\udccb One-off' },
+    { v: 'expense',  l: '\ud83d\udcb8 Expense' },
+    { v: 'savings',  l: '\ud83d\udcb0 Savings' },
+    { v: 'income',   l: '\ud83d\udcb5 Income' },
+    { v: 'transfer', l: '\ud83d\udd04 Transfer' },
   ];
   const typeHidden = document.getElementById('ql-txn-type');
   const currentType = (typeHidden && typeHidden.value) || 'expense';
@@ -8315,29 +8387,28 @@ function openQuickLogModal() {
     overlay._vvScroll = reposition;
     reposition();
   }
-  // Bundle 28 round 34: improved keyboard handling for the amount field.
-  // John 2026-05-13: "keyboard always opens on the transaction and bumps
-  // the screen up so I can't see how much I'm entering." Root cause: the
-  // visualViewport reposition (above) translates the WHOLE overlay up by
-  // the keyboard height, but the modal's internal scroll position might
-  // not be on the amount field — so the amount can land above the visible
-  // window. Fix: on focus, scroll the modal to put amount at the top of
-  // the visible scroll area + retry after keyboard animation settles.
+  // Bundle 28 round 38: removed the auto-focus on ql-amt entirely. r34
+  // tried to fix the keyboard-bumps-screen issue with a scroll-into-view
+  // helper, but John 2026-05-13 phone-verify FAIL: "the fix is just make
+  // it so nothing is auto tapped into" — let the user tap when they're
+  // ready. No focus → no keyboard → no screen bump. Tap-to-focus still
+  // works for manual interaction, and the existing visualViewport
+  // reposition (above) handles the case when keyboard does come up.
+  // (Field reorder + modal height-expansion deferred — pending UX pass.)
   const _qa = $('ql-amt');
   if (_qa) {
-    setTimeout(() => { _qa.focus(); }, 150);
+    // Keep the focus-handler for the case where user DOES tap the amount
+    // input, so the modal still scrolls amount into view properly. But
+    // no longer auto-trigger focus on modal open.
     const _scrollAmtIntoView = () => {
       const modal = _qa.closest('.modal');
       if (modal) modal.scrollTop = 0;
-      // Retry after the keyboard animation settles (~300ms on most
-      // mobile browsers) — the visualViewport resize event fires DURING
-      // the animation so an initial scroll lands at the wrong place.
       setTimeout(() => {
         try { _qa.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) {}
       }, 320);
     };
     _qa.addEventListener('focus', _scrollAmtIntoView);
-    overlay._qaFocusHandler = _scrollAmtIntoView; // tracked for potential cleanup
+    overlay._qaFocusHandler = _scrollAmtIntoView;
   }
   // Bundle 25: wire freq-change to surface the dueMonth picker for
   // quarterly + yearly (those need an anchor month, monthly/fortnightly/
@@ -8571,6 +8642,9 @@ function setQlCat(cat) {
 // Bundle 28 round 34: Quick Log txn-type chip selector. Matches selectCat
 // pattern — clears all chip states, paints the active one green, writes
 // the value to the hidden input that downstream save handlers read.
+// Bundle 28 round 38: auto-sync category for non-Expense types so the
+// user doesn't have to ALSO select category=Income or =Savings — the
+// type alone communicates the intent.
 function selectTxnType(btn, type) {
   document.querySelectorAll('#ql-type-chips button').forEach(b => {
     b.style.background = 'var(--bg5)'; b.style.borderColor = 'var(--bg5)'; b.style.color = 'var(--text2)';
@@ -8578,6 +8652,22 @@ function selectTxnType(btn, type) {
   btn.style.background = 'var(--green)'; btn.style.borderColor = 'var(--green)'; btn.style.color = '#000';
   const hidden = document.getElementById('ql-txn-type');
   if (hidden) hidden.value = type;
+
+  // Bundle 28 round 38: auto-sync category for non-Expense types
+  const catHidden = document.getElementById('ql-cat-hidden');
+  const catSel = document.getElementById('ql-cat');
+  const autoCat = type === 'income' ? 'Income' : type === 'savings' ? 'Savings' : null;
+  if (autoCat) {
+    if (catHidden) catHidden.value = autoCat;
+    if (catSel) catSel.value = autoCat;
+    // Visually re-sync the category chip-row so the green-state matches
+    document.querySelectorAll('#cat-chips button').forEach(b => {
+      const isActive = (b.dataset.cat === autoCat);
+      b.style.background = isActive ? 'var(--green)' : 'var(--bg5)';
+      b.style.borderColor = isActive ? 'var(--green)' : 'var(--bg5)';
+      b.style.color = isActive ? '#000' : 'var(--text2)';
+    });
+  }
 }
 
 function selectCat(btn, cat) {

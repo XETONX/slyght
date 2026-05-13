@@ -106,6 +106,38 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Rounds 38–41 — Quick Log re-thought, Debt Freedom dynamic, pace explainer, BNPL polish
+John phone-verify on rounds 35–37: 1 FAIL, 4 PASS-with-comments. Each round below addresses one item.
+
+**Round 38 — Quick Log auto-focus removed + Type chips reorganised**
+- (FAIL #1) Removed auto-focus on `ql-amt`. John: "the fix is just make it so nothing is auto tapped into — let me start typing when I'm ready." No focus → no keyboard → no screen bump on modal open. The focus-handler scroll-into-view still fires when the user does tap.
+- (#2 follow-up) Type chips overhauled per user's mental model:
+  - Removed `from-person` (now a debt tile, not a txn type) and `one-off` (it's just an expense — synonym noise).
+  - Added `savings` (was being conflated with category=Savings; now first-class) and `income` (migrated from category 'Income / Refund').
+  - Dropped 'Income / Refund ↑' from QUICK_CATS so it isn't a dual home.
+  - `selectTxnType` now auto-syncs the category chip when type=income/savings — user doesn't have to set category separately.
+
+**Round 39 — Debt Freedom timeline: due-date awareness + label clarity**
+(#5 PASS-ish) John: "the calculation is not factoring due date — recommends to pay Michael in JAN something but that debt is due on Saturday." Plus: "explain what $126 a month is" and "financial freedom framing is wrong."
+- New sort: urgency bucket first (overdue → ≤7 days → ≤30 days → longer), then user's `debtStrategy` (avalanche/snowball) within the bucket. Michael's $500 due Saturday now sorts ahead of higher-rate debts.
+- Each phase shows a due-date chip: 🔥 Due today/tomorrow, ⚠️ Overdue, ⏰ Due in N days, or "Due in N days" plain.
+- Labels: "$X/mo" now reads as `$X/mo surplus` (was ambiguous). Header subline: "Order = due-date urgency first, then your debt strategy. Each $/mo is your free surplus for that phase."
+- Footer reframed: removed "investing $X/mo / financial freedom" language (John: not making him rich); now reads "Your monthly surplus jumps to $X/mo — no debt payments draining it. That money can finally go to savings, investing, or whatever else."
+
+**Round 40 — Pace explainer "what does pace mean?" header**
+(#3 PASS with question) Pace explainer modal now has a dedicated amber-tinted card at the top defining pace: "the daily-budget you'd need to hit by end of week. Over pace = spent more than that rate would predict. Under pace = on track or ahead."
+
+**Round 41 — BNPL quick-add re-shaped per Afterpay reality**
+(#4 PASS with changes) Reworked inputs:
+- Dropped 6/8 instalment chips — Afterpay is standardised to 4. Chips now 1 / 2 / 3 / 4 (default 4).
+- Label changed from "Instalments" to "Payments remaining" so John can backfill a plan he's mid-way through (his complaint: "most of my afterpays are up to 3 payments remaining but I cant track that").
+- Input changed from "Total amount" to "Per-payment amount" — the user sees the per-payment figure on the Afterpay screen, not the total. App computes the rest.
+- Preview now shows "Total left to pay" + "Next payment" + "Last payment (auto-stop)".
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
+(Scanner-routing item #4b — recognise Afterpay screenshots → auto-populate BNPL modal — deferred to a dedicated round; needs scanner pipeline changes beyond UI.)
+
 ### Rounds 35–37 — End-date support + BNPL quick-add + Debt Freedom timeline
 Bigger asks from John's feedback batch after rounds 31–33. Memories from that turn (`feedback-slyght-info-density-discipline`, `feedback-slyght-text-contrast`) shaped the design choices below.
 
