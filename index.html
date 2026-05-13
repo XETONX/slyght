@@ -712,7 +712,7 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
           <div style="color:var(--text3);font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:6px">CURRENT BALANCE</div>
           <div id="settings-balance-display" style="font-family:var(--mono);font-size:32px;font-weight:700;color:var(--text);margin-bottom:4px">$0.00</div>
           <div id="settings-balance-updated" style="color:var(--text3);font-size:12px;margin-bottom:12px">Live</div>
-          <button onclick="goPage('pg-dash')" aria-label="Go to dashboard to update balance" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:8px;color:#000;font-size:15px;font-weight:700;min-height:44px;cursor:pointer">Update Balance</button>
+          <button onclick="openSettingsBalanceEdit()" aria-label="Update balance" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:8px;color:#000;font-size:15px;font-weight:700;min-height:44px;cursor:pointer">Update Balance</button>
         </div>
 
         <!-- Category rows -->
@@ -2725,7 +2725,23 @@ function eodReconAccept() {
 // + Settings balance edits were dying with no user feedback when diff < $1 or
 // when prevExpected was 0/NaN. Now we either auto-apply (with a sensible reason)
 // or surface a toast so the user knows what happened.
+//
+// Bundle 28.x round 2: check S.bal (the actual stored balance) FIRST for the
+// "no change" case. Previously this checked only prevExpected (= getLiveBal()),
+// which can differ from S.bal because getLiveBal includes projection
+// adjustments. When user re-saved the same displayed value, that small
+// projection delta tripped the `absDiff < 1` auto-apply branch, which then
+// called applyBalanceCorrection — and applyBalanceCorrection's first check
+// (`if (Math.abs(newBal - S.bal) < 0.01) return`) silently returned without
+// toasting. Net: user saw nothing. Now the S.bal check fires first.
 function runRecon(newBal, prevExpected) {
+  const diffVsStored = Math.abs(newBal - (+S.bal || 0));
+  if (diffVsStored < 0.01) {
+    // User didn't change the actually-stored balance
+    if (_pendingBalCorrection) _pendingBalCorrection = null;
+    if (typeof showToast === 'function') showToast('Balance unchanged');
+    return;
+  }
   if (prevExpected === 0 || prevExpected == null || isNaN(prevExpected)) {
     // First-time / unknown previous balance — no recon possible, apply directly
     if (_pendingBalCorrection) {
@@ -2737,9 +2753,12 @@ function runRecon(newBal, prevExpected) {
   const diff = newBal - prevExpected;
   const absDiff = Math.abs(diff);
   if (absDiff < 0.01) {
-    // No actual change
-    if (_pendingBalCorrection) _pendingBalCorrection = null;
-    if (typeof showToast === 'function') showToast('Balance unchanged');
+    // newBal == prevExpected but != S.bal (projection drift). Apply with a
+    // reason that explains the reconciliation rather than a generic toast.
+    if (_pendingBalCorrection) {
+      _pendingBalCorrection = null;
+      applyBalanceCorrection(newBal, 'Reconciled to live projection');
+    }
     return;
   }
   if (absDiff < 1) {
@@ -5365,6 +5384,64 @@ function updateBalanceFromSettings() {
   if (msg) { msg.style.color = ''; msg.textContent = ''; }
   _pendingBalCorrection = {newBal: b, prevExpected};
   runRecon(b, prevExpected);
+}
+
+// Bundle 28.x hotfix round 2: in-place Settings balance edit modal.
+// Previously the visible "Update Balance" button at L715 just called
+// goPage('pg-dash') — redirecting to Dashboard, confusing users who tapped
+// expecting an in-place edit. The legacy s-bal input + button at L855-857
+// still exist but the input is not visible in the new Settings IA (Bundle
+// 22 v3). This opens a Samsung-style EDIT_MODAL on top of Settings, uses
+// the same _pendingBalCorrection + runRecon flow as the Dashboard path.
+function openSettingsBalanceEdit() {
+  if (typeof EDIT_MODAL === 'undefined' || !EDIT_MODAL.openCustom) {
+    // Defensive fallback — direct to Dashboard if modal infra missing
+    if (typeof goPage === 'function') goPage('pg-dash');
+    return;
+  }
+  const current = +S.bal || 0;
+  const bodyHtml =
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Current: <strong style="font-family:var(--mono);color:var(--text2)">$' + current.toFixed(2) + '</strong></div>' +
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Enter your real bank balance:</div>' +
+    '<input id="settings-bal-edit-input" type="number" inputmode="decimal" placeholder="0.00" ' +
+    'autocomplete="off" data-lpignore="true" data-form-type="other" ' +
+    'value="' + current.toFixed(2) + '" ' +
+    'style="width:100%;padding:12px;font-family:var(--mono);font-size:18px;background:var(--bg3);' +
+    'border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);box-sizing:border-box">';
+  EDIT_MODAL.openCustom({
+    title: 'Update balance',
+    hint: 'If this differs from what slyght has, the next screen asks why.',
+    bodyHtml,
+    onReady: () => {
+      const el = document.getElementById('settings-bal-edit-input');
+      if (el) { el.focus(); el.select && el.select(); }
+    },
+    save: () => {
+      const el = document.getElementById('settings-bal-edit-input');
+      if (!el) return { ok: false, reason: 'Input missing' };
+      const b = parseFloat(parseFloat(el.value).toFixed(2));
+      if (isNaN(b) || b < 0) return { ok: false, reason: 'Enter a positive number' };
+      const prevExpected = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
+      // Payday-jump detection mirrors updateBalanceFromSettings
+      const jump = b - (+S.bal || 0);
+      const income = +S.income || 7282;
+      const todayD = new Date().getDate();
+      const pd = +S.payday || 15;
+      const nearPayday = todayD >= pd - 1 && todayD <= pd + 2;
+      if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday && !S.paydayReceived) {
+        S.paydayReceived = true;
+        S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
+      }
+      // Stage correction; runRecon will toast / auto-apply / open recon-modal.
+      // Note: EDIT_MODAL closes itself on { ok: true }. The recon-modal (if
+      // opened by runRecon for >=$1 diffs) is a separate modal layer.
+      _pendingBalCorrection = { newBal: b, prevExpected };
+      // Defer runRecon so EDIT_MODAL.close has finished its DOM teardown before
+      // recon-modal opens — avoids z-index / focus-trap collisions.
+      setTimeout(() => { if (typeof runRecon === 'function') runRecon(b, prevExpected); }, 50);
+      return { ok: true };
+    },
+  });
 }
 
 function renderAlerts(safe, liveBal, dueTotal, txnSpent) {

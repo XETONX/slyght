@@ -45,7 +45,10 @@ async function shoot(page, idx, slug, note = '') {
   const file = `slyght-layerV-${DATE_TAG}-${nn}-${slug}.png`;
   const fullPath = path.join(OUT_DIR, file);
   try {
-    await page.screenshot({ path: fullPath, fullPage: false });
+    // Bundle 28.x: fullPage:true so captures show full document scrollHeight,
+    // not just viewport. Fixes OPEN-BUGS #33 (Settings + Bills tail content
+    // invisible to visual regression — false negatives on intentional changes).
+    await page.screenshot({ path: fullPath, fullPage: true });
     const size = fs.statSync(fullPath).size;
     manifest.push({ idx, slug, file, status: 'ok', size, note });
     console.log(`  [${nn}] ${slug}  (${(size/1024).toFixed(0)} KB)${note ? '  — ' + note : ''}`);
@@ -599,6 +602,62 @@ async function step(name, fn) {
     await page.waitForTimeout(700);
   });
   await shoot(page, 37, 'modal-net-worth');
+  await step('close net worth modal', async () => {
+    await page.evaluate(() => {
+      const m = document.querySelector('.modal-overlay.active') || document.querySelector('[id*="networth"][style*="block"]');
+      if (m) m.style.display = 'none';
+      if (m) m.classList.remove('active');
+    });
+    await page.waitForTimeout(300);
+  });
+
+  // ─── Bundle 28.x captures — balance-edit surfaces ────────────────────────
+  // Three new captures for the balance-edit flow that this bundle fixed:
+  // 38 — dashboard hero balance edit input visible
+  // 39 — recon modal opened by a $1+ balance edit
+  // 40 — settings balance edit modal (openSettingsBalanceEdit)
+
+  // 38 Dashboard hero balance edit
+  await step('open dashboard balance edit', async () => {
+    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-dash'); });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(150);
+    await page.evaluate(() => { if (typeof openHeroBalEdit === 'function') openHeroBalEdit(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 38, 'dashboard-balance-edit-input', 'hero balance in edit mode');
+
+  // 39 Recon modal — typed a >=$1 new balance, hit confirmHeroBalEdit
+  await step('trigger recon modal via hero balance', async () => {
+    await page.evaluate(() => {
+      const inp = document.getElementById('h-bal-input');
+      if (inp) {
+        const current = (typeof S !== 'undefined' && S.bal) || 100;
+        inp.value = String(Math.round((current + 25) * 100) / 100);  // +$25 from current
+      }
+      if (typeof confirmHeroBalEdit === 'function') confirmHeroBalEdit();
+    });
+    await page.waitForTimeout(700);
+  });
+  await shoot(page, 39, 'modal-recon-balance', 'reason picker opened by $25 diff');
+  await step('close recon modal', async () => {
+    await page.evaluate(() => {
+      const m = document.getElementById('recon-modal');
+      if (m) m.classList.remove('open');
+      try { if (typeof _pendingBalCorrection !== 'undefined') _pendingBalCorrection = null; } catch (_) {}
+    });
+    await page.waitForTimeout(300);
+  });
+
+  // 40 Settings balance edit modal — openSettingsBalanceEdit
+  await step('open settings balance edit modal', async () => {
+    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-settings'); });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { if (typeof openSettingsBalanceEdit === 'function') openSettingsBalanceEdit(); });
+    await page.waitForTimeout(600);
+  });
+  await shoot(page, 40, 'modal-settings-balance-edit', 'EDIT_MODAL with current balance pre-filled');
 
   // Persist manifest
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
