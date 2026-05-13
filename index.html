@@ -8691,13 +8691,21 @@ function renderDashTxns() {
     const d = new Date(t.ts);
     const time = String(d.getDate()).padStart(2,'0')+'/'+(d.getMonth()+1)+' '+d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');
     const flag = t.flagged ? ' <span style="font-size:10px;background:var(--red-dim);color:var(--red);border:1px solid var(--red-border);border-radius:3px;padding:1px 4px;font-family:var(--mono)">HABIT</span>' : '';
-    const corrBadge = t._isCorrection ? ' <span style="font-size:10px;margin-left:2px" title="Reconciliation correction">🔧</span>' : '';
-    const ruBadge   = t._isRoundup    ? ' <span style="font-size:10px;margin-left:2px" title="Round-up to savings">🏦</span>' : '';
+    // r68: corrections are bookkeeping adjustments, not real spends. Pre-fix they
+    // rendered the same red "-$X" treatment as a real expense, which makes large
+    // adjustment entries ("Fixing testing -$564") read as alarming purchases. Now:
+    // muted color, prefix "Adj ±", explicit ADJ badge. Same logic applied to round-ups.
+    const isCorrection = !!t._isCorrection;
     const isIncome  = t.income;
     const isRoundup = !!t._isRoundup;
+    const corrBadge = isCorrection ? ' <span style="font-size:10px;margin-left:4px;background:var(--bg4);color:var(--text2);border:1px solid var(--border2);border-radius:3px;padding:1px 5px;font-family:var(--mono);font-weight:700" title="Balance reconciliation — not a real spend">ADJ</span>' : '';
+    const ruBadge   = isRoundup    ? ' <span style="font-size:10px;margin-left:2px" title="Round-up to savings">🏦</span>' : '';
     const chipCol = isIncome ? 'var(--green)' : col;
     let amtColor, amtStr;
-    if (isIncome) {
+    if (isCorrection) {
+      amtColor = 'var(--text2)';
+      amtStr = (isIncome ? '+' : '-') + fmt(t.amt) + ' adj';
+    } else if (isIncome) {
       amtColor = 'var(--green)';
       amtStr = '+' + fmt(t.amt);
     } else if (isRoundup) {

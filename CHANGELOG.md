@@ -122,6 +122,18 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 68 — Corrections visually de-emphasized in Recent Spending
+**Problem:** `_isCorrection: true` transactions (created by the balance reconciliation flow when user picks "Correcting previous error" etc.) rendered identically to real expenses — large red `-$X` numbers. "Fixing testing -$564" looked like a $564 spend on the dashboard, alarming the user even though it's a bookkeeping adjustment that already settled.
+
+**Fix** (`index.html:8694+`):
+- Amount color: muted `var(--text2)` instead of `var(--red)` / `var(--green)`
+- Amount suffix: ` adj` so the row reads "$564 adj" not "$564"
+- Badge: small uppercase `ADJ` pill in mono next to the txn note, replaces the inline `🔧` emoji (more legible at a glance)
+
+Now real spends keep their red treatment, real income keeps green, and reconciliation adjustments are visually grouped with round-ups as muted-grey support entries.
+
+Gates: 65/65 tests, 51/51 runtime, 4/4 guardians green. Verified by local Layer V — Recent Spending tile now reads cleanly with real spends visually dominant over bookkeeping.
+
 ### Round 67 — Visual consistency: border-radius outliers + redundant warnings
 - **Border-radius outlier cleanup** (5 inline replacements): `border-radius:5px → 6px` (×2), `border-radius:7px → 8px` (×1), `border-radius:22px → 20px` (×1). Reduces the codebase from 15 distinct radius values to 11, all aligned to the scale 2/3/4/6/8/10/12/14/16/20.
 - **"Short of surplus" warning suppressed in critical mode** (`index.html:6401+`) — When `surplus === 0` (critical or survival), every debt is mathematically "short of surplus", so repeating that on every tile was visual noise that competed with the section-level CRITICAL banner already conveying the state. Now: keep the rare-positive `✓ Affordable from surplus` signal and the ETA, drop the per-tile amber warning when there's no surplus to allocate. The debt cards (Michael, Bowie) now read cleanly: name · amount · notes · % of debt · due date.
