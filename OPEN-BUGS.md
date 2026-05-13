@@ -842,6 +842,43 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   per OPEN-BUGS' own framing; #40's wiring fix covers this. Trail kept
   per project precedent.)
 
+## 43. Transaction delete — rapid-tap deletes wrong second txn + double-bumps balance
+- **Bug:** Hit Delete in the Edit Transaction modal — first tap: balance
+  bumped by +$amt but the row appeared not to delete. Second tap on the
+  (still-visible) Delete button: balance bumped by +$amt AGAIN AND a
+  row deleted. Net: $2×amt drift in S.bal, two different txns deleted
+  (the original + whichever row shifted into the same index position
+  after the first splice).
+- **Source:** John phone 2026-05-13: "my balance increased to $800 and
+  it didnt dfelte and then hitting delete aain got rid of it but then
+  added in another $100 so balance is saying $900 right now".
+- **Root cause:** Pre-round-12 the txn-edit-modal stored an array INDEX
+  in its hidden `txn-edit-idx` field. After the first delete's splice
+  shifted S.txns, `S.txns[idx]` pointed to a DIFFERENT row. Rapid-tap
+  or queued-touch second click read that fresh-but-wrong row's `.ts`
+  and removed it. The race was visible because closeModal + onStateChange
+  + renderAll take a few ms on mobile — the user can tap again while
+  the modal is still rendered on screen.
+- **Fix bundle:** Bundle 28 round 12 — two-layer defence:
+  (1) bind the modal to stable `txn-edit-ts` (timestamp), not idx; after
+      splice the same ts produces find-not-found instead of finding a
+      different row;
+  (2) clear the hidden ts field at the top of deleteEditedTransaction
+      BEFORE confirm — a re-entry sees empty value and bails. Restored
+      if user cancels the confirm so an intentional later click still
+      works.
+  removeByTsWithBalance also now silently no-ops on `reason=not-found`
+  instead of alerting, so even if both defences are bypassed the user
+  doesn't see an error popup.
+- **Drift recovery:** John's S.bal carried $200 over-credit (2× $100
+  on the failed double-delete). Path: dashboard hero balance edit →
+  enter the real bank-app balance → runRecon fires →
+  applyBalanceCorrection routes through BRAIN.transaction.recordCorrection
+  → adjustment txn lands in S.txns with `_isCorrection:true` and
+  `RECONCILE_CORRECTION` source. Audit log captures the recovery so
+  the trail is auditable.
+- **Status:** fixed (Bundle 28 round 12)
+
 ## 42. saveEditedTransaction — balance sign inverted for expense edits
 - **Bug:** Pre-Bundle-28 `saveEditedTransaction` math (centralised in
   `BRAIN.transaction.update` round 10) adjusted `S.bal` by `+diff` when
@@ -858,11 +895,20 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   `(income ? diff : -diff)`. Centralisation from round 10 made this
   a single-site fix; all callers (saveEditedTransaction is the only
   one currently) inherit the corrected math.
-- **Drift note:** John's live S.bal may have accumulated drift from
-  prior edits under the buggy math. Recovery path is the existing
-  dashboard hero balance edit (`applyBalanceCorrection` →
-  `BRAIN.transaction.recordCorrection`) — set actual bank balance,
-  reconciliation toast restores the truth.
+- **Drift recovery (unified across #42 and #43):** John's live S.bal
+  carries drift from prior edits under the buggy math (#42) AND from
+  the double-delete bug (#43, +$200 confirmed 2026-05-13). Recovery
+  path for BOTH is the existing dashboard hero balance edit:
+  1. Open the app, tap the hero balance ($X) on the Dashboard.
+  2. Enter the real balance from your bank app.
+  3. Confirm — `runRecon` fires, the diff is recorded via
+     `BRAIN.transaction.recordCorrection` (creates a flagged
+     `_isCorrection:true` adjustment txn with `RECONCILE_CORRECTION`
+     source).
+  4. S.bal now matches truth; the adjustment txn shows in Recent
+     Spending with a 🔧 badge; audit log captures the recovery.
+  No code change needed for recovery — the path was built for exactly
+  this class of drift.
 - **Status:** fixed (Bundle 28 round 11)
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests

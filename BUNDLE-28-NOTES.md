@@ -26,7 +26,8 @@
 | `315431c` | infra | Manual moved into repo (`CC-PRINCIPAL-ENGINEER-MANUAL.md`) + `docs/{adr,sdd,archive,manual-amendments,ops}/` scaffolded + `CHANGELOG.md` initialised with back-fill |
 | `57a3d72` | gate-cleanup | Cleared 2 pre-existing FAILs (`no-hardcoded-bill-name` L12118, `no-third-discretionary-filter-array` L14846) + AMENDMENT-001 (structured Noticed format) |
 | `8d3dea8` | round 10 | Canonical writers `BRAIN.transaction.update` + `BRAIN.transaction.removeByTsWithBalance` + migrated `saveEditedTransaction` + `deleteEditedTransaction`. Closes the biggest remaining ❌ in the canonical-writer audit. OPEN-BUGS #42 logged for suspect-sign math direction (math preserved for now, flip after phone-verify confirms). |
-| `<next>` | round 11 | Phone-verified OPEN-BUGS #42 confirmed (John: "editing to $80 brings it back up instead of further down"). One-line sign flip in `BRAIN.transaction.update`. Centralisation from round 10 made this a single-site change instead of touching every caller. |
+| `5473366` | round 11 | Phone-verified OPEN-BUGS #42 confirmed (John: "editing to $80 brings it back up instead of further down"). One-line sign flip in `BRAIN.transaction.update`. Centralisation from round 10 made this a single-site change instead of touching every caller. |
+| `<next>` | round 12 | OPEN-BUGS #43 — txn delete idempotency. John saw $200 drift from one rapid-tap delete. Pre-round-12 modal stored array idx; after first splice idx pointed at different row; second tap deleted wrong row + bumped balance again. Fix: migrate hidden field idx → stable ts + clear-on-delete + silent no-op on not-found. Drift recovery path documented in OPEN-BUGS #42/#43 (dashboard hero balance edit → `recordCorrection`). |
 
 ---
 

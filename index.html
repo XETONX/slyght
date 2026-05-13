@@ -1625,7 +1625,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 <div class="modal-overlay" id="txn-edit-modal" onclick="handleOverlayClick(event,'txn-edit-modal')">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-title">Edit Transaction</div>
-    <input type="hidden" id="txn-edit-idx">
+    <!-- Bundle 28 round 12: stable txn ts instead of fragile array idx. Pre-round-12 a queued/rapid-tap delete after splice would read S.txns[idx] at a now-different row and remove the wrong txn (and bump balance again). Storing ts means a second invocation finds-not-found and bails. -->
+    <input type="hidden" id="txn-edit-ts">
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" type="number" id="txn-edit-amt" inputmode="decimal" placeholder="0.00"></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" type="text" id="txn-edit-note" placeholder="Description"></div>
     <div class="modal-field"><label>Category</label>
@@ -4379,7 +4380,10 @@ function getTopPriorityDebt() {
 function editTransaction(idx) {
   const txn = S.txns[idx]; if (!txn) return;
   const modal = $('txn-edit-modal'); if (!modal) return;
-  $('txn-edit-idx').value = idx;
+  // Bundle 28 round 12: bind by stable ts not array idx. Renderers still pass
+  // idx (resolves via S.txns.indexOf or length-1-revIdx); we look up the txn
+  // once here and store its ts for downstream save/delete/convert.
+  $('txn-edit-ts').value = String(txn.ts);
   $('txn-edit-amt').value = txn.amt;
   $('txn-edit-note').value = txn.note || '';
   $('txn-edit-cat').value = txn.cat || 'Other';
@@ -4406,9 +4410,10 @@ function editTransaction(idx) {
 // John had a $500 debt AND a $500 income for the same Mum-loan). If user
 // genuinely needs a new debt, they can add it via the Immediate Debts tile.
 function convertEditedTransactionToLoan() {
-  const idx = parseInt($('txn-edit-idx')?.value);
-  if (isNaN(idx) || !S.txns[idx]) return;
-  const txn = S.txns[idx];
+  const ts = parseInt($('txn-edit-ts')?.value);
+  if (isNaN(ts)) return;
+  const txn = BRAIN.transaction.findByTs(ts);
+  if (!txn) return;
   if (!txn.income) { showToast('Not an income transaction'); return; }
   const confirmMsg =
     'Convert this income to a "loan from person"?\n\n' +
@@ -4478,13 +4483,12 @@ function convertEditedTransactionToLoan() {
 }
 function saveEditedTransaction() {
   // Bundle 28 round 10: routed through BRAIN.transaction.update so the audit
-  // log captures the edit and the AI agent can observe it. Math direction
-  // preserved from pre-Bundle-28 (see canonical writer's comment for the
-  // suspect-sign note flagged in OPEN-BUGS).
-  const idx = parseInt($('txn-edit-idx')?.value);
-  if (isNaN(idx) || !S.txns[idx]) return;
-  const txn = S.txns[idx];
-  const ts = txn.ts;
+  // log captures the edit and the AI agent can observe it.
+  // Bundle 28 round 12: bind by ts (stable) not idx (fragile after splice).
+  const ts = parseInt($('txn-edit-ts')?.value);
+  if (isNaN(ts)) return;
+  const txn = BRAIN.transaction.findByTs(ts);
+  if (!txn) return;
   const newAmt = parseFloat($('txn-edit-amt')?.value);
   const newNote = $('txn-edit-note')?.value;
   const newCat = $('txn-edit-cat')?.value;
@@ -4517,12 +4521,30 @@ function deleteEditedTransaction() {
   // Bundle 28 round 10: routed through BRAIN.transaction.removeByTsWithBalance
   // (canonical delete + balance reconciliation in one atomic call with
   // rollback on inner failure).
-  const idx = parseInt($('txn-edit-idx')?.value);
-  if (isNaN(idx) || !S.txns[idx]) return;
-  if (!confirm('Delete this transaction? Balance will be adjusted.')) return;
-  const ts = S.txns[idx].ts;
+  // Bundle 28 round 12: TWO-LAYER defence against the "delete bumped balance
+  // twice but only deleted one row" bug John hit 2026-05-13. Layer 1: bind
+  // by stable ts (not array idx — idx becomes stale after splice and points
+  // to a different row). Layer 2: clear the hidden ts field BEFORE confirm
+  // so a queued/rapid-tap re-entry finds no ts and bails out cleanly.
+  const tsField = $('txn-edit-ts');
+  const tsStr = tsField ? tsField.value : '';
+  const ts = parseInt(tsStr);
+  if (isNaN(ts)) return;
+  // Idempotency lock: clear immediately so a second tap returns at the
+  // isNaN check above. Restored if user cancels the confirm.
+  if (tsField) tsField.value = '';
+  if (!confirm('Delete this transaction? Balance will be adjusted.')) {
+    if (tsField) tsField.value = tsStr; // restore so a subsequent intentional click works
+    return;
+  }
   const r = BRAIN.transaction.removeByTsWithBalance(ts, BRAIN.SOURCES.TXN_DELETE);
   if (!r.ok) {
+    if (r.reason && r.reason.indexOf('not-found') === 0) {
+      // Already deleted (likely a rapid-tap re-entry the lock didn't catch).
+      // Silent close — no toast, no second-bump, no confusion.
+      closeModal('txn-edit-modal');
+      return;
+    }
     alert('Could not delete transaction: ' + r.reason);
     return;
   }
