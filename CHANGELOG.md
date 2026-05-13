@@ -106,6 +106,30 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 45 — Two real bugs found in phone-verify of rounds 38-42 (FAIL #6)
+John FAIL on #6: "Doesn't explain PACE still. Also now when I have less than $11 it's saying I'm -$334 short before payday but I only have one bill coming out before payday of $31 so I'm actually short $20."
+
+**45a — `safe = $334 short` math bug — double-bucket-subtraction + on-payday debt:**
+
+Reproduced exactly with John's state file. `safe = liveBal - dueTotal - immDebts + bonus - bucketSafe`:
+- liveBal $11.72
+- dueTotal $31.19 (Afterpay ✓)
+- immDebts $217.50 (Mum-vet debt due May 15 — which IS payday)
+- bucketSafe $96.62 (China Holiday bucket)
+- = **-$333.59** ≈ what he saw
+
+**Two bugs in one:**
+1. **bucketSafe double-counts.** When user saves to a bucket, S.bal DECREASES + bucket.saved INCREASES. They're separate accounts. Subtracting bucketSafe in `safe` treats S.bal as INCLUDING bucket money — wrong, it doesn't. Removed bucketSafe from the formula.
+2. **Mum-vet due ON payday shouldn't count as "before payday".** Salary lands the morning of payday + the bill comes out same day from new income; it doesn't compete with current balance. Used `due < paydayDate` (strict) instead of `<=` for this specific calc. (Doesn't touch `getActiveDebtsDueBeforePayday` itself — many other readers depend on the inclusive version.)
+
+After r45: `safe = $11.72 - $31.19 - $0 + $0 = -$19.47`. Matches John's mental model.
+
+**45b — Pace explainer concrete numbers:**
+
+The r40 amber-tinted "what is pace?" card had a single-sentence definition. John FAIL: still not clear. Now uses his ACTUAL numbers from `getThisWeekProjection()` — Daily target / Expected by today / Actually spent / Result (over or under). The math is right there in the modal so the abstract definition becomes concrete.
+
+Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
+
 ### Round 42 — Self-audit fixes (no phone-verify needed; bug-class)
 After 5 consecutive feature pushes I paused per John's pre-authorisation note ("if you think you are pushing too much stop then analyse last 5 pushes and scan for errors"). Audit found three issues:
 

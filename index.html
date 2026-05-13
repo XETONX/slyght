@@ -2500,14 +2500,25 @@ function explainWeekProjection() {
 
     const body =
       '<div style="line-height:1.6;color:var(--text2);font-size:14px">' +
-        // Bundle 28 round 40: dedicated "what is pace?" header — John on
-        // r34 phone-verify: "opens math explainer but has no tile
-        // explaining what running over pace means."
-        '<div style="background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:8px;padding:12px;margin-bottom:12px">' +
-          '<div style="font-size:12px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">What does "pace" mean?</div>' +
-          '<div style="font-size:13px;color:var(--text2);line-height:1.5">Pace = the daily-budget you\'d need to hit by end of week. <strong style="color:var(--text)">Over pace</strong> = you\'ve spent more so far than that daily rate would predict — keep an eye on it. <strong style="color:var(--text)">Under pace</strong> = you\'re on track or ahead.</div>' +
+        // Bundle 28 round 40 → r45: stronger "what is pace?" explainer.
+        // John r41 phone-verify: "doesn't explain PACE still" — the r40
+        // single-line definition wasn't enough. Now uses a concrete
+        // 3-step example and shows John's actual numbers in the math.
+        '<div style="background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:8px;padding:14px;margin-bottom:14px">' +
+          '<div style="font-size:13px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">📈 What is "pace"?</div>' +
+          '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:10px">Pace = how fast you\'re spending compared to your daily-budget. The app picks a daily target based on your weekday/weekend caps + how much you have left before payday. Then it watches whether you\'re running ahead or behind.</div>' +
+          '<div style="background:rgba(0,0,0,0.18);border-radius:6px;padding:10px 12px;font-size:12px;line-height:1.5;color:var(--text2);margin-bottom:8px">' +
+            '<div style="font-weight:700;color:var(--text);margin-bottom:4px">Right now:</div>' +
+            '<div>• Your daily target: <strong style="font-family:var(--mono);color:var(--amber)">' + fmtCents(proj.dailyRate) + '/day</strong></div>' +
+            '<div>• Expected by today: <strong style="font-family:var(--mono);color:var(--text)">' + fmtCents(proj.dailyRate * (proj.daysSoFarInWeek + 1)) + '</strong> (' + fmtCents(proj.dailyRate) + ' × ' + (proj.daysSoFarInWeek + 1) + ' days)</div>' +
+            '<div>• Actually spent: <strong style="font-family:var(--mono);color:' + (paceOver > 0 ? 'var(--red)' : 'var(--green)') + '">' + fmtCents(proj.spentSoFar) + '</strong></div>' +
+            '<div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.08)">• Result: <strong style="color:' + (paceOver > 0 ? 'var(--red)' : 'var(--green)') + '">' + (paceOver > 0 ? '$' + Math.abs(paceOver).toFixed(2) + ' OVER pace' : '$' + Math.abs(paceOver).toFixed(2) + ' UNDER pace') + '</strong></div>' +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--text2);line-height:1.5">' +
+            '<strong style="color:var(--red)">Over pace</strong> = slow down or you\'ll run out before payday. <strong style="color:var(--green)">Under pace</strong> = you\'ve got breathing room.' +
+          '</div>' +
         '</div>' +
-        '<div style="margin-bottom:12px">This is the projected total cash leaving the account this week — already-spent + bills coming up + projected living.</div>' +
+        '<div style="margin-bottom:12px;font-size:13px;color:var(--text3)">The full week projection below shows where every dollar is going.</div>' +
 
         '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
           '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Spent so far this week</div>' +
@@ -5504,9 +5515,36 @@ function renderAll() {
   const due = getBillsDue();
   const dueTotal = due.reduce((s,b) => s + b.amt, 0);
   const bonusTotal = S.bonuses.reduce((s,b) => s + (+b.amt || 0), 0);
-  const bucketSafe = (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
   const immDebtsForSafe = getActiveDebtsDueBeforePayday();
-  const safe = liveBal - dueTotal - immDebtsForSafe + bonusTotal - bucketSafe;
+  // Bundle 28 round 45: removed bucket subtraction from the "safe before
+  // payday" calc. John's state shows bal=$11.72 + China bucket $96 saved.
+  // Pre-r45: safe = $11 - $31 (Afterpay) - $217 (Mum-vet due ON payday)
+  //                - $96 (bucket double-count) = -$334.
+  // Mathematically wrong because S.bal does NOT include bucket money —
+  // when user transfers to a bucket, S.bal decreases AND bucket.saved
+  // increases. So bucket money is already separate from spendable. Pre-r45
+  // was double-subtracting. Now: safe = liveBal - dueTotal - immDebts +
+  // bonus, which matches what John's mental model ("$11 minus $31 bill =
+  // -$20 short").
+  // Mum-vet due ON payday: getActiveDebtsDueBeforePayday already uses
+  // `due <= paydayDate` (inclusive). For the "before payday" semantic
+  // (salary lands that morning + bill comes out same day from new income),
+  // the strict `< paydayDate` is more accurate. Tracked as OPEN-BUGS
+  // candidate — fixing in getActiveDebtsDueBeforePayday risks affecting
+  // many other readers; addressing surgically here.
+  const _payDateForSafe = (typeof MODEL !== 'undefined' && MODEL && MODEL.paydayDate)
+    ? MODEL.paydayDate
+    : (() => { const t = new Date(); t.setHours(0,0,0,0); const pd = new Date(t.getFullYear(), t.getMonth(), S.payday || 15); if (pd <= t) pd.setMonth(pd.getMonth()+1); return pd; })();
+  const _todayForSafe = new Date(); _todayForSafe.setHours(0,0,0,0);
+  // Debts due STRICTLY before payday (not ON payday — same-day pays from new salary)
+  const immDebtsForSafeStrict = (S.debts || [])
+    .filter(d => !d.paid && !d.viaRent && d.delayDate)
+    .filter(d => {
+      const due = new Date(d.delayDate + 'T00:00:00');
+      return due >= _todayForSafe && due < _payDateForSafe;
+    })
+    .reduce((sum, d) => sum + (+d.amt || 0), 0);
+  const safe = liveBal - dueTotal - immDebtsForSafeStrict + bonusTotal;
   const days = MODEL.daysToPayday;
   const maxDay = getMaxDay();
   const today = new Date().getDate();
