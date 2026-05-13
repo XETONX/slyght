@@ -7125,11 +7125,22 @@ function deleteBucket() {
   if (!b) return;
   if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
   saveUndoState();
+  const bucketName = b.name;
   // Bundle 28 forward-architecture: BRAIN.savings.removeBucket is the
   // canonical deletion path (audit log captures removed bucket so undo can
   // restore via addBucket if needed).
-  const r = BRAIN.savings.removeBucket(b.name, BRAIN.SOURCES.BUCKET_DELETE);
+  const r = BRAIN.savings.removeBucket(bucketName, BRAIN.SOURCES.BUCKET_DELETE);
   if (!r.ok) { showToast('Couldn\'t delete: ' + (r.reason || 'unknown')); return; }
+  // Bundle 28 round 8: cascade-remove linked PLAN.intents entries so
+  // orphaned intents don't keep referencing the deleted bucket. AI agent
+  // + audit log capture each removal. If user later wants the intent
+  // back, they can re-create the bucket + add a goal again.
+  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
+    const linked = BRAIN.plan.intent.byBucket(bucketName);
+    linked.forEach(intent => {
+      BRAIN.plan.intent.remove(intent.id, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
+    });
+  }
   closeModal('bucket-modal', true); renderAll();
   showUndoToast('Bucket deleted');
 }
@@ -19945,10 +19956,30 @@ function confirmDeleteGoal(goalId) {
     }
   }
 
+  // Bundle 28 round 8: close the full delete cycle — also remove the
+  // canonical PLAN.intents entry (created in confirmNewGoal round 5).
+  // Without this the intent orphans, causing the goal to keep appearing
+  // in any future surface that reads BRAIN.plan.intent.byKind('goal').
+  // Default-goal IDs (china, freedom-buffer, apartment) are seeded by
+  // seedV25 and regenerate from PLAN defaults — we only remove
+  // user-added intents (id pattern 'goal-*').
+  if (goalId.startsWith('goal-') && BRAIN.plan && BRAIN.plan.intent) {
+    const intent = BRAIN.plan.intent.get(goalId);
+    if (intent) {
+      BRAIN.plan.intent.remove(goalId, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
+    }
+  }
+
   // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
   // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
+  // Bundle 28 round 8: also refresh canvas Savings sub-screen if open.
+  // Same rationale as confirmNewGoal — bucket may have been removed but
+  // the canvas doesn't auto-redraw on PLAN_MODAL close.
+  if (typeof renderPaydaySavings === 'function') {
+    try { renderPaydaySavings(); } catch (_) {}
+  }
   showToast('🗑 Goal deleted');
 }
 
