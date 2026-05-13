@@ -653,6 +653,41 @@ async function step(name, fn) {
   // capture 40 (settings-balance-edit modal) removed Bundle 28.x — Settings
   // balance edit was deleted; dashboard hero is the single edit surface.
 
+  // 41 Add-bucket modal opened FROM INSIDE the Payday Plan canvas — captures
+  // the z-index sandwich fix (commit bdda17b). Pre-fix this modal opened at
+  // z-index 200 BEHIND the canvas (510) and john had to back-press 4 deep
+  // to reach it. Post-fix at z-index 600 it sits ABOVE the canvas.
+  await step('open add-bucket modal from inside canvas', async () => {
+    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-dash'); });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { if (typeof openPaydayPlan === 'function') openPaydayPlan(); });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-savings'); });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { if (typeof openAddBucketModal === 'function') openAddBucketModal(); });
+    await page.waitForTimeout(600);
+  });
+  await shoot(page, 41, 'modal-add-bucket-over-canvas', 'verifies z-index sandwich fix');
+
+  // 42 KIA Extra editor with toast firing — captures the toast layering
+  // fix. We trigger the save() callback path manually so showToast fires
+  // visibly. EDIT_MODAL closes; toast at z-index 800 sits above canvas (510).
+  await step('open KIA Extra editor + fire toast', async () => {
+    // Close any prior modal
+    await page.evaluate(() => {
+      const m = document.querySelector('.modal-overlay.open');
+      if (m) m.classList.remove('open');
+      document.querySelectorAll('.edit-modal').forEach(e => e.style.display = 'none');
+    });
+    await page.waitForTimeout(200);
+    // Fire showToast manually while canvas is open — pure layering test
+    await page.evaluate(() => {
+      if (typeof showToast === 'function') showToast('✓ Layer test — toast above canvas');
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 42, 'toast-over-canvas', 'showToast at z-index 800 above canvas 510');
+
   // Persist manifest
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
   console.log(`\nManifest: ${path.join(OUT_DIR, 'manifest.json')}`);
