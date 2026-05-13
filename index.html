@@ -611,8 +611,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </div>
       <div id="dash-survival-banner"></div>
       <div id="dash-alerts"></div>
-      <div style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0">
-        <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">MAX PER DAY</div>
+      <div onclick="explainMaxPerDay()" title="Tap to see the math" style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0;cursor:pointer">
+        <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">MAX PER DAY <span style="font-size:10px;opacity:.5">· tap for math</span></div>
         <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
         <div style="font-size:13px;font-weight:600;margin-top:4px" id="max-day-context"></div>
         <div style="font-size:13px;color:var(--text3);margin-top:4px" id="pace-display"></div>
@@ -1636,6 +1636,12 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </select>
     </div>
     <div class="modal-field"><label>Date</label><input class="modal-input" type="date" id="txn-edit-date"></div>
+    <!-- Bundle 28 forward-feature: convert an income txn into a "loan from
+         person" without losing the cash inflow. Solves the John 2026-05-13
+         mistag where $500 from Mum got logged as income, double-counted
+         against the existing debt entry. Button shown only when editing an
+         income txn (toggled in editTransaction). -->
+    <button class="modal-btn" id="txn-edit-convert-loan-btn" onclick="convertEditedTransactionToLoan()" style="display:none;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);width:100%;margin-bottom:8px">Convert to "loan from person"</button>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-save" onclick="saveEditedTransaction()">Save</button>
       <button class="modal-btn modal-btn-delete" onclick="deleteEditedTransaction()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Delete</button>
@@ -2293,6 +2299,56 @@ function getSurvivalMode() {
 function getMaxDay() {
   if (MODEL.daysToPayday <= 0) return 0;
   return Math.max(0, getDynamicDailyBudget());
+}
+
+// Bundle 28 forward-feature: P1 principle (every number tappable to its
+// inputs). Tap the MAX PER DAY card on dashboard to see the math behind
+// today's number. Reads the same inputs getDynamicDailyBudget uses so the
+// breakdown can never drift from the displayed value.
+function explainMaxPerDay() {
+  try {
+    const bal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
+    const days = Math.max(1, (MODEL && MODEL.daysToPayday) || 1);
+    const billsList = (typeof getBillsDue === 'function') ? getBillsDue() : [];
+    const billsCommitted = billsList.reduce((s, b) => s + (+b.amt || 0), 0);
+    const debtsCommitted = (typeof getActiveDebtsDueBeforePayday === 'function')
+      ? getActiveDebtsDueBeforePayday() : 0;
+    const available = Math.max(0, bal - billsCommitted - debtsCommitted);
+    const dailyAvailable = available / days;
+    const isWeekend = [0, 6].includes(new Date().getDay());
+    const userCap = isWeekend ? (+S.weekendBudget || 180) : (+S.weekdayBudget || 60);
+    const dayLabel = isWeekend ? 'weekend' : 'weekday';
+    const cap = Math.min(dailyAvailable, userCap);
+    const todaySpent = (typeof getTodaySpent === 'function') ? getTodaySpent() : 0;
+    const finalMax = Math.max(0, cap - todaySpent);
+    const f = (n) => '$' + Math.round(n).toLocaleString();
+    const lines = [
+      'Today\'s MAX PER DAY: ' + f(finalMax),
+      '',
+      'How it\'s built:',
+      '  Balance:           ' + f(bal),
+      '  − Bills due:       ' + f(billsCommitted) + (billsList.length ? ' (' + billsList.length + ' before payday)' : ''),
+      '  − Debt minimums:   ' + f(debtsCommitted),
+      '  = Available:       ' + f(available),
+      '',
+      '  Available ÷ ' + days + ' days to payday',
+      '  = ' + f(dailyAvailable) + '/day raw',
+      '',
+      '  Capped by your ' + dayLabel + ' budget (' + f(userCap) + ')',
+      '  = ' + f(cap) + ' starting cap',
+      '',
+      '  Already spent today: ' + f(todaySpent),
+      '  = ' + f(finalMax) + ' left for the rest of today',
+    ];
+    if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+      EDIT_MODAL.openInfo({ title: 'Today\'s max per day', body: lines.join('\n') });
+    } else if (typeof alert === 'function') {
+      alert(lines.join('\n'));
+    }
+  } catch (e) {
+    if (typeof console !== 'undefined') console.error('[explainMaxPerDay] threw:', e);
+    if (typeof showToast === 'function') showToast('Could not build the breakdown — check console');
+  }
 }
 
 // Genuine surplus: only positive when bills + living costs + buckets + dynamic buffer are all covered
@@ -4183,8 +4239,57 @@ function editTransaction(idx) {
   $('txn-edit-cat').value = txn.cat || 'Other';
   const d = new Date(txn.ts);
   $('txn-edit-date').value = d.toISOString().slice(0,10);
+  // Bundle 28 forward-feature: show "Convert to loan from person" only for
+  // income txns. Hides for spend/correction/roundup txns where conversion
+  // makes no sense.
+  const convertBtn = $('txn-edit-convert-loan-btn');
+  if (convertBtn) convertBtn.style.display = txn.income ? 'block' : 'none';
   modal.classList.add('open');
   if (typeof UX !== 'undefined') UX.trackModalOpen('txn-edit-modal');
+}
+
+// Bundle 28 forward-feature: convert an income txn → "loan from person".
+// Balance stays the same (the cash inflow is real — someone gave you money).
+// The flip stops the txn from inflating income/discretionary math and
+// categorises it as 'Loan' (already in _NON_SPEND_CATS at L2224 → excluded
+// from getDiscretionaryByCategory + computeSpentInRange). Sets _txnType to
+// 'from-person' so the lax getDiscretionarySpend filter also excludes it.
+//
+// Does NOT auto-create a debt entry — the user typically already has the
+// debt logged separately (which is the scenario that exposed this bug:
+// John had a $500 debt AND a $500 income for the same Mum-loan). If user
+// genuinely needs a new debt, they can add it via the Immediate Debts tile.
+function convertEditedTransactionToLoan() {
+  const idx = parseInt($('txn-edit-idx')?.value);
+  if (isNaN(idx) || !S.txns[idx]) return;
+  const txn = S.txns[idx];
+  if (!txn.income) { showToast('Not an income transaction'); return; }
+  const confirmMsg =
+    'Convert this income to a "loan from person"?\n\n' +
+    'The cash inflow stays ($' + Math.round(txn.amt) + ' was real money).\n' +
+    'But the amount stops counting as income for daily-spend and surplus math.\n' +
+    'Category becomes "Loan".\n\n' +
+    'Tip: if you don\'t have a debt entry yet for who you borrowed from, ' +
+    'add one via "+ Add Debt" on the dashboard.';
+  if (!confirm(confirmMsg)) return;
+  // Route through BRAIN.transaction.reclassify (canonical writer) so the
+  // audit log captures it and AI agents can later read the change.
+  const result = BRAIN.transaction.reclassify(txn.ts, {
+    income: false,
+    cat: 'Loan',
+    _txnType: 'from-person',
+  }, BRAIN.SOURCES.TXN_RECLASSIFY);
+  if (!result.ok) {
+    showToast('Reclassify failed: ' + (result.reason || 'unknown'));
+    return;
+  }
+  if (typeof AUDITOR !== 'undefined' && AUDITOR.record) {
+    AUDITOR.record('TXN_CONVERT_INCOME_TO_LOAN', S.bal, S.bal, 0,
+      'Converted income to loan-from-person: ' + (txn.note || 'no note') + ' ($' + txn.amt + ')');
+  }
+  closeModal('txn-edit-modal');
+  onStateChange('txn-convert-loan');
+  showToast('✓ Reclassified as loan from person');
 }
 function saveEditedTransaction() {
   const idx = parseInt($('txn-edit-idx')?.value);
@@ -5030,7 +5135,8 @@ function renderAll() {
   renderTrend();
   renderCatBreakdown();
   renderSettingsBills();
-  renderSavingsBuckets();
+  // renderSavingsBuckets() call deleted Bundle 28 — fn was dead (rendered
+  // to non-existent DOM target). Buckets surface inside Payday Plan canvas.
   renderSpendingCoach();
   if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
   checkAfford();
@@ -6798,41 +6904,13 @@ function quickAddToBucket(i, amt) {
   showUndoToast(fmtC(amt)+' added to '+bucket.name);
 }
 
-function renderSavingsBuckets() {
-  const c = $('savings-buckets-content'); if (!c) return;
-  const buckets = S.savingsBuckets || [];
-  if (!buckets.length) { c.innerHTML = '<div class="empty-state">No savings buckets yet.</div><button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>'; return; }
-  const bucketSurplus = getGenuineSurplus();
-  // China Holiday gets special treatment at the top
-  const chinaIdx = buckets.findIndex(b=>b.name.toLowerCase().includes('china'));
-  let html = '';
-  if (chinaIdx >= 0) html += renderChinaHolidayTracker(buckets[chinaIdx], chinaIdx);
-  let html2 = buckets.map((b, i) => {
-    if (i === chinaIdx) return ''; // already rendered specially
-    const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
-    const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
-    const monthsToGoal = bucketSurplus > 0 ? Math.ceil((b.goal - (b.saved||0)) / bucketSurplus) : 0;
-    const accountBadge = '<span style="font-size:10px;font-family:var(--mono);font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border);border-radius:3px;padding:1px 5px;margin-left:6px">'+b.account+'</span>';
-    return '<div onclick="openBucketModal('+i+')" style="padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;border-radius:var(--r-xs);margin:0 -4px;padding:12px 4px">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-      '<span style="font-size:15px;font-weight:500;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">'+b.name+accountBadge+'</span>' +
-      '<span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--green);white-space:nowrap">'+fmtC(b.saved)+' / '+fmtC(b.goal)+'</span>' +
-      '</div>' +
-      '<div style="height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:5px">' +
-      '<div style="width:'+pct+'%;height:5px;border-radius:3px;background:'+barCol+';transition:width .5s"></div></div>' +
-      '<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3)">' +
-      '<span>'+pct+'% of goal</span>' +
-      // M5: floor "to go" at 0 and show celebration text when goal is met
-      '<span style="color:'+(b.saved >= b.goal ? 'var(--green)' : 'var(--text3)')+'">'+
-      (b.saved >= b.goal ? 'Goal reached! \uD83C\uDF89' : fmtC(Math.max(0, b.goal - b.saved))+' to go \u2192')+
-      '</span></div>' +
-      '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + (monthsToGoal > 0 && monthsToGoal < 60 ? monthsToGoal + ' months to goal at current surplus' : '') + '</div>' +
-      '</div>';
-  }).join('');
-  html += html2;
-  html += '<button class="add-btn" onclick="openAddBucketModal()" style="margin-top:8px">+ Add Bucket</button>';
-  c.innerHTML = html;
-}
+// renderSavingsBuckets + its companion renderChinaHolidayTracker deleted
+// Bundle 28 \u2014 function rendered to #savings-buckets-content which doesn't
+// exist in the Bundle 22 v3 Settings IA (DOM grep confirmed zero matches).
+// 35 LOC of dead render code. Buckets are surfaced inside the Payday Plan
+// canvas Savings sub-screen and via openBucketModal (still wired). When a
+// proper buckets-management page lands in PLAN mode (future bundle), re-
+// derive the layout from the canvas Savings sub-screen pattern.
 
 let activeBucketIdx = -1;
 
@@ -9636,6 +9714,9 @@ window.addEventListener('DOMContentLoaded', () => {
       ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
       ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
       ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],
+      ['explainMaxPerDay reachable', () => typeof explainMaxPerDay === 'function'],
+      ['convertEditedTransactionToLoan reachable', () => typeof convertEditedTransactionToLoan === 'function'],
+      ['_buildPaydayAskAIPrompt reachable', () => typeof _buildPaydayAskAIPrompt === 'function'],
       ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
       ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
       ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
@@ -14714,6 +14795,8 @@ const BRAIN = {
     PLAN_INTENT_REMOVE:        'plan-intent-remove',
     PLAN_INTENT_LINK_BUCKET:   'plan-intent-link-bucket',
     MIGRATION_INTENTS_V1:      'migration-intents-v1',
+    // Bundle 28 forward-architecture — txn reclassification
+    TXN_RECLASSIFY:            'txn-reclassify',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -14747,6 +14830,8 @@ const BRAIN = {
     // Bundle 28 Phase 0 — PLAN.intents canonical entity
     'plan-intent-add', 'plan-intent-update', 'plan-intent-remove',
     'plan-intent-link-bucket', 'migration-intents-v1',
+    // Bundle 28 forward-architecture
+    'txn-reclassify',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -16588,6 +16673,66 @@ const BRAIN = {
         _balAffected: true,
         _isCorrection: true
       }, BRAIN.SOURCES.RECONCILE_CORRECTION);
+    },
+
+    // Bundle 28 forward-architecture: canonical reclassifier. Lets a txn's
+    // semantic shape change (income flag, category, _txnType) WITHOUT
+    // touching its amount or timestamp. Balance is unaffected (the cash
+    // already moved). The use case that prompted this: john's $500 mum-loan
+    // was logged as income, double-counted with the existing debt entry —
+    // user wanted to flip income:false + cat:'Loan' without losing the
+    // cash inflow. Direct mutation works but bypasses BRAIN; AI agent +
+    // audit log can't see it. This method gives BRAIN the hook.
+    //
+    // Allowed patch fields: cat, income, _txnType, note. Adding more
+    // fields here is a deliberate scope expansion — keep narrow until a
+    // real use case appears. (e.g., changing amt requires balance
+    // recomputation — handled by saveEditedTransaction not here.)
+    //
+    // Returns { ok, before, after } so callers can confirm the change and
+    // undo flows can restore the prior shape via another reclassify call.
+    reclassify(ts, patch, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (typeof ts !== 'number' || isNaN(ts)) {
+        return { ok: false, reason: 'invalid-ts' };
+      }
+      if (!patch || typeof patch !== 'object') {
+        return { ok: false, reason: 'missing-patch' };
+      }
+      const allowed = ['cat', 'income', '_txnType', 'note'];
+      for (const k of Object.keys(patch)) {
+        if (!allowed.includes(k)) {
+          return { ok: false, reason: 'unknown-field:' + k };
+        }
+      }
+      const txn = (S.txns || []).find(t => t.ts === ts);
+      if (!txn) return { ok: false, reason: 'not-found:' + ts };
+
+      const before = {
+        cat: txn.cat,
+        income: !!txn.income,
+        _txnType: txn._txnType || null,
+        note: txn.note || null,
+      };
+      Object.assign(txn, patch);
+      const after = {
+        cat: txn.cat,
+        income: !!txn.income,
+        _txnType: txn._txnType || null,
+        note: txn.note || null,
+      };
+
+      BRAIN.audit.append({
+        type: 'txn_reclassify',
+        txnTs: ts,
+        before, after,
+        src: source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, before, after };
     }
   },
 

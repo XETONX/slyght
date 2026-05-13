@@ -95,6 +95,50 @@ Audit-first approach:
 
 ---
 
+## Cross-reference inspection queue (per John 2026-05-13)
+
+> Directive: every feature/data-store/text-box needs (a) a semantic
+> relation reference, (b) a BRAIN canonical writer hook so audit log
+> captures changes + AI agent can read/write, (c) clean data flow in
+> AND out. When I touch a tile, flag the pathways that touch it for
+> inspection.
+
+### Pathways made canonical this turn ✓
+
+- `convertEditedTransactionToLoan` → routed through new `BRAIN.transaction.reclassify(ts, patch, source)` writer. Audit log captures before/after shape. AI agent could call this method directly. ✓
+- `renderTrend` + `renderCatBreakdown` + dashboard pace tile → routed through `getDiscretionaryByCategory` / `computeSpentInRange` canonical helpers. ✓
+- `_buildPaydayAskAIPrompt` → reads `BRAIN.plan.getSnapshot()`. Pure, canonical. ✓
+- `explainMaxPerDay` → reads `getLiveBal`, `MODEL.daysToPayday`, `getBillsDue`, `getActiveDebtsDueBeforePayday`, `getTodaySpent`. All canonical readers (modulo legacy fn names — see below). ✓
+
+### Pathways flagged for inspection (data flow not yet clean)
+
+| Pathway | Currently | Should be |
+|---|---|---|
+| `saveEditedTransaction` (L4189) | Direct `txn.amt = ...`, `txn.note = ...`, `txn.cat = ...`, `S.bal = ...` direct mutation | New `BRAIN.transaction.update(ts, patch, source)` writer (similar shape to `reclassify` but allows `amt` + handles balance recompute). Add allowed=['amt','note','cat','date','income','_txnType']. Audit log captures full diff. **Defer to Bundle 28.0.7 or 29 — needs balance-recompute logic.** |
+| `deleteEditedTransaction` (L4211) | Direct `S.txns.splice` + direct `S.bal = ...` | `BRAIN.transaction.removeByTs(ts)` exists (L16627) and handles audit log. But balance adjustment still inline. Wrap into `BRAIN.transaction.removeByTsWithBalance(ts, source)` that does both atomically. **Defer — low risk, easy migration.** |
+| `getBillsDue()` legacy helper | Reads `BILLS` global directly | Probably canonical-enough (it's THE bills reader), but verify it composes with `BRAIN.bills.getThisCycle()` consistently. **Inspect for divergence.** |
+| `getActiveDebtsDueBeforePayday()` legacy | Reads `S.debts` directly | Should use `BRAIN.debts.active()` filter or similar. **Inspect.** |
+| Chat input pre-fill in `openPaydayAskAI` | Direct `$('chat-input').value = '...'` | This is UI-only side-effect (no state mutation). But future AI agent might want to know "user opened ask-AI from canvas with N context" — could BRAIN.audit.append a `chat_prefill_from_canvas` entry. **Note for future.** |
+| `editTransaction` modal show/hide of convert-loan button | Direct `$('txn-edit-convert-loan-btn').style.display = ...` | UI-only, fine as-is. Note: button visibility derived from `txn.income`. |
+| MAX PER DAY card tap → `explainMaxPerDay` | Direct read, no state change | Pure read. Fine. |
+| `S.weekdayBudget` / `S.weekendBudget` | Read by `getDynamicDailyBudget` | Settings writes route through `BRAIN.config.setWeekdayBudget` (Bundle 22 v3 Phase 0). ✓ |
+| `S.bal` mutation in `applyBalanceCorrection` (L5269) | Direct `S.bal = ...` | Wrapped by `BRAIN.transaction.recordCorrection` for the txn side. Balance side stays direct because the legacy contract preserves it. **Acceptable but flag for future canonical-balance-writer pattern.** |
+
+### Broader patterns flagged for inspection
+
+- **Settings form inputs** — Bundle 22 v3 migrated income/payday/budget/debt-strategy to `BRAIN.config.*` writers. **Inspect** the remaining form-input save paths to confirm none still write `S.X = $('s-X').value` directly. Specifically: `s-pin`, any not-yet-audited fields.
+- **Modal save handlers** that mutate state directly (saveBucketModal at L6904 — uses `BRAIN.savings.setBucketSaved` ✓; saveNewBucket at L6897 — direct `S.savingsBuckets.push`, should use `BRAIN.savings.addBucket` ... which may not exist yet).
+- **Quick Log flow** — uses `BRAIN.transaction.record` ✓ but the category/income flag is set inline; AI couldn't change "this is a Loan" after-the-fact without `reclassify`. Now that `reclassify` exists, **Quick Log could expose "is this a loan?" as a checkbox** that uses reclassify post-save.
+
+### Outside-the-box ideas spawned from John's directive
+
+- **Universal data-flow ledger** — a `BRAIN.dataFlow` namespace that documents, for every state field, its canonical writer/reader + which UI surfaces read it + which renderers consume it. The catalog itself is data, AI can introspect. Bundle 30 candidate.
+- **Auto-generate canonical-writer wrappers** — for every form input with `id="s-X"`, auto-derive a `BRAIN.config.setX` writer with audit logging. Eliminates the "I forgot to canonicalise this one" gap. Bundle 30+ infrastructure.
+- **Per-txn "explain my impact"** — every Recent Spending row gets a tap-to-see "this txn moved your daily max from $X to $Y, your surplus from $A to $B, your bucket pace by $C". Total transparency. Future bundle.
+- **AI as state-shape auditor** — at the end of each bundle, AI walks every state field + every writer/reader and reports gaps. Bundle 30+.
+
+---
+
 ## Layer V verification log
 
 | Capture | Phase | Verified |
