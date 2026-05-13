@@ -75,7 +75,7 @@ button,input,select,textarea{font-family:var(--sans)}
 .settings-group-card{background:var(--bg2);border-radius:12px;overflow:hidden;margin-bottom:10px}
 .settings-edit-row{display:flex;align-items:center;padding:14px 16px;background:transparent;border:none;color:var(--text);min-height:56px;text-align:left;cursor:pointer;width:100%;border-bottom:1px solid var(--border)}
 .settings-edit-row:last-child{border-bottom:none}
-.settings-edit-row:active{background:var(--bg3)}
+/* r69: removed :active background darken — was creating "shading behind tappable" effect on touch. Global opacity-dip in tap-target rules provides feedback. */
 .settings-edit-row .row-label{flex:1;font-size:15px;color:var(--text)}
 .settings-edit-row .row-value{font-family:var(--mono);font-size:14px;color:var(--text2);margin-right:10px;font-weight:600}
 .settings-edit-row .row-chevron{font-size:20px;color:var(--text3);line-height:1}
@@ -194,7 +194,7 @@ body.edit-modal-open{overflow:hidden}
 .hdr-logo{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-1px;color:var(--text)}
 .hdr-right{display:flex;align-items:center;gap:10px}
 .icon-btn{width:34px;height:34px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s}
-.icon-btn:active{background:var(--bg4)}
+/* r69: removed icon-btn :active background darken — opacity-dip handles tap feedback. */
 .icon-btn svg{opacity:.6}
 .pad{padding:16px 20px}
 /* HERO */
@@ -232,7 +232,7 @@ body.edit-modal-open{overflow:hidden}
    doesn't leave visible empty space when the debt count is odd. */
 .debt-grid > .debt-tile:last-child:nth-child(odd){grid-column:1 / -1}
 .debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s;min-height:160px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
-.debt-tile:active{background:var(--bg4)}
+/* r69: removed debt-tile :active background darken — was the most visible "shading behind tappable" on the dashboard. Opacity-dip is enough. */
 /* Bundle 28 round 27: allow names to wrap to 2 lines so "Borrowed from
    Michael" and "Borrowed from Mum" don't both render as "Borrowed from ..."
    making them indistinguishable on the dashboard. Single-line ellipsis
@@ -337,13 +337,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .settings-input{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:8px 12px;font-size:15px;font-family:var(--mono);color:var(--text);width:120px;text-align:right;outline:none;transition:border-color .2s}
 .settings-input:focus{border-color:var(--green)}
 .action-btn{width:100%;padding:13px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:15px;font-weight:600;color:var(--text);cursor:pointer;margin-bottom:8px;transition:border-color .2s}
-.action-btn:hover{border-color:var(--green)}
+/* r69: gate :hover on (hover:hover) media query — on touch devices, browsers fire :hover after touchstart and stick it until next interaction, leaving a "stuck hover" shading effect that John was seeing. */
+@media (hover:hover) { .action-btn:hover{border-color:var(--green)} }
 .import-area{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px;font-family:var(--mono);font-size:13px;color:var(--text);min-height:80px;outline:none;resize:none;margin-bottom:8px}
 .import-area:focus{border-color:var(--green)}
 .section-hdr{font-size:13px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.07em;margin:16px 0 8px}
 .danger-btn{width:100%;padding:13px;background:none;border:1px solid var(--red-border);border-radius:var(--r-sm);font-size:15px;font-weight:600;color:var(--red);cursor:pointer}
 .add-btn{width:100%;padding:11px;background:none;border:1px dashed var(--border2);border-radius:var(--r-sm);font-size:14px;font-weight:500;color:var(--text3);cursor:pointer;margin-top:4px;transition:all .2s}
-.add-btn:hover{border-color:var(--green);color:var(--green)}
+@media (hover:hover) { .add-btn:hover{border-color:var(--green);color:var(--green)} }
 .empty-state{font-size:14px;color:var(--text3);padding:8px 0;font-style:italic}
 .bonus-row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
 .bonus-row .s-input{margin-bottom:0}
@@ -395,7 +396,7 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 #nw-modal .modal{position:relative;padding:0;display:flex;flex-direction:column}
 #nw-modal-scroll{padding:24px;overflow-y:auto;max-height:85vh}
 #nw-modal-close-x{position:absolute;top:12px;right:12px;background:var(--bg3);border:1px solid var(--border2);border-radius:50%;width:32px;height:32px;color:var(--text2);font-size:20px;line-height:1;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;z-index:5}
-#nw-modal-close-x:hover{background:var(--bg2);color:var(--text)}
+@media (hover:hover) { #nw-modal-close-x:hover{background:var(--bg2);color:var(--text)} }
 .modal-field{margin-bottom:14px}
 .modal-field label{font-size:13px;color:var(--text2);font-weight:500;display:block;margin-bottom:6px}
 .modal-input{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 14px;font-size:15px;color:var(--text);outline:none;transition:border-color .2s}
@@ -504,7 +505,8 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 .typing-dot:nth-child(2){animation-delay:.2s}.typing-dot:nth-child(3){animation-delay:.4s}
 @keyframes typingPulse{0%,60%,100%{opacity:.3;transform:scale(1)}30%{opacity:1;transform:scale(1.25)}}
 .quick-prompt-btn{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);padding:13px 14px;text-align:left;font-size:15px;color:var(--text2);cursor:pointer;transition:all .15s;display:block}
-.quick-prompt-btn:active{background:var(--bg4);border-color:var(--green);color:var(--green)}
+/* r69: removed quick-prompt-btn :active background darken; kept border/color shift for tap-feedback. */
+.quick-prompt-btn:active{border-color:var(--green);color:var(--green)}
 .chat-key-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;padding:32px 24px;text-align:center}
 /* NOTIFICATION DRAWER */
 @keyframes slideDown{from{transform:translateY(-10px);opacity:0}to{transform:translateY(0);opacity:1}}
@@ -6471,14 +6473,35 @@ function renderDebtTiles() {
       etaStr +
       (d.notes ? '<div class="dt-sub">' + esc(d.notes) + '</div>' : '<div class="dt-sub" style="color:var(--text3);font-style:italic;opacity:.7">Tap to add notes</div>') +
       // r64: viaRent debts get a paid-off bar (originalAmt → current) instead of a "% of immediate debts" share bar.
-      // The share-bar capped at 100% on Property Deposit was misleading — $5,681 vs $717 immediate = 791% capped at 100% reads like "this debt is fully extant" when the bar's actual semantic was "share of total". For viaRent, a payoff progress bar is more meaningful.
+      // r69: extended to surface "Paid this cycle: $X" when the linked rent+deposit bill is marked paid in the current month. Reads paidBills + BILLS.breakdown.depositSavings so the tile syncs globally — pay the bill on the calendar, the debt tile reflects it immediately.
       (isViaRent
         ? (function(){
             const orig = +d.originalAmt || +d.amt || 1;
             const paid = Math.max(0, orig - (+d.amt || 0));
             const paidPct = Math.max(0, Math.min(100, Math.round((paid / orig) * 100)));
+            // Look for a current-month paid bill carrying breakdown.depositSavings (the
+            // monthly deposit-paydown amount). Default link is "Rent + Deposit Savings"
+            // — d.rentBillName can override per-debt for future use.
+            let cycleNote = '';
+            try {
+              // guardian-allow: no-hardcoded-bill-name — default fallback when a viaRent debt doesn't carry a custom `rentBillName` link; "Rent + Deposit Savings" is the canonical name of the bill that both pays $500 rent to Mum AND deposits $2,500 into the property deposit account (permanent — Property Deposit is the only viaRent debt in S.debts and the bill's depositSavings breakdown is the paydown source)
+              const linkName = d.rentBillName || 'Rent + Deposit Savings';
+              const linkedBill = (typeof BILLS !== 'undefined' ? BILLS : []).find(b => b && b.name === linkName);
+              const depositPortion = linkedBill && linkedBill.breakdown && +linkedBill.breakdown.depositSavings;
+              if (linkedBill && depositPortion > 0) {
+                const now = new Date();
+                const y = now.getFullYear(), m = now.getMonth() + 1;
+                const isPaid = typeof isThisMonthlyBillPaid === 'function'
+                  ? isThisMonthlyBillPaid(linkedBill.name, linkedBill.day, m, y)
+                  : false;
+                cycleNote = isPaid
+                  ? '<div style="font-size:11px;color:var(--green);font-family:var(--mono);margin-top:2px">✓ ' + fmt(depositPortion) + ' paid this cycle</div>'
+                  : '<div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">' + fmt(depositPortion) + ' due this cycle · day ' + linkedBill.day + '</div>';
+              }
+            } catch (_) {}
             return '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + paidPct + '% paid off · ' + fmt(paid) + ' / ' + fmt(orig) + '</div>' +
-              '<div class="dt-bar"><div class="dt-fill" style="width:' + paidPct + '%;background:var(--green)"></div></div></div>';
+              '<div class="dt-bar"><div class="dt-fill" style="width:' + paidPct + '%;background:var(--green)"></div></div>' +
+              cycleNote + '</div>';
           })()
         : '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
           '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>') +
@@ -21997,13 +22020,23 @@ function renderTrips(trips) {
     const daysLong = Math.ceil((end - start) / 86400000) + 1;
     const monthsUntil = Math.ceil(daysUntil / 30);
     const remaining = Math.max(0, (trip.budget || 0) - (trip.saved || 0));
-    // r65: when daysUntil < 30 (e.g. Darwin in 25 days), "$900/month to reach by departure"
-    // is mathematically wrong — there isn't a full month left. Show the actual rate or the
-    // weekly equivalent for short timelines.
+    // r65→r69: when daysUntil < 30 the original "$900/month" was wrong (no full
+    // month left). r65 used weekly fallback ($225/week) but John is paid monthly
+    // on the 15th — "weekly" numbers aren't actionable to him. r69 reframes to
+    // "this paycheck" — count remaining paydays before departure and divide.
     const monthlyNeeded = monthsUntil > 0 ? Math.ceil(remaining / monthsUntil) : remaining;
+    const paydayDay = (typeof S !== 'undefined' && S.payday) ? +S.payday : 15;
+    // Count paydays strictly between today and trip start.
+    let paydaysUntil = 0;
+    {
+      let probe = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const limit = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      // First future payday after today
+      let py = new Date(probe.getFullYear(), probe.getMonth(), paydayDay);
+      if (py <= probe) py = new Date(probe.getFullYear(), probe.getMonth() + 1, paydayDay);
+      while (py < limit) { paydaysUntil++; py = new Date(py.getFullYear(), py.getMonth() + 1, paydayDay); }
+    }
     const isImminent = daysUntil > 0 && daysUntil < 30;
-    const weeksUntil = Math.max(1, Math.ceil(daysUntil / 7));
-    const weeklyNeeded = isImminent ? Math.ceil(remaining / weeksUntil) : 0;
     const pct = trip.budget > 0 ? Math.min(100, ((trip.saved || 0) / trip.budget * 100)) : 0;
 
     const isActive = today >= start && today <= end;
@@ -22050,7 +22083,9 @@ function renderTrips(trips) {
       ${!isPast && remaining > 0 ? `
       <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:10px">
         ${isImminent
-          ? `Save $${weeklyNeeded}/week ($${Math.ceil(remaining/Math.max(1,daysUntil))}/day) to reach your budget by departure`
+          ? (paydaysUntil <= 1
+              ? `Allocate $${remaining.toLocaleString()} this paycheck — only ${paydaysUntil === 0 ? 'no paydays' : '1 payday'} before departure`
+              : `Allocate $${Math.ceil(remaining/paydaysUntil).toLocaleString()} per paycheck (${paydaysUntil} paydays left) to reach your budget by departure`)
           : `Save $${monthlyNeeded}/month to reach your budget by departure`}
       </div>` : ''}
 

@@ -122,6 +122,28 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 69 — Wrap-up: residual shading + paycheck framing + Property Deposit global sync
+End-of-session three-fix wrap-up per John's phone-verify feedback on r58-r68.
+
+**Residual button shading** — phone-verify on r66 caught residual "shading behind tappable objects". Trace: per-element `:active{background:var(--bg4)}` rules darkened multiple surfaces on touch in addition to the global opacity dip, AND `:hover` rules fired on touchstart and got stuck. Fixes:
+- Removed `:active{background:bg3/bg4}` on `.settings-edit-row`, `.icon-btn`, `.debt-tile`, `.quick-prompt-btn` — opacity-dip + transform-scale already convey tap feedback.
+- Wrapped 3 `:hover` rules (`.action-btn`, `.add-btn`, `#nw-modal-close-x`) in `@media (hover:hover)` so they only apply on devices with real cursor hover capability. S23 Ultra is touch-primary — `hover:hover` evaluates to false, so hover styles never fire (no stuck-hover shading).
+
+**Trip "this paycheck" framing** (`index.html:21946+`) — r65 used a weekly fallback for imminent (<30 days) trips ("Save $225/week"). John doesn't deal in weekly numbers — he's paid monthly on the 15th. Replaced with paycheck-aware framing:
+- Counts paydays between today and trip start using `S.payday` (15th).
+- `paydaysUntil === 0` → "Allocate $900 this paycheck — no paydays before departure" (impossible, but graceful).
+- `paydaysUntil === 1` → "Allocate $900 this paycheck — only 1 payday before departure" (Darwin's actual case).
+- `paydaysUntil >= 2` → "Allocate $X per paycheck (N paydays left)".
+- Imminent trips (<30 days) get this; longer trips keep "$X/month".
+
+**Property Deposit global sync** (`index.html:6475+`) — John ask: "tile should recognise when rent and deposit savings is marked paid... so this tile syncs globally". viaRent debt tiles now read `BILLS[].breakdown.depositSavings` and current-month `paidBills` to surface paydown state:
+- If linked bill paid this cycle → green `✓ $2,500 paid this cycle` line under the paid-off bar.
+- If not yet paid → muted `$2,500 due this cycle · day 15` line.
+- Link is via `d.rentBillName` (default fallback: "Rent + Deposit Savings", the canonical breakdown-bearing bill in BILLS).
+- No mutation — purely read-side. Paying the bill on the calendar fires existing `paidBills` flow; tile re-renders next paint cycle and reflects it.
+
+Gates: 65/65 tests, 51/51 runtime, 4/4 guardians green.
+
 ### Round 68 — Corrections visually de-emphasized in Recent Spending
 **Problem:** `_isCorrection: true` transactions (created by the balance reconciliation flow when user picks "Correcting previous error" etc.) rendered identically to real expenses — large red `-$X` numbers. "Fixing testing -$564" looked like a $564 spend on the dashboard, alarming the user even though it's a bookkeeping adjustment that already settled.
 
