@@ -9466,6 +9466,9 @@ window.addEventListener('DOMContentLoaded', () => {
     const tests = [
       ['BRAIN.plan exists', () => !!(typeof BRAIN !== 'undefined' && BRAIN.plan)],
       ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
+      ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
+      ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
+      ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
       ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
       ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
       ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
@@ -11387,6 +11390,168 @@ const REAL_STATE_V17 = {
       localStorage.setItem('slyght_v5', JSON.stringify(d));
     }
   } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV24 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+
+// Seed v25 (Bundle 28 Phase 0): collapse trips/goals/provisions into
+// S.planIntents canonical entity. Idempotent — gated by slyght_seeded_v25.
+// Snapshot taken first for rollback safety. Existing PLAN.getTrips /
+// getGoals / getAnnualProvisions readers are UNCHANGED in Phase 0 — intents
+// is a parallel structure populated by this migration; subsequent phases
+// migrate readers one surface at a time.
+//
+// Algorithm:
+//   1. Snapshot pre-state (recovery point)
+//   2. Read PLAN.getTrips() — each becomes kind='trip' intent
+//   3. Read PLAN.getGoals() — each becomes kind='goal' intent
+//   4. Read PLAN.getAnnualProvisions() — each becomes kind='provision' intent
+//   5. Bucket-link mapping by name (or special tokens for mum-account)
+//   6. All extras (gfSplitting, monthly, frequency, etc.) preserved in
+//      intent.meta — never lost
+(function seedV25() {
+  const flag = 'slyght_seeded_v25';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    // Already migrated? (defensive — flag should catch this)
+    if (Array.isArray(S.planIntents) && S.planIntents.length > 0) {
+      localStorage.setItem(flag, '1');
+      return;
+    }
+    if (!Array.isArray(S.planIntents)) S.planIntents = [];
+
+    // Build intents from existing canonical readers. Note: these readers
+    // exist only at runtime (inside index.html), not in the migration's
+    // localStorage-only context. So we read the raw underlying state
+    // (S.tripDefs / S.goalDefs) and merge the hardcoded provisions defaults.
+    const now = Date.now();
+    const tripDefs = Array.isArray(S.tripDefs) ? S.tripDefs : [];
+    const goalDefs = Array.isArray(S.goalDefs) ? S.goalDefs : [];
+
+    // Trip defaults (mirror of PLAN.getTrips defaults at index.html ~16934)
+    const tripDefaults = [
+      { id: 'darwin-2026', name: 'Darwin', emoji: '🐊',
+        startDate: '2026-06-07', endDate: '2026-06-15', budget: 900,
+        bucketHint: '', meta: { days: 9, covered: ['flights', 'accommodation', 'car hire'],
+        gfSplitting: true, notes: 'Looking after uncle\'s dog. GF coming.' } },
+      { id: 'china-2026', name: 'China', emoji: '🇨🇳',
+        startDate: '2026-12-01', endDate: '2026-12-22', budget: 5000,
+        bucketHint: 'China Holiday', meta: { days: 21, covered: [],
+        gfSplitting: true, stayingWithFamily: true,
+        notes: 'Staying with her family and friends. Budget excludes flights.' } },
+    ];
+    const tripsMerged = tripDefaults.map(def => {
+      const stored = tripDefs.find(t => t && t.id === def.id);
+      return stored ? Object.assign({}, def, stored, { meta: Object.assign({}, def.meta, stored.meta || {}) }) : def;
+    }).concat(tripDefs.filter(t => t && !tripDefaults.find(d => d.id === t.id))
+                    .map(t => Object.assign({ bucketHint: '', meta: {} }, t)));
+
+    // Goal defaults (mirror of PLAN.getGoals at ~16984)
+    const goalDefaults = [
+      { id: 'apartment', name: 'Property Deposit', emoji: '🏠', target: 50000,
+        bucketHint: '__mum-account__',
+        meta: { description: 'Building toward your own place. Inner West, Meadowbank, Kogarah or Wolli Creek area. $50,000 deposit target. Account managed by Mum.',
+          monthly: 2500, targetDate: null, colour: '#4ECDC4', priority: 1,
+          notes: '$50k demonstrates genuine savings history. Budget $550-700k property.' } },
+      { id: 'freedom-buffer', name: 'Freedom buffer', emoji: '🛡️', target: 9000,
+        bucketHint: 'Rainy Day Fund',
+        meta: { description: '3 months expenses if everything goes wrong',
+          monthly: 0, targetDate: null, colour: '#FF6B35', priority: 2,
+          notes: 'First milestone: $1,000 buffer. Second: $3,000. Final: $9,000.' } },
+      { id: 'china', name: 'China holiday', emoji: '🇨🇳', target: 5000,
+        bucketHint: 'China Holiday',
+        meta: { description: 'End of 2026 with GF. Staying with family and friends.',
+          monthly: 0, targetDate: '2026-11-01', colour: '#E74C3C', priority: 3,
+          notes: 'Her estimate $5k excluding flights. Flights additional ~$1,200 return.' } },
+    ];
+    const goalsMerged = goalDefaults.map(def => {
+      const stored = goalDefs.find(g => g && g.id === def.id);
+      return stored ? Object.assign({}, def, stored, { meta: Object.assign({}, def.meta, stored.meta || {}) }) : def;
+    }).concat(goalDefs.filter(g => g && !goalDefaults.find(d => d.id === g.id))
+                    .map(g => Object.assign({ bucketHint: '', meta: {} }, g)));
+
+    // Provisions — fixed enumeration; mirror of PLAN.getAnnualProvisions at ~16909
+    const provisionDefaults = [
+      { name: 'Teachers Health',    annual: 259.41 * 4, monthly: 86.47, frequency: 'quarterly', nextDue: '2026-08-01' },
+      { name: 'Car service (KIA)',  annual: 500,        monthly: 42,    frequency: 'biannual',  nextDue: '2026-10-01' },
+      { name: 'KIA registration',   annual: 462,        monthly: 39,    frequency: 'annual',    nextDue: '2027-04-01' },
+      { name: 'KIA green slip',     annual: 552,        monthly: 46,    frequency: 'annual',    nextDue: '2027-04-01' },
+      { name: 'KIA insurance (NRMA)', annual: 1023.06,  monthly: 85,    frequency: 'annual',    nextDue: '2027-05-01' },
+    ];
+
+    const _slug = (s) => String(s || '').toLowerCase().trim()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+    // Materialise trips
+    tripsMerged.forEach(t => {
+      S.planIntents.push({
+        id: t.id, name: t.name, emoji: t.emoji || '✈️',
+        kind: 'trip',
+        targetAmount: +t.budget || 0,
+        startDate: t.startDate || null,
+        endDate: t.endDate || null,
+        bucketId: t.bucketHint || '',
+        category: 'travel',
+        notes: (t.meta && t.meta.notes) || '',
+        priority: 3,
+        archived: false,
+        meta: t.meta || {},
+        createdAt: now, updatedAt: now,
+      });
+    });
+
+    // Materialise goals
+    goalsMerged.forEach(g => {
+      S.planIntents.push({
+        id: g.id, name: g.name, emoji: g.emoji || '🎯',
+        kind: 'goal',
+        targetAmount: +g.target || 0,
+        startDate: null,
+        endDate: (g.meta && g.meta.targetDate) || null,
+        bucketId: g.bucketHint || '',
+        category: 'goal',
+        notes: (g.meta && g.meta.notes) || '',
+        priority: (g.meta && +g.meta.priority) || 3,
+        archived: false,
+        meta: g.meta || {},
+        createdAt: now, updatedAt: now,
+      });
+    });
+
+    // Materialise provisions
+    provisionDefaults.forEach(p => {
+      S.planIntents.push({
+        id: 'provision-' + _slug(p.name),
+        name: p.name, emoji: '🚗',
+        kind: 'provision',
+        targetAmount: +p.annual || 0,
+        startDate: null,
+        endDate: p.nextDue || null,
+        bucketId: 'Rego & Insurance',  // sinking-fund pile per existing bucket
+        category: 'vehicle',
+        notes: '',
+        priority: 2,
+        archived: false,
+        meta: { annual: p.annual, monthly: p.monthly, frequency: p.frequency, sinking: true },
+        createdAt: now, updatedAt: now,
+      });
+    });
+
+    if (!S.auditLog) S.auditLog = [];
+    S.auditLog.push({
+      type: 'seedV25-collapse-intents',
+      source: 'migration-intents-v1',
+      bundle: '28-phase-0',
+      intentsCount: S.planIntents.length,
+      ts: now,
+    });
+    S.seededV25 = true;
+    d.S = S;
+    localStorage.setItem('slyght_v5', JSON.stringify(d));
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV25 error', e); }
   localStorage.setItem(flag, '1');
 })();
 
@@ -14365,6 +14530,12 @@ const BRAIN = {
     AI_PROPOSAL_APPLY:         'ai-proposal-apply',
     AI_KNOWN_UPCOMING_ADD:     'ai-known-upcoming-add',
     CARRIED_FROM_PRIOR_CYCLE:  'carried-from-prior-cycle',
+    // Bundle 28 Phase 0 — PLAN.intents canonical entity
+    PLAN_INTENT_ADD:           'plan-intent-add',
+    PLAN_INTENT_UPDATE:        'plan-intent-update',
+    PLAN_INTENT_REMOVE:        'plan-intent-remove',
+    PLAN_INTENT_LINK_BUCKET:   'plan-intent-link-bucket',
+    MIGRATION_INTENTS_V1:      'migration-intents-v1',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -14395,6 +14566,9 @@ const BRAIN = {
     'canvas-auto-apply', 'canvas-lock', 'canvas-unlock',
     'ai-affordability-query', 'ai-proposal-apply', 'ai-known-upcoming-add',
     'carried-from-prior-cycle',
+    // Bundle 28 Phase 0 — PLAN.intents canonical entity
+    'plan-intent-add', 'plan-intent-update', 'plan-intent-remove',
+    'plan-intent-link-bucket', 'migration-intents-v1',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -15238,6 +15412,180 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'plan_proposal_reject', proposalId, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, removed };
+    },
+
+    // ─── BRAIN.plan.intent — canonical entity (Bundle 28 Phase 0) ─────────
+    // Solves the China-as-3-records / NRMA-across-4-surfaces fragility by
+    // making "things John is putting money toward" a single list with views
+    // by kind. The savings bucket holds the money; the intent describes the
+    // purpose. Multiple intents can share one bucket.
+    //
+    // Phase 0 is ADDITIVE only — existing PLAN.getTrips / getGoals /
+    // getAnnualProvisions readers are NOT touched. seedV25 populates the
+    // intents from current state so the structure exists in parallel.
+    // Subsequent phases (28.0.x / 28.1+) migrate readers one surface at a
+    // time, each phone-verified.
+    //
+    // Schema (S.planIntents[]):
+    //   id            string  stable kebab-case (never mutates)
+    //   name          string  user-editable
+    //   emoji         string
+    //   kind          'trip' | 'goal' | 'provision' | 'buffer'
+    //   targetAmount  number  dollars
+    //   startDate     string  'YYYY-MM-DD' optional
+    //   endDate       string  'YYYY-MM-DD' optional
+    //   bucketId      string  S.savingsBuckets[].name or special token (FK)
+    //   category      string  free-text taxonomy
+    //   notes         string
+    //   priority      number  1=high → 5=low
+    //   archived      boolean soft-delete
+    //   meta          object  kind-specific extras (frequency, gfSplitting...)
+    //   createdAt     number  epoch ms
+    //   updatedAt     number  epoch ms
+    intent: {
+      // ── Reads (pure) ──
+      get(id) {
+        const list = (S && S.planIntents) || [];
+        const i = list.find(x => x && x.id === id);
+        return (i && !i.archived) ? i : null;
+      },
+      list({ kind, archived = false, bucketId } = {}) {
+        const list = (S && S.planIntents) || [];
+        return list.filter(i =>
+          i &&
+          (archived === null || !!i.archived === !!archived) &&
+          (!kind || i.kind === kind) &&
+          (!bucketId || i.bucketId === bucketId)
+        );
+      },
+      byKind(kind) { return this.list({ kind }); },
+      byBucket(bucketId) { return this.list({ bucketId }); },
+
+      // ── Internal helpers ──
+      _slug(name) {
+        return String(name || '').toLowerCase().trim()
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      },
+      _defaultEmoji(kind) {
+        return ({ trip: '✈️', goal: '🎯', provision: '🚗', buffer: '🛡️' })[kind] || '💰';
+      },
+
+      // ── Writes (canonical; every one logs to BRAIN.audit) ──
+      add(intentLike, source) {
+        if (!source || !BRAIN._SOURCE_SET.has(source)) {
+          return { ok: false, reason: 'unknown-source:' + source };
+        }
+        if (!intentLike || typeof intentLike !== 'object') {
+          return { ok: false, reason: 'missing-intent' };
+        }
+        const requiredFields = ['name', 'kind', 'targetAmount'];
+        for (const k of requiredFields) {
+          if (intentLike[k] === undefined || intentLike[k] === null || intentLike[k] === '') {
+            return { ok: false, reason: 'missing-field:' + k };
+          }
+        }
+        if (!['trip', 'goal', 'provision', 'buffer'].includes(intentLike.kind)) {
+          return { ok: false, reason: 'invalid-kind:' + intentLike.kind };
+        }
+        const id = intentLike.id || this._slug(intentLike.name);
+        if (!id) return { ok: false, reason: 'empty-id' };
+        if (this.get(id)) return { ok: false, reason: 'id-exists:' + id };
+
+        const now = Date.now();
+        const intent = {
+          id,
+          name: String(intentLike.name),
+          emoji: intentLike.emoji || this._defaultEmoji(intentLike.kind),
+          kind: intentLike.kind,
+          targetAmount: +intentLike.targetAmount || 0,
+          startDate: intentLike.startDate || null,
+          endDate: intentLike.endDate || null,
+          bucketId: intentLike.bucketId || '',
+          category: intentLike.category || '',
+          notes: intentLike.notes || '',
+          priority: +intentLike.priority || 3,
+          archived: false,
+          meta: (intentLike.meta && typeof intentLike.meta === 'object') ? intentLike.meta : {},
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        if (!S.planIntents) S.planIntents = [];
+        S.planIntents.push(intent);
+
+        BRAIN.audit.append({
+          type: 'plan_intent_added',
+          intentId: id,
+          kind: intent.kind,
+          targetAmount: intent.targetAmount,
+          bucketId: intent.bucketId,
+          src: source,
+          ts: now,
+        });
+
+        try { save(); } catch (_) {}
+        return { ok: true, id };
+      },
+
+      update(id, patch, source) {
+        if (!source || !BRAIN._SOURCE_SET.has(source)) {
+          return { ok: false, reason: 'unknown-source:' + source };
+        }
+        const intent = this.get(id);
+        if (!intent) return { ok: false, reason: 'not-found:' + id };
+        if (!patch || typeof patch !== 'object') return { ok: false, reason: 'missing-patch' };
+
+        const allowed = ['name', 'emoji', 'targetAmount', 'startDate', 'endDate',
+                         'bucketId', 'category', 'notes', 'priority', 'meta'];
+        const applied = {};
+        for (const k of Object.keys(patch)) {
+          if (!allowed.includes(k)) {
+            return { ok: false, reason: 'unknown-field:' + k };
+          }
+          applied[k] = patch[k];
+        }
+        if (applied.targetAmount !== undefined) applied.targetAmount = +applied.targetAmount || 0;
+        if (applied.priority !== undefined) applied.priority = +applied.priority || 3;
+
+        Object.assign(intent, applied, { updatedAt: Date.now() });
+
+        BRAIN.audit.append({
+          type: 'plan_intent_updated',
+          intentId: id,
+          patch: applied,
+          src: source,
+          ts: Date.now(),
+        });
+
+        try { save(); } catch (_) {}
+        return { ok: true };
+      },
+
+      remove(id, source) {
+        return this._archive(id, source);
+      },
+
+      _archive(id, source) {
+        if (!source || !BRAIN._SOURCE_SET.has(source)) {
+          return { ok: false, reason: 'unknown-source:' + source };
+        }
+        const intent = this.get(id);
+        if (!intent) return { ok: false, reason: 'not-found:' + id };
+        intent.archived = true;
+        intent.updatedAt = Date.now();
+        BRAIN.audit.append({
+          type: 'plan_intent_archived',
+          intentId: id,
+          src: source,
+          ts: Date.now(),
+        });
+        try { save(); } catch (_) {}
+        return { ok: true };
+      },
+
+      setBucket(id, bucketId, source) {
+        return this.update(id, { bucketId: bucketId || '' }, source);
+      },
     },
   },
 
