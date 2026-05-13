@@ -1,6 +1,7 @@
 # SLYGHT — Architecture Overview
 
-> Living document. Last revamp: 2026-05-12 post-Bundle-22-v3 (Settings IA refactor complete).
+> Living document. Last revamp: 2026-05-13 post-Bundle-28 (canonical-writer queue closed — 13 BRAIN bubbles, every direct `S.X = …` mutation routes through a typed writer with audit emission).
+> See `docs/adr/ADR-001-canonical-writer-pattern.md` for the architectural decision record.
 > Maintainer: keep in sync as bubbles shift / canonical writers move.
 > John uses this as a software-consultant mental model of his own app.
 
@@ -112,31 +113,40 @@ flowchart TB
 | `_planScrollSavedY` | number (scroll px) | Bundle 16.6 — captured by PLAN_MODAL.open, restored by close |
 | `MathInvariants.invariants[]` | rule registry | Constant array |
 
-## 4. BRAIN layer (8 bubbles after Bundle 22 v3)
+## 4. BRAIN layer (13 bubbles after Bundle 28)
 
-Each bubble is a sub-object on `BRAIN` (defined at index.html L11284). Cross-cutting bubbles act as canonical writers/readers for state. Tab bubbles own their UI tab's read/write surface. **Bundle 22 v3** added `BRAIN.config` (income / payday / budgets / round-ups-enabled) and extended `BRAIN.savings` with round-up destination + read helpers — every Settings edit now flows through a canonical writer with audit logging and typed source-tag validation.
+Each bubble is a sub-object on `BRAIN`. Cross-cutting bubbles act as canonical writers/readers for state. Tab bubbles own their UI tab's read/write surface.
+
+**Bundle 28 closed the canonical-writer audit** (rounds 10–21) — every direct `S.X = …` mutation site outside sanctioned load/seed/migration paths now routes through a typed canonical writer. The AI agent self-introspects via `BRAIN.audit.query()` (round 20). See `docs/adr/ADR-001-canonical-writer-pattern.md` for the architectural decision record.
+
+**Bundle 22 v3** added `BRAIN.config` (income / payday / budgets / round-ups-enabled) and extended `BRAIN.savings` with round-up destination + read helpers — every Settings edit now flows through a canonical writer with audit logging and typed source-tag validation.
 
 ### Cross-cutting (shared services)
 
 | Bubble | Bundle | Methods | Owns |
 |---|---|---|---|
-| `BRAIN.audit` | 8 | `append(entry)` · `recent(n)` | Append-only event log — every canonical writer logs source tag |
-| `BRAIN.config` | **22 v3** | `setIncome` · `setPayday` · `setWeekdayBudget` · `setWeekendBudget` · `setRoundUpsEnabled` | Single source for income / payday / budgets / round-ups on-off. Replaced 5+ direct `S.x = ...` write sites |
-| `BRAIN.savings` | 8 + 22 v3 | `setBucketSaved` · `addToBucket` · `getBuckets` · `getBucket(nameOrId)` · `getRoundUpDestinationName` · `setRoundUpDestination(target, src)` | Buckets + round-up destination. Resolver routes name → bucket OR PLAN trip/goal id |
-| `BRAIN.summary` | 19 | `total(range)` · `byCategory(range)` · `totalsByCategory(range)` · `todayTxns(now)` · `aiContext()` | Precomputed rollups + AI envelope. Delegates to canonical filter helpers. |
+| `BRAIN.audit` | 8 + 18/20 | `append(entry)` · `appendReconLog(entry, src)` · `recent(n)` · `since(ts)` · `summarizeRecent(ts)` · `query(criteria)` | Append-only event log — every canonical writer logs source tag. `query()` (round 20) gives the AI agent typed filter access by type/source/time |
+| `BRAIN.config` | 22 v3 + 28 | `setIncome` · `setPayday` · `setWeekdayBudget` · `setWeekendBudget` · `setRoundUpsEnabled` · `setStrategy` · `setApiKey` · `setApiAlertThreshold` | Single source for income / payday / budgets / round-ups / debt strategy / API key + threshold. API key writer (round 15) centralises localStorage mirror + validation; audit stores `<set>`/`<unset>` markers not raw key |
+| `BRAIN.savings` | 8 + 22 v3 + 28 | `setBucketSaved` · `addToBucket` · `addBucket` · `updateBucket` · `removeBucket` · `getBuckets` · `getBucket` · `getRoundUpDestinationName` · `setRoundUpDestination` | Buckets + round-up destination. Round 5 added full bucket lifecycle writers |
+| `BRAIN.summary` | 19 | `total(range)` · `byCategory(range)` · `totalsByCategory(range)` · `todayTxns(now)` · `aiContext()` | Precomputed rollups + AI envelope |
+| `BRAIN.chat` | **28 round 14** | `addUser(content, src)` · `addAssistant(content, opts, src)` · `clear(src)` · `list(pred?)` · `HISTORY_CAP=50` | `S.chatHistory` lifecycle. Audit stores message `length` not `content` (privacy). 4 sources: `CHAT_USER_SEND` / `_ASSISTANT_REPLY` / `_ASSISTANT_ERROR` / `_CLEAR` |
+| `BRAIN.cycle` | **28 round 17** | `markPaydayReceived(src, opts)` · `clearPaydayReceived(src, reason)` · `isPaydayReceived()` · `getPaydayReceivedDate()` | `S.paydayReceived` lifecycle + cosmetic flag cleanup. Unifies legacy split between `paydayBannerDismissed` and `paydayPlanAutoExpanded` resets |
 
 ### Tab bubbles
 
 | Bubble | Bundle | Methods | Tab |
 |---|---|---|---|
 | `BRAIN.dashboard` | 10 | `todaySpend(now)` · `todayTxns(now)` · `cycleSpend()` · `weekSpend()` | Dashboard "NOW screen" |
-| `BRAIN.transaction` | 11 | `record(txn, src)` · `recordCorrection(diff, reason)` · `removeByTs(ts)` · `findByTs(ts)` · `list(predicate)` | Quick Log + txn list. `recordCorrection` is the Bundle 15.1 wrapper used by balance reconciliation |
+| `BRAIN.transaction` | 11 + 28 | `record(txn, src)` · `recordCorrection(diff, reason)` · `update(ts, patch, src)` · `removeByTs(ts)` · `removeByTsWithBalance(ts, src)` · `reclassify(ts, patch, src)` · `findByTs(ts)` · `list(predicate)` | Quick Log + txn list. **Round 10–12 closed the txn ❌**: edit / delete / reclassify all now route through canonical writers with balance reconciliation, audit emission, and idempotent ts-binding (closes OPEN-BUGS #42 + #43). |
 | `BRAIN.bills` | 14 | `markPaid(bill, src, opts)` · `unmark(key, src)` · `setPendingPay()` · `consumePendingPay()` · `isPaid()` · `isAutoDebit()` · `autoMatch()` · `autoDetect()` · `dueBeforePayday()` | Bills tab + paid/unpaid lifecycle |
-| `BRAIN.debts` | 15 + 22 v3 | `add` · `markPaid` · `unmark` · `update` · `delete` · `setStrategy` · `findById` · `active` · `total` · `isViaRent` · `allocateWrxProceeds` | Debts + WRX sale + strategy. `setStrategy` added 22 v3 (snowball/avalanche) |
+| `BRAIN.debts` | 15 + 22 v3 | `add` · `markPaid` · `unmark` · `update` · `delete` · `setStrategy` · `findById` · `active` · `total` · `isViaRent` · `allocateWrxProceeds` | Debts + WRX sale + strategy |
+| `BRAIN.assets` | 24 + 28 | `setMumAccount` · `setSuperBalance` · `setCarloan` · `setCarloanOriginal` · `setCarloanLifetimePaid` · `setCC` · `setCCLimit` · `setWrxValue` · `setWrxStatus` · `setKiaEarlyRepayFee` · `resetKiaEarlyRepayFee` · `netWorth()` · `liquidNet()` · `totalAssets()` · `totalLiabilities()` | Assets + liabilities + WRX state. Round 13 added WRX writers (3 sites closed); round 19 added KIA fee writers. Canonical net-worth math. |
+| `BRAIN.allocation` | 26.1.5b | Payday plan persistence (`updateAllocation` · `lockPaydayPlan` · `getPlan` · `dismissBanner`) | Allocate Payday sub-screen |
+| `BRAIN.plan` | 27 + 28 P0 | Plan-cycle envelope: `getSnapshot()` · `tickItem` · `untickItem` · `setOverride` · `clearOverride` · `intent.{add,update,remove,setBucket,list,byKind,byBucket}` · `getTrips()` · `getGoals()` · `getAnnualProvisions()` | Payday Plan canvas + intents canonical layer (Phase 0 collapse) |
 
 ### Source tag vocabulary (BRAIN.SOURCES)
 
-Frozen enum. Every canonical writer takes a `source` arg validated against `_SOURCE_SET`. Pre-Bundle-11 these were stringly-typed — Bundle 11 froze the vocabulary. Bundle 22 v3 added 7 new tags for Settings paths.
+Frozen enum. Every canonical writer takes a `source` arg validated against `_SOURCE_SET`. Pre-Bundle-11 these were stringly-typed — Bundle 11 froze the vocabulary. 60+ tags as of Bundle 28 round 21.
 
 ```
 Bundle 8–15 baseline:
@@ -149,6 +159,34 @@ Bundle 22 v3 additions:
   SETTINGS_INCOME_EDIT · SETTINGS_PAYDAY_EDIT · SETTINGS_BUDGET_EDIT
   SETTINGS_DEBT_STRATEGY · SETTINGS_ROUNDUP_DEST · SETTINGS_ROUNDUPS_TOGGLE
   QUICKLOG_ROUNDUP_DEST (reserved)
+
+Bundle 24 + 25 additions:
+  SETTINGS_ASSET_EDIT · SETTINGS_LIABILITY_EDIT · QUICKLOG_ADD_BILL
+
+Bundle 26.1.5b additions:
+  PLAN_ALLOCATE_SLIDER · PLAN_LOCK_PAYDAY · PLAN_UNLOCK_PAYDAY
+
+Bundle 27 additions (Payday Plan Canvas):
+  PLAN_BILLS_TICK · PLAN_DEBT_TICK · PLAN_SAVINGS_TICK · PLAN_KIA_EXTRA_TICK · PLAN_UPCOMING_TICK
+  PLAN_UPCOMING_ADD · PLAN_UPCOMING_REMOVE · PLAN_UPCOMING_UPDATE · PLAN_UNTICK
+  PLAN_OVERRIDE_SET · PLAN_OVERRIDE_CLEAR · PLAN_BONUS_EDIT · PLAN_BONUS_CONFIRM
+  PLAN_DAILY_FLOOR_EDIT · PLAN_BUFFER_FLOOR_EDIT
+  CANVAS_AUTO_APPLY · CANVAS_LOCK · CANVAS_UNLOCK
+  AI_AFFORDABILITY_QUERY · AI_PROPOSAL_APPLY · AI_KNOWN_UPCOMING_ADD
+  CARRIED_FROM_PRIOR_CYCLE
+
+Bundle 28 additions (intents + canonical-writer queue cleanout):
+  PLAN_INTENT_{ADD,UPDATE,REMOVE,LINK_BUCKET} · MIGRATION_INTENTS_V1
+  TXN_RECLASSIFY · TXN_EDIT · TXN_DELETE
+  BUCKET_CREATE · BUCKET_UPDATE · BUCKET_DELETE
+  WRX_VALUE_EDIT · WRX_STATUS_CHANGE
+  CHAT_USER_SEND · CHAT_ASSISTANT_REPLY · CHAT_ASSISTANT_ERROR · CHAT_CLEAR
+  SETTINGS_API_KEY · CHAT_KEY_SET
+  NOTIFY_ADD · NOTIFY_BATCH · NOTIFY_DISMISS · NOTIFY_CLEAR_ALL
+  CYCLE_PAYDAY_RECEIVED · CYCLE_PAYDAY_CLEARED
+  RECON_LOG_APPEND
+  KIA_FEE_EDIT · KIA_FEE_RESET
+  SETTINGS_API_ALERT_THRESHOLD
 ```
 
 ## 5. Calc layer — canonical helpers
