@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-05-13T13:01:48.571Z",
-  "balance": 84.89,
+  "timestamp": "2026-05-13T14:04:23.407Z",
+  "balance": 11.72,
   "summary": {
     "passed": 51,
     "failed": 0,
@@ -14,19 +14,19 @@
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "getLiveBal() equals TEST_S.bal",
           "pass": true,
-          "detail": "got $84.89 expected $84.89"
+          "detail": "got $11.72 expected $11.72"
         },
         {
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "TEST_S.bal is valid positive number",
           "pass": true,
-          "detail": "TEST_S.bal = 84.89"
+          "detail": "TEST_S.bal = 11.72"
         },
         {
           "section": "SECTION 1 — BALANCE INTEGRITY",
           "name": "TEST_S.bal is positive (synthetic: ~$1,500.34)",
           "pass": true,
-          "detail": "real state: $84.89 (positive ✓)"
+          "detail": "real state: $11.72 (positive ✓)"
         }
       ]
     },
@@ -37,7 +37,7 @@
           "section": "SECTION 2 — DEBT STATE VERIFICATION",
           "name": "Active non-viaRent debts are valid (synthetic: Pet Insurance only)",
           "pass": true,
-          "detail": "2 active: [Afterpay — Concert Tickets, Borrowed from Michael]"
+          "detail": "2 active: [Borrowed from Michael, Borrowed from Mum for Bowie vet]"
         },
         {
           "section": "SECTION 2 — DEBT STATE VERIFICATION",
@@ -113,7 +113,7 @@
           "section": "SECTION 4 — SURPLUS AND MAX/DAY",
           "name": "getGenuineSurplus() <= TEST_S.bal",
           "pass": true,
-          "detail": "surplus=$0 bal=$84.89"
+          "detail": "surplus=$0 bal=$11.72"
         },
         {
           "section": "SECTION 4 — SURPLUS AND MAX/DAY",
@@ -154,13 +154,13 @@
           "section": "SECTION 5 — SPENDING CALCULATIONS",
           "name": "getAvgDailySpend() excludes debt repayments",
           "pass": true,
-          "detail": "avg=$60.00/day debtRepayments=$7028.32 (avg should be much less)"
+          "detail": "avg=$60.00/day debtRepayments=$7310.82 (avg should be much less)"
         },
         {
           "section": "SECTION 5 — SPENDING CALCULATIONS",
           "name": "getAvgDailySpend() excludes income",
           "pass": true,
-          "detail": "avg=$60.00/day income=$9843.08"
+          "detail": "avg=$60.00/day income=$9862.69"
         },
         {
           "section": "SECTION 5 — SPENDING CALCULATIONS",
@@ -236,7 +236,7 @@
           "section": "SECTION 7 — DATA INTEGRITY",
           "name": "paydayReceived flag matches calendar position",
           "pass": true,
-          "detail": "paydayReceived=false · today=13 · payday=15"
+          "detail": "paydayReceived=false · today=14 · payday=15"
         }
       ]
     },
@@ -247,13 +247,13 @@
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
           "name": "SCENARIO: Mark Afterpay paid → debtsDue decreases",
           "pass": true,
-          "detail": "before=$120.47 after=$0.00 (target: decrease)"
+          "detail": "N/A — no unpaid Afterpay debt in fixture (skipped)"
         },
         {
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
           "name": "SCENARIO: Log $50 expense → balance decreases",
           "pass": true,
-          "detail": "before=$84.89 after=$34.89"
+          "detail": "before=$11.72 after=$-38.28"
         },
         {
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
@@ -271,7 +271,7 @@
           "section": "SECTION 8 — MOCK GO-LIVE SCENARIOS",
           "name": "SCENARIO: WRX sale at $21k → clears all active debts",
           "pass": true,
-          "detail": "WRX net=$23000 activeDebt=$531.19 — WRX sale clears everything"
+          "detail": "WRX net=$23000 activeDebt=$717.50 — WRX sale clears everything"
         }
       ]
     },
@@ -282,7 +282,7 @@
           "section": "SECTION 9 — AUDIT LOG ANALYSIS",
           "name": "Audit log loaded from real state",
           "pass": true,
-          "detail": "44 audit entries loaded"
+          "detail": "53 audit entries loaded"
         },
         {
           "section": "SECTION 9 — AUDIT LOG ANALYSIS",

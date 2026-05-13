@@ -39,6 +39,44 @@ function buildSlyghtV5(fx) {
 }
 
 const manifest = [];
+// r64: UI→code attribution map. Each shoot() call also records the active
+// screen's primary container + a list of buttons / clickable rows present in
+// that screen. Persisted alongside manifest.json so future-me can reverse-
+// lookup a capture → the elements present → the onclick handlers → grep the
+// source. Saves the "where in the 24k-line file does this render?" search.
+const uiCodeMap = [];
+
+async function attributeUi(page, slug) {
+  try {
+    return await page.evaluate(() => {
+      const summary = (el) => {
+        if (!el) return null;
+        return {
+          tag: el.tagName,
+          id: el.id || null,
+          classes: typeof el.className === 'string' ? el.className.slice(0, 80) : null,
+          ariaLabel: el.getAttribute && el.getAttribute('aria-label'),
+          onclick: el.getAttribute && (el.getAttribute('onclick') || '').slice(0, 120),
+          dataLabel: el.dataset && el.dataset.label || null,
+          text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60),
+        };
+      };
+      const activeScreen = document.querySelector('.screen.active') || document.body;
+      const allClickables = Array.from(activeScreen.querySelectorAll('[onclick], button, a, [role="button"]'));
+      return {
+        activeScreenId: activeScreen.id || null,
+        activeModal: (() => {
+          const m = document.querySelector('.modal-overlay.show, .edit-modal.show, .recon-overlay.show');
+          return m ? { id: m.id || null, classes: typeof m.className === 'string' ? m.className.slice(0, 80) : null } : null;
+        })(),
+        clickables: allClickables.slice(0, 40).map(summary),
+        clickableCount: allClickables.length,
+      };
+    });
+  } catch (e) {
+    return { error: e.message };
+  }
+}
 
 async function shoot(page, idx, slug, note = '') {
   const nn = String(idx).padStart(2, '0');
@@ -50,11 +88,35 @@ async function shoot(page, idx, slug, note = '') {
     // invisible to visual regression — false negatives on intentional changes).
     await page.screenshot({ path: fullPath, fullPage: true });
     const size = fs.statSync(fullPath).size;
+    const attribution = await attributeUi(page, slug);
     manifest.push({ idx, slug, file, status: 'ok', size, note });
-    console.log(`  [${nn}] ${slug}  (${(size/1024).toFixed(0)} KB)${note ? '  — ' + note : ''}`);
+    uiCodeMap.push({ idx, slug, file, ...attribution });
+    console.log(`  [${nn}] ${slug}  (${(size/1024).toFixed(0)} KB)${note ? '  — ' + note : ''}${attribution.clickableCount !== undefined ? '  · ' + attribution.clickableCount + ' tappables' : ''}`);
   } catch (e) {
     manifest.push({ idx, slug, file: null, status: 'fail', error: e.message, note });
     console.log(`  [${nn}] ${slug}  FAIL: ${e.message}`);
+  }
+}
+
+// r64: zoom() screenshots a single element at higher effective DPR so detail
+// is legible at desktop reading size. Use for hero subline math, debt-card
+// bars, calendar legend, etc — anywhere the full-page shot is too small.
+async function zoom(page, idx, slug, selector, note = '') {
+  const nn = String(idx).padStart(2, '0');
+  const file = `slyght-layerV-${DATE_TAG}-${nn}-zoom-${slug}.png`;
+  const fullPath = path.join(OUT_DIR, file);
+  try {
+    const handle = await page.$(selector);
+    if (!handle) throw new Error('selector not found: ' + selector);
+    await handle.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(150);
+    await handle.screenshot({ path: fullPath, scale: 'device' });
+    const size = fs.statSync(fullPath).size;
+    manifest.push({ idx, slug: 'zoom-' + slug, file, status: 'ok', size, selector, note });
+    console.log(`  [${nn}z] zoom ${slug}  (${(size/1024).toFixed(0)} KB)  selector=${selector}`);
+  } catch (e) {
+    manifest.push({ idx, slug: 'zoom-' + slug, file: null, status: 'fail', selector, error: e.message, note });
+    console.log(`  [${nn}z] zoom ${slug}  FAIL: ${e.message}`);
   }
 }
 
@@ -473,46 +535,55 @@ async function step(name, fn) {
   await page.waitForTimeout(300);
   await shoot(page, 28, 'settings-top');
 
-  // 29 App Controls
-  await step('scroll to app controls', async () => {
-    await page.evaluate(() => {
-      const cands = Array.from(document.querySelectorAll('h2, h3, summary, .section-title, div'));
-      const hit = cands.find(el => /app controls|round.?ups|api key/i.test((el.textContent || '').slice(0, 80)) && el.offsetHeight > 0);
-      if (hit) hit.scrollIntoView({ block: 'start' });
-      else window.scrollBy(0, 500);
-    });
-  });
-  await page.waitForTimeout(300);
-  await shoot(page, 29, 'settings-app-controls');
+  // Bundle 28 round 57: Bundle 22 v3 reshipped Settings as Samsung-style IA
+  // with sub-screens. The old captures (29-32) scrolled inside a flat layout
+  // that no longer exists — they were producing blank screens. New flow:
+  // open each sub-screen via openSettingsCategory(), shoot it, then close
+  // before opening the next one. Slot names follow the new IA, not the old
+  // "app-controls/income-budget/debt-strategy/bottom" labels (those don't map
+  // cleanly to the post-22v3 reality).
+  const openSub = async (subId) => {
+    await page.evaluate((id) => {
+      if (typeof openSettingsCategory === 'function') openSettingsCategory(id);
+    }, subId);
+    await page.waitForTimeout(350);
+  };
+  const closeSub = async (subId) => {
+    await page.evaluate((id) => {
+      if (typeof closeSettingsCategory === 'function') closeSettingsCategory(id);
+    }, subId);
+    await page.waitForTimeout(300);
+  };
 
-  // 30 Income / Budget
-  await step('scroll to income budget', async () => {
-    await page.evaluate(() => {
-      const cands = Array.from(document.querySelectorAll('h2, h3, summary, .section-title, label, div'));
-      const hit = cands.find(el => /monthly salary|payday|weekday budget|weekend budget/i.test((el.textContent || '').slice(0, 80)) && el.offsetHeight > 0);
-      if (hit) hit.scrollIntoView({ block: 'start' });
-    });
-  });
-  await page.waitForTimeout(300);
-  await shoot(page, 30, 'settings-income-budget');
+  // 29 — Financial Data sub-screen (income, assets, debts surface)
+  await step('open sub-financial', () => openSub('sub-financial'));
+  await shoot(page, 29, 'settings-financial');
+  await step('close sub-financial', () => closeSub('sub-financial'));
 
-  // 31 Debts + savings
-  await step('scroll to debt strategy', async () => {
-    await page.evaluate(() => {
-      const cands = Array.from(document.querySelectorAll('h2, h3, summary, .section-title, label, div'));
-      const hit = cands.find(el => /debt strategy|avalanche|snowball/i.test((el.textContent || '').slice(0, 80)) && el.offsetHeight > 0);
-      if (hit) hit.scrollIntoView({ block: 'start' });
-    });
-  });
-  await page.waitForTimeout(300);
-  await shoot(page, 31, 'settings-debt-strategy');
+  // 30 — Strategies sub-screen (weekday/weekend budgets + debt payoff order)
+  await step('open sub-strategies', () => openSub('sub-strategies'));
+  await shoot(page, 30, 'settings-strategies');
+  await step('close sub-strategies', () => closeSub('sub-strategies'));
 
-  // 32 Bottom (snapshots / health / activity log / danger zone)
-  await step('scroll settings bottom', async () => {
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  });
-  await page.waitForTimeout(300);
-  await shoot(page, 32, 'settings-bottom');
+  // 31 — Data & Backup sub-screen (snapshots, round-ups, export, import)
+  await step('open sub-data', () => openSub('sub-data'));
+  await shoot(page, 31, 'settings-data-backup');
+  await step('close sub-data', () => closeSub('sub-data'));
+
+  // 32 — Diagnostics sub-screen (health checks, activity log, version)
+  await step('open sub-diagnostics', () => openSub('sub-diagnostics'));
+  await shoot(page, 32, 'settings-diagnostics');
+  await step('close sub-diagnostics', () => closeSub('sub-diagnostics'));
+
+  // r64: previously-missing Settings sub-screens — notifications + AI assistant.
+  // 32a — Notifications sub-screen (smart alerts, quiet mode)
+  await step('open sub-notifications', () => openSub('sub-notifications'));
+  await shoot(page, 32, 'settings-notifications', 'r64: was uncaptured');
+  await step('close sub-notifications', () => closeSub('sub-notifications'));
+  // 32b — AI Assistant sub-screen (API key, usage, costs)
+  await step('open sub-ai', () => openSub('sub-ai'));
+  await shoot(page, 32, 'settings-ai-assistant', 'r64: was uncaptured');
+  await step('close sub-ai', () => closeSub('sub-ai'));
 
   console.log('\n=== SECTION 7 — Critical modals ===');
   // 33 Quick-log
@@ -688,9 +759,39 @@ async function step(name, fn) {
   });
   await shoot(page, 42, 'toast-over-canvas', 'showToast at z-index 800 above canvas 510');
 
-  // Persist manifest
+  // ─── SECTION 8 — Zoom captures (r64) ───────────────────────────
+  // Close-ups of small-but-critical UI so detail is legible at desktop reading size.
+  console.log('\n=== SECTION 8 — Zoom captures ===');
+  // Hard-reset to dashboard — close any overlays AND any payday canvas (which is
+  // a full-screen overlay, not a screen, so goPage doesn't kick it).
+  await step('hard-reset to dashboard for zoom', async () => {
+    await page.evaluate(() => {
+      // Close every overlay class we've seen
+      document.querySelectorAll('.modal-overlay.show, .edit-modal.show, .recon-overlay.show').forEach(m => m.classList.remove('show'));
+      // Close payday canvas if it has a close API
+      if (typeof closePaydayPlan === 'function') { try { closePaydayPlan(); } catch (_) {} }
+      // Hide any canvas root by id
+      const canv = document.getElementById('payday-canvas') || document.getElementById('payday-plan-root');
+      if (canv) { canv.style.display = 'none'; canv.classList && canv.classList.remove('show', 'open', 'active'); }
+      if (typeof goPage === 'function') goPage('pg-dash');
+    });
+    await page.waitForTimeout(400);
+  });
+  await zoom(page, 43, 'hero-balance', '#h-bal', 'hero balance + subline');
+  await zoom(page, 44, 'hero-subline', '#h-note', 'today\'s outflow breakdown — verify $66/$283/$218 math');
+  await zoom(page, 45, 'immediate-debts-grid', '#debt-grid', 'debt tiles — verify via-rent shows paid-off bar (r64)');
+  await zoom(page, 46, 'persistent-strip', '#persistent-strip', 'NW · max-day · payday footer');
+  await step('open bills for calendar zoom', async () => {
+    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-cal'); });
+    await page.waitForTimeout(400);
+  });
+  await zoom(page, 47, 'bills-calendar', '#cal-grid', 'calendar — verify Google One day-1 strike-through (paidBills migration)');
+
+  // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
-  console.log(`\nManifest: ${path.join(OUT_DIR, 'manifest.json')}`);
+  fs.writeFileSync(path.join(OUT_DIR, 'ui-code-map.json'), JSON.stringify(uiCodeMap, null, 2));
+  console.log(`\nManifest:    ${path.join(OUT_DIR, 'manifest.json')}`);
+  console.log(`UI-code map: ${path.join(OUT_DIR, 'ui-code-map.json')}`);
 
   await browser.close();
   console.log('Done.');

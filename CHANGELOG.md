@@ -122,6 +122,46 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 64 — Deep Layer V sweep + harness upgrade + 4 UX fixes
+John ask: "FULL SWEEP of the app using local Layer V to understand the whole app, map out how code is visualised, continue improving where code was meant to look one way and displays another, fix data gaps, fix UX gaps." Deep-sweep every capture cross-referenced against `state-snapshot.json` (live phone dump) and `index.html`, with per-tappable critique. Doc: `docs/R64-DEEP-SWEEP-2026-05-13.md` (8,000 words, 42 captures, full code-attribution table, prioritised punch list).
+
+#### UI fixes shipped
+- **Hero subline orphan arrow** (`index.html:5755`) — `' in debt payments ↓'` had a trailing down-arrow with no label or tooltip. Removed; subline now reads `$66 spent today · $283 in debt payments · $218 bills paid`.
+- **viaRent debt bar misleading** (`index.html:6425`) — Property Deposit ($5,681) was rendering "100% OF DEBT" because the share-bar `pct = Math.min(100, amt/total*100)` capped a 791% computation. Visually identical to a "100% paid" bar but semantic opposite. Now viaRent tiles render "X% paid off · paid / original" with a green bar; manual debts keep the share bar.
+- **Empty-debt-notes "Tap to edit"** (`index.html:6424`) — already fixed in r61, reverified here.
+- **Tutorial z-index over add-bucket modal** (`index.html:9367+`) — first-run "Welcome to Payday Plan" tutorial fires on 400ms timer; if user opened a modal in that window, tutorial appeared on top. Now guarded: skip + defer if any modal is already open when timer elapses.
+
+#### Data migration shipped
+- **seedV26 paidBills cleanup** (`index.html:13748+`) — discovered via deep sweep: `paidBills["2026-5-Google Microsoft-1"]` and `paidBills["2026-5-Teachers Health-1"]` were stale (bills renamed/removed in earlier bundles but their paidBills keys never migrated). Effect: Google One on day 1 rendered as UNPAID despite auto-debiting. Migration renames `Google Microsoft-N` → `Google One-N` for any month/year and drops orphan keys whose name is no longer in BILLS. Idempotent. Verified by Layer V calendar zoom — day 1 now shows strikethrough + ✓ as expected.
+
+#### Layer V harness upgrades
+- **UI→code attribution** (`scripts/layerV-capture.js`) — every `shoot()` call now also records the active screen, any active modal, and up to 40 clickable elements (with `tag/id/classes/aria-label/onclick/text` summary). Persisted to `captures/ui-code-map.json` (41 entries this run). Lets future-me grep for any element seen in a capture and find its handler instead of searching the 24k-line index.html cold.
+- **Zoom helper** (`scripts/layerV-capture.js:zoom()`) — single-element close-up screenshots at device DPR. Section 8 adds 5 zooms: hero balance, hero subline (verifies $66/$283/$218 math), immediate-debts grid (verifies viaRent bar fix), persistent strip, bills calendar (verifies seedV26 paid-strikethrough). Calendar zoom is materially more legible than the full-page calendar shot.
+- **Settings notifications + AI sub-screens** (`scripts/layerV-capture.js`) — were uncaptured. Now sections 32a/32b cover them with the same Samsung-IA navigation pattern as the existing 4 sub-screens.
+
+#### Findings classified as not-a-bug (decision: leave alone)
+- Day-15 calendar total `$3998` is **correct**: includes 2 bills ($3,000 Rent + $780 KIA Loan) PLUS the Bowie debt ($217.50 delayDate=2026-05-15). Calendar intentionally mixes bills + debts due. Legend says "Bill · Payday · Multiple" without mentioning debts — under-documented but accurate. Logged as polish for next bundle.
+- "Savings $20 = 1 transaction" in Analysis pivot is **correct**: `getAllOutflowsByCategory` filter excludes `_isRoundup` (round-ups are passive, not "spending"). The one $20 is the May 7 China holiday deposit. 13 round-ups in window correctly excluded.
+- Darwin trip "your share" copy is **correct**: trip data has `gfSplitting: true` and notes explicitly say "GF coming". Not solo.
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime PASS. Verified end-to-end with local Layer V run against current code.
+
+### Rounds 57–63 — Layer V fixture refresh + post-refresh re-analysis sweep
+Bundle 28 marathon continuation. After r55 BNPL ship, r56 settings IA, r57 capture-script settings sub-screen routing, r58 fixture refresh from live-phone dump, r59 deep re-analysis identified five real issues + four false-positives that dissolved when the stale "Google Microsoft" fixture was replaced. r60–r63 land the punch-list.
+
+- **r57** — `scripts/layerV-capture.js` SECTION 6 rewritten to open/close the four Samsung-style sub-screens (`sub-financial`, `sub-strategies`, `sub-data`, `sub-diagnostics`). Pre-fix captures 29–32 were blank white screens (~62 KB) using pre-Bundle-22v3 selectors; post-fix captures 144–237 KB with real content.
+- **r58** — `state-snapshot.json` replaced with `slyght-state-2026-05-13 (1).json` (bal $11.72, 2026-05-13T10:54:56Z). Backup at `state-snapshot.json.pre-r58.bak`. Runtime 51/51 PASS post-refresh — caught no test-fixture drift this round.
+- **r59** — 42-capture deep re-analysis on the fresh fixture. Synthesis at `docs/R59-RE-ANALYSIS-2026-05-13.md`. Found: seedV18 NRMA contamination (P0), Afterpay ghost label (P1), "Tap to edit" placeholder confusion (P1), test-pollution surfacing gap (P1), Diagnostics "Most used" label noise (P2). Verified hero subline math is canonical and correct ($66 disc + $283 debt + $218 bills reconciles exactly to today's BRAIN.dashboard.todayOutflows() split).
+- **r60** — `seedV18` retired (`index.html:13313`). The migration originally injected NRMA KIA Insurance into `S.debts` whenever fresh localStorage carried >10 txns without an NRMA entry. With the live-state truth that NRMA is paid via Mum (`slyght_nrma_mum_flow`), this injection was a ghost-data source visible in every Layer V run. New body: flag-only — keeps existing installs idempotent while stopping the contamination at the source.
+- **r61** — three UX-clarity fixes:
+  - "(same as debt above)" badge in monthly-bills list (`index.html:7598`) now requires a matching active debt in `S.debts` instead of firing on any `Afterpay`-named or `Debt repayment`-tagged bill. Cleared the ghost label that persisted after Afterpay was paid off.
+  - Empty-notes debt cards now render `Tap to add notes` in muted-italic (`index.html:6424`) instead of `Tap to edit` in body-text color. Eliminates the "looks like a real note" misread John surfaced on Bowie vet.
+  - Diagnostics Data-Health adds a test-pollution detector for transaction notes matching `/debug|asdf|qwerty|placeholder|fixme|lorem|ipsum/i`. Skips `_isCorrection` entries (legit user corrections like "Fixing testing" $563.78). Surfaces as a warning, not a hard issue.
+- **r62** — verification-only round. Confirmed hero subline math is correct against fixture (no code change). Footer "$0 left today" vs hero "$11.72 left" reconciled as intentional dual surfacing (daily-budget remaining vs total survivability).
+- **r63** — `UX_TRACKER.trackTap` click handler (`index.html:14623`) now prefers `aria-label` / `data-label` / `title` (own + closest ancestor) over raw `textContent` before falling back to a leading-non-word-stripped truncate. Fixes "Most used: 1$3✓" mojibake-looking labels that were actually concatenated badge+amount+checkmark from button textContent.
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime PASS across r60-r63. Layer V verification deferred to post-deploy (script hits `https://xetonx.github.io/slyght/`, not local file).
+
 ### Round 55 — BNPL explicit paymentDates schedule (additive)
 Bundle 29 candidate B pulled forward. Real Afterpay/Klarna/Zip schedules slide (21 May → 4 Jun → 18 Jun → 2 Jul) and don't repeat on the same day-of-month. Pre-r55 BNPL bills used `freq:fortnightly + day:21` which is an approximation that drifts visibly over a multi-month plan.
 
