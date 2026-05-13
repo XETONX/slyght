@@ -707,13 +707,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <!-- ═══ Bundle 22 v3 Phase 1: Samsung-style root navigator (skeleton) ═══ -->
       <div id="settings-root-nav">
 
-        <!-- Balance hero -->
-        <div style="background:var(--bg2);border-radius:12px;padding:18px;margin-bottom:16px">
-          <div style="color:var(--text3);font-size:12px;font-weight:600;letter-spacing:0.5px;margin-bottom:6px">CURRENT BALANCE</div>
-          <div id="settings-balance-display" style="font-family:var(--mono);font-size:32px;font-weight:700;color:var(--text);margin-bottom:4px">$0.00</div>
-          <div id="settings-balance-updated" style="color:var(--text3);font-size:12px;margin-bottom:12px">Live</div>
-          <button onclick="openSettingsBalanceEdit()" aria-label="Update balance" style="width:100%;padding:12px;background:var(--green);border:none;border-radius:8px;color:#000;font-size:15px;font-weight:700;min-height:44px;cursor:pointer">Update Balance</button>
-        </div>
+        <!-- Balance hero removed Bundle 28.x — dashboard hero is the single
+             balance-edit surface. Removing the redundant Settings entry
+             eliminated a broken edit path that John couldn't get to work
+             reliably and that introduced inconsistent state when the recon
+             modal was cancelled. -->
 
         <!-- Category rows -->
         <div style="display:flex;flex-direction:column;gap:1px;background:var(--border);border-radius:12px;overflow:hidden;margin-bottom:12px">
@@ -850,12 +848,8 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         </div>
       </div>
       <div class="card">
-        <div class="settings-section">
-          <div class="settings-title">Balance</div>
-          <div class="settings-row"><span class="settings-lbl">Current balance ($)</span><input class="settings-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="s-bal" placeholder="0.00" inputmode="decimal"></div>
-          <button class="add-btn" onclick="updateBalanceFromSettings()" style="margin-top:6px">Update Balance</button>
-          <div id="s-bal-msg" style="font-size:14px;margin-top:6px"></div>
-        </div>
+        <!-- Legacy Balance section removed Bundle 28.x. Edit balance from the
+             dashboard hero. -->
         <div class="settings-section">
           <div class="settings-title">App Security</div>
           <div class="settings-row"><span class="settings-lbl">App PIN</span><input class="settings-input" autocomplete="new-password" data-lpignore="true" data-form-type="other" type="password" id="s-pin" placeholder="4 digits" maxlength="4" oninput="saveSettings()"></div>
@@ -5022,7 +5016,7 @@ function renderAll() {
   renderSpendingCoach();
   if (document.getElementById('pg-spend')?.classList.contains('active')) { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }
   checkAfford();
-  if ($('s-bal')) $('s-bal').value = S.bal != null ? S.bal : '';
+  // s-bal restore removed Bundle 28.x (Settings balance edit deleted).
   if ($('s-income')) $('s-income').value = S.income || 7282;
   if ($('s-payday')) $('s-payday').value = S.payday || 15;
   if ($('s-car')) $('s-car').value = S.carloan != null ? S.carloan : '';
@@ -5039,9 +5033,8 @@ function renderAll() {
     const _destName = BRAIN.savings.getRoundUpDestinationName();
     _roundupSubEl.textContent = _destName ? ('Add cents to ' + _destName) : 'Add cents to your savings goal';
   }
-  // Bundle 22 v3 Phase 1: Settings root balance hero — live read from S.bal.
-  const _sBalDispEl = $('settings-balance-display');
-  if (_sBalDispEl) _sBalDispEl.textContent = fmtC(S.bal || 0);
+  // Bundle 28.x: settings-balance-display removed — dashboard hero is the
+  // single balance surface.
   // Bundle 22 v3 Phase 3a: Settings sub-screen value displays (Financial,
   // Strategies, AI Assistant). Each row's row-value span is updated here
   // so values stay live when the user opens a sub-screen.
@@ -5354,95 +5347,12 @@ function confirmHeroBalEdit() {
   runRecon(b, prevExpected);
 }
 
-function updateBalanceFromSettings() {
-  const _sbal = $('s-bal'); if (!_sbal) return;
-  const b = parseFloat(_sbal.value);
-  const msg = $('s-bal-msg');
-  if (isNaN(b)) { if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Enter a valid balance.'; } return; }
-  const prevExpected = getLiveBal(); // H2: snapshot before S.bal changes
-
-  // Detect payday via balance jump — compare new bank balance to current S.bal baseline
-  const jump = b - S.bal;
-  const income = S.income || 7282;
-  const todayD3 = new Date().getDate();
-  const pd3 = S.payday || 15;
-  const nearPayday3 = todayD3 >= pd3 - 1 && todayD3 <= pd3 + 2;
-  if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday3 && !S.paydayReceived) {
-    S.paydayReceived = true;
-    S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
-  }
-
-  // Bundle 28.x hotfix: route Settings balance edit through the same
-  // pending-correction flow Dashboard uses. Previously this directly mutated
-  // S.bal at this point (bypassing applyBalanceCorrection's canonical writer)
-  // and the recon modal asked for a reason AFTER the change had already
-  // landed — leaving an inconsistent state if the user cancelled the modal.
-  // Now: stage the correction, let runRecon either auto-apply (small diffs)
-  // or open the reason modal (>=$1 diffs). applyBalanceCorrection (called
-  // by confirmRecon or by runRecon's auto-apply branch) handles S.bal +
-  // BRAIN.transaction.recordCorrection + onStateChange + toast.
-  if (msg) { msg.style.color = ''; msg.textContent = ''; }
-  _pendingBalCorrection = {newBal: b, prevExpected};
-  runRecon(b, prevExpected);
-}
-
-// Bundle 28.x hotfix round 2: in-place Settings balance edit modal.
-// Previously the visible "Update Balance" button at L715 just called
-// goPage('pg-dash') — redirecting to Dashboard, confusing users who tapped
-// expecting an in-place edit. The legacy s-bal input + button at L855-857
-// still exist but the input is not visible in the new Settings IA (Bundle
-// 22 v3). This opens a Samsung-style EDIT_MODAL on top of Settings, uses
-// the same _pendingBalCorrection + runRecon flow as the Dashboard path.
-function openSettingsBalanceEdit() {
-  if (typeof EDIT_MODAL === 'undefined' || !EDIT_MODAL.openCustom) {
-    // Defensive fallback — direct to Dashboard if modal infra missing
-    if (typeof goPage === 'function') goPage('pg-dash');
-    return;
-  }
-  const current = +S.bal || 0;
-  const bodyHtml =
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Current: <strong style="font-family:var(--mono);color:var(--text2)">$' + current.toFixed(2) + '</strong></div>' +
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Enter your real bank balance:</div>' +
-    '<input id="settings-bal-edit-input" type="number" inputmode="decimal" placeholder="0.00" ' +
-    'autocomplete="off" data-lpignore="true" data-form-type="other" ' +
-    'value="' + current.toFixed(2) + '" ' +
-    'style="width:100%;padding:12px;font-family:var(--mono);font-size:18px;background:var(--bg3);' +
-    'border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);box-sizing:border-box">';
-  EDIT_MODAL.openCustom({
-    title: 'Update balance',
-    hint: 'If this differs from what slyght has, the next screen asks why.',
-    bodyHtml,
-    onReady: () => {
-      const el = document.getElementById('settings-bal-edit-input');
-      if (el) { el.focus(); el.select && el.select(); }
-    },
-    save: () => {
-      const el = document.getElementById('settings-bal-edit-input');
-      if (!el) return { ok: false, reason: 'Input missing' };
-      const b = parseFloat(parseFloat(el.value).toFixed(2));
-      if (isNaN(b) || b < 0) return { ok: false, reason: 'Enter a positive number' };
-      const prevExpected = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
-      // Payday-jump detection mirrors updateBalanceFromSettings
-      const jump = b - (+S.bal || 0);
-      const income = +S.income || 7282;
-      const todayD = new Date().getDate();
-      const pd = +S.payday || 15;
-      const nearPayday = todayD >= pd - 1 && todayD <= pd + 2;
-      if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday && !S.paydayReceived) {
-        S.paydayReceived = true;
-        S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
-      }
-      // Stage correction; runRecon will toast / auto-apply / open recon-modal.
-      // Note: EDIT_MODAL closes itself on { ok: true }. The recon-modal (if
-      // opened by runRecon for >=$1 diffs) is a separate modal layer.
-      _pendingBalCorrection = { newBal: b, prevExpected };
-      // Defer runRecon so EDIT_MODAL.close has finished its DOM teardown before
-      // recon-modal opens — avoids z-index / focus-trap collisions.
-      setTimeout(() => { if (typeof runRecon === 'function') runRecon(b, prevExpected); }, 50);
-      return { ok: true };
-    },
-  });
-}
+// Settings balance edit removed Bundle 28.x — dashboard hero is the single
+// balance-edit surface (confirmHeroBalEdit + runRecon + applyBalanceCorrection).
+// updateBalanceFromSettings + openSettingsBalanceEdit were both deleted
+// because the Settings entry was either redirecting to dashboard (round 1)
+// or opening a modal that didn't reliably commit (round 2). One surface,
+// one flow.
 
 function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
   const c = $('dash-alerts'); if (!c) return; c.innerHTML = '';
@@ -11592,13 +11502,9 @@ markDebtPaid = function() {
   try { NOTIFY.refresh(); } catch(e) {}
 };
 
-const _origUpdateBalance = updateBalanceFromSettings;
-updateBalanceFromSettings = function() {
-  const newBal = parseFloat(document.getElementById('s-bal')?.value || S.bal);
-  const expectedChange = newBal - S.bal;
-  auditedMutation('MANUAL_BALANCE_UPDATE_to_$' + newBal, expectedChange, () => _origUpdateBalance());
-  if (typeof SNAPSHOTS !== 'undefined') SNAPSHOTS.autoSnapshot('balance_update');
-};
+// updateBalanceFromSettings auditedMutation wrapper removed Bundle 28.x.
+// applyBalanceCorrection (the canonical dashboard balance writer) handles its
+// own AUDITOR.record + SNAPSHOTS.autoSnapshot path.
 
 function renderAuditLog() {
   const el = document.getElementById('audit-log-content');

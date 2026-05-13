@@ -24,7 +24,6 @@ const checks = [
         if (line.includes('function getLiveBal') ||
             line.includes('function getGenuineSurplus') ||
             line.includes('function getMaxDay') ||
-            line.includes('function updateBalanceFromSettings') ||
             line.includes('function quickLogTxn') ||
             line.includes('function markDebtPaid') ||
             line.includes('function markBillPaidMonth') ||

@@ -650,14 +650,8 @@ async function step(name, fn) {
     await page.waitForTimeout(300);
   });
 
-  // 40 Settings balance edit modal — openSettingsBalanceEdit
-  await step('open settings balance edit modal', async () => {
-    await page.evaluate(() => { if (typeof goPage === 'function') goPage('pg-settings'); });
-    await page.waitForTimeout(500);
-    await page.evaluate(() => { if (typeof openSettingsBalanceEdit === 'function') openSettingsBalanceEdit(); });
-    await page.waitForTimeout(600);
-  });
-  await shoot(page, 40, 'modal-settings-balance-edit', 'EDIT_MODAL with current balance pre-filled');
+  // capture 40 (settings-balance-edit modal) removed Bundle 28.x — Settings
+  // balance edit was deleted; dashboard hero is the single edit surface.
 
   // Persist manifest
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
