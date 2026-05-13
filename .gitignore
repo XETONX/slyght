@@ -15,3 +15,8 @@ SLYGHT ENV KEY.txt
 # Audit A1 cleanup — large binaries kept on disk, not in git history
 archive/exports/
 archive/screenshots/
+
+# Layer V output — 100+ PNG captures from Playwright runs. Kept on disk
+# for visual regression but excluded from git history (would balloon
+# repo size). Bundle 28 round 20 added per Noticed item.
+captures/

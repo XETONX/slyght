@@ -15430,6 +15430,38 @@ const BRAIN = {
         byType[t]++;
       });
       return { count: entries.length, byType };
+    },
+
+    // Bundle 28 round 20: full-filter query API for AI introspection.
+    // Now that 13 BRAIN bubbles emit consistent audit entries, the AI agent
+    // can self-introspect by querying audit slices ("show me every chat
+    // event in the last hour", "all WRX-related state changes this week",
+    // "transactions edited by canonical writer since Tuesday"). Pre-round-20
+    // the only filters were `recent(n)` (last-N count-based) and `since(ts)`
+    // (timestamp lower-bound). This adds field-based filtering with optional
+    // type / typePrefix / source / time-window / arbitrary predicate.
+    //
+    // criteria fields (all optional, ANDed together):
+    //   type        — exact match on entry.type
+    //   typePrefix  — string prefix match on entry.type (e.g. 'chat_' for all chat events)
+    //   source      — exact match on entry.source
+    //   sourcePrefix— string prefix match on entry.source
+    //   sinceTs     — entry.ts > sinceTs
+    //   untilTs     — entry.ts <= untilTs
+    //   predicate   — caller-supplied fn(entry) → boolean
+    //   limit       — last N results (after filtering); default unlimited
+    query(criteria) {
+      criteria = criteria || {};
+      let entries = (S._auditLog || []);
+      if (criteria.type) entries = entries.filter(e => e.type === criteria.type);
+      if (criteria.typePrefix) entries = entries.filter(e => typeof e.type === 'string' && e.type.indexOf(criteria.typePrefix) === 0);
+      if (criteria.source) entries = entries.filter(e => e.source === criteria.source);
+      if (criteria.sourcePrefix) entries = entries.filter(e => typeof e.source === 'string' && e.source.indexOf(criteria.sourcePrefix) === 0);
+      if (typeof criteria.sinceTs === 'number') entries = entries.filter(e => (+e.ts || 0) > criteria.sinceTs);
+      if (typeof criteria.untilTs === 'number') entries = entries.filter(e => (+e.ts || 0) <= criteria.untilTs);
+      if (typeof criteria.predicate === 'function') entries = entries.filter(criteria.predicate);
+      if (typeof criteria.limit === 'number' && criteria.limit > 0) entries = entries.slice(-criteria.limit);
+      return entries;
     }
   },
 

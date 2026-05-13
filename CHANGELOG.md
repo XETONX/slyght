@@ -106,6 +106,18 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 20 — `BRAIN.audit.query` AI introspection helper
+Closes a Noticed item surfaced after round 14 (BRAIN.chat): "natural follow-up is a `BRAIN.audit.query` reader so the AI agent can self-introspect." Now that 13 BRAIN bubbles emit consistent audit entries, this unlocks self-introspection patterns.
+
+- `query({type?, typePrefix?, source?, sourcePrefix?, sinceTs?, untilTs?, predicate?, limit?})` — all filters optional, ANDed together
+- Example use cases:
+  - All chat events in last hour: `query({typePrefix:'chat_', sinceTs:Date.now()-3600000})`
+  - WRX lifecycle this week: `query({typePrefix:'wrx_', sinceTs:weekAgo})`
+  - User-initiated edits only: `query({sourcePrefix:'settings-', sinceTs:dayAgo})`
+  - Last 10 cycle-related events: `query({typePrefix:'cycle_', limit:10})`
+- Complements existing `recent(n)`, `since(ts)`, `summarizeRecent(ts)`
+- Gates: 0 FAILs, 51/51 runtime PASS.
+
 ### Rounds 15–19 — Canonical-writer queue cleanout
 Five-round push to close every remaining ❌ in the canonical-writer audit table (modulo the multi-flow `S.bal` partial which spans rounds 10–11 and the non-existent `S.kiaMinPayment` writer entry which was stale documentation).
 
