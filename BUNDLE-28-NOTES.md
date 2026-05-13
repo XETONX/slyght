@@ -110,6 +110,64 @@ Audit-first approach:
 - `_buildPaydayAskAIPrompt` → reads `BRAIN.plan.getSnapshot()`. Pure, canonical. ✓
 - `explainMaxPerDay` → reads `getLiveBal`, `MODEL.daysToPayday`, `getBillsDue`, `getActiveDebtsDueBeforePayday`, `getTodaySpent`. All canonical readers (modulo legacy fn names — see below). ✓
 
+### Whole-app canonical-writer audit (John 2026-05-13: "CURRENT AND PLAN")
+
+Mapped every direct `S.X = ...` / `S.X.push` / `S.X.splice` site. Categorised
+by what state they touch. ✓ = canonical writer in place, ❌ = direct mutation
+(needs BRAIN method), ⚙️ = sanctioned (load/seed/migration), 🔄 = added this
+session.
+
+**Entity collections (highest stakes — multi-reader state)**
+
+| Field | Direct sites | Canonical writer | Status |
+|---|---|---|---|
+| `S.txns` (push) | 1 (BRAIN.transaction.record body) | `BRAIN.transaction.record` | ✓ |
+| `S.txns` (mutate field) | `saveEditedTransaction` (L4189) inline mutation | None — needs `BRAIN.transaction.update` | ❌ deferred |
+| `S.txns` (reclassify) | `convertEditedTransactionToLoan` 🔄 | `BRAIN.transaction.reclassify` 🔄 | ✓ this session |
+| `S.txns` (splice) | `deleteEditedTransaction` (L4211) | `BRAIN.transaction.removeByTs` exists | ❌ migration deferred |
+| `S.debts` | All canonical via `BRAIN.debts.{add,markPaid,unmark,update,delete}` | ✓ |
+| `S.paidBills` | All canonical via `BRAIN.bills.{markPaid,unmark}` + helpers | ✓ |
+| `S.savingsBuckets` (push add) | `saveNewBucket` 🔄 | `BRAIN.savings.addBucket` 🔄 | ✓ this session |
+| `S.savingsBuckets[i].saved` | All canonical via `BRAIN.savings.setBucketSaved` | ✓ |
+| `S.savingsBuckets[i].{name,goal,account,notes}` | `saveBucketModal` 🔄 | `BRAIN.savings.updateBucket` 🔄 | ✓ this session |
+| `S.savingsBuckets` (splice) | `deleteBucket` 🔄 + `confirmDeleteGoal` 🔄 | `BRAIN.savings.removeBucket` 🔄 | ✓ this session |
+| `S.planIntents` | `BRAIN.plan.intent.{add,update,remove,setBucket}` | ✓ Phase 0 |
+| `S.activePlan` (overrides/ticks/savings/floors) | `BRAIN.plan.{setOverride,clearOverride,tickItem,untickItem,...}` | ✓ Bundle 27 |
+| `S.tripDefs` / `S.goalDefs` | `PLAN.saveTrip` / `PLAN.saveGoal` (legacy non-BRAIN) | ⚠️ legacy shim — Bundle 29 migrate to BRAIN.plan.intent |
+| `S.notifications` | Multiple direct filters/pushes (NOTIFY module) | `NOTIFY.add` / `NOTIFY.dismiss` | ⚠️ partial (NOTIFY isn't a BRAIN bubble yet) |
+| `S.reconLog` | Direct push in `confirmRecon` (~L2800) | None | ❌ Bundle 29 candidate |
+| `S.chatHistory` | Direct push in `sendChatMessage` (~L10377) | None — chat needs BRAIN.chat bubble | ❌ Bundle 29+ |
+
+**Scalar fields (single value)**
+
+| Field | Canonical writer | Status |
+|---|---|---|
+| `S.bal` | `applyBalanceCorrection` + handler-specific math | ⚠️ partial — many flows touch directly (round-up, bill-paid, txn-edit, snapshot restore) |
+| `S.income` / `S.payday` / `S.weekdayBudget` / `S.weekendBudget` | `BRAIN.config.set{Income,Payday,WeekdayBudget,WeekendBudget}` | ✓ Bundle 22 v3 |
+| `S.debtStrategy` | `BRAIN.config.setStrategy` | ✓ Bundle 22 v3 |
+| `S.roundUpDestination` | `BRAIN.savings.setRoundUpDestination` | ✓ Bundle 22 v3 |
+| `S.roundUpsEnabled` | `BRAIN.config.setRoundUpsEnabled` | ✓ Bundle 22 v3 |
+| `S.mumAccountBalance` / `S.superBalance` / `S.cc` / `S.ccLimit` / `S.carloan` / `S.carloanOriginal` | `BRAIN.assets.set{Mum,Super,Cc,CcLimit,Carloan,CarloanOriginal}` | ✓ Bundle 24 (pending full extraction) |
+| `S.wrxStatus` / `S.wrxValue` / `S.wrxSalePrice` / `S.wrxListedDate` / `S.wrxSoldDate` | Inline only (multiple call sites L1924, L5610, L10836-10844) | ❌ needs `BRAIN.assets.setWrxState` |
+| `S.apiKey` | Direct writes (L1903, L9596, L9918, L10900) | ❌ needs `BRAIN.config.setApiKey` (secret-handling discipline) |
+| `S.paydayReceived` / `S.paydayReceivedDate` | Direct writes in balance-edit flow + seed v22 | ❌ needs `BRAIN.config.setPaydayReceived` or BRAIN.cycle |
+| `S.kiaEarlyRepayFee` | Direct UI edit | ❌ needs canonical writer |
+| `S.kiaMinPayment` | Direct read | ❌ no writer surface yet |
+| `S.lastOpenDate` | Direct (L2754) | ⚙️ infrastructure, low value |
+| `S.pinHash` | Direct (L1757) | ⚙️ security |
+| `S._auditLog` | `BRAIN.audit.append` | ✓ |
+
+**Migration priority for Bundle 29+** (highest value first)
+
+1. `BRAIN.transaction.update(ts, patch, source)` — for `saveEditedTransaction`. Allows amt + handles balance recompute.
+2. `BRAIN.transaction.removeByTsWithBalance` — for `deleteEditedTransaction`.
+3. `BRAIN.assets.setWrxState(status, salePrice, listedDate, soldDate, source)` — unified WRX writer.
+4. `BRAIN.config.setApiKey(key, source)` — with secret-handling discipline.
+5. `BRAIN.cycle` — new bubble for paydayReceived flag + cycle lifecycle.
+6. `BRAIN.chat.append(entry, source)` — for chatHistory growth.
+7. `NOTIFY` → `BRAIN.notifications` extraction.
+8. Layer 1 rule `no-direct-savings-buckets-push-splice` — to prevent regression of the migrations above.
+
 ### Pathways flagged for inspection (data flow not yet clean)
 
 | Pathway | Currently | Should be |

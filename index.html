@@ -6933,22 +6933,33 @@ function openBucketModal(i) {
 }
 
 function saveBucketModal() {
-  // Bundle 7 (#1): TODO confirm bucket edit fix — needs phone verification.
-  // Read-and-write flow looks correct (form → b reference → save → render).
-  // Hypothesis: bucket.goal does NOT propagate to a linked plan item's
-  // .target field (PLAN.readSavedFromSource only mirrors `saved`, not
-  // `goal`). If the user-visible failure is "edited goal doesn't show in
-  // Plan mode", that's the bug — needs a parallel write to the linked
-  // trip.target / goal.target. Awaiting John's specific repro.
+  // Bundle 28 forward-architecture: route bucket field writes through
+  // BRAIN.savings.updateBucket (canonical writer, audit-logged). Saved-
+  // amount changes still flow through setBucketSaved (separate concern).
+  // Pre-Bundle-28 this directly mutated b.name/goal/account/notes, leaving
+  // BRAIN + audit log + AI agent blind to the change.
   if (activeBucketIdx < 0) return;
   const b = S.savingsBuckets[activeBucketIdx];
-  const _bkn2 = $('bkt-name'); if (_bkn2) b.name = _bkn2.value.trim() || b.name;
-  const _bkg2 = $('bkt-goal'); if (_bkg2) { const _gv = parseFloat(_bkg2.value); if (!isNaN(_gv) && _gv > 0) b.goal = _gv; }
-  // Bundle 8: route bucket write through BRAIN.savings.
-  const _bksv2 = $('bkt-saved'); if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, BRAIN.SOURCES.MANUAL);
-  const _bkac2 = $('bkt-account'); if (_bkac2) b.account = _bkac2.value || b.account;
-  const _bkno2 = $('bkt-notes'); if (_bkno2) b.notes = _bkno2.value.trim();
-  save(); closeModal('bucket-modal', true); renderAll();
+  if (!b) return;
+  const _bkn2 = $('bkt-name');
+  const _bkg2 = $('bkt-goal');
+  const _bkac2 = $('bkt-account');
+  const _bkno2 = $('bkt-notes');
+  const _bksv2 = $('bkt-saved');
+  const patch = {};
+  if (_bkn2) { const n = _bkn2.value.trim(); if (n) patch.name = n; }
+  if (_bkg2) { const g = parseFloat(_bkg2.value); if (!isNaN(g) && g > 0) patch.goal = g; }
+  if (_bkac2) { const a = _bkac2.value; if (a) patch.account = a; }
+  if (_bkno2) { patch.notes = _bkno2.value.trim(); }
+  const originalName = b.name;
+  if (Object.keys(patch).length > 0) {
+    const r = BRAIN.savings.updateBucket(originalName, patch, BRAIN.SOURCES.BUCKET_UPDATE);
+    if (!r.ok) { showToast('Couldn\'t save bucket: ' + (r.reason || 'unknown')); return; }
+  }
+  // Saved amount uses dedicated canonical writer (different concern — value
+  // mutation vs metadata mutation). Uses updated name if rename happened.
+  if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, BRAIN.SOURCES.MANUAL);
+  closeModal('bucket-modal', true); renderAll();
 }
 
 function addFundsBucketModal() {
@@ -6965,10 +6976,15 @@ function addFundsBucketModal() {
 function deleteBucket() {
   if (activeBucketIdx < 0) return;
   const b = S.savingsBuckets[activeBucketIdx];
+  if (!b) return;
   if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
   saveUndoState();
-  S.savingsBuckets.splice(activeBucketIdx, 1);
-  save(); closeModal('bucket-modal', true); renderAll();
+  // Bundle 28 forward-architecture: BRAIN.savings.removeBucket is the
+  // canonical deletion path (audit log captures removed bucket so undo can
+  // restore via addBucket if needed).
+  const r = BRAIN.savings.removeBucket(b.name, BRAIN.SOURCES.BUCKET_DELETE);
+  if (!r.ok) { showToast('Couldn\'t delete: ' + (r.reason || 'unknown')); return; }
+  closeModal('bucket-modal', true); renderAll();
   showUndoToast('Bucket deleted');
 }
 
@@ -6995,11 +7011,25 @@ function saveNewBucket() {
   const name = _nbn2.value.trim();
   const _nbg2 = $('nb-goal'); const goal = _nbg2 ? parseFloat(_nbg2.value) : NaN;
   const _nba2 = $('nb-account'); const account = (_nba2 ? _nba2.value.trim() : '') || 'Other';
-  if (!name || isNaN(goal) || goal <= 0) { alert('Enter a name and goal amount.'); return; }
-  if (!S.savingsBuckets) S.savingsBuckets = [];
-  if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
-  S.savingsBuckets.push({id: S.nextBucketId++, name, goal, saved:0, account});
-  save(); closeModal('add-bucket-modal', true); renderAll();
+  // Bundle 28 forward-architecture: route through BRAIN.savings.addBucket
+  // canonical writer (audit-logged, source-validated, rejects duplicates).
+  // Pre-Bundle-28 this did direct S.savingsBuckets.push, bypassing BRAIN.
+  const r = BRAIN.savings.addBucket({ name, goal, account }, BRAIN.SOURCES.BUCKET_CREATE);
+  if (!r.ok) {
+    if (r.reason && r.reason.startsWith('duplicate-name')) {
+      alert('A bucket called "' + name + '" already exists.');
+    } else if (r.reason === 'invalid-goal') {
+      alert('Enter a goal amount greater than $0.');
+    } else if (r.reason === 'empty-name') {
+      alert('Enter a name for the bucket.');
+    } else {
+      alert('Couldn\'t add bucket: ' + (r.reason || 'unknown'));
+    }
+    return;
+  }
+  closeModal('add-bucket-modal', true);
+  renderAll();
+  if (typeof showToast === 'function') showToast('✓ "' + name + '" bucket added');
 }
 
 function renderSpendingCoach() {
@@ -14795,8 +14825,11 @@ const BRAIN = {
     PLAN_INTENT_REMOVE:        'plan-intent-remove',
     PLAN_INTENT_LINK_BUCKET:   'plan-intent-link-bucket',
     MIGRATION_INTENTS_V1:      'migration-intents-v1',
-    // Bundle 28 forward-architecture — txn reclassification
+    // Bundle 28 forward-architecture — txn reclassification + bucket lifecycle
     TXN_RECLASSIFY:            'txn-reclassify',
+    BUCKET_CREATE:             'bucket-create',
+    BUCKET_UPDATE:             'bucket-update',
+    BUCKET_DELETE:             'bucket-delete',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -14832,6 +14865,7 @@ const BRAIN = {
     'plan-intent-link-bucket', 'migration-intents-v1',
     // Bundle 28 forward-architecture
     'txn-reclassify',
+    'bucket-create', 'bucket-update', 'bucket-delete',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -16066,6 +16100,111 @@ const BRAIN = {
       const bucket = (S.savingsBuckets || []).find(b => b.name === bucketName);
       if (!bucket) return { ok: false, reason: 'no-bucket', bucketName };
       return this.setBucketSaved(bucketName, (bucket.saved || 0) + delta, source);
+    },
+    // Bundle 28 forward-architecture: canonical bucket-lifecycle writers.
+    // Pre-Bundle-28 saveNewBucket pushed S.savingsBuckets directly and
+    // saveBucketModal mutated b.name/goal/account/notes directly. Both
+    // bypassed BRAIN — audit log + AI agent couldn't see the changes. These
+    // three methods close that gap. The data shape stays the same; only the
+    // write paths funnel through here.
+    //
+    // addBucket: create a new bucket
+    //   bucketLike: { name (req), goal (req >0), account (optional), notes (optional) }
+    //   Generates id (nextBucketId pattern preserved).
+    addBucket(bucketLike, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!bucketLike || typeof bucketLike !== 'object') {
+        return { ok: false, reason: 'missing-bucket' };
+      }
+      const name = String(bucketLike.name || '').trim();
+      if (!name) return { ok: false, reason: 'empty-name' };
+      const goal = +bucketLike.goal || 0;
+      if (goal <= 0) return { ok: false, reason: 'invalid-goal' };
+      if (!Array.isArray(S.savingsBuckets)) S.savingsBuckets = [];
+      // No duplicates by name (case-insensitive)
+      const existing = S.savingsBuckets.find(b => b && b.name &&
+        b.name.toLowerCase() === name.toLowerCase());
+      if (existing) return { ok: false, reason: 'duplicate-name:' + name };
+      if (!S.nextBucketId) S.nextBucketId = S.savingsBuckets.length;
+      const bucket = {
+        id: S.nextBucketId++,
+        name,
+        goal,
+        saved: 0,
+        account: bucketLike.account || 'Other',
+      };
+      if (bucketLike.notes) bucket.notes = String(bucketLike.notes);
+      S.savingsBuckets.push(bucket);
+      BRAIN.audit.append({
+        type: 'bucket_create',
+        bucketId: bucket.id, name: bucket.name, goal: bucket.goal,
+        account: bucket.account, src: source, ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, bucket };
+    },
+    // updateBucket: patch existing bucket's metadata (NOT .saved — use
+    // setBucketSaved for that). Allowed fields: name, goal, account, notes.
+    updateBucket(nameOrId, patch, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!patch || typeof patch !== 'object') {
+        return { ok: false, reason: 'missing-patch' };
+      }
+      const bucket = this.getBucket(nameOrId);
+      if (!bucket) return { ok: false, reason: 'not-found' };
+      const allowed = ['name', 'goal', 'account', 'notes'];
+      const applied = {};
+      for (const k of Object.keys(patch)) {
+        if (!allowed.includes(k)) return { ok: false, reason: 'unknown-field:' + k };
+        applied[k] = patch[k];
+      }
+      if (applied.goal !== undefined) {
+        const g = +applied.goal;
+        if (isNaN(g) || g <= 0) return { ok: false, reason: 'invalid-goal' };
+        applied.goal = g;
+      }
+      if (applied.name !== undefined) {
+        applied.name = String(applied.name).trim();
+        if (!applied.name) return { ok: false, reason: 'empty-name' };
+        // Reject if renamed to collide with another bucket
+        const collision = (S.savingsBuckets || []).find(b => b !== bucket &&
+          b.name && b.name.toLowerCase() === applied.name.toLowerCase());
+        if (collision) return { ok: false, reason: 'duplicate-name:' + applied.name };
+      }
+      const before = { name: bucket.name, goal: bucket.goal, account: bucket.account, notes: bucket.notes || '' };
+      Object.assign(bucket, applied);
+      BRAIN.audit.append({
+        type: 'bucket_update',
+        bucketId: bucket.id, before, patch: applied,
+        src: source, ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, before, bucket };
+    },
+    // removeBucket: hard-delete a bucket. Returns the removed bucket so
+    // callers can offer undo. AI agent can re-add via addBucket if needed.
+    // Pre-Bundle-28 the delete flow was a direct splice; now audit-logged.
+    removeBucket(nameOrId, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!Array.isArray(S.savingsBuckets)) return { ok: false, reason: 'no-buckets' };
+      const idx = S.savingsBuckets.findIndex(b =>
+        b && (b.name === nameOrId || b.id === nameOrId));
+      if (idx < 0) return { ok: false, reason: 'not-found' };
+      const removed = S.savingsBuckets.splice(idx, 1)[0];
+      BRAIN.audit.append({
+        type: 'bucket_delete',
+        bucketId: removed.id, name: removed.name,
+        goal: removed.goal, savedAtDelete: removed.saved || 0,
+        src: source, ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, removed };
     },
     // ─── Readers + round-up destination (Bundle 22 v3 Phase 0) ──────────
     // Buckets are keyed by name (string), not id. getBucket accepts either
@@ -19485,15 +19624,14 @@ function confirmDeleteGoal(goalId) {
 
   // For user-added goals (id starts with 'goal-'), remove the auto-
   // created bucket too — UNLESS it has saved > 0, in which case keep
-  // it (don't lose money).
+  // it (don't lose money). Bundle 28: route through canonical writer.
   if (goalId.startsWith('goal-')) {
     const ref = PLAN.bucketForPlanItem(goalId);
     if (ref && ref.type === 'auto-bucket') {
       const bucketName = goal.name;
-      const bucketIdx = (S.savingsBuckets || []).findIndex(b => b.name === bucketName);
-      if (bucketIdx >= 0 && (S.savingsBuckets[bucketIdx].saved || 0) === 0) {
-        S.savingsBuckets.splice(bucketIdx, 1);
-        save();
+      const matched = (S.savingsBuckets || []).find(b => b.name === bucketName);
+      if (matched && (matched.saved || 0) === 0) {
+        BRAIN.savings.removeBucket(bucketName, BRAIN.SOURCES.BUCKET_DELETE);
       }
     }
   }
