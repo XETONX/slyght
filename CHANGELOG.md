@@ -106,6 +106,20 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 24 — Dashboard hero "spent today" outflow visibility fix
+Phone-flagged by John: "investigate dashboard note under balance saying amount spent today, ensuring that calculation is correct and not just mimicking recent spending but understanding the calculation based on description and updating accordingly."
+
+**Bug:** the hero `#h-note` debt subline string-matched `t.cat === 'Debt repayment'` — only 1 of 4 debt categories. A $780 KIA Loan payment landed as `cat: 'Loan'` (Quick Log path) or `cat: 'Bills'` (mark-paid flow) — BOTH excluded from `getTodaySpent()` (strict discretionary) AND from the debt subline. Net effect: $780 outflow disappeared from the headline entirely; the dashboard said "Nothing spent today".
+
+**Fix:**
+- New canonical reader `todayOutflowsCanonical(now)` + `BRAIN.dashboard.todayOutflows()` — superset of `todayTxnsCanonical` that includes debt + bills + savings + loan + CC payment categories. Drops only income / corrections / round-ups. Registered in guardian-static's `TODAYSPEND_CANONICAL_FNS` allow-list.
+- Hero note rewritten as a parts array: discretionary headline + optional debt subline (via `_DEBT_CATEGORIES_SET`) + optional bills subline. Any combination renders cleanly with `·` separators.
+- Calculation now matches the description: "$X spent today" = strict discretionary (unchanged); "$Y in debt payments" = any of 4 debt cats; "$Z bills paid" = Bills cat.
+
+**Architectural payoff:** guardian-static's `no-inline-todayspend-computation` rule caught my initial inline filter and forced the canonical-reader route — exactly what the rule exists for. Bundle 10's architectural barrier is paying for itself two bundles later.
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Round 21 — Missed-migration cleanup + `BRAIN.config.setApiAlertThreshold`
 Round 20's audit-table sweep surfaced 3 sites that should already have routed through existing canonical writers but were missed in prior bundles. Plus one inline-audited handler promoted to a proper canonical writer.
 

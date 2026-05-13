@@ -100,7 +100,12 @@ const DEBTS_WRITER_FNS = new Set([
 const TODAYSPEND_CANONICAL_FNS = new Set([
   'computeSpentToday', 'todayTxnsCanonical', 'getTodaySpent',
   'getTodayDiscretionarySpend', 'computeSpentInRange',
-  'getDiscretionaryByCategory', 'getNoSpendStreak'
+  'getDiscretionaryByCategory', 'getNoSpendStreak',
+  // Bundle 28 round 24: superset reader for "all today's outflows"
+  // (incl. debt / bills / savings / loan / CC payment categories).
+  // Drops the _NON_SPEND_CATS filter intentionally — used by the
+  // hero note's outflow breakdown.
+  'todayOutflowsCanonical',
 ]);
 // Survival-mode strings (rule no-hardcoded-survival-mode-string).
 const SURVIVAL_MODE_STRINGS = new Set(['critical', 'survival', 'tight', 'cautious', 'normal']);

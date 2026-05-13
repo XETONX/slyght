@@ -2688,6 +2688,23 @@ function todayTxnsCanonical(now) {
     !t._isCorrection && !t._isRoundup
   );
 }
+// Bundle 28 round 24: superset of todayTxnsCanonical. INCLUDES debt /
+// bills / savings / transfer / loan / cc payment categories — for
+// surfaces that need to show every dollar leaving the account today,
+// not just discretionary spending. Drops income, corrections, and
+// round-ups (accounting artefacts, not real outflows). The hero note's
+// "spent today / debt payments / bills paid" multi-line breakdown
+// reads from here. Exempt from no-inline-todayspend-computation
+// (registered in TODAYSPEND_CANONICAL_FNS allow-list).
+function todayOutflowsCanonical(now) {
+  const ref = new Date(now || Date.now()); ref.setHours(0,0,0,0);
+  const start = ref.getTime();
+  return (S.txns || []).filter(t =>
+    t.ts >= start &&
+    !t.income &&
+    !t._isCorrection && !t._isRoundup
+  );
+}
 function getNoSpendStreak() {
   // Only discretionary transactions break the streak — debt repayments do NOT count
   const expenseTxns = S.txns.filter(t => !t.income && !_NON_SPEND_CATS.has(t.cat));
@@ -5243,14 +5260,29 @@ function renderAll() {
   if (_hbal) { _hbal.textContent = fmtC(liveBal); _hbal.className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok'); }
   const hn = $('h-note');
   if (hn) {
-    const _todayStr = new Date().toDateString();
-    const _todayDebtPayments = S.txns ? S.txns.filter(t => !t.income && t.cat === 'Debt repayment' && new Date(t.ts).toDateString() === _todayStr) : [];
-    const _todayDebtTotal = _todayDebtPayments.reduce((s,t) => s+t.amt, 0);
+    // Bundle 28 round 24: surface every outflow class explicitly so any
+    // meaningful cash movement is visible. Pre-round-24 the debt subline
+    // string-matched 'Debt repayment' only (1 of 4 debt cats); a $780 KIA
+    // Loan payment (cat 'Loan' or 'Bills') was invisible. Now reads from
+    // canonical BRAIN.dashboard.todayOutflows() (superset of todayTxns —
+    // includes debt + bills + savings + loan + CC payment) and splits the
+    // result via _DEBT_CATEGORIES_SET for the debt subline plus a Bills
+    // filter for the bills subline.
+    const _todayOutflows = BRAIN.dashboard.todayOutflows();
+    const _todayDebtTotal = _todayOutflows
+      .filter(t => _DEBT_CATEGORIES_SET.has(t.cat))
+      .reduce((s,t) => s+t.amt, 0);
+    const _todayBillTotal = _todayOutflows
+      .filter(t => t.cat === 'Bills')
+      .reduce((s,t) => s+t.amt, 0);
     const _todayDiscSpent = getTodaySpent();
-    if (_todayDebtTotal > 0) {
-      hn.textContent = fmt(_todayDiscSpent) + ' spent today · ' + fmt(_todayDebtTotal) + ' in debt payments \u2193';
-    } else if (_todayDiscSpent > 0) {
-      hn.textContent = fmt(_todayDiscSpent) + ' spent today';
+    const _parts = [];
+    if (_todayDiscSpent > 0) _parts.push(fmt(_todayDiscSpent) + ' spent today');
+    if (_todayDebtTotal > 0) _parts.push(fmt(_todayDebtTotal) + ' in debt payments ↓');
+    if (_todayBillTotal > 0) _parts.push(fmt(_todayBillTotal) + ' bills paid');
+
+    if (_parts.length > 0) {
+      hn.textContent = _parts.join(' · ');
     } else if (cycleSpent > 0) {
       hn.textContent = 'Nothing spent today · ' + fmt(cycleSpent) + ' this cycle';
     } else {
@@ -17543,6 +17575,17 @@ const BRAIN = {
     todayTxns(now) {
       return (typeof todayTxnsCanonical === 'function')
         ? todayTxnsCanonical(now)
+        : [];
+    },
+    // Bundle 28 round 24: superset reader — today's ALL outflows
+    // (incl debt / bills / savings / loan / CC payment / transfer).
+    // Use this when the surface needs to show every dollar leaving the
+    // account today, not just discretionary spending. The hero note's
+    // "spent today / debt payments / bills paid" three-line breakdown
+    // reads from here.
+    todayOutflows(now) {
+      return (typeof todayOutflowsCanonical === 'function')
+        ? todayOutflowsCanonical(now)
         : [];
     },
     // Cycle-to-date spend — for "$X this cycle" hero fallback. Delegates

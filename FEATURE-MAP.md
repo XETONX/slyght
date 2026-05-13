@@ -34,7 +34,7 @@
 | Surface | Render fn | DOM target | Reads | Writes via | Cross-references |
 |---|---|---|---|---|---|
 | Hero balance | `renderAll` inline (~L4960) | `#h-bal` | `S.bal` via `getLiveBal()` | `openHeroBalEdit` → `confirmHeroBalEdit` → `runRecon` → `applyBalanceCorrection` → `BRAIN.transaction.recordCorrection` | Footer NW, Settings hero (removed), persistent strip |
-| Today's spent text | `renderAll` inline (~L4965) | `#h-note` | `getTodaySpent()` + `S.txns` filter for Debt cat | `BRAIN.transaction.record` (LOG_EXPENSE) | Footer "$X left today", MAX PER DAY math |
+| Today's spent text | `renderAll` inline (~L5261) | `#h-note` | `BRAIN.dashboard.todayOutflows()` (Bundle 28 round 24 — canonical superset of `todayTxns`, includes debt + bills + savings + loan + CC payment cats; splits via `_DEBT_CATEGORIES_SET` for debt subline + Bills filter for bills subline) · `getTodaySpent()` for the discretionary headline | `BRAIN.transaction.record` (LOG_EXPENSE) | Footer "$X left today", MAX PER DAY math. **Round 24 fix:** debt subline used to string-match `'Debt repayment'` only (1/4 debt cats) — $780 KIA Loan payments were invisible. Now uses canonical Set. |
 | Liquid net worth | `renderAll` inline (~L4978) | `#nw-val` | `MODEL.liquidNet` from `calculateNetWorth()` | Various BRAIN.assets writers | NW modal, footer NW |
 | Days to payday bar | `renderAll` inline (~L4985-5010) | `#pd-fill`, `#pd-lbl` | `MODEL.daysToPayday` | `BRAIN.config.setPayday` | MAX PER DAY math, Ask AI prompt |
 | Survival banner | `renderSurvivalBanner` (~L2336) | `#dash-survival-banner` | `MODEL.survivalMode`, `getLiveBal`, `getActiveDebtsDueBeforePayday` | n/a (read-only render) | Alert cards, MAX PER DAY context |
