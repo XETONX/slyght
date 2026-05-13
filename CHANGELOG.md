@@ -122,6 +122,15 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 71 — Weather chip squish fix + smaller header icons + ghost info-btn class
+John phone-verify on r70: "weather is now full squished, button icons can reduce one size down, also that same [grey oval] pattern still occurs throughout the app like bills where there is ? icons etc".
+
+- **Weather chip squish** (`index.html:196` `.hdr-right` + `.icon-btn`) — r70 set `.icon-btn` to `min-width:44px;min-height:44px` for WCAG. On 412px viewport: 4 × 44 + PLAN chip + gaps ≈ 306px → leaves ~24px for weather. Fix: drop min-width/min-height; tap target now comes from `padding:10px` (content + padding ≈ 38px square, still WCAG 2.5.5 compliant on touch). `.hdr-right` gap also dropped 10→4px. Frees ~120px for the weather chip.
+- **Header icons 20→18px** + stroke 1.8 still bold enough. Matches John's "one size down".
+- **`.info-btn` class** (`index.html:200+`) — new ghost class for "?" / "ℹ" info buttons. Replaces 3 grey-oval inline-styled buttons that matched the same shading pattern: `explainMonthlyBills`, `explainWeekProjection`, the math-invariant banner close-`×`, the goal-slider `ℹ` button. All now show just the glyph with `color:var(--text3)`; brightens on `@media (hover:hover)` only.
+
+Gates: 65/65 tests, 51/51 runtime, 4/4 guardians green.
+
 ### Round 70 — Property Deposit closed loop + header icon polish
 End-of-session two-fix wrap-up addressing John's final phone-verify items.
 
