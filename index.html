@@ -2305,6 +2305,14 @@ function getMaxDay() {
 // inputs). Tap the MAX PER DAY card on dashboard to see the math behind
 // today's number. Reads the same inputs getDynamicDailyBudget uses so the
 // breakdown can never drift from the displayed value.
+//
+// Round 7 rebuild — john's "needs to be more informative and like fun
+// instead of just lines plus the calculations dont make sense I have
+// afterpay before payday and it doesnt show... 2 days before payday i
+// shouldnt be recommending to spend $70 a day ever... visual learner".
+// Now includes: ASCII progress bar, debt names (Afterpay etc) with due
+// dates, today's full outflow breakdown (discretionary + bills today),
+// timing-aware warnings, and emoji section headers.
 function explainMaxPerDay() {
   try {
     const bal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
@@ -2322,34 +2330,94 @@ function explainMaxPerDay() {
     const todaySpent = (typeof getTodaySpent === 'function') ? getTodaySpent() : 0;
     const finalMax = Math.max(0, cap - todaySpent);
     const f = (n) => '$' + Math.round(n).toLocaleString();
+
+    // ASCII progress bar — 20 chars total, filled proportional to today spent
+    const pctUsed = Math.min(100, Math.round((todaySpent / Math.max(1, userCap)) * 100));
+    const barWidth = 20;
+    const filled = Math.round((pctUsed / 100) * barWidth);
+    const bar = '▓'.repeat(filled) + '░'.repeat(Math.max(0, barWidth - filled));
+
+    // Today's full outflow breakdown — discretionary (counted in cap) vs
+    // bills-today (categorised separately — not counted in cap math but
+    // affects balance). User specifically asked for this distinction.
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const allTodayTxns = (S.txns || []).filter(t =>
+      t && t.ts >= todayStart.getTime() && !t.income && !t._isCorrection && !t._isRoundup);
+    const billsTodayAmt = allTodayTxns
+      .filter(t => _NON_SPEND_CATS && _NON_SPEND_CATS.has(t.cat || ''))
+      .reduce((s, t) => s + (+t.amt || 0), 0);
+    const todayTotal = todaySpent + billsTodayAmt;
+
+    // Debts due BEFORE payday — sorted ascending by daysUntilDue for context
+    const todayD = new Date().getDate();
+    const pdDay = +S.payday || 15;
+    const upcomingDebts = (S.debts || [])
+      .filter(d => d && !d.paid && !d.viaRent)
+      .map(d => {
+        const dueDay = d.day || d.dueDay || 0;
+        const daysUntil = dueDay
+          ? (dueDay >= todayD ? dueDay - todayD : (31 - todayD + dueDay))
+          : null;
+        return Object.assign({}, d, { daysUntil });
+      })
+      .filter(d => d.daysUntil != null && d.daysUntil < days)
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+
+    // Timing-aware warning
+    let timingWarn = '';
+    if (days <= 2 && finalMax > 20) {
+      timingWarn = '⚠️ Only ' + days + ' day' + (days === 1 ? '' : 's') +
+        ' to payday. Stay conservative — keep cushion for surprises.';
+    } else if (days <= 2 && finalMax <= 10) {
+      timingWarn = '🔒 ' + days + ' day' + (days === 1 ? '' : 's') +
+        ' left & only ' + f(finalMax) + ' wiggle room. Hold tight until payday.';
+    } else if (days >= 10 && finalMax >= userCap * 0.9) {
+      timingWarn = '✅ Plenty of runway — ' + days + ' days to payday, well within budget.';
+    }
+
     const lines = [
-      'Today\'s MAX PER DAY: ' + f(finalMax),
+      '💰 Today\'s MAX PER DAY: ' + f(finalMax) + ' left',
       '',
-      'How it\'s built:',
-      '  Balance:                 ' + f(bal),
-      '  − Bills BEFORE payday:   ' + f(billsCommitted) +
+      '📊 Budget used today:',
+      '  ' + bar + '  ' + pctUsed + '%',
+      '  ' + f(todaySpent) + ' of ' + f(userCap) + ' ' + dayLabel + ' budget',
+      '',
+      '🏦 Your money right now:',
+      '  Balance:                ' + f(bal),
+      '  − Bills before payday:  ' + f(billsCommitted) +
         (billsList.length
-          ? ' (' + billsList.length + ': ' + billsList.slice(0, 2).map(b => b.name).join(', ') +
+          ? ' (' + billsList.slice(0, 2).map(b => b.name).join(', ') +
             (billsList.length > 2 ? '...' : '') + ')'
-          : ' (none — rent + others hit ON or AFTER payday)'),
-      '  − Debt minimums:         ' + f(debtsCommitted),
-      '  = Available:             ' + f(available),
+          : ' (rent + others hit ON payday — not counted here)'),
+      '  − Debt minimums:        ' + f(debtsCommitted),
+      upcomingDebts.length
+        ? '    └─ ' + upcomingDebts.slice(0, 3).map(d =>
+            d.name + ' ' + f(d.amt) + ' in ' + d.daysUntil + 'd').join(', ')
+        : null,
+      '  = Cash cushion:         ' + f(available),
       '',
-      '  Available ÷ ' + days + ' days to payday',
+      '⏰ Time math:',
+      '  ' + f(available) + ' ÷ ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday',
       '  = ' + f(dailyAvailable) + '/day raw',
-      '',
-      '  Capped by your ' + dayLabel + ' budget (' + f(userCap) + ')',
+      '  Capped by ' + dayLabel + ' budget (' + f(userCap) + ')',
       '  = ' + f(cap) + ' starting cap',
       '',
-      '  Already spent today: ' + f(todaySpent),
-      '  = ' + f(finalMax) + ' left for the rest of today',
+      '🧾 Today\'s total outflow:',
+      '  Discretionary spent:    ' + f(todaySpent),
+      billsTodayAmt > 0
+        ? '  + Bills/loans today:    ' + f(billsTodayAmt) + ' (excluded from cap math)'
+        : null,
+      '  = Total today:          ' + f(todayTotal),
       '',
-      'Note: Bills hitting ON payday (e.g. rent) aren\'t counted here —',
-      'they come out as your salary lands. This is your cash CUSHION',
-      'between now and payday morning.',
-    ];
+      '🎯 Result:',
+      '  ' + f(cap) + ' cap − ' + f(todaySpent) + ' discretionary today',
+      '  = ' + f(finalMax) + ' left for the rest of today',
+      timingWarn ? '' : null,
+      timingWarn || null,
+    ].filter(l => l !== null);
+
     if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
-      EDIT_MODAL.openInfo({ title: 'Today\'s max per day', body: lines.join('\n') });
+      EDIT_MODAL.openInfo({ title: '💰 Max per day — the math', body: lines.join('\n') });
     } else if (typeof alert === 'function') {
       alert(lines.join('\n'));
     }
@@ -8812,11 +8880,11 @@ function _buildPaydayAskAIPrompt() {
         : '  (none)',
       '',
       '## Tell me',
-      '1. Given those dates and goals, where should next payday\'s surplus go FIRST?',
-      '2. Anything I should be cautious about before payday?',
-      '3. Which trip/goal is most at-risk of missing its date?',
+      '1. Given those dates and goals, where should next payday\'s surplus go FIRST? **Show the math** — e.g. "$X to goal A because Y days × $Z/day = needed".',
+      '2. Anything I should be cautious about before payday? Calculate the daily-leftover if I cover all upcoming bills.',
+      '3. Which trip/goal is most at-risk of missing its date? Show the pace gap (what I\'m saving vs what I need per month).',
       '',
-      '_Format your reply with short paragraphs, emojis for sections, and **bold** for the actual $ amounts you recommend allocating._',
+      '_Format your reply with short paragraphs, emojis for sections, **bold** for the actual $ amounts you recommend allocating, and explicit math breakdowns for each recommendation (don\'t just give numbers — show how you got them)._',
     ];
     return lines.join('\n');
   } catch (e) {
@@ -14679,6 +14747,24 @@ function renderSpendingPivot() {
 
   html += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--bg3);border-radius:10px"><span style="color:var(--text2);font-size:14px">Total outflows</span><span style="color:var(--text);font-size:16px;font-weight:700">$'+totalSpend.toFixed(2)+'</span></div>';
 
+  // Bundle 28 round 7: detect debt-related category fragmentation so user
+  // knows when the same loan (e.g. KIA Firstmac) is appearing under
+  // multiple categories. Doesn't merge them automatically — preserves user
+  // intent — but flags the overlap so they can standardise next time.
+  // Resolves john 2026-05-13 "Debt repayment and Loan tab double up on
+  // firstmac kia loan or am i confused?"
+  const _DEBT_CATS = ['Debt repayment', 'Loan', 'Car Loan', 'CC Payment'];
+  const _debtPresent = data.filter(c => _DEBT_CATS.includes(c.cat));
+  if (_debtPresent.length > 1) {
+    const _debtTotal = _debtPresent.reduce((s, c) => s + c.total, 0);
+    const _debtLabels = _debtPresent.map(c => c.cat + ' $' + Math.round(c.total)).join(' + ');
+    html += '<div style="font-size:13px;color:var(--amber);margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;line-height:1.5">' +
+      '💡 <strong>Debt categories doubling up?</strong> ' +
+      _debtLabels + ' = <strong>$' + Math.round(_debtTotal) + '</strong> total. ' +
+      'If these all relate to the same loan, consider picking one category (we recommend "Debt repayment") and editing the others to match.' +
+      '</div>';
+  }
+
   if (data.length === 0) {
     html += '<div style="color:var(--text3);text-align:center;padding:20px">No spending in this period</div>';
   } else {
@@ -19629,6 +19715,11 @@ function confirmNewTrip() {
   // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
+  // Bundle 28 round 7: refresh canvas Savings sub-screen (same rationale
+  // as confirmNewGoal — bucket created but canvas doesn't auto-redraw).
+  if (typeof renderPaydaySavings === 'function') {
+    try { renderPaydaySavings(); } catch (_) {}
+  }
   showToast('✅ ' + emoji + ' ' + name + ' Added');
 }
 
@@ -19968,6 +20059,14 @@ function confirmNewGoal() {
   // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
+  // Bundle 28 round 7: also refresh canvas Savings sub-screen if open —
+  // john's "newly added goals only adds to the PLAN homepage and not in
+  // the savings goals subscreen". The bucket gets created but the canvas
+  // doesn't re-render after PLAN_MODAL closes (renderPlanMode only
+  // touches PLAN-mode surfaces).
+  if (typeof renderPaydaySavings === 'function') {
+    try { renderPaydaySavings(); } catch (_) {}
+  }
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
 
