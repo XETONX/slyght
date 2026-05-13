@@ -122,6 +122,34 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 55 — BNPL explicit paymentDates schedule (additive)
+Bundle 29 candidate B pulled forward. Real Afterpay/Klarna/Zip schedules slide (21 May → 4 Jun → 18 Jun → 2 Jul) and don't repeat on the same day-of-month. Pre-r55 BNPL bills used `freq:fortnightly + day:21` which is an approximation that drifts visibly over a multi-month plan.
+
+r55 adds a **new optional `paymentDates` field** alongside the existing `day + freq + endDate` fields:
+
+```json
+{
+  "name": "Stanmore Station Pharmacy",
+  "amt": 12.49, "day": 21, "tag": "BNPL",
+  "recurring": true, "freq": "fortnightly",
+  "endDate": "2026-07-02",
+  "paymentDates": [
+    "2026-05-21", "2026-06-04", "2026-06-18", "2026-07-02"
+  ]
+}
+```
+
+- `saveBnpl` generates the array (calendar-aware `setDate`/`setMonth`, no UTC drift).
+- `getExpandedBills` checks for `paymentDates` first — if present, emits one entry per date that falls in the current month; bills "between payments this month" are skipped entirely (no over-counting).
+- `buildCalendarEntries` pre-passes `paymentDates`-carrying bills outside the offset loop so each explicit date gets exactly one calendar marker, then the legacy day+freq path runs for everything else.
+- Bills without `paymentDates` follow the existing day+freq expansion unchanged (purely additive — no migration needed for existing user data).
+
+Per user constraint "do not overwrite or over duplicate what we just created in this marathon", existing BNPL fixtures keep working until the user creates a new BNPL plan via `openBnplModal`. Old plans can be regenerated through the modal if exactness matters; the legacy fallback is good-enough for low-frequency monthly bills.
+
+Tests added (3 — total 65/65): paymentDates array matches Afterpay 4-payment fortnightly, weekly 3-payment slide, length-equals-remaining invariant.
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime, all 4 guardians PASS.
+
 ### Round 53 — Monthly Bills: month section headers
 John on r52 verify: "PASS but I think it should be split like MAY and then all Bills under MAY instead of repeating on the 4th 2 bills MAY you know?"
 

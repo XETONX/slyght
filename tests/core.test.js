@@ -1297,6 +1297,54 @@ test('BNPL end-date: single-payment plan (remaining=1) end equals start', () => 
   expect(_bnplEndDate('2026-05-21', 1, 'fortnightly')).toBe('2026-05-21');
 });
 
+// ── Bundle 28 round 55: BNPL explicit paymentDates schedule ──
+// John's Afterpay screenshots show a fixed sequence of dates
+// (21 May → 4 Jun → 18 Jun → 2 Jul) that do NOT repeat on the same
+// day-of-month. Day+freq is approximate; paymentDates is exact. The
+// helper below mirrors saveBnpl's generator so the contract is locked.
+function _bnplPaymentDates(startStr, remaining, freq) {
+  const start = new Date(startStr + 'T00:00:00');
+  const out = [];
+  if (freq === 'monthly') {
+    for (let i = 0; i < remaining; i++) {
+      const d = new Date(start);
+      d.setMonth(d.getMonth() + i);
+      out.push(d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0'));
+    }
+  } else {
+    const daysBetween = freq === 'weekly' ? 7 : 14;
+    for (let i = 0; i < remaining; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i * daysBetween);
+      out.push(d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0'));
+    }
+  }
+  return out;
+}
+
+test('BNPL paymentDates: Afterpay fortnightly 4-payment slide schedule', () => {
+  // Matches John's Stanmore Station Pharmacy screenshot exactly.
+  expect(_bnplPaymentDates('2026-05-21', 4, 'fortnightly')).toEqual([
+    '2026-05-21', '2026-06-04', '2026-06-18', '2026-07-02',
+  ]);
+});
+
+test('BNPL paymentDates: weekly 3-payments slide forward by 7 days', () => {
+  expect(_bnplPaymentDates('2026-05-21', 3, 'weekly')).toEqual([
+    '2026-05-21', '2026-05-28', '2026-06-04',
+  ]);
+});
+
+test('BNPL paymentDates: length equals remaining, first equals start', () => {
+  const dates = _bnplPaymentDates('2026-05-21', 6, 'fortnightly');
+  expect(dates.length).toBe(6);
+  expect(dates[0]).toBe('2026-05-21');
+});
+
 // ── Bundle 28 round 50 regression: AU date formatter ──
 // Anchor John's format preference ("14th June" / "14 Jun" style — day
 // as number, month as word). Mirrors the production fmtAuDate fn.

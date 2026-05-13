@@ -3518,6 +3518,35 @@ function getExpandedBills() {
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   BILLS.filter(b => b.recurring !== false && _isBillActiveAsOf(b, now)).forEach(b => {
+    // Bundle 28 round 55: BNPL bills with an explicit paymentDates array
+    // bypass the day+freq fallback expansion below. Real Afterpay
+    // schedules slide (May 21 → Jun 4 → Jun 18 → Jul 2) and don't
+    // repeat on the same day-of-month. Generate one synthetic entry
+    // per payment-date that falls in the CURRENT month. Bills without
+    // paymentDates use the legacy day+freq path unchanged.
+    if (Array.isArray(b.paymentDates) && b.paymentDates.length > 0) {
+      const _curYear = now.getFullYear();
+      const _curMonth = now.getMonth();
+      let _added = 0;
+      b.paymentDates.forEach(pd => {
+        if (typeof pd !== 'string') return;
+        const parts = pd.split('-');
+        if (parts.length !== 3) return;
+        const py = +parts[0], pm = +parts[1] - 1, pd_d = +parts[2];
+        if (py === _curYear && pm === _curMonth) {
+          if (_added === 0) {
+            result.push({ ...b, day: pd_d });
+          } else {
+            result.push({ ...b, day: pd_d, _generated: true });
+          }
+          _added++;
+        }
+      });
+      // If no payment-date in current month, the bill is "between
+      // payments this month" — skip entirely (don't fall through to
+      // day+freq expansion which would over-count).
+      return;
+    }
     result.push(b);
     if (b.freq === 'fortnightly') {
       // H1: use real month length instead of day2 - 28 hack
@@ -3899,11 +3928,43 @@ function buildCalendarEntries(state, now) {
     });
   };
 
+  // Bundle 28 round 55: bills carrying an explicit paymentDates array
+  // (BNPL with calendar-aware slide schedules) emit one entry per date
+  // directly, bypassing the day+freq month-window expansion. Done once
+  // outside the offset loop so we don't multi-add per month iteration.
+  const _bnplPaid = billsArr.filter(b =>
+    b.recurring !== false && Array.isArray(b.paymentDates) && b.paymentDates.length > 0
+  );
+  _bnplPaid.forEach(b => {
+    b.paymentDates.forEach(pd => {
+      if (typeof pd !== 'string') return;
+      const parts = pd.split('-');
+      if (parts.length !== 3) return;
+      const py = +parts[0], pm = +parts[1] - 1, pdd = +parts[2];
+      const billDate = new Date(py, pm, pdd);
+      const dateISO = py + '-' + String(pm + 1).padStart(2, '0') + '-' + String(pdd).padStart(2, '0');
+      const paidKey = paidBillKey(b.name, pdd, pm, py);
+      const _entry = paidBills[paidKey];
+      const isPaidByKey = _entry === true || (_entry && _entry.paid === true);
+      const isPaid = isPaidByKey || _isPaidByMatchingTxn(b, billDate);
+      const covered = debtsForCoverage.some(d => _covers(d, b, billDate));
+      if (covered) return;
+      _add(dateISO, {
+        type: 'bill', name: b.name, amt: b.amt,
+        color: 'var(--amber)',
+        paid: isPaid,
+        bill: b, ref: b, source: 'bills'
+      });
+    });
+  });
+
   for (let offset = -12; offset < 12; offset++) {
     const m = ((baseM + offset) % 12 + 12) % 12;
     const y = baseY + Math.floor((baseM + offset) / 12);
     billsArr.forEach(b => {
       if (b.recurring === false) return;
+      // Skip bills already handled by the paymentDates pre-pass above.
+      if (Array.isArray(b.paymentDates) && b.paymentDates.length > 0) return;
       if (!_dueIn(b, m)) return;
       const billDate = new Date(y, m, b.day);
       const dateISO = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(b.day).padStart(2, '0');
@@ -6918,17 +6979,34 @@ function saveBnpl() {
   const amt = parseFloat(perInst.toFixed(2));
   // Bundle 28 round 48: calendar-aware date math (see _bnplRecompute
   // comment). Pre-r48 produced a one-day-early endDate due to UTC drift.
+  // Bundle 28 round 55: BNPL bills now ALSO persist an explicit
+  // paymentDates: [...] array — the actual schedule from Afterpay/Klarna
+  // doesn't follow a fixed day-of-month (May 21 → Jun 4 → Jun 18 → Jul 2,
+  // not "21st of every month"). paymentDates is the canonical schedule
+  // for BNPL bills; the existing day+freq fields stay for backwards
+  // compat with renderers that haven't been updated yet (getExpandedBills
+  // detects paymentDates and uses it preferentially).
   const start = new Date(startStr + 'T00:00:00');
-  const endDate = new Date(start);
+  const paymentDates = [];
   if (freq === 'monthly') {
-    endDate.setMonth(endDate.getMonth() + (remaining - 1));
+    for (let i = 0; i < remaining; i++) {
+      const d = new Date(start);
+      d.setMonth(d.getMonth() + i);
+      paymentDates.push(d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0'));
+    }
   } else {
     const daysBetween = freq === 'weekly' ? 7 : 14;
-    endDate.setDate(endDate.getDate() + (remaining - 1) * daysBetween);
+    for (let i = 0; i < remaining; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i * daysBetween);
+      paymentDates.push(d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0'));
+    }
   }
-  const endStr = endDate.getFullYear() + '-' +
-    String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
-    String(endDate.getDate()).padStart(2, '0');
+  const endStr = paymentDates[paymentDates.length - 1];
   const newBill = {
     name,
     amt,
@@ -6938,6 +7016,7 @@ function saveBnpl() {
     freq,
     endDate: endStr,
     autoDebit,
+    paymentDates, // Bundle 28 round 55: explicit schedule
   };
   BILLS.push(newBill);
   save();
