@@ -8191,9 +8191,14 @@ function openEditPaydayKiaExtra() {
         const r = BRAIN.plan.setOverride('kia-extra', 'KIA', amt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
         if (!r.ok) return r;
       }
-      if (typeof renderPaydaySavings === 'function') renderPaydaySavings();
-      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      // Bundle 28.x: fire toast FIRST, then re-render. Previously re-renders
+      // ran before the toast — if any re-render threw, the toast was lost
+      // and user saw silent success. John flagged "functionality works but no
+      // toast" on 2026-05-13. Re-renders wrapped in try so a render exception
+      // doesn't swallow the user-visible feedback.
       if (typeof showToast === 'function') showToast('✓ KIA extra ' + (amt === 0 ? 'cleared' : '→ $' + amt));
+      try { if (typeof renderPaydaySavings === 'function') renderPaydaySavings(); } catch (e) { console.error('[KIA Extra] renderPaydaySavings threw:', e); }
+      try { if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot(); } catch (e) { console.error('[KIA Extra] renderPaydayPlanRoot threw:', e); }
       return { ok: true };
     },
   });
@@ -8913,7 +8918,7 @@ function renderPaydaySavings() {
   }
   // Footer
   html += '<div class="settings-section-hint">Add new buckets in the Plan tab.</div>';
-  html += '<div class="settings-pointer-row"><a onclick="_paydayExitToTab(\'pg-spend\')">+ Add bucket →</a></div>';
+  html += '<div class="settings-pointer-row"><a onclick="openAddBucketModal()">+ Add bucket →</a></div>';
   body.innerHTML = html;
 }
 
@@ -14400,7 +14405,11 @@ function updatePersistentStrip() {
   nw.textContent = 'NW: ' +
     (nwLiquid >= 0 ? '+' : '') + fmtC(nwLiquid);
   nw.style.color = nwLiquid >= 0 ? 'var(--green)' : 'var(--red)';
-  md.textContent = '$' + _m.safeToSpendToday.toFixed(0) + ' today';
+  // Bundle 28.x: relabel from '$X today' to '$X left today' — the previous
+  // string read identically to the hero's '$X spent today' even though the
+  // semantics are opposite (this is REMAINING budget, hero is SPENT). Closes
+  // the cross-tile label divergence John flagged on 2026-05-13.
+  md.textContent = '$' + _m.safeToSpendToday.toFixed(0) + ' left today';
   pd.textContent = _m.daysToPayday + 'd to payday';
 }
 
