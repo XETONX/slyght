@@ -302,7 +302,7 @@ select.s-input{cursor:pointer}
 .cut-save{font-size:13px;color:var(--text3);font-family:var(--mono)}
 /* BUDGET */
 .seg{display:flex;background:var(--bg3);border-radius:var(--r-sm);padding:3px;margin-bottom:16px}
-.seg-btn{flex:1;padding:12px 10px;font-size:13px;font-weight:600;border:none;background:none;color:var(--text3);cursor:pointer;border-radius:7px;transition:all .15s}
+.seg-btn{flex:1;padding:12px 10px;font-size:13px;font-weight:600;border:none;background:none;color:var(--text3);cursor:pointer;border-radius:8px;transition:all .15s}
 .seg-btn.on{background:var(--bg5);color:var(--text);border:1px solid var(--border2)}
 .slider-row{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .slider-lbl{font-size:14px;color:var(--text2);min-width:150px;font-weight:500}
@@ -493,7 +493,7 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 .msg-time{font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
 .msg-wrap-user .msg-time{text-align:right;color:var(--text3)}
 .chat-input-bar{flex-shrink:0;padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px) + 72px);background:var(--bg2);border-top:1px solid var(--border2);display:flex;gap:8px;align-items:flex-end}
-.chat-input{flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:22px;padding:11px 16px;font-size:15px;color:var(--text);outline:none;resize:none;max-height:120px;min-height:44px;line-height:1.5;overflow-y:hidden;transition:border-color .2s;font-family:var(--sans)}
+.chat-input{flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:11px 16px;font-size:15px;color:var(--text);outline:none;resize:none;max-height:120px;min-height:44px;line-height:1.5;overflow-y:hidden;transition:border-color .2s;font-family:var(--sans)}
 .chat-input:focus{border-color:var(--green)}
 .chat-input::placeholder{color:var(--text3)}
 .chat-send-btn{width:44px;height:44px;border-radius:50%;background:var(--green);border:none;color:#000;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s,transform .1s}
@@ -2778,8 +2778,8 @@ function explainMaxPerDay() {
           '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700">Budget used today</div>' +
           '<div style="font-size:16px;font-weight:800;color:' + barColor + ';font-family:var(--mono)">' + pctUsed + '%</div>' +
         '</div>' +
-        '<div style="height:10px;background:var(--bg4);border-radius:5px;overflow:hidden">' +
-          '<div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';border-radius:5px;transition:width .5s"></div>' +
+        '<div style="height:10px;background:var(--bg4);border-radius:6px;overflow:hidden">' +
+          '<div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';border-radius:6px;transition:width .5s"></div>' +
         '</div>' +
         '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:6px">' +
           '<span>' + f(todaySpent) + ' spent</span>' +
@@ -6403,9 +6403,16 @@ function renderDebtTiles() {
     if (!isViaRent && !isAuto) {
       const canAfford = d.amt <= surplus;
       const shortBy = surplus > 0 ? d.amt - surplus : d.amt;
+      // r67: skip the "short of surplus" badge when surplus is zero
+      // (critical/survival mode) — every debt is short, so repeating the
+      // amount on each tile is visual noise. Section-level CRITICAL banner
+      // already conveys the state. Keep the affordable check (rare positive
+      // signal) and the ETA (still informative).
       affordStr = canAfford
         ? '<div style="font-size:10px;color:var(--green);font-family:var(--mono);font-weight:700;margin-bottom:4px">✓ Affordable from surplus</div>'
-        : '<div style="font-size:10px;color:var(--amber);font-family:var(--mono);font-weight:700;margin-bottom:4px">⚠️ $'+shortBy.toFixed(0)+' short of surplus</div>';
+        : (surplus > 0
+            ? '<div style="font-size:10px;color:var(--amber);font-family:var(--mono);font-weight:700;margin-bottom:4px">⚠️ $'+shortBy.toFixed(0)+' short of surplus</div>'
+            : '');
       const etaMonths = surplus > 0 ? Math.ceil(d.amt / surplus) : 0;
       etaStr = etaMonths > 0 && etaMonths <= 60
         ? '<div style="font-size:10px;color:var(--text3);font-family:var(--mono)">~'+etaMonths+' months at surplus</div>'

@@ -122,6 +122,12 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 67 — Visual consistency: border-radius outliers + redundant warnings
+- **Border-radius outlier cleanup** (5 inline replacements): `border-radius:5px → 6px` (×2), `border-radius:7px → 8px` (×1), `border-radius:22px → 20px` (×1). Reduces the codebase from 15 distinct radius values to 11, all aligned to the scale 2/3/4/6/8/10/12/14/16/20.
+- **"Short of surplus" warning suppressed in critical mode** (`index.html:6401+`) — When `surplus === 0` (critical or survival), every debt is mathematically "short of surplus", so repeating that on every tile was visual noise that competed with the section-level CRITICAL banner already conveying the state. Now: keep the rare-positive `✓ Affordable from surplus` signal and the ETA, drop the per-tile amber warning when there's no surplus to allocate. The debt cards (Michael, Bowie) now read cleanly: name · amount · notes · % of debt · due date.
+
+Gates: 65/65 tests, 51/51 runtime, 4/4 guardians green. Verified by local Layer V — dashboard immediate-debts grid much cleaner.
+
 ### Round 66 — r64.B follow-through + 2 UX fixes + GO HAM polish pass
 John ask: "continue going I love all these UX polishes, I want more! go above making other UXs look nicer or cleaning up the buttons where they are tappable like removing the weird oval shading behind buttons, increasing and unifying the font size across all tiles and UIs so its easy to read just go HAM!"
 
