@@ -1162,6 +1162,99 @@ test('BRAIN.transaction.removeByTsWithBalance: idempotency — same ts twice doe
   expect(bal).toBe(800); // bal must NOT have moved on second-attempt
 });
 
+// ── Bundle 28 round 39 + 42 regression tests: Debt Freedom sort ──
+// Anchor the urgency-bucket sort + within-bucket daysUntil tiebreaker.
+// Pure reproducer — mirrors buildDebtFreedomProjection's sort body.
+// Locks in: due-soon beats due-far regardless of strategy; closer due
+// wins tie inside a bucket.
+
+function _sortDebtsByUrgencyThenStrategy(debts, strategy, nowMs) {
+  const _daysUntil = d => {
+    if (!d.delayDate) return Infinity;
+    const ms = new Date(d.delayDate + 'T00:00:00').getTime() - nowMs;
+    return ms / 86400000;
+  };
+  const _urgencyBucket = d => {
+    const du = _daysUntil(d);
+    if (du < 0)  return 0;
+    if (du <= 7)  return 1;
+    if (du <= 30) return 2;
+    return 3;
+  };
+  return debts
+    .filter(d => !d.paid && !d.viaRent && (+d.amt || 0) > 0)
+    .sort((a, b) => {
+      const ua = _urgencyBucket(a), ub = _urgencyBucket(b);
+      if (ua !== ub) return ua - ub;
+      const da = _daysUntil(a), db = _daysUntil(b);
+      if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return da - db;
+      if (strategy === 'snowball') return (+a.amt || 0) - (+b.amt || 0) || (a.priority || 99) - (b.priority || 99);
+      return (+b.rate || 0) - (+a.rate || 0) || (a.priority || 99) - (b.priority || 99);
+    });
+}
+
+const _NOW_MS = TEST_TIMESTAMP;
+function _addDays(n) {
+  return new Date(_NOW_MS + n * 86400000).toISOString().slice(0, 10);
+}
+
+test('Debt freedom sort: due-this-week beats due-far regardless of avalanche rate', () => {
+  // Bug class anchor (OPEN-BUGS #14): r37 used pure avalanche and
+  // recommended Michael in January when he was due Saturday.
+  const debts = [
+    // Far-future debt with high rate (avalanche would prefer this)
+    { id: 1, name: 'CC', amt: 5000, rate: 20, delayDate: _addDays(120), priority: 1 },
+    // Due-this-week, low rate (urgency should win)
+    { id: 2, name: 'Michael', amt: 500, rate: 0, delayDate: _addDays(3), priority: 2 },
+  ];
+  const sorted = _sortDebtsByUrgencyThenStrategy(debts, 'avalanche', _NOW_MS);
+  expect(sorted[0].name).toBe('Michael');
+  expect(sorted[1].name).toBe('CC');
+});
+
+test('Debt freedom sort: overdue (bucket 0) beats due-this-week (bucket 1)', () => {
+  const debts = [
+    { id: 1, name: 'Michael', amt: 500, rate: 0, delayDate: _addDays(3), priority: 2 },
+    { id: 2, name: 'Overdue', amt: 100, rate: 0, delayDate: _addDays(-2), priority: 99 },
+  ];
+  const sorted = _sortDebtsByUrgencyThenStrategy(debts, 'avalanche', _NOW_MS);
+  expect(sorted[0].name).toBe('Overdue');
+  expect(sorted[1].name).toBe('Michael');
+});
+
+test('Debt freedom sort r42: within-bucket tiebreaker by daysUntil — closer due wins', () => {
+  // Round 42 audit fix: Afterpay (due in 1 day) and Michael (due in 3 days)
+  // are both bucket=1. Without daysUntil tiebreaker, avalanche rate would
+  // swap them. With tiebreaker, closer due wins.
+  const debts = [
+    { id: 1, name: 'Michael', amt: 500, rate: 0, delayDate: _addDays(3), priority: 99 },
+    { id: 2, name: 'Afterpay', amt: 31, rate: 0, delayDate: _addDays(1), priority: 1 },
+  ];
+  const sorted = _sortDebtsByUrgencyThenStrategy(debts, 'avalanche', _NOW_MS);
+  expect(sorted[0].name).toBe('Afterpay');
+  expect(sorted[1].name).toBe('Michael');
+});
+
+test('Debt freedom sort: viaRent excluded from queue', () => {
+  const debts = [
+    { id: 1, name: 'Mum', amt: 5681, rate: 0, viaRent: true, priority: 1 },
+    { id: 2, name: 'Manual', amt: 500, rate: 0, priority: 2 },
+  ];
+  const sorted = _sortDebtsByUrgencyThenStrategy(debts, 'avalanche', _NOW_MS);
+  expect(sorted.length).toBe(1);
+  expect(sorted[0].name).toBe('Manual');
+});
+
+test('Debt freedom sort: paid debts excluded', () => {
+  const debts = [
+    { id: 1, name: 'Cleared', amt: 100, rate: 0, paid: true, priority: 1 },
+    { id: 2, name: 'Active', amt: 200, rate: 0, priority: 2 },
+  ];
+  const sorted = _sortDebtsByUrgencyThenStrategy(debts, 'avalanche', _NOW_MS);
+  expect(sorted.length).toBe(1);
+  expect(sorted[0].name).toBe('Active');
+});
+
 // ── Summary ─────────────────────────────────────────────
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed > 0) process.exit(1);
