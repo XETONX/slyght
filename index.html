@@ -17303,12 +17303,14 @@ const BRAIN = {
     // Allowed patch fields: amt (with balance reconciliation), note, cat,
     // ts (date move). Other fields require reclassify() or recordCorrection.
     //
-    // Balance math: PRESERVES the pre-Bundle-28 direction. If patch.amt
-    // changes, S.bal is adjusted by (income ? -diff : diff) where
-    // diff = newAmt - oldAmt. The sign on the expense branch is
-    // suspect — flagged in OPEN-BUGS for review under the "txn-edit
-    // amt direction" entry — but unchanged here to avoid surprising
-    // user-facing behavior changes during the migration.
+    // Balance math: diff = newAmt - oldAmt.
+    //   For an EXPENSE: increasing amt means the user spent more than
+    //   originally logged → balance should DROP further → balDelta = -diff.
+    //   For INCOME: increasing amt means more cash actually came in →
+    //   balance should RISE → balDelta = +diff.
+    // (Pre-Bundle-28 code had the signs inverted; OPEN-BUGS #42
+    // confirmed by phone-verify 2026-05-13 — expense edit $50→$80 was
+    // moving balance UP instead of further DOWN. Corrected here.)
     //
     // Returns { ok, before, after, balDelta } so callers can react and
     // undo flows can issue a reversing update.
@@ -17342,7 +17344,7 @@ const BRAIN = {
       if ('amt' in patch && typeof patch.amt === 'number' && !isNaN(patch.amt)) {
         const diff = patch.amt - txn.amt;
         if (Math.abs(diff) > 0.01) {
-          balDelta = txn.income ? -diff : diff;
+          balDelta = txn.income ? diff : -diff;
           S.bal = parseFloat((S.bal + balDelta).toFixed(2));
         }
         txn.amt = patch.amt;

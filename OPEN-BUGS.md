@@ -842,26 +842,28 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   per OPEN-BUGS' own framing; #40's wiring fix covers this. Trail kept
   per project precedent.)
 
-## 42. saveEditedTransaction — balance sign appears inverted for expense edits
-- **Bug:** Pre-Bundle-28 `saveEditedTransaction` math (now centralised in
-  `BRAIN.transaction.update` round 10) adjusts `S.bal` by `+diff` when
-  an EXPENSE amount edit grows (diff = newAmt - oldAmt). Walking it:
+## 42. saveEditedTransaction — balance sign inverted for expense edits
+- **Bug:** Pre-Bundle-28 `saveEditedTransaction` math (centralised in
+  `BRAIN.transaction.update` round 10) adjusted `S.bal` by `+diff` when
+  an EXPENSE amount edit grew (diff = newAmt - oldAmt). Walking it:
   user logs $50 expense → bal drops $200 → $150. Edits to $80. Expected
-  net: bal = $200 - $80 = $120 (or equivalently, $150 + ($50 - $80) = $120,
-  i.e. bal += oldAmt - newAmt = -diff). Current code does bal += diff
-  → $150 + $30 = $180. Same shape on the income branch — appears to use
-  the opposite sign (income up → bal down). Could be intentional under
-  a "balance is metadata-only and shouldn't move on past-event edit"
-  semantic, but if so the math should be a no-op, not the inverted form.
-- **Source:** Round-10 migration analysis (Bundle 28). Not phone-reported
-  yet — surfaced while reading the pre-existing implementation for
-  routing through BRAIN.transaction.update.
-- **Repro needed:** yes — phone-verify: log a $50 expense, note bal,
-  edit to $80, check whether bal moved up (current bug) or down (correct).
-- **Fix bundle:** unscheduled — defer until phone-verify confirms the
-  inversion (the canonical writer comment flags this for future review).
-  If confirmed, fix is a one-line sign flip inside `BRAIN.transaction.update`.
-- **Status:** open (math suspected wrong, awaiting phone-verify before sign flip)
+  net: bal = $200 - $80 = $120 (i.e. bal += oldAmt - newAmt = -diff).
+  Buggy code did bal += diff → $150 + $30 = $180. Income branch had
+  the opposite-direction same bug.
+- **Source:** Round-10 migration analysis (Bundle 28). Phone-verified
+  by John 2026-05-13: "confirmed bug where editing to $80 brings it
+  back up instead of further down".
+- **Fix bundle:** Bundle 28 round 11 — one-line sign flip in
+  `BRAIN.transaction.update` from `(income ? -diff : diff)` to
+  `(income ? diff : -diff)`. Centralisation from round 10 made this
+  a single-site fix; all callers (saveEditedTransaction is the only
+  one currently) inherit the corrected math.
+- **Drift note:** John's live S.bal may have accumulated drift from
+  prior edits under the buggy math. Recovery path is the existing
+  dashboard hero balance edit (`applyBalanceCorrection` →
+  `BRAIN.transaction.recordCorrection`) — set actual bank balance,
+  reconciliation toast restores the truth.
+- **Status:** fixed (Bundle 28 round 11)
 
 ## 10. Test-source drift — canonical helpers copy-pasted in tests
 - **Bug:** `tests/core.test.js` lines 117–530 copy-paste the bodies
