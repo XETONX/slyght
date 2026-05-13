@@ -106,6 +106,20 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 42 — Self-audit fixes (no phone-verify needed; bug-class)
+After 5 consecutive feature pushes I paused per John's pre-authorisation note ("if you think you are pushing too much stop then analyse last 5 pushes and scan for errors"). Audit found three issues:
+
+**42a — Debt Freedom within-bucket tiebreaker by daysUntil**
+Round 39 sorted by urgency-bucket (overdue / ≤7d / ≤30d / longer), then strategy. But within a bucket, two debts could swap order based on strategy/priority even though one was clearly more imminent. E.g., Afterpay due May 14 and Michael due May 16 are both bucket=1, but Afterpay should still sort first. Fixed: within-bucket sub-sort now factors `daysUntil` BEFORE strategy/priority.
+
+**42b — `_autoExpireDebts` now also runs at boot**
+Round 35 added `_autoExpireDebts` to `onStateChange` — so expired endDate debts auto-flip `paid:true` on any state-change action. But if the user opens the app after a long absence with no immediate action, expired debts stay visible until they do something. Fixed: also called after `detectPaydayCycleRollover` in the post-load path (L2280-area) so first render is consistent.
+
+**42c — Category row hidden when Type=Income/Savings**
+Round 38 dropped 'Income / Refund' from `QUICK_CATS` (it's now a Type chip). But selecting type=Income syncs `ql-cat-hidden = 'Income'` while no chip in the visible row highlights — visually confusing. Fixed: `selectTxnType` now hides the entire `#ql-cat-field` when type is income/savings (the category is type-determined, no user choice needed). `openQuickLogModal` resets it visible at modal open.
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Rounds 38–41 — Quick Log re-thought, Debt Freedom dynamic, pace explainer, BNPL polish
 John phone-verify on rounds 35–37: 1 FAIL, 4 PASS-with-comments. Each round below addresses one item.
 

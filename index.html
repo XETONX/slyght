@@ -1657,7 +1657,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
     <div class="modal-field"><label>Amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="ql-amt" placeholder="0.00" inputmode="decimal" name="ql-amt-field" oninput="updateRoundUpPreview()"></div>
     <div id="ql-roundup-preview" style="display:none;margin:-8px 0 10px;padding:8px 12px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);font-size:14px;color:var(--green);display:flex;align-items:center;justify-content:space-between"><span id="ql-roundup-label">🏦 Round-up: +$0.00 → China Holiday</span><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ql-roundup-toggle" checked style="accent-color:var(--green)"><span style="font-size:13px">On</span></label></div>
     <div class="modal-field"><label>Description</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="ql-note" placeholder="e.g. Uber Eats, Coles" name="ql-note-field"></div>
-    <div class="modal-field"><label>Category</label>
+    <!-- Bundle 28 round 42: Category row wrapped in #ql-cat-field so it
+         can be hidden when type=income / type=savings (category is then
+         auto-determined by type; showing the chip row with no highlight
+         was visually confusing). selectTxnType toggles display. -->
+    <div class="modal-field" id="ql-cat-field"><label>Category</label>
       <div style="overflow-x:auto;white-space:nowrap;padding:4px 0;margin-bottom:8px">
         <div id="cat-chips" style="display:inline-flex;gap:6px;padding:0 2px">
           <!-- chips rendered by JS in openQuickLogModal -->
@@ -2278,6 +2282,10 @@ function load() {
   // guardian-allow-block-end: no-hardcoded-bill-name
   // Detect cycle rollover post-load (in case the user reopens after a new month started).
   try { detectPaydayCycleRollover(); } catch(e) {}
+  // Bundle 28 round 42 (audit): also run autoExpire at boot so endDated
+  // debts that expired while the app was closed get flagged on first
+  // render — not on the next user action. Mirrors the onStateChange call.
+  try { _autoExpireDebts(); } catch(e) {}
   // Refresh the computed model now that all migrations have completed.
   if (typeof refreshModel === 'function') refreshModel();
 }
@@ -6595,7 +6603,12 @@ function buildDebtFreedomProjection() {
     .sort((a, b) => {
       const ua = _urgencyBucket(a), ub = _urgencyBucket(b);
       if (ua !== ub) return ua - ub; // urgent buckets first
-      // Within the same urgency bucket, sub-sort by strategy
+      // Bundle 28 round 42 (audit fix): within the same urgency bucket,
+      // sub-sort by exact daysUntil first — Afterpay (May 14) should
+      // sort ahead of Michael (May 16) even though both are bucket=1.
+      // Then strategy. Then priority.
+      const da = _daysUntil(a), db = _daysUntil(b);
+      if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return da - db;
       if (strategy === 'snowball') return (+a.amt || 0) - (+b.amt || 0) || (a.priority || 99) - (b.priority || 99);
       return (+b.rate || 0) - (+a.rate || 0) || (a.priority || 99) - (b.priority || 99);
     });
@@ -8305,6 +8318,10 @@ function openQuickLogModal() {
   const _qln2 = $('ql-note'); if (_qln2) _qln2.value = '';
   const _qlc = $('ql-cat'); if (_qlc) _qlc.value = '';
   if ($('ql-cat-hidden')) $('ql-cat-hidden').value = 'Food / Coffee';
+  // Bundle 28 round 42: ensure category row visible at modal open (a
+  // prior session might have left it hidden via type=income/savings).
+  const _qlcf = $('ql-cat-field'); if (_qlcf) _qlcf.style.display = '';
+  const _qltt = $('ql-txn-type'); if (_qltt) _qltt.value = 'expense'; // default type
   const _qlrec = $('ql-recurring'); if (_qlrec) _qlrec.checked = false;
   const _qlrf = $('ql-recurring-fields'); if (_qlrf) _qlrf.style.display = 'none';
   if ($('ql-day')) $('ql-day').value = '';
@@ -8654,19 +8671,29 @@ function selectTxnType(btn, type) {
   if (hidden) hidden.value = type;
 
   // Bundle 28 round 38: auto-sync category for non-Expense types
+  // Bundle 28 round 42 (audit fix): also hide the entire category row
+  // when type=income/savings (category is auto-determined; visible row
+  // with no highlight was confusing). Show for expense/transfer.
   const catHidden = document.getElementById('ql-cat-hidden');
   const catSel = document.getElementById('ql-cat');
+  const catField = document.getElementById('ql-cat-field');
   const autoCat = type === 'income' ? 'Income' : type === 'savings' ? 'Savings' : null;
   if (autoCat) {
     if (catHidden) catHidden.value = autoCat;
     if (catSel) catSel.value = autoCat;
+    if (catField) catField.style.display = 'none'; // hide — type implies category
     // Visually re-sync the category chip-row so the green-state matches
+    // (preserved for if user toggles back to expense; some types like
+    // 'savings' have a matching chip and benefit from highlight).
     document.querySelectorAll('#cat-chips button').forEach(b => {
       const isActive = (b.dataset.cat === autoCat);
       b.style.background = isActive ? 'var(--green)' : 'var(--bg5)';
       b.style.borderColor = isActive ? 'var(--green)' : 'var(--bg5)';
       b.style.color = isActive ? '#000' : 'var(--text2)';
     });
+  } else {
+    // Expense / Transfer — show category row so user can pick sub-category
+    if (catField) catField.style.display = '';
   }
 }
 
