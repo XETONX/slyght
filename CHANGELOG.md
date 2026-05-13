@@ -122,6 +122,35 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 53 — Monthly Bills: month section headers
+John on r52 verify: "PASS but I think it should be split like MAY and then all Bills under MAY instead of repeating on the 4th 2 bills MAY you know?"
+
+Pre-r53 each multi-bill day row labelled itself with the month — "2 bills · May $3,780" appeared 13 times across the list. Now the list is grouped by month at the top level:
+
+```
+MAY                                                  $5,109
+  [15] 2 bills                          after: -$X   $3,780
+     · Rent + Deposit Savings                        $3,000
+     · KIA Loan — Firstmac                             $780
+  [16] Optus — Phone + Internet         after: -$X     $194
+  [18] YouTube Premium                  after: -$X      $17
+  [30] 2 bills                          after: -$X   $1,028
+     · Allianz CTP                                     $566
+     · KIA Registration                                $462
+
+JUN                                                  $X,XXX
+  ...
+```
+
+- Each month gets a section header with the month name (uppercase) and the month total on the right.
+- Year suffix only when it differs from the current year ("MAY" vs "JAN 2027").
+- Day-group rows lose their redundant "May" subline (was "2 bills · May" → just "2 bills"; the running balance "after: $X" stays).
+- Single-bill day rows also drop the month text from their subline.
+
+Round 52b's same-day grouping is preserved underneath.
+
+Gates: 0 FAILs, 62/62 tests, 51/51 runtime PASS.
+
 ### Round 52 — Trips as first-class allocation targets + Monthly Bills same-day grouping
 Two refinements from John's r51 verify.
 
