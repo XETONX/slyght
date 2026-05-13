@@ -43,9 +43,18 @@ const checks = [
   },
 
   // Every money mutation calls save() and renderAll()
+  //
+  // Bundle 28.x hotfix: updateBalanceFromSettings was removed from this list
+  // because it no longer mutates state directly. It now stages a pending
+  // correction and delegates to runRecon → applyBalanceCorrection, which is
+  // the actual mutation point (and which IS on this list). The previous
+  // direct-mutate-then-recon pattern left inconsistent state if the user
+  // cancelled the recon modal; the new flow asks-then-commits. Per
+  // slyght_guardian_philosophy.md: outdated rules get updated, not
+  // allowed-around.
   { name: 'Money mutations call save() and renderAll()',
     test: () => {
-      const mutations = ['quickLogTxn', 'markDebtPaid', 'markBillPaidMonth', 'updateBalanceFromSettings'];
+      const mutations = ['quickLogTxn', 'markDebtPaid', 'markBillPaidMonth', 'applyBalanceCorrection'];
       const missing = [];
       mutations.forEach(fn => {
         const match = html.match(new RegExp('function ' + fn + '[\\s\\S]*?\\n}'));

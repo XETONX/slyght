@@ -2721,11 +2721,35 @@ function eodReconAccept() {
 }
 
 // H2: expects (newBal, prevExpected) where prevExpected = getLiveBal() before S.bal changed
+// Bundle 28.x hotfix: replace silent returns with explicit handling — Dashboard
+// + Settings balance edits were dying with no user feedback when diff < $1 or
+// when prevExpected was 0/NaN. Now we either auto-apply (with a sensible reason)
+// or surface a toast so the user knows what happened.
 function runRecon(newBal, prevExpected) {
-  if (prevExpected === 0) return;
+  if (prevExpected === 0 || prevExpected == null || isNaN(prevExpected)) {
+    // First-time / unknown previous balance — no recon possible, apply directly
+    if (_pendingBalCorrection) {
+      _pendingBalCorrection = null;
+      applyBalanceCorrection(newBal, 'Initial balance set');
+    }
+    return;
+  }
   const diff = newBal - prevExpected;
   const absDiff = Math.abs(diff);
-  if (absDiff < 1) return;
+  if (absDiff < 0.01) {
+    // No actual change
+    if (_pendingBalCorrection) _pendingBalCorrection = null;
+    if (typeof showToast === 'function') showToast('Balance unchanged');
+    return;
+  }
+  if (absDiff < 1) {
+    // Tiny adjustment — apply directly without asking for a reason
+    if (_pendingBalCorrection) {
+      _pendingBalCorrection = null;
+      applyBalanceCorrection(newBal, 'Small adjustment (<$1)');
+    }
+    return;
+  }
   const rt = $('recon-title'), rb = $('recon-body'), rs = $('recon-reasons');
 
   // Smart match: find bills whose amount is close to the difference
@@ -5329,16 +5353,17 @@ function updateBalanceFromSettings() {
     S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
   }
 
-  S.bal = b;
-  onStateChange('balance-settings');
-  if (msg) {
-    msg.style.color = 'var(--green)';
-    msg.textContent = S.paydayReceived && jump >= income * 0.8
-      ? 'Looks like you got paid — payday plan activated'
-      : 'Balance updated to ' + fmtC(b);
-  }
-  setTimeout(() => { if ($('s-bal-msg')) $('s-bal-msg').textContent = ''; }, 3000);
-  // Trigger reconciliation if difference is significant
+  // Bundle 28.x hotfix: route Settings balance edit through the same
+  // pending-correction flow Dashboard uses. Previously this directly mutated
+  // S.bal at this point (bypassing applyBalanceCorrection's canonical writer)
+  // and the recon modal asked for a reason AFTER the change had already
+  // landed — leaving an inconsistent state if the user cancelled the modal.
+  // Now: stage the correction, let runRecon either auto-apply (small diffs)
+  // or open the reason modal (>=$1 diffs). applyBalanceCorrection (called
+  // by confirmRecon or by runRecon's auto-apply branch) handles S.bal +
+  // BRAIN.transaction.recordCorrection + onStateChange + toast.
+  if (msg) { msg.style.color = ''; msg.textContent = ''; }
+  _pendingBalCorrection = {newBal: b, prevExpected};
   runRecon(b, prevExpected);
 }
 
