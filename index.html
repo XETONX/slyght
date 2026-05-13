@@ -340,7 +340,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .nav-center-btn{width:56px;height:56px;border-radius:50%;background:var(--green);color:#000;border:none;font-size:28px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,232,122,0.4);display:flex;align-items:center;justify-content:center;margin-top:-16px;flex-shrink:0;transition:transform .15s,box-shadow .15s}
 .nav-center-btn:active{transform:scale(.93);box-shadow:0 2px 8px rgba(0,232,122,0.3)}
 /* MODAL */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:flex-end;justify-content:center}
+/* Bundle 28.x layer fix: z-index 200 → 600 so .modal-overlay sits above
+   the Payday Plan canvas (#pg-payday-plan at z-index 510). Previously when
+   user tapped "+ Add bucket" inside the canvas Savings sub-screen, the
+   add-bucket modal opened at z-index 200 — BEHIND the canvas (510) AND
+   PLAN mode (500), so user had to press back ~4 times to find the modal.
+   Same root cause for any standard modal opened from inside canvas (debt
+   edit, txn edit, net worth, etc.). 600 keeps modal above canvas + PLAN
+   mode but below EDIT_MODAL (700) so edit-modal still wins when stacked. */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:600;align-items:flex-end;justify-content:center}
 .modal-overlay.open{display:flex}
 .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r) var(--r) 0 0;padding:24px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;overscroll-behavior:contain}
 /* Bundle 22 v3 Phase 4c: every modal in the app locks page scroll while open,
@@ -390,7 +398,12 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 .cat-chip.active{background:var(--green-dim);border-color:var(--green-border);color:var(--green)}
 /* RECON MODAL */
 .recon-modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:24px;width:calc(100% - 48px);max-width:400px;margin:0 auto}
-.recon-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:300;align-items:center;justify-content:center}
+/* Bundle 28.x layer fix: 300 → 620 so the balance-reconciliation modal
+   sits above .modal-overlay (600) and above Payday Plan canvas (510).
+   This is the "why did your balance change?" reason-picker that opens
+   after a balance edit. Pre-fix it was hidden behind the canvas if the
+   balance edit was triggered while canvas was open. */
+.recon-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:620;align-items:center;justify-content:center}
 .recon-overlay.open{display:flex}
 /* ANIMATIONS */
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -1658,13 +1671,13 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
 </div>
 
 <!-- UNDO TOAST (L3) -->
-<div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer;z-index:400;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
+<div id="undo-toast" onclick="undoLastAction()" style="display:none;position:fixed;bottom:120px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:12px 20px;font-size:14px;font-weight:600;color:var(--text);cursor:pointer;z-index:800;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4)">Undo</div>
 <div id="sw-update-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:var(--green-dim);border-top:1px solid var(--green-border);padding:12px 16px;align-items:center;justify-content:space-between;z-index:9998">
   <span style="font-size:14px;color:var(--green);font-weight:600">✓ New version available</span>
   <button onclick="window.location.reload()" style="background:var(--green);color:#fff;border:none;border-radius:var(--r-sm);padding:8px 16px;font-size:14px;font-weight:700;cursor:pointer">Reload</button>
 </div>
 <div id="debt-celebrate-overlay"><div id="debt-celebrate-msg"></div></div>
-<div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:500;font-family:var(--mono)">OFFLINE</div>
+<div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:800;font-family:var(--mono)">OFFLINE</div>
 
 <!-- END-OF-DAY RECONCILIATION MODAL -->
 <div class="recon-overlay" id="eod-recon-modal">
@@ -10051,7 +10064,14 @@ function showToast(msg) {
   if (!el) {
     el = document.createElement('div');
     el.id = 'slyght-toast';
-    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:500;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
+    // Bundle 28.x layer fix: z-index 500 → 800. showToast was sandwiched
+    // between PLAN mode (500) and the Payday Plan canvas (510), so toasts
+    // fired from any in-canvas action (KIA Extra commit, savings allocate,
+    // bill tick, etc.) were rendered BEHIND the canvas — silent feedback.
+    // 800 sits above everything modal-tier (canvas 510, modals 600, recon
+    // 620, edit-modal 700) so toasts are always visible regardless of
+    // which surface is open when they fire.
+    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
     document.body.appendChild(el);
   }
   el.textContent = msg;
