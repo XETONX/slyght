@@ -2302,17 +2302,13 @@ function getMaxDay() {
 }
 
 // Bundle 28 forward-feature: P1 principle (every number tappable to its
-// inputs). Tap the MAX PER DAY card on dashboard to see the math behind
-// today's number. Reads the same inputs getDynamicDailyBudget uses so the
-// breakdown can never drift from the displayed value.
+// inputs). Tap MAX PER DAY → richly-styled HTML breakdown.
 //
-// Round 7 rebuild — john's "needs to be more informative and like fun
-// instead of just lines plus the calculations dont make sense I have
-// afterpay before payday and it doesnt show... 2 days before payday i
-// shouldnt be recommending to spend $70 a day ever... visual learner".
-// Now includes: ASCII progress bar, debt names (Afterpay etc) with due
-// dates, today's full outflow breakdown (discretionary + bills today),
-// timing-aware warnings, and emoji section headers.
+// Round 9 rebuild — john's "numbers look good but the way the info is
+// displayed clearly looks like just text not like little bubbles and modals
+// that are interactive or clean and bold for me to understand with
+// percentages or visuals etc". Now uses HTML cards + gradient hero +
+// visual progress bar + bold $ + colour-coded sections.
 function explainMaxPerDay() {
   try {
     const bal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
@@ -2330,16 +2326,13 @@ function explainMaxPerDay() {
     const todaySpent = (typeof getTodaySpent === 'function') ? getTodaySpent() : 0;
     const finalMax = Math.max(0, cap - todaySpent);
     const f = (n) => '$' + Math.round(n).toLocaleString();
-
-    // ASCII progress bar — 20 chars total, filled proportional to today spent
     const pctUsed = Math.min(100, Math.round((todaySpent / Math.max(1, userCap)) * 100));
-    const barWidth = 20;
-    const filled = Math.round((pctUsed / 100) * barWidth);
-    const bar = '▓'.repeat(filled) + '░'.repeat(Math.max(0, barWidth - filled));
+    const barColor = pctUsed >= 90 ? 'var(--red)' : pctUsed >= 70 ? 'var(--amber)' : 'var(--green)';
+    const heroColor = finalMax > userCap * 0.5 ? '#4ECDC4'
+                    : finalMax > userCap * 0.2 ? '#FF6B35'
+                    : '#E74C3C';
 
-    // Today's full outflow breakdown — discretionary (counted in cap) vs
-    // bills-today (categorised separately — not counted in cap math but
-    // affects balance). User specifically asked for this distinction.
+    // Today's full outflow split
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const allTodayTxns = (S.txns || []).filter(t =>
       t && t.ts >= todayStart.getTime() && !t.income && !t._isCorrection && !t._isRoundup);
@@ -2348,9 +2341,8 @@ function explainMaxPerDay() {
       .reduce((s, t) => s + (+t.amt || 0), 0);
     const todayTotal = todaySpent + billsTodayAmt;
 
-    // Debts due BEFORE payday — sorted ascending by daysUntilDue for context
+    // Debts due BEFORE payday with names + days until due
     const todayD = new Date().getDate();
-    const pdDay = +S.payday || 15;
     const upcomingDebts = (S.debts || [])
       .filter(d => d && !d.paid && !d.viaRent)
       .map(d => {
@@ -2363,63 +2355,105 @@ function explainMaxPerDay() {
       .filter(d => d.daysUntil != null && d.daysUntil < days)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
-    // Timing-aware warning
-    let timingWarn = '';
+    let timingWarnHtml = '';
     if (days <= 2 && finalMax > 20) {
-      timingWarn = '⚠️ Only ' + days + ' day' + (days === 1 ? '' : 's') +
-        ' to payday. Stay conservative — keep cushion for surprises.';
+      timingWarnHtml = '<div style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px;font-size:13px;color:var(--amber);line-height:1.5;margin-top:12px"><strong>⚠️ Heads up:</strong> Only ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday. Keep cushion for surprises.</div>';
     } else if (days <= 2 && finalMax <= 10) {
-      timingWarn = '🔒 ' + days + ' day' + (days === 1 ? '' : 's') +
-        ' left & only ' + f(finalMax) + ' wiggle room. Hold tight until payday.';
+      timingWarnHtml = '<div style="background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:10px;padding:12px;font-size:13px;color:var(--red);line-height:1.5;margin-top:12px"><strong>🔒 Hold tight:</strong> ' + days + ' day' + (days === 1 ? '' : 's') + ' left & only ' + f(finalMax) + ' wiggle room.</div>';
     } else if (days >= 10 && finalMax >= userCap * 0.9) {
-      timingWarn = '✅ Plenty of runway — ' + days + ' days to payday, well within budget.';
+      timingWarnHtml = '<div style="background:rgba(78,205,196,0.1);border:1px solid rgba(78,205,196,0.3);border-radius:10px;padding:12px;font-size:13px;color:#4ECDC4;line-height:1.5;margin-top:12px"><strong>✅ Plenty of runway</strong> — ' + days + ' days to payday, well within budget.</div>';
     }
 
-    const lines = [
-      '💰 Today\'s MAX PER DAY: ' + f(finalMax) + ' left',
-      '',
-      '📊 Budget used today:',
-      '  ' + bar + '  ' + pctUsed + '%',
-      '  ' + f(todaySpent) + ' of ' + f(userCap) + ' ' + dayLabel + ' budget',
-      '',
-      '🏦 Your money right now:',
-      '  Balance:                ' + f(bal),
-      '  − Bills before payday:  ' + f(billsCommitted) +
-        (billsList.length
-          ? ' (' + billsList.slice(0, 2).map(b => b.name).join(', ') +
-            (billsList.length > 2 ? '...' : '') + ')'
-          : ' (rent + others hit ON payday — not counted here)'),
-      '  − Debt minimums:        ' + f(debtsCommitted),
-      upcomingDebts.length
-        ? '    └─ ' + upcomingDebts.slice(0, 3).map(d =>
-            d.name + ' ' + f(d.amt) + ' in ' + d.daysUntil + 'd').join(', ')
-        : null,
-      '  = Cash cushion:         ' + f(available),
-      '',
-      '⏰ Time math:',
-      '  ' + f(available) + ' ÷ ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday',
-      '  = ' + f(dailyAvailable) + '/day raw',
-      '  Capped by ' + dayLabel + ' budget (' + f(userCap) + ')',
-      '  = ' + f(cap) + ' starting cap',
-      '',
-      '🧾 Today\'s total outflow:',
-      '  Discretionary spent:    ' + f(todaySpent),
-      billsTodayAmt > 0
-        ? '  + Bills/loans today:    ' + f(billsTodayAmt) + ' (excluded from cap math)'
-        : null,
-      '  = Total today:          ' + f(todayTotal),
-      '',
-      '🎯 Result:',
-      '  ' + f(cap) + ' cap − ' + f(todaySpent) + ' discretionary today',
-      '  = ' + f(finalMax) + ' left for the rest of today',
-      timingWarn ? '' : null,
-      timingWarn || null,
-    ].filter(l => l !== null);
+    const debtRows = upcomingDebts.length
+      ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);line-height:1.6">' +
+        '<div style="margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-size:10px">Debts before payday:</div>' +
+        upcomingDebts.slice(0, 4).map(d =>
+          '<div style="display:flex;justify-content:space-between"><span>' + d.name +
+          ' <span style="opacity:.6">in ' + d.daysUntil + 'd</span></span><span style="font-family:var(--mono);color:var(--text2)">' + f(d.amt) + '</span></div>'
+        ).join('') +
+        '</div>'
+      : '';
+
+    const billsLabel = billsList.length
+      ? ' <span style="font-size:11px;color:var(--text3);font-style:italic">(' + billsList.slice(0, 2).map(b => b.name).join(', ') + (billsList.length > 2 ? '...' : '') + ')</span>'
+      : ' <span style="font-size:11px;color:var(--text3);font-style:italic">(rent etc. hit ON payday — not here)</span>';
+
+    const body = '<div style="white-space:normal">' +
+      // Hero card — gradient based on remaining
+      '<div style="background:linear-gradient(135deg,' + heroColor + ',' + heroColor + 'dd);border-radius:14px;padding:18px;margin-bottom:12px;text-align:center;color:#0a0f1a">' +
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;opacity:.6;margin-bottom:6px">LEFT FOR TODAY</div>' +
+        '<div style="font-size:38px;font-weight:800;font-family:var(--mono);line-height:1">' + f(finalMax) + '</div>' +
+        '<div style="font-size:12px;opacity:.65;margin-top:6px">of ' + f(userCap) + ' ' + dayLabel + ' budget</div>' +
+      '</div>' +
+
+      // Progress bar card
+      '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+          '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700">Budget used today</div>' +
+          '<div style="font-size:16px;font-weight:800;color:' + barColor + ';font-family:var(--mono)">' + pctUsed + '%</div>' +
+        '</div>' +
+        '<div style="height:10px;background:var(--bg4);border-radius:5px;overflow:hidden">' +
+          '<div style="height:100%;width:' + pctUsed + '%;background:' + barColor + ';border-radius:5px;transition:width .5s"></div>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:6px">' +
+          '<span>' + f(todaySpent) + ' spent</span>' +
+          '<span>' + f(Math.max(0, userCap - todaySpent)) + ' left</span>' +
+        '</div>' +
+      '</div>' +
+
+      // Money breakdown
+      '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px">' +
+        '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">💰 Your money right now</div>' +
+        '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px;align-items:baseline">' +
+          '<div style="color:var(--text2)">Balance</div>' +
+            '<div style="text-align:right;font-family:var(--mono);font-weight:700;color:var(--green)">' + f(bal) + '</div>' +
+          '<div style="color:var(--text3)">− Bills before payday' + billsLabel + '</div>' +
+            '<div style="text-align:right;font-family:var(--mono);color:var(--text3)">' + f(billsCommitted) + '</div>' +
+          '<div style="color:var(--text3)">− Debt minimums</div>' +
+            '<div style="text-align:right;font-family:var(--mono);color:var(--text3)">' + f(debtsCommitted) + '</div>' +
+          '<div style="padding-top:8px;border-top:1px solid var(--border);font-weight:700">= Cash cushion</div>' +
+            '<div style="padding-top:8px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-weight:800;color:var(--text)">' + f(available) + '</div>' +
+        '</div>' +
+        debtRows +
+      '</div>' +
+
+      // Time math card
+      '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px">' +
+        '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">⏰ Time math</div>' +
+        '<div style="font-size:13px;color:var(--text2);line-height:1.8">' +
+          '<strong>' + f(available) + '</strong> ÷ <strong>' + days + ' day' + (days === 1 ? '' : 's') + '</strong> = <strong style="font-family:var(--mono)">' + f(dailyAvailable) + '/day</strong> raw<br>' +
+          'Capped by <strong>' + dayLabel + ' budget (' + f(userCap) + ')</strong> = <strong style="font-family:var(--mono)">' + f(cap) + '</strong> starting cap<br>' +
+          '− already spent today (<strong>' + f(todaySpent) + '</strong>) = <strong style="color:' + heroColor + ';font-family:var(--mono)">' + f(finalMax) + '</strong> left' +
+        '</div>' +
+      '</div>' +
+
+      // Today's outflow (only if there's a bills-today component or non-trivial spend)
+      (billsTodayAmt > 0 || todaySpent > 0
+        ? '<div style="background:var(--bg3);border-radius:12px;padding:14px;margin-bottom:10px">' +
+          '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">🧾 Today\'s total outflow</div>' +
+          '<div style="display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px;align-items:baseline">' +
+            '<div style="color:var(--text2)">Discretionary spent</div>' +
+              '<div style="text-align:right;font-family:var(--mono);color:var(--text)">' + f(todaySpent) + '</div>' +
+            (billsTodayAmt > 0
+              ? '<div style="color:var(--text3)">+ Bills/loans today</div>' +
+                '<div style="text-align:right;font-family:var(--mono);color:var(--text3)">' + f(billsTodayAmt) + '</div>'
+              : '') +
+            '<div style="padding-top:8px;border-top:1px solid var(--border);font-weight:700">= Total today</div>' +
+              '<div style="padding-top:8px;border-top:1px solid var(--border);text-align:right;font-family:var(--mono);font-weight:800">' + f(todayTotal) + '</div>' +
+          '</div>' +
+          (billsTodayAmt > 0
+            ? '<div style="font-size:11px;color:var(--text3);margin-top:8px;font-style:italic">Only discretionary spend counts toward the daily cap. Bills/loans affect your balance but use a separate budget.</div>'
+            : '') +
+        '</div>'
+        : '') +
+
+      timingWarnHtml +
+    '</div>';
 
     if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
-      EDIT_MODAL.openInfo({ title: '💰 Max per day — the math', body: lines.join('\n') });
+      EDIT_MODAL.openInfo({ title: '💰 Today\'s max per day', body });
     } else if (typeof alert === 'function') {
-      alert(lines.join('\n'));
+      alert('Max per day: ' + f(finalMax));
     }
   } catch (e) {
     if (typeof console !== 'undefined') console.error('[explainMaxPerDay] threw:', e);
@@ -8454,6 +8488,13 @@ function openEditPaydaySavings(bucketName) {
   if (monthly > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Monthly target: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(monthly).toLocaleString() + '</strong></div>';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Allocate this cycle:</div>';
   body += _buildQuickPickGrid(_generateQuickPicks('savings', monthly), current);
+  // Bundle 28 round 9: Manage section at the bottom so user can delete the
+  // bucket (+ linked goal/trip intent) from inside the canvas, not just
+  // from PLAN dashboard. addresses john's "feature needs to be available
+  // in Savings Goals subscreen but works in PLAN dashboard".
+  body += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">' +
+    '<button onclick="confirmDeleteBucketFromCanvas(\'' + bucketName.replace(/'/g, "\\'") + '\')" style="width:100%;padding:10px;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:8px;color:rgba(231,76,60,0.85);font-size:13px;font-weight:600;cursor:pointer">🗑️ Delete this savings goal</button>' +
+    '</div>';
   EDIT_MODAL.openCustom({
     title: 'Allocate to ' + bucketName,
     hint: 'How much of your remainder goes to this goal this cycle.',
@@ -8474,6 +8515,41 @@ function openEditPaydaySavings(bucketName) {
       return { ok: true };
     },
   });
+}
+
+// Bundle 28 round 9: delete a bucket from inside the canvas allocation
+// editor. Cascades through BRAIN.savings.removeBucket (which round 8
+// already extended to also archive linked PLAN.intents). Closes the
+// EDIT_MODAL, refreshes canvas + PLAN mode + dashboard.
+function confirmDeleteBucketFromCanvas(bucketName) {
+  const bucket = (S.savingsBuckets || []).find(b => b && b.name === bucketName);
+  if (!bucket) { showToast('Bucket not found'); return; }
+  const savedAmt = +bucket.saved || 0;
+  const warn = savedAmt > 0
+    ? 'Delete "' + bucketName + '"?\n\n$' + Math.round(savedAmt) +
+      ' currently in this bucket will be restored to your spendable balance.\n\n' +
+      'Any linked goal/trip in PLAN mode will also be removed.'
+    : 'Delete "' + bucketName + '"?\n\nAny linked goal/trip in PLAN mode will also be removed.';
+  if (!confirm(warn)) return;
+  const r = BRAIN.savings.removeBucket(bucketName, BRAIN.SOURCES.BUCKET_DELETE);
+  if (!r.ok) { showToast('Couldn\'t delete: ' + (r.reason || 'unknown')); return; }
+  // Linked intent cascade already handled inside BRAIN.savings.removeBucket
+  // call site (round 8 wired deleteBucket to do it). For this entry point
+  // we also need to cascade — repeat the logic so cancel from PLAN
+  // dashboard vs cancel from canvas both behave the same.
+  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
+    const linked = BRAIN.plan.intent.byBucket(bucketName);
+    linked.forEach(i => BRAIN.plan.intent.remove(i.id, BRAIN.SOURCES.PLAN_INTENT_REMOVE));
+  }
+  // Close the EDIT_MODAL — caller's onSave won't fire because user used the
+  // delete button path. Reach into EDIT_MODAL state to close cleanly.
+  if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.close) EDIT_MODAL.close();
+  // Refresh everywhere the bucket was visible
+  try { if (typeof renderPaydaySavings === 'function') renderPaydaySavings(); } catch (_) {}
+  try { if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot(); } catch (_) {}
+  try { if (typeof renderPlanMode === 'function') renderPlanMode(); } catch (_) {}
+  try { if (typeof renderAll === 'function') renderAll(); } catch (_) {}
+  showToast('🗑 Deleted "' + bucketName + '"');
 }
 
 // ─── KIA Extra editor (Bundle 28 Phase 0.1) ────────────────────────────
@@ -8544,6 +8620,11 @@ function openEditPaydayTripAlloc(tripId) {
   if (remaining > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Need $' + perWeek + '/week to hit it before the trip.</div>';
   else body += '<div style="font-size:13px;color:var(--green);margin-bottom:8px">✅ Funded.</div>';
   body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
+  // Bundle 28 round 9: Delete this trip button so user can manage trips
+  // directly from the canvas (mirrors openEditPaydaySavings change).
+  body += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">' +
+    '<button onclick="confirmDeleteTrip(\'' + tripId.replace(/'/g, "\\'") + '\'); if (typeof EDIT_MODAL !== \'undefined\' && EDIT_MODAL.close) EDIT_MODAL.close();" style="width:100%;padding:10px;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:8px;color:rgba(231,76,60,0.85);font-size:13px;font-weight:600;cursor:pointer">🗑️ Delete this trip</button>' +
+    '</div>';
   EDIT_MODAL.openCustom({
     title: 'Allocate to ' + trip.name,
     hint: 'This cycle\'s contribution toward the trip.',
@@ -14760,19 +14841,28 @@ function renderSpendingPivot() {
 
   // Bundle 28 round 7: detect debt-related category fragmentation so user
   // knows when the same loan (e.g. KIA Firstmac) is appearing under
-  // multiple categories. Doesn't merge them automatically — preserves user
-  // intent — but flags the overlap so they can standardise next time.
-  // Resolves john 2026-05-13 "Debt repayment and Loan tab double up on
-  // firstmac kia loan or am i confused?"
+  // multiple categories. Round 9 — reformatted from wall-of-text to a
+  // clear hierarchy with header, total, bullet list, recommendation.
   const _DEBT_CATS = ['Debt repayment', 'Loan', 'Car Loan', 'CC Payment'];
   const _debtPresent = data.filter(c => _DEBT_CATS.includes(c.cat));
   if (_debtPresent.length > 1) {
     const _debtTotal = _debtPresent.reduce((s, c) => s + c.total, 0);
-    const _debtLabels = _debtPresent.map(c => c.cat + ' $' + Math.round(c.total)).join(' + ');
-    html += '<div style="font-size:13px;color:var(--amber);margin-bottom:10px;padding:10px 12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;line-height:1.5">' +
-      '💡 <strong>Debt categories doubling up?</strong> ' +
-      _debtLabels + ' = <strong>$' + Math.round(_debtTotal) + '</strong> total. ' +
-      'If these all relate to the same loan, consider picking one category (we recommend "Debt repayment") and editing the others to match.' +
+    html += '<div style="margin-bottom:14px;padding:14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:10px">' +
+      '<div style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:6px">💡 Debt categories doubling up?</div>' +
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:10px">' +
+        '<strong>$' + Math.round(_debtTotal).toLocaleString() + '</strong> total across <strong>' + _debtPresent.length + '</strong> categories:' +
+      '</div>' +
+      '<div style="background:rgba(0,0,0,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+        _debtPresent.map(c =>
+          '<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text);padding:3px 0">' +
+            '<span>' + c.cat + '</span>' +
+            '<span style="font-family:var(--mono);font-weight:600">$' + Math.round(c.total).toLocaleString() + '</span>' +
+          '</div>'
+        ).join('') +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text3);line-height:1.5">' +
+        'If these all relate to the same loan, edit older transactions to use one category (we recommend <strong style="color:var(--text2)">"Debt repayment"</strong>) so the breakdown stays clean.' +
+      '</div>' +
       '</div>';
   }
 
@@ -19581,9 +19671,10 @@ function renderTrips(trips) {
 
       ${trip.notes ? `<div style="font-size:12px;color:rgba(255,255,255,0.3);font-style:italic;margin-bottom:10px">${trip.notes}</div>` : ''}
 
-      <div style="display:flex;gap:8px">
-        <button onclick="editTrip('${trip.id}')" style="flex:1;padding:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer">✏️ Edit budget</button>
+      <div style="display:flex;gap:6px">
+        <button onclick="editTrip('${trip.id}')" style="flex:1;padding:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer">✏️ Edit</button>
         <button onclick="addTripSavings('${trip.id}')" style="flex:1;padding:8px;background:rgba(78,205,196,0.15);border:1px solid rgba(78,205,196,0.3);border-radius:8px;color:#4ECDC4;font-size:13px;cursor:pointer">+ Add savings</button>
+        <button onclick="confirmDeleteTrip('${trip.id}')" style="padding:8px 10px;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:8px;color:rgba(231,76,60,0.7);font-size:13px;cursor:pointer" title="Delete trip">🗑️</button>
       </div>
     </div>`;
   });
@@ -19732,6 +19823,60 @@ function confirmNewTrip() {
     try { renderPaydaySavings(); } catch (_) {}
   }
   showToast('✅ ' + emoji + ' ' + name + ' Added');
+}
+
+// Bundle 28 round 9: confirmDeleteTrip — mirrors confirmDeleteGoal. Removes
+// from S.tripDefs + cascades auto-bucket cleanup + cascades linked
+// PLAN.intents removal + refreshes both PLAN mode and canvas.
+function confirmDeleteTrip(tripId) {
+  const trips = PLAN.getTrips();
+  const trip = trips.find(t => t.id === tripId);
+  if (!trip) return;
+  const saved = +trip.saved || 0;
+  const warn = saved > 0
+    ? 'Delete "' + trip.name + '"?\n\n$' + Math.round(saved) +
+      ' currently saved toward this trip stays in its bucket (we don\'t lose money).\n\n' +
+      'The trip itself + any PLAN.intents link will be removed.'
+    : 'Delete "' + trip.name + '"?\n\nThe trip + any PLAN.intents link will be removed.';
+  if (!confirm(warn)) return;
+
+  // Remove from S.tripDefs (canonical store for legacy trips).
+  if (Array.isArray(S.tripDefs)) {
+    S.tripDefs = S.tripDefs.filter(t => t.id !== tripId);
+  } else {
+    const stored = JSON.parse(localStorage.getItem('slyght_trips') || '[]');
+    localStorage.setItem('slyght_trips', JSON.stringify(stored.filter(t => t.id !== tripId)));
+  }
+
+  // For user-added trips (id starts with 'trip-'), also remove the auto-
+  // created bucket if it has $0 (don't lose money).
+  if (tripId.startsWith('trip-')) {
+    const ref = PLAN.bucketForPlanItem(tripId);
+    if (ref && ref.type === 'auto-bucket') {
+      const bucketName = trip.name;
+      const matched = (S.savingsBuckets || []).find(b => b.name === bucketName);
+      if (matched && (matched.saved || 0) === 0) {
+        BRAIN.savings.removeBucket(bucketName, BRAIN.SOURCES.BUCKET_DELETE);
+      }
+    }
+  }
+
+  // Close the canonical intent — only for user-added trips (id pattern
+  // 'trip-*'). Default trips (china-2026, darwin-2026) are seed-regenerated
+  // so we leave their intents alone.
+  if (tripId.startsWith('trip-') && BRAIN.plan && BRAIN.plan.intent) {
+    const intent = BRAIN.plan.intent.get(tripId);
+    if (intent) {
+      BRAIN.plan.intent.remove(tripId, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
+    }
+  }
+
+  try { save(); } catch (_) {}
+  renderPlanMode();
+  if (typeof renderPaydaySavings === 'function') {
+    try { renderPaydaySavings(); } catch (_) {}
+  }
+  showToast('🗑 Trip deleted');
 }
 
 function addTripSavings(tripId) {

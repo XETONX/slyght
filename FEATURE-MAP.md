@@ -167,6 +167,19 @@ Hero balance was REMOVED from Settings Bundle 28 round 2 — dashboard hero is s
 - Round 6 — I bumped z-index numbers in round 4 without checking parent stacking context. Won't repeat: always check `transform` / `filter` / `opacity<1` on parents.
 - Round 7 — I migrated dead renderers (renderTrend/renderCatBreakdown DOM IDs don't exist). Won't repeat: grep `id="X"` in DOM before migrating consumers of `$('X')`.
 - Round 8 — I added `confirmNewGoal` intent creation in round 5 but forgot the matching `confirmDeleteGoal` intent removal. Won't repeat: add CREATE + DELETE pair in same round; cross-reference both in this map.
+- Round 9 — I added a 🗑️ button to renderGoalCards in round 6 but DIDN'T add the parallel button to renderTrips cards AND didn't add an in-canvas delete affordance for bucket/trip rows in Savings sub-screen. John flagged both. Won't repeat: when adding an action to one card-type, audit ALL sibling card-types (goal/trip/bucket/provision) for the same affordance.
+- Round 9 — I used `EDIT_MODAL.openInfo` with plain-pre-text body for explainers. That produced "just lines, not bubbles". Now I use rich HTML cards inside the body string + wrap in `<div style="white-space:normal">` to negate the pre-line CSS. Pattern locked: explainer/info modals use HTML cards, not plain text.
 - Ongoing — when a render fn calls another (e.g. confirmDeleteGoal needs renderPaydaySavings refresh), check ALL surfaces that read the affected state, not just the obvious parent surface.
+
+## Round 9 additions to the map
+
+- `renderGoalCards` → 🗑️ button (round 6)
+- `renderTrips` → 🗑️ button (round 9 — parallel to goal cards)
+- `confirmDeleteTrip(tripId)` → new (round 9). Mirrors confirmDeleteGoal: removes from S.tripDefs + cascades auto-bucket cleanup + removes linked intent (for 'trip-*' ids) + refreshes PLAN mode + canvas
+- `openEditPaydaySavings` → Delete-this-savings-goal footer button (round 9). Calls confirmDeleteBucketFromCanvas
+- `openEditPaydayTripAlloc` → Delete-this-trip footer button (round 9). Calls confirmDeleteTrip
+- `confirmDeleteBucketFromCanvas(bucketName)` → new (round 9). Wrapper for the canvas-context delete: removes bucket via BRAIN.savings.removeBucket + manual intent cascade + closes EDIT_MODAL + refreshes everywhere
+- `explainMaxPerDay` → rich HTML rebuild (round 9). Hero gradient card + progress bar with colour-by-percentage + money breakdown grid table + time math + today's outflow split + timing-aware warning card
+- `buildSpendingPivot` debt category tip → reformatted (round 9). Bulleted category list + bold total + recommendation in muted text
 
 — end FEATURE-MAP.md —
