@@ -106,6 +106,50 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Rounds 29–30 — Surplus suggestion fix, dashboard/auto-sort parity, autoDebit flag, Week Projection redesign
+John phone-verify on rounds 25–28: rounds 25/27/28 PASS; round 26 needed user help (added memory `feedback-phone-verify-instructiveness`). New bugs surfaced:
+
+**Round 29 — Surplus + debt schema fixes**
+
+*Surplus suggestion math display bug:*
+- Pre-round-29 message hardcoded "after a $500 buffer" but actual buffer is dynamic ($0–$500 via `getDynamicBuffer` based on balance + committed). John's $336 balance produced buffer=$50, so "$99 spare after $500 buffer" implied $599 available when really there was ~$386 — message was lying about the math.
+- Fix: read the actual `getDynamicBuffer()` value and render it in the message.
+
+*Surplus suggestion targeting auto-debit debts:*
+- Pre-round-29 the target picker included Afterpay — which auto-debits. Recommending manual action toward something that pays itself = dead advice.
+- Fix: filter `!d.viaRent && !d.autoDebit`. If all remaining debts are scheduled/routed, the message changes to "Remaining debts are auto-debited or rent-routed — no manual payment needed. Consider sweeping it into a savings bucket."
+
+*New `autoDebit` flag on debt schema:*
+- Mirrors the bill-level `autoDebit` concept (BNPL / finance plans that auto-take from card).
+- Add Debt modal: new checkbox "Auto-debits on due date (Afterpay, BNPL, finance plans)".
+- Edit Debt modal: new checkbox "🤖 Auto-debits on due date (BNPL / finance plan)".
+- `BRAIN.debts.update` MUTABLE allow-set extended.
+
+*Dashboard / auto-sort parity:*
+- Pre-round-29 dashboard filtered `!viaRent` → showed 3 debts. Auto-sort dialog showed all 4 (incl. Property Deposit). John flagged the count mismatch.
+- Fix: dashboard now shows ALL non-paid debts (including viaRent). Per-debt visual mode differentiates them:
+  - viaRent → amber theme, "VIA RENT" badge, "Rent-routed · $X/mo" status, no surplus-affordability warning
+  - autoDebit → blue theme, "🤖 AUTO" badge, "Auto-debits dd/mm" status, no "Pay now" CTA
+  - manual → standard red theme, surplus-affordability warning, "Pay now" or "Due dd/mm"
+- IMMEDIATE total stays manual-only ($1,031) — viaRent debts don't inflate the headline.
+- `autoSortDebts` score-adjusts: `+40` for autoDebit, `+60` for viaRent — manual-pay debts always sort first, scheduled/routed go last (matching prior behavior, now explicit).
+
+**Round 30 — Dynamic Week Projection redesign (prettier + interactive)**
+
+John's ask: "needs rework to be more pretty and interactive."
+
+- Plain-text panel → card-based layout with:
+  - Composition bar showing the 3 portions visually (Spent | Bills | Living) — color-coded segments
+  - 3-column grid with color chips + labels + monospaced amounts
+  - Large bold total + horizontal divider
+  - Pace callout in its own colored sub-card (green if under pace, amber if over)
+- New "?" tap target → `explainWeekProjection()` opens math explainer modal via `EDIT_MODAL.openInfo`:
+  - Per-component cards (Spent / Bills / Living) with description of how each is computed
+  - Equation line: `$X + $Y + $Z = $TOTAL`
+  - Pace explanation with expected-pace math
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Rounds 25–28 — Visual analysis fixes (post phone-screenshot review)
 John shared 7 screenshots across Dashboard / Bills / Analysis / debts / Auto-sort dialog / Recent Spending with directive: "deep look at the photos, analyse each calculation, how info is displayed, is it pretty, interactive, does it make sense." Four concrete fixes landed in this push.
 

@@ -1382,6 +1382,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
     <div class="modal-field"><label>Interest rate % p.a. (0 if none)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-rate" placeholder="0" inputmode="decimal"></div>
     <div class="modal-field"><label>Due date</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="date" id="modal-due"></div>
     <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="modal-notes"></div>
+    <!-- Bundle 28 round 29: autoDebit flag matches bill-modal's bm-autodebit. -->
+    <div class="modal-checkbox-row">
+      <input type="checkbox" class="modal-checkbox" id="modal-autodebit">
+      <label for="modal-autodebit">🤖 Auto-debits on due date (BNPL / finance plan)</label>
+    </div>
     <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-priority" min="1" max="99" value="1"><button onclick="document.getElementById('modal-priority').stepDown(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↓</button><button onclick="document.getElementById('modal-priority').stepUp(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↑</button></div>
     <div id="modal-payoff-eta" style="font-size:13px;color:var(--text3);padding:8px 0;border-top:1px solid var(--border);margin-bottom:4px"></div>
     <div class="modal-actions">
@@ -1481,6 +1486,14 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <option value="longterm">Long term (rate &gt; 0 or &gt; $1,000)</option>
         <option value="viaRent">Via salary / rent (auto-deducted)</option>
       </select>
+    </div>
+    <!-- Bundle 28 round 29: autoDebit flag mirrors the bill-level autoDebit
+         concept. Marked debts (Afterpay, finance contracts that auto-take
+         from card) skip the surplus suggestion + show an AUTO badge on the
+         dashboard tile, since manual user action isn't needed. -->
+    <div class="modal-field" style="display:flex;align-items:center;gap:10px">
+      <input type="checkbox" id="nd-autodebit" style="width:18px;height:18px;accent-color:var(--green);cursor:pointer">
+      <label for="nd-autodebit" style="cursor:pointer;margin:0;font-size:14px">Auto-debits on due date (Afterpay, BNPL, finance plans)</label>
     </div>
     <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="nd-notes" placeholder="Any context..."></div>
     <div class="modal-actions">
@@ -2322,6 +2335,72 @@ function getMaxDay() {
 // that are interactive or clean and bold for me to understand with
 // percentages or visuals etc". Now uses HTML cards + gradient hero +
 // visual progress bar + bold $ + colour-coded sections.
+// Bundle 28 round 30: Week projection math explainer. Tap on the "?"
+// in the Dynamic Week Projection card → opens EDIT_MODAL.openInfo with
+// per-line math. Matches the explainMaxPerDay shape so the dashboard
+// and bills tab use the same explainer-modal idiom.
+function explainWeekProjection() {
+  try {
+    const proj = getThisWeekProjection();
+    const livingTotal = parseFloat((proj.dailyRate * proj.daysLeftInWeek).toFixed(2));
+    const paceOver = proj.spentSoFar - proj.dailyRate * proj.daysSoFarInWeek;
+    const f = (n) => '$' + Math.round(n).toLocaleString();
+    const fmtCents = (n) => '$' + (+n || 0).toFixed(2);
+
+    const body =
+      '<div style="line-height:1.6;color:var(--text2);font-size:14px">' +
+        '<div style="margin-bottom:12px">This is the projected total cash leaving the account this week — already-spent + bills coming up + projected living.</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Spent so far this week</div>' +
+          '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--blue)">' + fmtCents(proj.spentSoFar) + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:4px">All logged transactions since Monday — both discretionary and bill payments.</div>' +
+        '</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Bills due this week</div>' +
+          '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--red)">' + fmtCents(proj.billsDueThisWeek) + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:4px">Recurring bills with day-of-month falling between today and Sunday. Paid-already ones are excluded.</div>' +
+        '</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Living (projected)</div>' +
+          '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--amber)">' + fmtCents(livingTotal) + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:4px">' + fmtCents(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' day' + (proj.daysLeftInWeek === 1 ? '' : 's') + ' left. The daily rate comes from your 30-day average discretionary spend.</div>' +
+        '</div>' +
+
+        '<div style="background:rgba(34,197,94,0.10);border:1px solid var(--green-border);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="display:flex;justify-content:space-between;font-size:13px">' +
+            '<span style="font-weight:700;color:var(--text)">Week total projection</span>' +
+            '<span style="font-family:var(--mono);font-weight:800;color:var(--green);font-size:16px">' + fmtCents(proj.projectedTotal) + '</span>' +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">' +
+            fmtCents(proj.spentSoFar) + ' + ' + fmtCents(proj.billsDueThisWeek) + ' + ' + fmtCents(livingTotal) + ' = ' + fmtCents(proj.projectedTotal) +
+          '</div>' +
+        '</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Pace check</div>' +
+          '<div style="font-size:13px;color:' + (paceOver > 0 ? 'var(--amber)' : 'var(--green)') + ';font-weight:600">' +
+            (paceOver > 0
+              ? 'You\'re ' + f(paceOver) + ' over the expected pace for this stage of the week.'
+              : 'You\'re ' + f(Math.abs(paceOver)) + ' under pace — solid week.') +
+          '</div>' +
+          '<div style="font-size:11px;color:var(--text3);margin-top:4px;font-family:var(--mono)">Expected: ' + fmtCents(proj.dailyRate) + '/day × ' + (proj.daysSoFarInWeek + 1) + ' days = ' + fmtCents(proj.dailyRate * (proj.daysSoFarInWeek + 1)) + '</div>' +
+        '</div>' +
+      '</div>';
+
+    if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+      EDIT_MODAL.openInfo({ title: '📊 This week — the math', body });
+    } else if (typeof alert === 'function') {
+      alert('Week total: ' + fmtCents(proj.projectedTotal));
+    }
+  } catch (e) {
+    console.warn('[explainWeekProjection] failed:', e);
+    if (typeof showToast === 'function') showToast('Could not load week math');
+  }
+}
+
 function explainMaxPerDay() {
   try {
     const bal = (typeof getLiveBal === 'function') ? getLiveBal() : (+S.bal || 0);
@@ -5771,11 +5850,24 @@ function renderAlerts(safe, liveBal, dueTotal, txnSpent) {
 }
 
 function renderDebtTiles() {
-  // FIX 2: hide paid and viaRent debts from dashboard immediate debts section
-  const active = S.debts.filter(d => !d.paid && !d.viaRent).sort((a,b) => (a.priority||99) - (b.priority||99));
+  // Bundle 28 round 29: include viaRent debts so the dashboard matches the
+  // auto-sort dialog's count (john 2026-05-13: "the debt tiles need to
+  // match from the sort to the homepage"). viaRent debts render with
+  // amber styling + VIA-RENT badge + "rent-routed" status so they're
+  // visually distinguishable from manual-pay debts.
+  // The IMMEDIATE total at the top is still the "what you owe out-of-cycle"
+  // figure (manual-pay only) — viaRent debts pay themselves down via the
+  // rent line and shouldn't inflate the "$1,031 total" headline.
+  const active = S.debts.filter(d => !d.paid).sort((a,b) => {
+    // viaRent goes last (they're long-term rent-routed)
+    if (!!a.viaRent !== !!b.viaRent) return a.viaRent ? 1 : -1;
+    return (a.priority||99) - (b.priority||99);
+  });
   const grid = $('debt-grid'), congrats = $('debt-congrats');
-  const total = active.reduce((s,d) => s + d.amt, 0);
-  const _immtot = $('imm-total'); if (_immtot) _immtot.textContent = active.length > 0 ? fmt(total) + ' total' : '';
+  // Immediate-only total (exclude viaRent — those are tracked separately)
+  const immediateActive = active.filter(d => !d.viaRent);
+  const total = immediateActive.reduce((s,d) => s + d.amt, 0);
+  const _immtot = $('imm-total'); if (_immtot) _immtot.textContent = immediateActive.length > 0 ? fmt(total) + ' total' : '';
   if (!active.length) {
     if (grid) grid.style.display = 'none';
     if (congrats) { congrats.style.display = 'block'; congrats.innerHTML = '<div class="congrats-icon">&#x2705;</div><div class="congrats-title">No Immediate Debts</div><div class="congrats-sub">All immediate debts cleared or deferred via rent.<br>Great work — keep building your savings.</div>'; }
@@ -5784,9 +5876,15 @@ function renderDebtTiles() {
   if (grid) grid.style.display = 'grid'; if (congrats) congrats.style.display = 'none';
   const surplus = getGenuineSurplus();
   grid.innerHTML = active.map((d, i) => {
-    const col = d.delayed ? 'warn' : 'bad';
-    const pct = Math.min(100, Math.round((d.amt/total)*100));
-    const fillCol = d.delayed ? 'var(--amber)' : 'var(--red)';
+    // Bundle 28 round 29: per-debt visual mode
+    //   viaRent  — amber, no surplus-affordability, no Pay-now CTA
+    //   autoDebit — blue, AUTO badge, "auto-debits on" status, no Pay-now
+    //   manual   — red, surplus-affordability shown, Pay-now if no date
+    const isViaRent = !!d.viaRent;
+    const isAuto = !!d.autoDebit;
+    const col = isViaRent ? 'warn' : (d.delayed ? 'warn' : 'bad');
+    const pct = Math.min(100, Math.round((d.amt/(total || 1))*100));
+    const fillCol = isViaRent ? 'var(--amber)' : (d.delayed ? 'var(--amber)' : 'var(--red)');
     const dueStr = d.delayDate ? (()=>{const p=d.delayDate.split('-');return p[2]+'/'+p[1];})() : 'ASAP';
     let dueUrgency = 'default';
     if (d.delayDate) {
@@ -5807,20 +5905,57 @@ function renderDebtTiles() {
     const monthlyPayStr = d.monthlyPayment
       ? '<div style="font-size:10px;color:var(--green);font-family:var(--mono);margin-bottom:4px">$'+d.monthlyPayment+'/mo · ~'+Math.ceil(d.amt/d.monthlyPayment)+' months'+(d.viaRent?' (via rent — already counted)':'')+'</div>'
       : '';
-    const canAfford = d.amt <= surplus;
-    const shortBy = surplus > 0 ? d.amt - surplus : d.amt;
-    const affordStr = canAfford
-      ? '<div style="font-size:10px;color:var(--green);font-family:var(--mono);font-weight:700;margin-bottom:4px">✓ Affordable from surplus</div>'
-      : '<div style="font-size:10px;color:var(--amber);font-family:var(--mono);font-weight:700;margin-bottom:4px">⚠️ $'+shortBy.toFixed(0)+' short of surplus</div>';
-    const etaMonths = surplus > 0 ? Math.ceil(d.amt / surplus) : 0;
-    const etaStr = etaMonths > 0 && etaMonths <= 60
-      ? '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">~'+etaMonths+' months at surplus</div>'
-      : '';
-    const pri = d.priority || (i+1);
-    const priBadge = '<span class="pri-badge" style="background:' +
-      (pri===1?'var(--green-dim)':pri===2?'var(--amber-dim)':'var(--bg4)') + ';color:' +
-      (pri===1?'var(--green)':pri===2?'var(--amber)':'var(--text3)') + ';border:1px solid ' +
-      (pri===1?'var(--green-border)':pri===2?'var(--amber-border)':'var(--border2)') + '">' + pri + '</span>';
+    // Bundle 28 round 29: affordability + ETA only meaningful for manual-pay
+    // debts. viaRent + autoDebit skip these (they don't need surplus
+    // allocation decisions from the user).
+    let affordStr = '';
+    let etaStr = '';
+    if (!isViaRent && !isAuto) {
+      const canAfford = d.amt <= surplus;
+      const shortBy = surplus > 0 ? d.amt - surplus : d.amt;
+      affordStr = canAfford
+        ? '<div style="font-size:10px;color:var(--green);font-family:var(--mono);font-weight:700;margin-bottom:4px">✓ Affordable from surplus</div>'
+        : '<div style="font-size:10px;color:var(--amber);font-family:var(--mono);font-weight:700;margin-bottom:4px">⚠️ $'+shortBy.toFixed(0)+' short of surplus</div>';
+      const etaMonths = surplus > 0 ? Math.ceil(d.amt / surplus) : 0;
+      etaStr = etaMonths > 0 && etaMonths <= 60
+        ? '<div style="font-size:9px;color:var(--text3);font-family:var(--mono)">~'+etaMonths+' months at surplus</div>'
+        : '';
+    }
+
+    // Bundle 28 round 29: badge override — viaRent shows VIA-RENT,
+    // autoDebit shows AUTO, otherwise the standard priority number.
+    let priBadge;
+    if (isViaRent) {
+      priBadge = '<span class="pri-badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);font-size:9px;letter-spacing:0.04em">VIA RENT</span>';
+    } else if (isAuto) {
+      priBadge = '<span class="pri-badge" style="background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.4);font-size:9px;letter-spacing:0.04em">🤖 AUTO</span>';
+    } else {
+      const pri = d.priority || (i+1);
+      priBadge = '<span class="pri-badge" style="background:' +
+        (pri===1?'var(--green-dim)':pri===2?'var(--amber-dim)':'var(--bg4)') + ';color:' +
+        (pri===1?'var(--green)':pri===2?'var(--amber)':'var(--text3)') + ';border:1px solid ' +
+        (pri===1?'var(--green-border)':pri===2?'var(--amber-border)':'var(--border2)') + '">' + pri + '</span>';
+    }
+
+    // Bundle 28 round 29: status line override
+    //   viaRent  → "Rent-routed · monthlyPayment/mo"
+    //   autoDebit → "🤖 Auto-debits on <date>" (no Pay-now CTA — user can't pre-empt)
+    //   manual no date → "⚡ Pay now" (the old ASAP behavior)
+    //   manual with date → "Due <dd/mm>"
+    let statusLine;
+    if (isViaRent) {
+      const mp = d.monthlyPayment ? '$' + d.monthlyPayment + '/mo' : 'monthly';
+      statusLine = '<span style="color:var(--amber);font-weight:600">Rent-routed · ' + mp + '</span>';
+    } else if (isAuto) {
+      statusLine = d.delayDate
+        ? '<span style="color:var(--blue);font-weight:600">🤖 Auto-debits ' + dueStr + '</span>'
+        : '<span style="color:var(--blue);font-weight:600">🤖 Auto-debits (no date)</span>';
+    } else if (dueStr === 'ASAP') {
+      statusLine = '<span style="color:var(--red);font-weight:700">⚡ Pay now</span>';
+    } else {
+      statusLine = dueDisplay;
+    }
+
     return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
       '<div class="dt-name">'+priBadge + esc(d.name) + (d.linkedLiability ? '<span style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:700;background:var(--red-dim);padding:1px 4px;border-radius:3px;margin-left:3px">⚠️ LINKED</span>' : '') + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
@@ -5831,8 +5966,7 @@ function renderDebtTiles() {
       '<div class="dt-sub">' + esc(d.notes || 'Tap to edit') + '</div>' +
       '<div class="dt-bar-wrap"><div class="dt-bar-lbl">' + pct + '% of debt</div>' +
       '<div class="dt-bar"><div class="dt-fill" style="width:'+pct+'%;background:'+fillCol+'"></div></div></div>' +
-      '<div class="dt-status" style="' + (dueColor ? 'color:' + dueColor : '') + '">' +
-        (dueStr === 'ASAP' ? '<span style="color:var(--red);font-weight:700">⚡ Pay now</span>' : dueDisplay) + '</div>' +
+      '<div class="dt-status" style="' + (dueColor && !isViaRent && !isAuto ? 'color:' + dueColor : '') + '">' + statusLine + '</div>' +
       '</div>';
   }).join('');
 }
@@ -5853,6 +5987,12 @@ function autoSortDebts() {
     }
     if ((d.rate || 0) > 10) score -= 15;
     if (d.amt <= surplus) score -= 10;
+    // Bundle 28 round 29: autoDebit + viaRent debts deprioritised — they
+    // don't need manual sort attention. autoDebit gets +40 (less urgent,
+    // payment is scheduled); viaRent gets +60 (long-term, salary-routed).
+    // Effect: manual-pay debts always sort first, scheduled/routed go last.
+    if (d.autoDebit) score += 40;
+    if (d.viaRent) score += 60;
     return {...d, _score: score};
   }).sort((a,b) => a._score - b._score);
 
@@ -5962,6 +6102,7 @@ function openDebtModal(idx) {
   const _mr = $('modal-rate'); if (_mr) _mr.value = d.rate !== undefined ? d.rate : 0;
   const _md = $('modal-due'); if (_md) _md.value = d.delayDate || '';
   const _mno = $('modal-notes'); if (_mno) _mno.value = d.notes || '';
+  const _mad = $('modal-autodebit'); if (_mad) _mad.checked = !!d.autoDebit;
   const _mp = $('modal-priority'); if (_mp) _mp.value = d.priority || (idx + 1);
   // Payoff countdown — estimate months to clear debt at current genuine surplus rate
   const surplus = getGenuineSurplus();
@@ -5989,6 +6130,9 @@ function _collectDebtModalFields() {
   const _smr = $('modal-rate'); if (_smr) fields.rate = parseFloat(_smr.value) || 0;
   const _smd = $('modal-due'); if (_smd) fields.delayDate = _smd.value || '';
   const _smno = $('modal-notes'); if (_smno) fields.notes = _smno.value;
+  // Bundle 28 round 29: autoDebit flag (must be sent even when false so
+  // toggling-off via edit modal persists).
+  const _smad = $('modal-autodebit'); if (_smad) fields.autoDebit = !!_smad.checked;
   const _smp = $('modal-priority'); if (_smp) fields.priority = parseInt(_smp.value) || 99;
   return fields;
 }
@@ -6093,10 +6237,15 @@ function saveNewDebt() {
   }
   // Type: immediate (default), longterm, viaRent
   const _ndt2 = $('nd-type'); const debtType = _ndt2 ? _ndt2.value : 'immediate';
+  const _ndad = $('nd-autodebit'); const autoDebit = _ndad ? !!_ndad.checked : false;
   const debtFields = { name, amt, rate, delayDate: due, notes };
   if (linkedLiability) debtFields.linkedLiability = linkedLiability;
   if (debtType === 'viaRent') debtFields.viaRent = true;
   if (debtType === 'longterm') debtFields.longTerm = true;
+  // Bundle 28 round 29: autoDebit flag matches the bill-level concept —
+  // dashboard shows AUTO badge + skips the surplus suggestion since the
+  // user doesn't need to manually pay this one (Afterpay etc.).
+  if (autoDebit) debtFields.autoDebit = true;
   // Bundle 15: route through BRAIN.debts.add (canonical writer, ID-collision
   // guard, audit emission, save).
   const r = BRAIN.debts.add(debtFields, BRAIN.SOURCES.ADD_DEBT);
@@ -7113,28 +7262,71 @@ function renderCalWeekSummary() {
   const paceMsg = paceOver > 0
     ? 'Running ' + fmtC(paceOver) + ' over pace — slow down'
     : 'Running ' + fmtC(Math.abs(paceOver)) + ' under pace — good week';
-  // Bundle 28 round 25: split the projected-daily line so the math reads
-  // correctly. Pre-round-25 the line was:
-  //   "Projected daily: $6.11/day × 5 days = $4,004.55"
-  // which is mathematically false ($6.11 × 5 = $30.55, not $4,004.55).
-  // The right side actually included `billsDueThisWeek` from the row
-  // above. Now split into two lines: pure living-cost calc + a
-  // clearly-labelled remaining-to-spend that names both components.
+  // Bundle 28 round 30: prettier + interactive redesign.
+  //   - Composition bar showing the 3 portions visually (Spent | Bills | Living)
+  //   - Icon-prefixed rows for scanability
+  //   - Tap "?" for a math explainer modal (renderWeekProjectionExplainer)
+  //   - Pace warning gets its own callout card with appropriate color
+  // Round 25 was a math-correctness fix; round 30 is the visual rework.
   const _projectedLiving = parseFloat((proj.dailyRate * proj.daysLeftInWeek).toFixed(2));
-  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.8;color:var(--text2)">' +
-    '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Dynamic Week Projection</div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Spent so far this week:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + (proj.daysSoFarInWeek === 0 ? ' (today only)' : '') + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Bills remaining:</span><span style="font-family:var(--mono);font-weight:700;color:var(--red)">' + fmtC(proj.billsDueThisWeek) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Living (projected):</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days = ' + fmtC(_projectedLiving) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border)"><span>Remaining to spend (bills + living):</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedRemaining) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Week total projection:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedTotal) + '</span></div>' +
-    '<div style="color:' + paceColor + ';font-weight:600;margin-top:4px">' + paceMsg + '</div>' +
+  const _wpTotal = Math.max(0.01, proj.projectedTotal);
+  const _spentPct = Math.max(0, Math.min(100, (proj.spentSoFar / _wpTotal) * 100));
+  const _billsPct = Math.max(0, Math.min(100 - _spentPct, (proj.billsDueThisWeek / _wpTotal) * 100));
+  const _livingPct = Math.max(0, 100 - _spentPct - _billsPct);
+  const _paceBg = paceOver > 0 ? 'rgba(245,158,11,0.10)' : 'rgba(34,197,94,0.10)';
+  const _paceBorder = paceOver > 0 ? 'var(--amber-border)' : 'var(--green-border)';
+
+  html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:14px;margin-top:10px">' +
+    // Header with title + info tap
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">📊 This Week Projection</div>' +
+      '<button onclick="explainWeekProjection()" aria-label="How is this calculated" style="background:var(--bg4);border:1px solid var(--border2);border-radius:50%;width:24px;height:24px;color:var(--text3);font-size:13px;font-weight:700;cursor:pointer;line-height:1">?</button>' +
+    '</div>' +
+    // Composition bar — visual breakdown of week total
+    '<div style="display:flex;height:8px;background:var(--bg4);border-radius:6px;overflow:hidden;margin-bottom:12px">' +
+      (_spentPct  > 0 ? '<div title="Spent so far" style="width:'+_spentPct+'%;background:var(--blue)"></div>' : '') +
+      (_billsPct  > 0 ? '<div title="Bills remaining" style="width:'+_billsPct+'%;background:var(--red)"></div>' : '') +
+      (_livingPct > 0 ? '<div title="Living projected" style="width:'+_livingPct+'%;background:var(--amber)"></div>' : '') +
+    '</div>' +
+    // Three composition rows with color chips + amounts
+    '<div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;font-size:13px;line-height:1.4;color:var(--text2)">' +
+      // Spent so far
+      '<span style="width:10px;height:10px;background:var(--blue);border-radius:2px"></span>' +
+      '<span>Spent so far' + (proj.daysSoFarInWeek === 0 ? ' (today)' : ' ('+(proj.daysSoFarInWeek+1)+' day'+(proj.daysSoFarInWeek===0?'':'s')+')') + '</span>' +
+      '<span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + '</span>' +
+      // Bills remaining
+      '<span style="width:10px;height:10px;background:var(--red);border-radius:2px"></span>' +
+      '<span>Bills due this week</span>' +
+      '<span style="font-family:var(--mono);font-weight:700;color:var(--red)">' + fmtC(proj.billsDueThisWeek) + '</span>' +
+      // Living projected
+      '<span style="width:10px;height:10px;background:var(--amber);border-radius:2px"></span>' +
+      '<span>Living · ' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days</span>' +
+      '<span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(_projectedLiving) + '</span>' +
+    '</div>' +
+    // Total — large + bold
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:10px;border-top:1px solid var(--border2)">' +
+      '<span style="font-size:13px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em">Week total</span>' +
+      '<span style="font-family:var(--mono);font-size:18px;font-weight:800;color:var(--text)">' + fmtC(proj.projectedTotal) + '</span>' +
+    '</div>' +
+    // Pace callout
+    '<div style="margin-top:10px;padding:8px 12px;background:' + _paceBg + ';border:1px solid ' + _paceBorder + ';border-radius:var(--r-sm);font-size:13px;color:' + paceColor + ';font-weight:600">' + paceMsg + '</div>' +
     '</div>';
 
-  // Genuine surplus: only fires when balance covers all bills + living costs + $500 buffer
+  // Bundle 28 round 29: surplus suggestion fixes
+  //   1. Pre-round-29 the message hardcoded "after a $500 buffer" but the
+  //      actual buffer is dynamic ($0–$500 via getDynamicBuffer based on
+  //      balance + committed). John's $336 balance gave buffer=$50, so
+  //      message "$99 spare after $500 buffer" lied — implied $599 cash
+  //      available when really there was ~$386. Now reads the actual
+  //      buffer value.
+  //   2. Pre-round-29 the target picker included auto-debited debts
+  //      (Afterpay) — suggesting manual action toward something that
+  //      auto-takes payment is dead advice. Now filters !autoDebit
+  //      AND !viaRent (rent-routed debts pay themselves down via salary).
   const surplus = getGenuineSurplus();
+  const _bufferUsed = (typeof getDynamicBuffer === 'function') ? getDynamicBuffer() : 0;
   if (surplus > 0 && S.debts) {
-    const activeDebts = S.debts.filter(d => !d.paid);
+    const activeDebts = S.debts.filter(d => !d.paid && !d.viaRent && !d.autoDebit);
     // Sort using debtStrategy (consistent with payday plan)
     const surplusStrategy = S.debtStrategy || 'avalanche';
     activeDebts.sort((a,b) => {
@@ -7142,13 +7334,23 @@ function renderCalWeekSummary() {
       return (b.rate||0) - (a.rate||0) || (a.priority||99) - (b.priority||99);
     });
     const target = activeDebts[0];
+    const bufferPhrase = _bufferUsed > 0
+      ? ' spare after a <strong>' + fmt(_bufferUsed) + '</strong> safety buffer'
+      : ' spare (no safety buffer applied — balance is tight)';
     if (target) {
       const canPay = Math.min(surplus, target.amt);
       const remaining = target.amt - canPay;
       html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:14px;line-height:1.7;color:var(--green)">' +
-        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong> spare after a $500 buffer. ' +
+        '<strong>&#x1F4A1; Surplus suggestion:</strong> You have <strong>'+fmt(surplus)+'</strong>' + bufferPhrase + '. ' +
         'Put <strong>'+fmt(canPay)+'</strong> toward <strong>'+target.name+'</strong>' +
         (remaining > 0 ? ' — leaves '+fmt(remaining)+' still owed.' : ' — clears it completely!') +
+        '</div>';
+    } else {
+      // All remaining debts are either auto-debiting or via-rent — nothing
+      // to manually allocate toward. Tell the user instead of going silent.
+      html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.6;color:var(--text2)">' +
+        '<strong style="color:var(--text)">&#x1F4A1; Surplus:</strong> You have <strong style="color:var(--green)">'+fmt(surplus)+'</strong>' + bufferPhrase + '. ' +
+        'Remaining debts are auto-debited or rent-routed — no manual payment needed. Consider sweeping it into a savings bucket.' +
         '</div>';
     }
   }
@@ -18473,7 +18675,12 @@ const BRAIN = {
       const MUTABLE = new Set([
         'name', 'amt', 'rate', 'notes', 'delayDate', 'priority',
         'delayed', 'coveredBy', 'coveredDate', '_noBaladjust',
-        'viaRent', 'longTerm', 'paid', 'originalAmt', 'linkedLiability'
+        'viaRent', 'longTerm', 'paid', 'originalAmt', 'linkedLiability',
+        // Bundle 28 round 29: autoDebit flag — debts that auto-take from
+        // card on due date (Afterpay, BNPL, finance plans). Used by the
+        // surplus-suggestion filter (don't recommend manual action) and
+        // the dashboard tile (show AUTO badge, hide "Pay now" CTA).
+        'autoDebit',
       ]);
       const changed = [];
       Object.keys(fields || {}).forEach(k => {
