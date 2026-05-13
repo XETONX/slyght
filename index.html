@@ -8704,13 +8704,11 @@ function openPaydayAskAI() {
 }
 
 // Build the contextualised question shown in the chat input when openPaydayAskAI
-// fires. Bundle 28 round 5: switched to DIRECT readers (S.bal, MODEL.daysToPayday,
-// getBillsDue, getActiveDebtsDueBeforePayday, savingsBuckets) instead of
-// BRAIN.plan.getSnapshot. The snapshot reads from S.activePlan which is the
-// user's LAST LOCKED PLAN — if user hasn't locked a fresh plan for the current
-// cycle, the snapshot returns stale numbers (john saw Balance $0 / 1 day /
-// Bills $5217 when reality was $340 / 2 days / different bills). Direct readers
-// reflect current state always.
+// fires. Bundle 28 round 6: rebuilt to focus the AI on ALLOCATION — what to
+// prioritise this cycle based on deadlines, trip/goal dates, and surplus.
+// Includes a formatting hint so AI replies with paragraphs/emojis/bold instead
+// of dense lines. Direct readers (not BRAIN.plan.getSnapshot) keep numbers
+// accurate to current state.
 function _buildPaydayAskAIPrompt() {
   try {
     const balance = Math.round(+S.bal || 0);
@@ -8719,32 +8717,111 @@ function _buildPaydayAskAIPrompt() {
     const bills = Math.round(billsList.reduce((s, b) => s + (+b.amt || 0), 0));
     const debts = Math.round((typeof getActiveDebtsDueBeforePayday === 'function')
       ? getActiveDebtsDueBeforePayday() : 0);
-    const savings = Math.round((S.savingsBuckets || [])
-      .reduce((s, b) => s + (+b.saved || 0), 0));
     const free = Math.max(0, balance - bills - debts);
     const incomeNext = Math.round(+S.income || 0);
     const paydayReceived = !!S.paydayReceived;
-    const billNames = billsList.slice(0, 3).map(b => b.name).join(', ') +
-      (billsList.length > 3 ? '...' : '');
+
+    // Trip + goal data — focus on dates so AI can reason about urgency
+    const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+    const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? (PLAN.getGoals() || []) : [];
+    const provisions = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions)
+      ? (PLAN.getAnnualProvisions() || []) : [];
+    const buckets = (S.savingsBuckets || []);
+
+    const _fmtDate = (s) => {
+      if (!s) return null;
+      try { return new Date(s).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }); }
+      catch (_) { return s; }
+    };
+    const _daysUntil = (s) => {
+      if (!s) return null;
+      const ms = new Date(s).getTime() - Date.now();
+      return Math.max(0, Math.round(ms / 86400000));
+    };
+
+    // Sort trips by startDate ASC (soonest first)
+    const tripLines = trips
+      .filter(t => t && (t.endDate ? new Date(t.endDate).getTime() > Date.now() : true))
+      .sort((a, b) => new Date(a.startDate || a.endDate || 0) - new Date(b.startDate || b.endDate || 0))
+      .slice(0, 4)
+      .map(t => {
+        const saved = +t.saved || 0;
+        const budget = +t.budget || 0;
+        const remaining = Math.max(0, budget - saved);
+        const dStart = _daysUntil(t.startDate);
+        const when = dStart != null ? (' in ' + dStart + ' days (' + _fmtDate(t.startDate) + ')') : '';
+        return '  - ' + (t.emoji || '✈️') + ' ' + t.name + when +
+          ' · saved $' + Math.round(saved) + ' of $' + Math.round(budget) +
+          ' (need $' + Math.round(remaining) + ' more)';
+      });
+
+    // Sort goals by saved-pct DESC (closer to done = priority) then targetDate
+    const goalLines = goals
+      .filter(g => g && !g.completed)
+      .sort((a, b) => {
+        const aPct = a.target ? (a.saved / a.target) : 0;
+        const bPct = b.target ? (b.saved / b.target) : 0;
+        return bPct - aPct;
+      })
+      .slice(0, 4)
+      .map(g => {
+        const saved = +g.saved || 0;
+        const target = +g.target || 0;
+        const pct = target ? Math.round((saved / target) * 100) : 0;
+        const when = g.targetDate ? (' · target ' + _fmtDate(g.targetDate)) : '';
+        return '  - ' + (g.emoji || '🎯') + ' ' + g.name + when +
+          ' · $' + Math.round(saved) + ' / $' + Math.round(target) + ' (' + pct + '%)';
+      });
+
+    // Provisions due in the near term — sorted by nextDue ASC
+    const provLines = provisions
+      .filter(p => p && p.nextDue)
+      .sort((a, b) => new Date(a.nextDue) - new Date(b.nextDue))
+      .slice(0, 5)
+      .map(p => '  - 🚗 ' + p.name + ' · ' + _fmtDate(p.nextDue) +
+        ' · $' + Math.round(p.annual) + '/yr (~$' + Math.round(p.monthly) + '/mo set aside)');
+
     const lines = [
-      'Walk me through this payday cycle.',
+      'Help me allocate this payday. Focus on PRIORITISATION, not generic advice.',
       '',
-      'Right now:',
-      '- Balance $' + balance + ' · ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday',
-      '- Bills due BEFORE payday: $' + bills + (billsList.length ? ' (' + billsList.length + ': ' + billNames + ')' : ' (none)'),
-      '- Debt minimums BEFORE payday: $' + debts,
-      '- In savings buckets (long-term): $' + savings,
-      '- Cash leftover after upcoming bills + debt minimums: $' + free,
+      '## My situation right now',
+      '- Balance: $' + balance + ' · ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday',
+      '- Bills due before payday: $' + bills +
+        (billsList.length ? ' (' + billsList.slice(0, 3).map(b => b.name).join(', ') + ')' : ''),
+      '- Debt minimums before payday: $' + debts,
+      '- Cash leftover BEFORE payday: $' + free,
       paydayReceived
-        ? '- Payday already received this cycle'
+        ? '- Payday already landed for this cycle'
         : '- Next payday income (estimate): $' + incomeNext,
       '',
-      'Where should I focus this cycle? Anything I should be cautious about?',
+      '## Upcoming trips (sorted by start date)',
+      tripLines.length ? tripLines.join('\n') : '  (none planned)',
+      '',
+      '## Long-term goals (sorted by % complete)',
+      goalLines.length ? goalLines.join('\n') : '  (none active)',
+      '',
+      '## Annual provisions (sinking funds)',
+      provLines.length ? provLines.join('\n') : '  (none)',
+      '',
+      '## Savings buckets',
+      buckets.length
+        ? buckets.slice(0, 5).map(b =>
+            '  - ' + b.name + ': $' + Math.round(+b.saved || 0) +
+            (b.goal ? ' of $' + Math.round(+b.goal) + ' goal' : '')
+          ).join('\n')
+        : '  (none)',
+      '',
+      '## Tell me',
+      '1. Given those dates and goals, where should next payday\'s surplus go FIRST?',
+      '2. Anything I should be cautious about before payday?',
+      '3. Which trip/goal is most at-risk of missing its date?',
+      '',
+      '_Format your reply with short paragraphs, emojis for sections, and **bold** for the actual $ amounts you recommend allocating._',
     ];
     return lines.join('\n');
   } catch (e) {
     if (typeof console !== 'undefined') console.error('[_buildPaydayAskAIPrompt] threw:', e);
-    return 'Walk me through this payday cycle — what should I focus on?';
+    return 'Help me allocate this payday — where should the surplus go?';
   }
 }
 function openPaydayUnlockPlan() {
@@ -14554,12 +14631,17 @@ function triggerCamera() {
 
 function buildSpendingPivot(period) {
   const now = Date.now();
-  // 'today' must align with Dashboard's "Spent today" — calendar-day boundary, _NON_SPEND_CATS filter
+  // 'today' must align with Dashboard's "Spent today" — calendar-day boundary
   const startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
   const cutoffs = {today:startOfToday.getTime(), week:now-7*86400000, month:now-30*86400000, all:0};
   const cutoff = cutoffs[period] || 0;
-  // RC2: consume canonical helper instead of duplicating the filter inline.
-  const cats = getDiscretionaryByCategory(cutoff, now);
+  // Bundle 28 round 6: switch from getDiscretionaryByCategory (strict —
+  // excludes Debt/Savings/Loan) to getAllOutflowsByCategory so the pivot
+  // shows EVERYWHERE the money went, not just discretionary. john's
+  // mental model: "the tile at the top is saying where my money went,
+  // i need to track if my money went to a debt or savings transfer".
+  // Strict filter still right for renderCutSliders ("what to cut").
+  const cats = getAllOutflowsByCategory(cutoff, now);
   const totalSpend = Object.values(cats).reduce((s,c) => s+c.total, 0);
   const allTxns = Object.values(cats).reduce((acc, c) => acc.concat(c.txns), []);
   const periodDays = period==='today'?1:period==='week'?7:period==='month'?30:
@@ -14595,7 +14677,7 @@ function renderSpendingPivot() {
   });
   html += '</div>';
 
-  html += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--bg3);border-radius:10px"><span style="color:var(--text2);font-size:14px">Total discretionary</span><span style="color:var(--text);font-size:16px;font-weight:700">$'+totalSpend.toFixed(2)+'</span></div>';
+  html += '<div style="display:flex;justify-content:space-between;margin-bottom:12px;padding:10px 12px;background:var(--bg3);border-radius:10px"><span style="color:var(--text2);font-size:14px">Total outflows</span><span style="color:var(--text);font-size:16px;font-weight:700">$'+totalSpend.toFixed(2)+'</span></div>';
 
   if (data.length === 0) {
     html += '<div style="color:var(--text3);text-align:center;padding:20px">No spending in this period</div>';
@@ -19678,10 +19760,11 @@ function renderGoalCards(goals, surplus) {
         💡 June bonus could cover half this goal in one hit. Round-ups add ~$3/month automatically.
       </div>` : ''}
 
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:6px">
         <button onclick="editGoal('${goal.id}')" style="flex:1;padding:8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer">✏️ Edit</button>
         <button onclick="addGoalSavings('${goal.id}')" style="flex:1;padding:8px;background:rgba(78,205,196,0.15);border:1px solid rgba(78,205,196,0.3);border-radius:8px;color:#4ECDC4;font-size:13px;cursor:pointer">+ Add savings</button>
-        <button onclick="markGoalComplete('${goal.id}')" style="padding:8px 12px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer">✅</button>
+        <button onclick="markGoalComplete('${goal.id}')" style="padding:8px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.4);font-size:13px;cursor:pointer" title="Mark complete">✅</button>
+        <button onclick="confirmDeleteGoal('${goal.id}')" style="padding:8px 10px;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:8px;color:rgba(231,76,60,0.7);font-size:13px;cursor:pointer" title="Delete goal">🗑️</button>
       </div>
     </div>`;
   });
@@ -20421,10 +20504,23 @@ document.getElementById('plan-modal-overlay')
       <div id="bonus-impact"></div>
     </div>
   </div>
-  <!-- PLAN MODAL OVERLAY -->
-  <div id="plan-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:601;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom)">
-    <div id="plan-modal-content" style="background:#0f1623;border-radius:24px 24px 0 0;padding:24px 24px 40px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-sizing:border-box"></div>
-  </div>
+  <!-- PLAN MODAL OVERLAY hoisted OUT of #plan-mode Bundle 28 round 6 — see
+       comment on its new location below. Keeping a placeholder here so
+       grep finds the design note next to the original parent. -->
+</div>
+
+<!-- Bundle 28 round 6 — PLAN_MODAL hoisted to top-level so its z-index:601
+     applies in the GLOBAL stacking context, not WITHIN #plan-mode's
+     stacking context. #plan-mode has transform:translateX(0) when open
+     (slide animation), which creates a new stacking context — nested
+     z-index values only stack RELATIVE to other children of plan-mode,
+     not above siblings like the Payday Plan canvas (z-index 510). User
+     reported: "+ Goal / + Trip / + Bucket buttons open a modal that's
+     hidden under layers; visible only after exiting canvas back to PLAN
+     mode" — exactly the symptom of stacking-context isolation. Hoisting
+     gives the modal its own root-level positioning so z-index works globally. -->
+<div id="plan-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:601;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom)">
+  <div id="plan-modal-content" style="background:#0f1623;border-radius:24px 24px 0 0;padding:24px 24px 40px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;box-sizing:border-box"></div>
 </div>
 
 <!-- ═══ Bundle 27: Payday Plan Canvas (slide-over peer of plan-mode) ═══ -->

@@ -182,6 +182,45 @@ session.
 | `S.weekdayBudget` / `S.weekendBudget` | Read by `getDynamicDailyBudget` | Settings writes route through `BRAIN.config.setWeekdayBudget` (Bundle 22 v3 Phase 0). ✓ |
 | `S.bal` mutation in `applyBalanceCorrection` (L5269) | Direct `S.bal = ...` | Wrapped by `BRAIN.transaction.recordCorrection` for the txn side. Balance side stays direct because the legacy contract preserves it. **Acceptable but flag for future canonical-balance-writer pattern.** |
 
+### Round 6 — caught a stacking context regression I missed
+
+John's phone-verify caught that the `+ Goal / + Trip / + Bucket` buttons
+opened PLAN_MODAL "under layers" — same z-index sandwich symptom as round 4
+but a different root cause this time:
+
+- `#plan-modal-overlay` was a CHILD of `#plan-mode`
+- `#plan-mode` has `transform:translateX(0)` (slide animation) which creates
+  a NEW stacking context — z-index values on children stack RELATIVE TO
+  other children of plan-mode, NOT globally
+- So PLAN_MODAL's z-index 601 only competed with siblings inside plan-mode,
+  while the Payday Plan canvas (z-index 510) was at the GLOBAL root level
+- Net: plan-mode (500) < canvas (510). PLAN_MODAL inside plan-mode is
+  CAPPED at plan-mode's 500, never above the canvas
+
+Fix: physically moved `#plan-modal-overlay` OUT of `#plan-mode` to be a
+top-level sibling. Now its z-index 601 applies globally.
+
+**Lesson:** z-index alone isn't enough. ALWAYS check the parent's stacking
+context (transform, filter, position:fixed with z-index, opacity < 1, etc.).
+Adding to inspection checklist for future modal/overlay work.
+
+### Round 6 pathway notes
+
+| Fix | Pathway |
+|---|---|
+| #2 Analysis tab missing debt/savings (REAL fix) | `buildSpendingPivot` (the actual Analysis renderer) switched from `getDiscretionaryByCategory` to `getAllOutflowsByCategory`. Round 5's migration of `renderTrend`/`renderCatBreakdown` was wasted — their DOM targets (`#trend-view`, `#cat-breakdown`) don't exist in the current Analysis tab IA. Those renderers are now dead code (defer deletion to Bundle 29). Label "Total discretionary" → "Total outflows". |
+| #1 Ask AI prompt refocus | Now builds a structured prompt with `## My situation`, `## Upcoming trips` (sorted by start date), `## Long-term goals` (sorted by % complete), `## Annual provisions` (sorted by nextDue), `## Savings buckets`, plus an explicit prompt for prioritisation + formatting hint to AI for paragraphs/emojis/**bold**. Reads from same direct readers; adds PLAN.getTrips/getGoals/getAnnualProvisions for date-aware context. |
+| #5a Delete button on goal cards | Added 🗑️ button next to ✅ Mark Complete in `renderGoalCards`. Routes through existing `confirmDeleteGoal(goalId)` — already canonical (uses BRAIN.savings.removeBucket for auto-bucket cleanup per round-4 migration). |
+
+### Deferred for next round (with reasoning)
+
+| Item | Why deferred |
+|---|---|
+| #3 MAX PER DAY explainer — full math overhaul (Afterpay visibility, timing-aware caps, visual progress bar) | Requires deeper math redesign + visual component design. Need to think through "spend 70/day with 2 days left" rule + how to display it. Better in a focused mini-bundle. |
+| #4 Debt tile layout — note text cut off, square layout sub-optimal | Pure CSS work. Needs design pass — list view vs cards, expand-on-tap, etc. Defer to a debt-tab UX bundle. |
+| #5b Add Goal modal scroll + keyboard interaction | Mobile keyboard pushing content off-screen is an iOS/Android behaviour; needs `position:sticky` save button OR keyboard-aware viewport adjustment. Defer to a modal-UX hardening round. |
+| Delete dead `renderTrend` + `renderCatBreakdown` | Bundle 29 cleanup. They consume the right helper now but render to non-existent targets. |
+
 ### Round 5 pathway analysis (per John 2026-05-13 directive)
 
 **Pathways made canonical this round ✓**
