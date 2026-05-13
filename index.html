@@ -10043,12 +10043,9 @@ function openEditApiThreshold() {
     currentValue: S.apiAlertThreshold || 15,
     validate: (v) => { const n = +v; return (isFinite(n) && n > 0) ? { ok: true } : { ok: false, reason: 'Enter a positive number' }; },
     save: (v) => {
-      const n = +v;
-      const old = S.apiAlertThreshold;
-      S.apiAlertThreshold = n;
-      BRAIN.audit.append({ type: 'api_alert_threshold_change', old, new: n, source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
-      return { ok: true };
+      // Bundle 28 round 21: routed through BRAIN.config.setApiAlertThreshold.
+      const r = BRAIN.config.setApiAlertThreshold(v, BRAIN.SOURCES.SETTINGS_API_ALERT_THRESHOLD);
+      return r.ok ? { ok: true } : { ok: false, reason: 'Enter a positive number' };
     },
   });
 }
@@ -10320,35 +10317,29 @@ function saveWrxValue() {
 }
 
 function saveSuperBalance() {
+  // Bundle 28 round 21: routed through BRAIN.assets.setSuperBalance
+  // (canonical writer exists since Bundle 24 — this Settings handler was
+  // a missed migration discovered in round 20's audit-table sweep).
   const v = parseFloat(document.getElementById('set-super')?.value);
-  if (!isNaN(v) && v >= 0) {
-    S.superBalance = v;
-    onStateChange('super_saved');
-    showToast('✅ Super Balance Updated — $' + v.toLocaleString());
-  }
+  if (isNaN(v) || v < 0) return;
+  const r = BRAIN.assets.setSuperBalance(v, BRAIN.SOURCES.SETTINGS_ASSET_EDIT);
+  if (!r.ok) return;
+  onStateChange('super_saved');
+  showToast('✅ Super Balance Updated — $' + v.toLocaleString());
 }
 
 function saveMumAccountBalance() {
+  // Bundle 28 round 21: routed through BRAIN.assets.setMumAccount (canonical
+  // writer exists since Bundle 24 — this handler was missed). The canonical
+  // writer also mirrors into the apartment goal via PLAN.saveGoal so this
+  // wrapper drops the inline PLAN.saveGoal call that was duplicating the
+  // bubble's internal behavior.
   const v = parseFloat(document.getElementById('set-mum-account')?.value);
-  if (!isNaN(v) && v >= 0) {
-    S.mumAccountBalance = v;
-    // Mirror into the apartment goal so its progress reflects the live balance.
-    // guardian-allow-block-start: tdz-safe-engine-access — confirmSuperBalance/Mum-account update is a user-action handler called only post-boot (button click after splash + onboard); PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard (permanent — see UI handler call paths)
-    if (typeof PLAN !== 'undefined') {
-      const goals = PLAN.getGoals();
-      const apGoal = goals.find(g => g.id === 'apartment');
-      if (apGoal) {
-        // Bundle 9: apGoal.saved local assignment removed (dead write — PLAN.saveGoal
-        // strips 'saved' post-Bundle-8). Apartment goal's saved value is derived from
-        // S.mumAccountBalance via PLAN.readSavedFromSource — S.mumAccountBalance was
-        // already updated above, so the goal will render the new value on next read.
-        PLAN.saveGoal(apGoal);
-      }
-    }
-    // guardian-allow-block-end: tdz-safe-engine-access
-    onStateChange('mum_account_updated');
-    showToast('✅ Deposit Account Updated — $' + v.toLocaleString());
-  }
+  if (isNaN(v) || v < 0) return;
+  const r = BRAIN.assets.setMumAccount(v, BRAIN.SOURCES.SETTINGS_ASSET_EDIT);
+  if (!r.ok) return;
+  onStateChange('mum_account_updated');
+  showToast('✅ Deposit Account Updated — $' + v.toLocaleString());
 }
 
 function saveApiKey() {
@@ -11238,7 +11229,9 @@ function executeChatAction(action) {
       break;
     case 'update_super':
       if (action.amt > 0) {
-        S.superBalance = action.amt;
+        // Bundle 28 round 21: routed through BRAIN.assets.setSuperBalance.
+        // Source CHAT distinguishes AI-driven super updates from manual ones.
+        BRAIN.assets.setSuperBalance(action.amt, BRAIN.SOURCES.CHAT);
         onStateChange('super_updated_chat');
         showToast('✅ Super Updated To $' + action.amt.toLocaleString());
       }
@@ -15316,6 +15309,8 @@ const BRAIN = {
     // Bundle 28 round 19 — KIA early-repay fee
     KIA_FEE_EDIT:              'kia-fee-edit',
     KIA_FEE_RESET:             'kia-fee-reset',
+    // Bundle 28 round 21 — API alert threshold
+    SETTINGS_API_ALERT_THRESHOLD: 'settings-api-alert-threshold',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -15368,6 +15363,8 @@ const BRAIN = {
     'recon-log-append',
     // Bundle 28 round 19
     'kia-fee-edit', 'kia-fee-reset',
+    // Bundle 28 round 21
+    'settings-api-alert-threshold',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -15538,6 +15535,21 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'roundups_enabled_change', old, new: flag, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: flag };
+    },
+
+    // Bundle 28 round 21: API alert threshold canonical writer. Centralises
+    // the single Settings EDIT_MODAL save handler that was inline-audited
+    // pre-round-21. Same shape as setIncome / setPayday — scalar setter
+    // with bounds check + audit emission.
+    setApiAlertThreshold(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n <= 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = S.apiAlertThreshold;
+      S.apiAlertThreshold = n;
+      BRAIN.audit.append({ type: 'api_alert_threshold_change', old, new: n, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: n };
     },
 
     // Bundle 28 round 15: API key canonical writer. Pre-round-15 four

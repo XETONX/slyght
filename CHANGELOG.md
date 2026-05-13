@@ -106,6 +106,15 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Round 21 — Missed-migration cleanup + `BRAIN.config.setApiAlertThreshold`
+Round 20's audit-table sweep surfaced 3 sites that should already have routed through existing canonical writers but were missed in prior bundles. Plus one inline-audited handler promoted to a proper canonical writer.
+
+- `saveSuperBalance` → `BRAIN.assets.setSuperBalance` (existed since Bundle 24)
+- `saveMumAccountBalance` → `BRAIN.assets.setMumAccount` (existed since Bundle 24). Drops the inline `PLAN.saveGoal` mirror call — the canonical writer already does that internally.
+- `executeChatAction.update_super` → `BRAIN.assets.setSuperBalance` (source `CHAT` distinguishes AI-driven updates)
+- New `BRAIN.config.setApiAlertThreshold(v, source)` — promotes the inline-audited Settings EDIT_MODAL save handler to the canonical pattern. `SETTINGS_API_ALERT_THRESHOLD` source.
+- Gates: 0 FAILs, 51/51 runtime PASS.
+
 ### Round 20 — `BRAIN.audit.query` AI introspection helper
 Closes a Noticed item surfaced after round 14 (BRAIN.chat): "natural follow-up is a `BRAIN.audit.query` reader so the AI agent can self-introspect." Now that 13 BRAIN bubbles emit consistent audit entries, this unlocks self-introspection patterns.
 
