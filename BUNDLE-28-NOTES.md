@@ -29,7 +29,8 @@
 | `5473366` | round 11 | Phone-verified OPEN-BUGS #42 confirmed (John: "editing to $80 brings it back up instead of further down"). One-line sign flip in `BRAIN.transaction.update`. Centralisation from round 10 made this a single-site change instead of touching every caller. |
 | `a2094d5` | round 12 | OPEN-BUGS #43 — txn delete idempotency. John saw $200 drift from one rapid-tap delete. Pre-round-12 modal stored array idx; after first splice idx pointed at different row; second tap deleted wrong row + bumped balance again. Fix: migrate hidden field idx → stable ts + clear-on-delete + silent no-op on not-found. Drift recovery path documented in OPEN-BUGS #42/#43 (dashboard hero balance edit → `recordCorrection`). |
 | `71375d1` | round 13 | WRX state canonical writers: `BRAIN.assets.setWrxValue` + `BRAIN.assets.setWrxStatus`. Migrated 3 sites (`setWrxStatus` global function, `saveWrxValue`, chat actions `mark_wrx_listed` + `mark_wrx_sold`). Audit log now captures WRX lifecycle (listed → sold → KIA cleared) — John's highest-stakes flow with zero observability pre-Bundle-28. |
-| `<next>` | round 14 | New `BRAIN.chat` bubble (12th bubble): `addUser` / `addAssistant` / `clear` / `list`. Migrated 7 push sites in `sendChatMessage` (1 user, 4 error, 1 success, 1 catch) + 1 clear in `clearChat`. AI integration pathway is now on the canonical writer + audit. Privacy: audit stores message `length` not `content` (audit log holds 500 entries, chat content stays in `S.chatHistory` capped at 50). |
+| `6bc8158` | round 14 | New `BRAIN.chat` bubble (12th bubble): `addUser` / `addAssistant` / `clear` / `list`. Migrated 7 push sites in `sendChatMessage` (1 user, 4 error, 1 success, 1 catch) + 1 clear in `clearChat`. AI integration pathway is now on the canonical writer + audit. Privacy: audit stores message `length` not `content` (audit log holds 500 entries, chat content stays in `S.chatHistory` capped at 50). |
+| `<next>` | rounds 15–19 | Canonical-writer queue cleanout. Round 15: `BRAIN.config.setApiKey` (4 sites migrated, centralised localStorage mirror + audit). Round 16: NOTIFY audit hooks on `add`/`refresh`/`dismiss`/`clearAll`. Round 17: new `BRAIN.cycle` bubble (13th) for `paydayReceived` lifecycle (3 sites; unifies cosmetic-flag cleanup). Round 18: `BRAIN.audit.appendReconLog` mirrors reconLog into unified audit. Round 19: `BRAIN.assets.setKiaEarlyRepayFee` + `resetKiaEarlyRepayFee`. All remaining ❌s in the canonical-writer audit table closed (except S.bal partial which spans many flows and S.kiaMinPayment which has no writer surface). |
 
 ---
 
@@ -199,8 +200,8 @@ session.
 | `S.planIntents` | `BRAIN.plan.intent.{add,update,remove,setBucket}` | ✓ Phase 0 |
 | `S.activePlan` (overrides/ticks/savings/floors) | `BRAIN.plan.{setOverride,clearOverride,tickItem,untickItem,...}` | ✓ Bundle 27 |
 | `S.tripDefs` / `S.goalDefs` | `PLAN.saveTrip` / `PLAN.saveGoal` (legacy non-BRAIN) | ⚠️ legacy shim — Bundle 29 migrate to BRAIN.plan.intent |
-| `S.notifications` | Multiple direct filters/pushes (NOTIFY module) | `NOTIFY.add` / `NOTIFY.dismiss` | ⚠️ partial (NOTIFY isn't a BRAIN bubble yet) |
-| `S.reconLog` | Direct push in `confirmRecon` (~L2800) | None | ❌ Bundle 29 candidate |
+| `S.notifications` | `NOTIFY.{add,dismiss,clearAll,refresh}` 🔄 | NOTIFY methods now emit `BRAIN.audit` entries on every mutation (Bundle 28 round 16). Not a separate bubble — NOTIFY stays as its own module but is now observable through `BRAIN.audit`. | ✓ this session |
+| `S.reconLog` | `confirmRecon` 🔄 | `BRAIN.audit.appendReconLog(entry, source)` (Bundle 28 round 18) — keeps the separate forensic log AND mirrors into the unified audit log. | ✓ this session |
 | `S.chatHistory` | `sendChatMessage` 🔄 (7 sites) + `clearChat` 🔄 | New `BRAIN.chat` bubble — `addUser` / `addAssistant` / `clear` / `list` (Bundle 28 round 14). Audit captures length not content for privacy. | ✓ this session |
 
 **Scalar fields (single value)**
@@ -214,10 +215,10 @@ session.
 | `S.roundUpsEnabled` | `BRAIN.config.setRoundUpsEnabled` | ✓ Bundle 22 v3 |
 | `S.mumAccountBalance` / `S.superBalance` / `S.cc` / `S.ccLimit` / `S.carloan` / `S.carloanOriginal` | `BRAIN.assets.set{Mum,Super,Cc,CcLimit,Carloan,CarloanOriginal}` | ✓ Bundle 24 (pending full extraction) |
 | `S.wrxStatus` / `S.wrxValue` / `S.wrxSalePrice` / `S.wrxListedDate` / `S.wrxSoldDate` | `setWrxStatus()` 🔄, `saveWrxValue()` 🔄, chat actions 🔄 | `BRAIN.assets.setWrxStatus(status, opts, source)` + `BRAIN.assets.setWrxValue(v, source)` (Bundle 28 round 13) | ✓ this session |
-| `S.apiKey` | Direct writes (L1903, L9596, L9918, L10900) | ❌ needs `BRAIN.config.setApiKey` (secret-handling discipline) |
-| `S.paydayReceived` / `S.paydayReceivedDate` | Direct writes in balance-edit flow + seed v22 | ❌ needs `BRAIN.config.setPaydayReceived` or BRAIN.cycle |
-| `S.kiaEarlyRepayFee` | Direct UI edit | ❌ needs canonical writer |
-| `S.kiaMinPayment` | Direct read | ❌ no writer surface yet |
+| `S.apiKey` | `Settings EDIT_MODAL` 🔄 + `saveApiKey` 🔄 + `saveChatKey` 🔄 + `openChatKeyModal` 🔄 | `BRAIN.config.setApiKey(key, source)` (Bundle 28 round 15). Centralises validation + localStorage mirror + audit. Audit stores `<set>`/`<unset>` markers — never the raw key. | ✓ this session |
+| `S.paydayReceived` / `S.paydayReceivedDate` | `detectPaydayCycleRollover` 🔄 + `confirmHeroBalEdit` 🔄 + `monthlyResetCheck` 🔄 | New `BRAIN.cycle` bubble — `markPaydayReceived` + `clearPaydayReceived` (Bundle 28 round 17). Unifies cosmetic-flag cleanup (paydayBannerDismissed + paydayPlanAutoExpanded). | ✓ this session |
+| `S.kiaEarlyRepayFee` | `commitKiaFee` 🔄 + `resetKiaFee` 🔄 | `BRAIN.assets.setKiaEarlyRepayFee` + `resetKiaEarlyRepayFee` (Bundle 28 round 19). Reset preserves the `delete S.kiaEarlyRepayFee` semantics (signals "use default-derived value"). | ✓ this session |
+| `S.kiaMinPayment` | (no writer surface in code — stale audit entry) | N/A | ⚙️ N/A — no actual writer site found |
 | `S.lastOpenDate` | Direct (L2754) | ⚙️ infrastructure, low value |
 | `S.pinHash` | Direct (L1757) | ⚙️ security |
 | `S._auditLog` | `BRAIN.audit.append` | ✓ |

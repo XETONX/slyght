@@ -2199,10 +2199,10 @@ function detectPaydayCycleRollover() {
   if (!S.paydayReceived || !S.paydayReceivedDate) return false;
   const rec = new Date(S.paydayReceivedDate), now = new Date();
   if (rec.getMonth() !== now.getMonth() || rec.getFullYear() !== now.getFullYear()) {
-    S.paydayReceived = false;
-    S.paydayReceivedDate = null;
-    S.paydayBannerDismissed = false;
-    save();
+    // Bundle 28 round 17: routed through BRAIN.cycle.clearPaydayReceived
+    // (canonical writer unifies the flag cleanup — both paydayBannerDismissed
+    // and paydayPlanAutoExpanded now reset on every rollover path).
+    BRAIN.cycle.clearPaydayReceived(BRAIN.SOURCES.CYCLE_PAYDAY_CLEARED, 'monthly-rollover-detected');
     return true;
   }
   return false;
@@ -3043,19 +3043,19 @@ function confirmRecon() {
   const _rcConf = $('recon-custom');
   const reason = selectedReason || (_rcConf ? _rcConf.value.trim() : '');
   if (!reason) return;
-  if (!S.reconLog) S.reconLog = [];
   const _rmConf = $('recon-modal'); if (_rmConf) _rmConf.classList.remove('open');
   selectedReason = '';
-  // Fix 1A: if this recon came from hero balance edit, create a correction transaction
+  // Bundle 28 round 18: routed through BRAIN.audit.appendReconLog (mirrors
+  // into BRAIN.audit + keeps the separate S.reconLog forensic log).
   if (_pendingBalCorrection) {
     const {newBal} = _pendingBalCorrection;
     _pendingBalCorrection = null;
-    S.reconLog.push({date: new Date().toISOString(), bal: newBal, reason});
+    BRAIN.audit.appendReconLog({date: new Date().toISOString(), bal: newBal, reason}, BRAIN.SOURCES.RECON_LOG_APPEND);
     applyBalanceCorrection(newBal, reason);
     return;
   }
   // S.txns is sacred — never wipe transactions during reconciliation
-  S.reconLog.push({date: new Date().toISOString(), bal: S.bal, reason});
+  BRAIN.audit.appendReconLog({date: new Date().toISOString(), bal: S.bal, reason}, BRAIN.SOURCES.RECON_LOG_APPEND);
   save();
   renderAll();
 }
@@ -5690,8 +5690,8 @@ function confirmHeroBalEdit() {
   const pd2 = S.payday || 15;
   const nearPayday2 = todayD2 >= pd2 - 1 && todayD2 <= pd2 + 2;
   if (jump >= income * 0.9 && jump <= income * 1.1 && nearPayday2 && !S.paydayReceived) {
-    S.paydayReceived = true;
-    S.paydayReceivedDate = new Date().toISOString().slice(0, 10);
+    // Bundle 28 round 17: routed through BRAIN.cycle.markPaydayReceived.
+    BRAIN.cycle.markPaydayReceived(BRAIN.SOURCES.CYCLE_PAYDAY_RECEIVED, {});
   }
   // Store pending correction — applied after user selects reason in recon modal
   _pendingBalCorrection = {newBal: b, prevExpected};
@@ -10027,12 +10027,10 @@ function openEditApiKey() {
     currentValue: S.apiKey || '',
     validate: (v) => v && v.trim().startsWith('sk-ant') ? { ok: true } : { ok: false, reason: 'Key must start with sk-ant-' },
     save: (v) => {
-      const k = v.trim();
-      try { localStorage.setItem('slyght_api_key', k); } catch (_) {}
-      const old = S.apiKey ? '<set>' : '<unset>';
-      S.apiKey = k;
-      BRAIN.audit.append({ type: 'api_key_change', old, new: '<set>', source: BRAIN.SOURCES.MANUAL, ts: Date.now() });
-      try { save(); } catch (_) {}
+      // Bundle 28 round 15: routed through BRAIN.config.setApiKey (canonical
+      // writer handles validation + S.apiKey + localStorage + audit + save).
+      const r = BRAIN.config.setApiKey(v, BRAIN.SOURCES.SETTINGS_API_KEY);
+      if (!r.ok) return { ok: false, reason: 'Key must start with sk-ant-' };
       return { ok: true };
     },
   });
@@ -10354,14 +10352,12 @@ function saveMumAccountBalance() {
 }
 
 function saveApiKey() {
+  // Bundle 28 round 15: routed through BRAIN.config.setApiKey.
   const v = document.getElementById('set-apikey')?.value?.trim();
-  if (v && v.startsWith('sk-ant')) {
-    localStorage.setItem('slyght_api_key', v);
-    S.apiKey = v;
-    showToast('✅ API key saved');
-  } else {
-    showToast('Invalid key — must start with sk-ant-');
-  }
+  if (!v) { showToast('Invalid key — must start with sk-ant-'); return; }
+  const r = BRAIN.config.setApiKey(v, BRAIN.SOURCES.SETTINGS_API_KEY);
+  if (r.ok) showToast('✅ API key saved');
+  else showToast('Invalid key — must start with sk-ant-');
 }
 
 function toggleRoundUps() {
@@ -11331,23 +11327,25 @@ function renderChatHistory() {
 
 
 function saveChatKey() {
+  // Bundle 28 round 15: routed through BRAIN.config.setApiKey.
   const input = $('chat-key-input');
   if (!input) return;
   const key = input.value.trim();
   if (!key) { alert('Enter an API key.'); return; }
-  S.apiKey = key;
-  localStorage.setItem('slyght_api_key', key);
-  save();
+  const r = BRAIN.config.setApiKey(key, BRAIN.SOURCES.CHAT_KEY_SET);
+  if (!r.ok) { alert('Invalid key — must start with sk-ant-'); return; }
   renderChatTab();
 }
 
 function openChatKeyModal() {
+  // Bundle 28 round 15: routed through BRAIN.config.setApiKey. Empty string
+  // is the valid clear-key path (canonical writer handles localStorage
+  // removal on empty input).
   const current = S.apiKey || '';
   const masked = current ? current.slice(0,12) + '...' : '';
   const key = prompt('Anthropic API key' + (masked ? ' (current: '+masked+')' : '') + ':', '');
-  if (key === null) return;
-  if (!key.trim()) { S.apiKey = ''; localStorage.removeItem('slyght_api_key'); } else { S.apiKey = key.trim(); localStorage.setItem('slyght_api_key', S.apiKey); }
-  save();
+  if (key === null) return; // user cancelled
+  BRAIN.config.setApiKey(key.trim(), BRAIN.SOURCES.CHAT_KEY_SET);
   renderChatTab();
 }
 
@@ -12977,8 +12975,9 @@ const APP_HEALTH = {
       const receivedDate = new Date(S.paydayReceivedDate);
       const monthsDiff = (today.getFullYear() - receivedDate.getFullYear()) * 12 + (today.getMonth() - receivedDate.getMonth());
       if (monthsDiff >= 1) {
-        S.paydayReceived = false; S.paydayReceivedDate = null; S.paydayPlanAutoExpanded = false;
-        save(); if (SLYGHT_DEBUG) console.log('Monthly reset: paydayReceived cleared');
+        // Bundle 28 round 17: routed through BRAIN.cycle.clearPaydayReceived.
+        BRAIN.cycle.clearPaydayReceived(BRAIN.SOURCES.CYCLE_PAYDAY_CLEARED, 'monthly-reset-check');
+        if (SLYGHT_DEBUG) console.log('Monthly reset: paydayReceived cleared');
       }
     }
     const currentMonthKey = today.getFullYear() + '-' + (today.getMonth() + 1);
@@ -13387,7 +13386,14 @@ const NOTIFY = {
   },
   refresh() {
     const newOnes = this.generate();
-    if (newOnes.length) { S.notifications=[...(S.notifications||[]),...newOnes].slice(-50); save(); }
+    if (newOnes.length) {
+      S.notifications=[...(S.notifications||[]),...newOnes].slice(-50);
+      // Bundle 28 round 16: audit the batch landing so AI agent can see
+      // when system-generated notifications appear without needing to
+      // diff S.notifications.
+      try { BRAIN.audit.append({ type: 'notif_batch', count: newOnes.length, source: BRAIN.SOURCES.NOTIFY_BATCH, ts: Date.now() }); } catch(_) {}
+      save();
+    }
     this.updateBadge();
   },
   updateBadge() {
@@ -13415,10 +13421,16 @@ const NOTIFY = {
     if (!S.dismissedNotifications) S.dismissedNotifications=[];
     S.dismissedNotifications.push(id);
     S.notifications=(S.notifications||[]).filter(n=>n.id!==id);
+    // Bundle 28 round 16: audit dismissal so AI agent can see which
+    // notifications John actively rejected vs. which never showed up.
+    try { BRAIN.audit.append({ type: 'notif_dismiss', notifId: id, source: BRAIN.SOURCES.NOTIFY_DISMISS, ts: Date.now() }); } catch(_) {}
     save(); this.updateBadge(); this.renderDrawer();
   },
   clearAll() {
+    const clearedCount = (S.notifications || []).length;
     S.notifications=[]; save(); this.updateBadge();
+    // Bundle 28 round 16: audit the wipe with pre-clear count.
+    try { BRAIN.audit.append({ type: 'notif_clear_all', clearedCount, source: BRAIN.SOURCES.NOTIFY_CLEAR_ALL, ts: Date.now() }); } catch(_) {}
     const b=document.getElementById('notif-drawer-body');
     if (b) b.innerHTML='<div style="text-align:center;padding:32px 0;color:var(--text3);font-size:15px">All notifications cleared ✓</div>';
   },
@@ -13449,6 +13461,10 @@ const NOTIFY = {
     const msg = n.title ? n.title + (n.message ? ' — ' + n.message : '') : (n.message || n.msg || '');
     S.notifications.push({ id: n.id, type: n.type || 'info', msg, act: n.act || null, ts: n.ts || Date.now(), read: false });
     S.notifications = S.notifications.slice(-50);
+    // Bundle 28 round 16: audit external NOTIFY.add() calls (single-shot
+    // adds outside the refresh-generate batch flow). Captures type + id
+    // so forensics can trace which subsystem fired what.
+    try { BRAIN.audit.append({ type: 'notif_add', notifType: n.type || 'info', notifId: n.id, source: BRAIN.SOURCES.NOTIFY_ADD, ts: Date.now() }); } catch(_) {}
     save();
     this.updateBadge();
   },
@@ -15284,6 +15300,22 @@ const BRAIN = {
     CHAT_ASSISTANT_REPLY:      'chat-assistant-reply',
     CHAT_ASSISTANT_ERROR:      'chat-assistant-error',
     CHAT_CLEAR:                'chat-clear',
+    // Bundle 28 round 15 — BRAIN.config.setApiKey
+    SETTINGS_API_KEY:          'settings-api-key',
+    CHAT_KEY_SET:              'chat-key-set',
+    // Bundle 28 round 16 — NOTIFY audit hooks
+    NOTIFY_ADD:                'notify-add',
+    NOTIFY_BATCH:              'notify-batch',
+    NOTIFY_DISMISS:            'notify-dismiss',
+    NOTIFY_CLEAR_ALL:          'notify-clear-all',
+    // Bundle 28 round 17 — BRAIN.cycle (paydayReceived lifecycle)
+    CYCLE_PAYDAY_RECEIVED:     'cycle-payday-received',
+    CYCLE_PAYDAY_CLEARED:      'cycle-payday-cleared',
+    // Bundle 28 round 18 — reconLog canonical writer
+    RECON_LOG_APPEND:          'recon-log-append',
+    // Bundle 28 round 19 — KIA early-repay fee
+    KIA_FEE_EDIT:              'kia-fee-edit',
+    KIA_FEE_RESET:             'kia-fee-reset',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -15326,6 +15358,16 @@ const BRAIN = {
     'wrx-value-edit', 'wrx-status-change',
     // Bundle 28 round 14
     'chat-user-send', 'chat-assistant-reply', 'chat-assistant-error', 'chat-clear',
+    // Bundle 28 round 15
+    'settings-api-key', 'chat-key-set',
+    // Bundle 28 round 16
+    'notify-add', 'notify-batch', 'notify-dismiss', 'notify-clear-all',
+    // Bundle 28 round 17
+    'cycle-payday-received', 'cycle-payday-cleared',
+    // Bundle 28 round 18
+    'recon-log-append',
+    // Bundle 28 round 19
+    'kia-fee-edit', 'kia-fee-reset',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -15337,6 +15379,34 @@ const BRAIN = {
       if (!S._auditLog) S._auditLog = [];
       S._auditLog.push(entry);
       if (S._auditLog.length > 500) S._auditLog = S._auditLog.slice(-500);
+    },
+
+    // Bundle 28 round 18: canonical writer for S.reconLog. Pre-round-18 the
+    // confirmRecon flow pushed directly with no audit-log trail. reconLog
+    // pre-dates BRAIN.audit and stays as a separate forensic log (capped
+    // 25, persisted across saves); this writer mirrors the push into
+    // BRAIN.audit so the AI agent can see balance-reconciliation events
+    // through the unified audit API.
+    appendReconLog(entry, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!entry || typeof entry !== 'object') {
+        return { ok: false, reason: 'invalid-entry' };
+      }
+      if (!Array.isArray(S.reconLog)) S.reconLog = [];
+      S.reconLog.push(entry);
+      // reconLog has historically been capped at 25 in the codebase
+      if (S.reconLog.length > 25) S.reconLog = S.reconLog.slice(-25);
+      this.append({
+        type: 'recon_log_entry',
+        bal: entry.bal,
+        reason: entry.reason,
+        date: entry.date,
+        source,
+        ts: Date.now(),
+      });
+      return { ok: true, entry };
     },
     recent(n) {
       return (S._auditLog || []).slice(-(n || 20));
@@ -15436,6 +15506,39 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'roundups_enabled_change', old, new: flag, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: flag };
+    },
+
+    // Bundle 28 round 15: API key canonical writer. Pre-round-15 four
+    // independent sites mutated S.apiKey + localStorage with varying
+    // validation: Settings EDIT_MODAL save (inline-audited), saveApiKey()
+    // global, saveChatKey(), openChatKeyModal(). Two of the four did NOT
+    // audit. Centralised here so every key change lands in BRAIN.audit
+    // and the localStorage mirror stays in lockstep with S.apiKey.
+    //
+    // Empty string is a VALID input (clears the key). Removes localStorage
+    // entry on clear. Stores key value as `<set>` / `<unset>` markers in
+    // audit log — never the raw key (security).
+    setApiKey(key, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        console.warn('[BRAIN.config] unknown source tag:', source);
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (typeof key !== 'string') return { ok: false, reason: 'invalid-type' };
+      const trimmed = key.trim();
+      // Validate prefix unless clearing
+      if (trimmed && !trimmed.startsWith('sk-ant')) {
+        return { ok: false, reason: 'invalid-prefix' };
+      }
+      const old = S.apiKey ? '<set>' : '<unset>';
+      const newMark = trimmed ? '<set>' : '<unset>';
+      S.apiKey = trimmed;
+      try {
+        if (trimmed) localStorage.setItem('slyght_api_key', trimmed);
+        else localStorage.removeItem('slyght_api_key');
+      } catch (_) {}
+      BRAIN.audit.append({ type: 'api_key_change', old, new: newMark, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: newMark };
     },
   },
 
@@ -16487,6 +16590,33 @@ const BRAIN = {
     //              + wrxSalePrice (opts.salePrice || wrxValue || 25000)
     // Always audits before/after as a snapshot so undo and AI reasoning
     // can replay the whole transition.
+    // Bundle 28 round 19: KIA early-repay fee canonical writers. The fee
+    // is the lump-sum Firstmac charges to settle the KIA loan early; user
+    // can override the default-derived value (2 months interest) with a
+    // confirmed quote from Firstmac. Pre-round-19 the two sites (commitKiaFee,
+    // resetKiaFee) wrote/deleted S.kiaEarlyRepayFee directly with no audit.
+    //
+    // Reset semantics: deleting the field (vs. setting to 0) is what
+    // signals "use default-derived value" — preserved here.
+    setKiaEarlyRepayFee(v, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const n = +v;
+      if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-value', value: v };
+      const old = (S.kiaEarlyRepayFee !== undefined && S.kiaEarlyRepayFee !== null) ? +S.kiaEarlyRepayFee : null;
+      S.kiaEarlyRepayFee = parseFloat(n.toFixed(2));
+      BRAIN.audit.append({ type: 'kia_fee_change', old, new: S.kiaEarlyRepayFee, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: S.kiaEarlyRepayFee };
+    },
+    resetKiaEarlyRepayFee(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const old = (S.kiaEarlyRepayFee !== undefined && S.kiaEarlyRepayFee !== null) ? +S.kiaEarlyRepayFee : null;
+      delete S.kiaEarlyRepayFee;
+      BRAIN.audit.append({ type: 'kia_fee_reset', old, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old };
+    },
+
     setWrxStatus(status, opts, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
       if (status !== 'unlisted' && status !== 'listed' && status !== 'sold') {
@@ -16641,6 +16771,71 @@ const BRAIN = {
       const h = S.chatHistory || [];
       return predicate ? h.filter(predicate) : h;
     },
+  },
+
+  // ─── BRAIN.cycle — paydayReceived lifecycle (Bundle 28 round 17) ────────
+  // The payday-received flag had 3 direct-mutation sites with subtle
+  // inconsistencies in which neighbouring flags each path reset:
+  //   detectPaydayCycleRollover (L2202) cleared paydayBannerDismissed
+  //   monthlyResetCheck (L12978) cleared paydayPlanAutoExpanded
+  //   confirmHeroBalEdit (L5693) only set paydayReceived + paydayReceivedDate
+  // Centralising here unifies the cleanup — clearPaydayReceived now resets
+  // BOTH cycle-related cosmetic flags so a fresh cycle always starts clean.
+  // (Slight behavior change from the legacy split; the legacy asymmetry
+  // looks like accidental code growth, not intentional design.)
+  cycle: {
+    markPaydayReceived(source, opts) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      opts = opts || {};
+      const receivedDate = opts.receivedDate || new Date().toISOString().slice(0, 10);
+      const before = {
+        paydayReceived: !!S.paydayReceived,
+        paydayReceivedDate: S.paydayReceivedDate || null,
+      };
+      S.paydayReceived = true;
+      S.paydayReceivedDate = receivedDate;
+      BRAIN.audit.append({
+        type: 'cycle_payday_received',
+        before,
+        after: { paydayReceived: true, paydayReceivedDate: receivedDate },
+        source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, before, after: { paydayReceived: true, paydayReceivedDate: receivedDate } };
+    },
+
+    // reason: free-form string captured in audit log so forensics knows
+    // why the flag was cleared (monthly-rollover, manual-reset, etc.).
+    clearPaydayReceived(source, reason) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const before = {
+        paydayReceived: !!S.paydayReceived,
+        paydayReceivedDate: S.paydayReceivedDate || null,
+        paydayBannerDismissed: !!S.paydayBannerDismissed,
+        paydayPlanAutoExpanded: !!S.paydayPlanAutoExpanded,
+      };
+      S.paydayReceived = false;
+      S.paydayReceivedDate = null;
+      S.paydayBannerDismissed = false;
+      S.paydayPlanAutoExpanded = false;
+      BRAIN.audit.append({
+        type: 'cycle_payday_cleared',
+        before,
+        reason: reason || 'unspecified',
+        source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, before };
+    },
+
+    isPaydayReceived() { return !!S.paydayReceived; },
+    getPaydayReceivedDate() { return S.paydayReceivedDate || null; },
   },
 
   // ─── BRAIN.savings — canonical bucket writer ────────────────────────────
@@ -18772,15 +18967,16 @@ function updateKiaFeeInline(raw) {
   }
 }
 function commitKiaFee(raw) {
+  // Bundle 28 round 19: routed through BRAIN.assets.setKiaEarlyRepayFee.
   const fee = parseFloat(raw);
   if (isNaN(fee) || fee < 0) return;
-  S.kiaEarlyRepayFee = parseFloat(fee.toFixed(2));
-  save();
+  const r = BRAIN.assets.setKiaEarlyRepayFee(fee, BRAIN.SOURCES.KIA_FEE_EDIT);
+  if (!r.ok) return;
   renderPlanMode();
 }
 function resetKiaFee() {
-  delete S.kiaEarlyRepayFee;
-  save();
+  // Bundle 28 round 19: routed through BRAIN.assets.resetKiaEarlyRepayFee.
+  BRAIN.assets.resetKiaEarlyRepayFee(BRAIN.SOURCES.KIA_FEE_RESET);
   renderPlanMode();
   showToast('Fee reset to default (2 months interest)');
 }
