@@ -15,6 +15,15 @@
 | `6eb7034` | 28.0.1+ | Round 3 forward fixes: "+ Add bucket" → openAddBucketModal, footer label, KIA toast try/catch |
 | `bdda17b` | 28.0.2 | **z-index sandwich fix** — `.modal-overlay` 200→600, `.recon-overlay` 300→620, `showToast`/`undo-toast`/`offline-badge` 400/500→800. Closes the entire layering bug class for any modal/toast opened above the canvas. |
 | `b7fb6ed` | — | Layer V captures #41+#42 visually verifying the z-index fix |
+| `381735d` | 28.2/0.5/0.6 | PLAN-mode tile reorder + canonicalise renderers (`buildSpendingPivot`) + Ask AI auto-fill |
+| `16726cd` | — | `BRAIN.transaction.reclassify` + Convert-to-Loan + MAX PER DAY tappable + delete `renderSavingsBuckets` dead code |
+| `1a3b80d` | — | Bucket lifecycle canonical writers (`BRAIN.savings.addBucket/updateBucket/removeBucket`) + 4 callers migrated |
+| `1268e24` | round 5 | Ask-AI math + Analysis filter + Convert-loan + bucket↔intent link + delete buttons on trip/goal/bucket cards |
+| `2d4e85f` | round 6 | **PLAN_MODAL hoisted out of `#plan-mode` stacking context** (root cause of round-4 sandwich recurrence); Analysis filter applied at real renderer `buildSpendingPivot`; delete-goal handler; Ask-AI prompt refocused with dates |
+| `977e04a` | round 7 | Debt category fragmentation tip + goal-edit refreshes canvas + Ask-AI math breakdowns + MAX PER DAY explainer rebuilt |
+| `9de16dc` | round 8 | Delete-goal full cycle (intent removal + canvas refresh — previously missed) + `FEATURE-MAP.md` directory |
+| `a1b0ce2` | round 9 | Delete affordances in canvas (trip + bucket — sibling-card audit miss) + MAX PER DAY rich HTML cards + debt-tip hierarchy reformat |
+| `<next>` | infra | Manual moved into repo (`CC-PRINCIPAL-ENGINEER-MANUAL.md`) + `docs/{adr,sdd,archive,manual-amendments,ops}/` scaffolded + `CHANGELOG.md` initialised with back-fill |
 
 ---
 
@@ -64,6 +73,29 @@
 | Net Worth Trend math fix (OPEN-BUGS #13) | Bundle 29 | Memory entry `slyght_nw_trend_off_by_orders.md`. |
 | Rules-as-data refactor | Bundle 30 | Audit A1 §5.5 strongest-shift. Big scope. |
 | Cloud sync (Gist) | Bundle 23 (post-28) | Per Audit A1 §6 sequence. |
+
+---
+
+## Artifact discipline going forward (per manual §8 + §3 Step 7)
+
+Established 2026-05-13 alongside Bundle 28 infra commit (manual moved into repo + `docs/` scaffolded + `CHANGELOG.md` initialised).
+
+**Session-end checklist additions** (these now run BEFORE every `git push`):
+
+1. **`CHANGELOG.md`** — append phase/round entry under the active bundle's section. New bundle = new H2 section at the top. Format per manual §8. Include commit SHAs + phone-verify status.
+2. **`FEATURE-MAP.md`** — if a surface was added/moved/deleted, update the directory section. If a self-correction lesson emerged, add to Self-correction queue.
+3. **`docs/adr/ADR-NNN-*.md`** — write BEFORE the architectural commit (not after). One ADR per decision.
+4. **`docs/sdd/SDD-YYYYMMDD-*.md`** — write BEFORE non-trivial implementation. Trivial fixes don't need SDDs — note in active `BUNDLE-NN-NOTES.md`.
+5. **`docs/manual-amendments/AMENDMENT-NNN-*.md`** — when a recurring mistake emerges, propose an amendment per manual §15 (don't silently edit the manual).
+
+**Folders to create on first use** (per manual §5 — "create when first needed, don't dump in root"):
+- `docs/adr/` — scaffolded with README 2026-05-13. First ADR pending.
+- `docs/sdd/` — scaffolded. First SDD pending.
+- `docs/archive/` — scaffolded. For going-forward superseded docs (pre-Bundle-28 archive lives at `/archive/`).
+- `docs/manual-amendments/` — scaffolded. First amendment pending.
+- `docs/ops/` — scaffolded. First runbook pending (snapshot-restore + redeploy are good candidates).
+
+**Authority ranking** (per manual §0): manual outranks ship prompts outranks ruflo-init `slyght/CLAUDE.md`. When `CLAUDE.md` conflicts with manual practice (e.g. it says "never save MDs to root" but slyght's pattern is root MDs), manual wins.
 
 ---
 

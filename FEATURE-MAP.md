@@ -11,6 +11,22 @@
 >
 > Maintained by Claude Code. Updated as Bundle 28+ ships. Last updated: 2026-05-13.
 
+## Sibling artifacts (read at session start per manual §3 Step 1)
+
+| File | Purpose |
+|---|---|
+| `CC-PRINCIPAL-ENGINEER-MANUAL.md` | Operating manual. Outranks ship prompts. Read end-to-end on first session of the day. |
+| `CHANGELOG.md` | Per-bundle ship log. Updated as part of every push (manual §3 Step 7). |
+| `BUNDLE-NN-NOTES.md` | Active-bundle working ledger. Phase log + deferred items + cross-reference inspection queue. |
+| `OPEN-BUGS.md` | Numbered bug ledger across all bundles. |
+| `ARCHITECTURE.md` | Living architecture doc (Mermaid + component map + bottlenecks). |
+| `docs/adr/` | Architecture Decision Records (one decision per file). |
+| `docs/sdd/` | Software Design Documents (pre-implementation, for non-trivial work). |
+| `docs/archive/` | Going-forward superseded docs. |
+| `docs/manual-amendments/` | Per manual §15 — amendment proposals before manual edits. |
+| `docs/ops/` | Operational runbooks (snapshot restore, redeploy, etc.). |
+| `archive/` | Pre-Bundle-28 historical archive (missions/ship-prompts/audits/state-backups). |
+
 ---
 
 ## CURRENT — Dashboard tab (`#pg-dash`)
