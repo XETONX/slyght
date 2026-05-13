@@ -106,6 +106,29 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Rounds 25–28 — Visual analysis fixes (post phone-screenshot review)
+John shared 7 screenshots across Dashboard / Bills / Analysis / debts / Auto-sort dialog / Recent Spending with directive: "deep look at the photos, analyse each calculation, how info is displayed, is it pretty, interactive, does it make sense." Four concrete fixes landed in this push.
+
+**Round 25 — Dynamic Week Projection math display**
+Pre-round-25 displayed: `Projected daily: $6.11/day × 5 days = $4,004.55`. Mathematically false: $6.11 × 5 = $30.55, not $4,004.55. The right-side value silently included `billsDueThisWeek` from the row above. Now split into two lines:
+- `Living (projected): $6.11/day × 5 days = $30.55` (the actual product)
+- `Remaining to spend (bills + living): $4,004.55` (explicitly named, separated by a top border)
+
+Description now matches calculation.
+
+**Round 26 — Auto-sort native `confirm()` → custom modal**
+Per manual §6 UX contract ("no native alert"). `autoSortDebts()` was using a native `confirm()` that showed "xetonx.github.io says" dialog — out of style with the rest of the app. Now uses `EDIT_MODAL.openCustom` with the same content rendered as styled rows showing rank + name + amount + due date + score. Save handler applies the priority order through `BRAIN.debts.update(d.id, {priority}, UPDATE_DEBT)` — unchanged behavior, native dialog gone.
+
+**Round 27 — Debt card name truncation + lone-last-card layout**
+Two-column `.debt-grid` with 3 debts left the lone-last card half-width with empty space to its right. Plus single-line `text-overflow:ellipsis` on `.dt-name` was clipping at ~50% viewport width — "Borrowed from Michael" and "Borrowed from Mum" both rendered as "Borrowed from ..." (indistinguishable on dashboard).
+- New CSS: `.debt-tile:last-child:nth-child(odd) { grid-column: 1 / -1 }` → lone last card spans both columns
+- `.dt-name` switched to 2-line clamp (`-webkit-line-clamp:2`) with `word-break:break-word` so compound names render fully
+
+**Round 28 — "Today" filter per-day label is redundant**
+Analysis "Where your money went" pivot showed `$8.65/day` next to category totals — but when the filter is "Today" (1 day), per-day rate equals the category total, so it's visual noise. Now skipped for `period === 'today'`; kept for 7-day / 30-day / all-time where the rate is meaningful context.
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Round 24 — Dashboard hero "spent today" outflow visibility fix
 Phone-flagged by John: "investigate dashboard note under balance saying amount spent today, ensuring that calculation is correct and not just mimicking recent spending but understanding the calculation based on description and updating accordingly."
 

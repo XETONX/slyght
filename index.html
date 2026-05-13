@@ -218,9 +218,16 @@ body.edit-modal-open{overflow:hidden}
 .card-sub{font-size:12px;color:var(--text3);margin-top:2px}
 /* DEBT TILES */
 .debt-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* Bundle 28 round 27: odd-last card spans both columns so the grid
+   doesn't leave visible empty space when the debt count is odd. */
+.debt-grid > .debt-tile:last-child:nth-child(odd){grid-column:1 / -1}
 .debt-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;cursor:pointer;transition:all .15s;min-height:160px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden}
 .debt-tile:active{background:var(--bg4)}
-.dt-name{font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Bundle 28 round 27: allow names to wrap to 2 lines so "Borrowed from
+   Michael" and "Borrowed from Mum" don't both render as "Borrowed from ..."
+   making them indistinguishable on the dashboard. Single-line ellipsis
+   was clipping at ~50% viewport width which is too tight for compound names. */
+.dt-name{font-size:13px;color:var(--text);font-weight:600;margin-bottom:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.25;word-break:break-word}
 .dt-amt{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1;margin-bottom:4px}
 .dt-amt.bad{color:var(--red)}.dt-amt.warn{color:var(--amber)}.dt-amt.ok{color:var(--green)}
 .dt-sub{font-size:12px;color:var(--text3);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -5849,18 +5856,44 @@ function autoSortDebts() {
     return {...d, _score: score};
   }).sort((a,b) => a._score - b._score);
 
-  // Show suggested order
-  const names = scored.map((d,i) => (i+1)+'. '+d.name+' ($'+d.amt.toFixed(0)+(d.delayDate?' due '+d.delayDate:'')+')').join('\n');
-  if (confirm('Suggested order (lowest score = highest priority):\n\n'+names+'\n\nApply this order?')) {
-    // Bundle 15: route through BRAIN.debts.update (priority is in the
-    // whitelist). UPDATE_DEBT source tags each priority flip in audit
-    // so the auto-sort decision is recoverable.
-    scored.forEach((d, i) => {
-      BRAIN.debts.update(d.id, { priority: i + 1 }, BRAIN.SOURCES.UPDATE_DEBT);
-    });
-    onStateChange('debt-resort');
-    showUndoToast('Debts re-sorted by urgency');
-  }
+  // Bundle 28 round 26: replaced native confirm() with EDIT_MODAL.openCustom
+  // per manual §6 UX contract ("no native alert"). Same content as the old
+  // native dialog, now styled to match the rest of the app + scroll-locked
+  // + back-button-intercepted.
+  const _rows = scored.map((d, i) =>
+    '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:var(--bg3);border-radius:var(--r-sm);margin-bottom:6px">' +
+      '<div style="font-family:var(--mono);font-weight:700;color:var(--green);min-width:18px">' + (i + 1) + '.</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="color:var(--text);font-size:14px;font-weight:600">' + esc(d.name) + '</div>' +
+        '<div style="color:var(--text3);font-size:12px;margin-top:2px">$' + Math.round(d.amt).toLocaleString() +
+          (d.delayDate ? ' · due ' + d.delayDate.slice(0, 10) : ' · no due date') +
+          ' · score ' + d._score +
+        '</div>' +
+      '</div>' +
+    '</div>'
+  ).join('');
+
+  const _body =
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">' +
+      'Lower score = higher priority (overdue + due-soon + high-rate + affordable-from-surplus all reduce score).' +
+    '</div>' +
+    _rows;
+
+  EDIT_MODAL.openCustom({
+    title: 'Auto-sort debts',
+    hint: 'Tap Save to re-order debts by suggested urgency. Existing order is preserved if you cancel.',
+    bodyHtml: _body,
+    save: () => {
+      // Route each priority flip through BRAIN.debts.update so audit log
+      // captures the re-sort decision with UPDATE_DEBT source.
+      scored.forEach((d, i) => {
+        BRAIN.debts.update(d.id, { priority: i + 1 }, BRAIN.SOURCES.UPDATE_DEBT);
+      });
+      onStateChange('debt-resort');
+      showUndoToast('Debts re-sorted by urgency');
+      return { ok: true };
+    },
+  });
 }
 
 
@@ -7080,11 +7113,20 @@ function renderCalWeekSummary() {
   const paceMsg = paceOver > 0
     ? 'Running ' + fmtC(paceOver) + ' over pace — slow down'
     : 'Running ' + fmtC(Math.abs(paceOver)) + ' under pace — good week';
+  // Bundle 28 round 25: split the projected-daily line so the math reads
+  // correctly. Pre-round-25 the line was:
+  //   "Projected daily: $6.11/day × 5 days = $4,004.55"
+  // which is mathematically false ($6.11 × 5 = $30.55, not $4,004.55).
+  // The right side actually included `billsDueThisWeek` from the row
+  // above. Now split into two lines: pure living-cost calc + a
+  // clearly-labelled remaining-to-spend that names both components.
+  const _projectedLiving = parseFloat((proj.dailyRate * proj.daysLeftInWeek).toFixed(2));
   html += '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:12px;margin-top:10px;font-size:13px;line-height:1.8;color:var(--text2)">' +
     '<div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Dynamic Week Projection</div>' +
     '<div style="display:flex;justify-content:space-between"><span>Spent so far this week:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.spentSoFar) + (proj.daysSoFarInWeek === 0 ? ' (today only)' : '') + '</span></div>' +
     '<div style="display:flex;justify-content:space-between"><span>Bills remaining:</span><span style="font-family:var(--mono);font-weight:700;color:var(--red)">' + fmtC(proj.billsDueThisWeek) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between"><span>Projected daily:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days = ' + fmtC(proj.projectedRemaining) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Living (projected):</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.dailyRate) + '/day × ' + proj.daysLeftInWeek + ' days = ' + fmtC(_projectedLiving) + '</span></div>' +
+    '<div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border)"><span>Remaining to spend (bills + living):</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedRemaining) + '</span></div>' +
     '<div style="display:flex;justify-content:space-between"><span>Week total projection:</span><span style="font-family:var(--mono);font-weight:700;color:var(--text)">' + fmtC(proj.projectedTotal) + '</span></div>' +
     '<div style="color:' + paceColor + ';font-weight:600;margin-top:4px">' + paceMsg + '</div>' +
     '</div>';
@@ -14973,7 +15015,14 @@ function renderSpendingPivot() {
       html += '<span style="font-size:18px">'+(icons[row.cat]||'💳')+'</span>';
       html += '<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--text);font-size:14px;font-weight:600">'+row.cat+'</span><span style="color:var(--text);font-size:15px;font-weight:700">$'+row.total.toFixed(2)+'</span></div>';
       html += '<div style="background:var(--bg2);border-radius:4px;height:4px;margin-bottom:4px"><div style="background:var(--green);width:'+Math.min(100,row.pct)+'%;height:100%;border-radius:4px"></div></div>';
-      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:12px">'+row.count+' transaction'+(row.count===1?'':'s')+' · '+row.pct+'%</span><span style="color:var(--text3);font-size:12px">$'+row.daily+'/day</span></div></div>';
+      // Bundle 28 round 28: skip the /day label for the "Today" filter
+      // ($X/day for 1 day = $X, tautologically the same number as
+      // row.total — visual noise). Keep for 7-day / 30-day / all-time
+      // periods where the rate is meaningful context.
+      const _rateLabel = (period === 'today')
+        ? '' /* per-day rate redundant for a 1-day window */
+        : '<span style="color:var(--text3);font-size:12px">$'+row.daily+'/day</span>';
+      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:12px">'+row.count+' transaction'+(row.count===1?'':'s')+' · '+row.pct+'%</span>'+_rateLabel+'</div></div>';
       html += '<span style="color:var(--text3);font-size:15px">'+(isExpanded?'▲':'▼')+'</span></div>';
       if (isExpanded) {
         html += '<div style="border-top:1px solid var(--border);padding:8px 12px">';
