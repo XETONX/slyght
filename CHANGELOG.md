@@ -122,6 +122,35 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 52 — Trips as first-class allocation targets + Monthly Bills same-day grouping
+Two refinements from John's r51 verify.
+
+**52a — Trips are first-class allocation targets (no more "+ Bucket" warning)**
+
+John: "It gives error saying this trip can't be allocated as it doesn't have a bucket tied to it but in the plan dashboard you have the trip modal with the option to add savings, edit the trip and plan it out etc, now that should be counted as the saving bucket and make that link."
+
+Pre-r52 (r51): unlinked trips were surfaced in an amber warning card with a `[+ Bucket]` button — extra friction. Now:
+
+- `recommendAllocation()` includes unlinked trips DIRECTLY in `bucketAllocations` with their own urgency-weighted share (`_tripUrgencyWeight` factored). Returns `syntheticBucketNames` array marking which entries need bucket creation.
+- Modal renders these inline alongside real buckets with a small `+ NEW BUCKET` blue tag so the user sees what'll happen.
+- Footnote: "+ NEW BUCKET items are trips without a linked bucket. Tap Apply and the bucket gets created automatically + linked to the trip."
+- `applyRecommendation` now auto-creates the bucket via `BRAIN.savings.addBucket` AND sets `bucketHint` on the trip via `PLAN.saveTrip` for each synthetic name — so future runs see the link without re-detecting. Returns `{ applied, created }`.
+
+One-tap experience: Darwin shows in the list with its urgency tag + NEW BUCKET label, Apply creates the bucket + sets the override in one shot.
+
+**52b — Monthly Bills: consolidate same-day bills under one chip**
+
+John: "Yes it's smaller but still a long list, can you consolidate bills that occur on same day or something?"
+
+Pre-r52b each bill was its own row with its own chip — May 15 showed two rows (Rent $3,000 + KIA Loan $780) with the same "15" chip stacked, May 30 showed two more (Allianz CTP + KIA Registration). Now bills are grouped by `(year, month, day)`:
+
+- Single-bill days: render as before (chip + name + amount).
+- Multi-bill days: one chip + day-header showing "2 bills · May $3,780" + nested sub-rows for each bill (indented under the chip, tappable individually).
+
+Compounds with r51's 25%-denser row size: a list of 15 monthly bills with several same-day clusters now renders in noticeably fewer visual rows.
+
+Gates: 0 FAILs, 62/62 tests, 51/51 runtime PASS.
+
 ### Round 51 — Darwin allocation surfacing + Monthly Bills compactness
 Phone-verify on r49+r50: 1/2/4/5/6/7 PASS, #3 PASS-with-question (Darwin missing from auto-allocate output), and a follow-up on #4 ("now it's just this massive list, needs to be more compactable better").
 

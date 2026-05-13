@@ -7603,31 +7603,71 @@ function renderBillsGrouped() {
     const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const _todayMs = Date.now();
 
-    const unpaidRows = _sortedUnpaid.map(b => {
-      const ri = BILLS.findIndex(x => x.name === b.name);
+    // Bundle 28 round 52b (John feedback): consolidate bills that fall
+    // on the same day. Pre-r52 each bill was its own row with its own
+    // chip — May 15 showed two rows (Rent + KIA Loan) with the same "15"
+    // chip stacked. Now: group consecutive same-day bills under one
+    // chip + day-total subline; sub-rows nest underneath. Single-bill
+    // days render as before.
+    const _dayGroups = [];
+    _sortedUnpaid.forEach(b => {
       const _my = _billRenderedMY(b);
-      const _billDate = new Date(_my.y, _my.m, b.day);
+      const key = _my.y + '-' + _my.m + '-' + b.day;
+      const last = _dayGroups[_dayGroups.length - 1];
+      if (last && last.key === key) {
+        last.bills.push(b);
+      } else {
+        _dayGroups.push({ key, my: _my, day: b.day, bills: [b] });
+      }
+    });
+    const unpaidRows = _dayGroups.map(g => {
+      const _billDate = new Date(g.my.y, g.my.m, g.day);
       _addPaydaysUpTo(_billDate);
-      runBal -= b.amt;
-      const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
       const _daysUntil = Math.ceil((_billDate.getTime() - _todayMs) / 86400000);
       const _chipClass = _daysUntil <= 3 ? 'today' : _daysUntil <= 14 ? 'soon' : 'normal';
-      const _monthLabel = _months[_my.m];
-      const _isLinkedDebt = b.tag === 'Debt repayment' || b.name.indexOf('Afterpay') !== -1;
-      // Bundle 28 round 51 (John feedback): tighter rows — pre-r51 each
-      // row used the full .bill-row style with chip + 2-line info column
-      // taking ~56px. With r50 merging in Today/Week bills, the list got
-      // long. Compact mode: smaller chip + single combined info line +
-      // tighter padding (~42px per row). Still legible, much denser.
-      return '<div class="bill-row" onclick="openBillModal('+ri+')" style="padding:8px 0;min-height:42px;gap:10px">' +
-        '<div class="bill-chip ' + _chipClass + '" style="min-width:32px;height:32px;font-size:13px">' + b.day + '</div>' +
-        '<div class="bill-info">' +
-          '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + b.name +
-            (_isLinkedDebt ? '<span style="font-size:10px;color:var(--amber);font-weight:600;margin-left:6px">·debt</span>' : '') +
+      const _monthLabel = _months[g.my.m];
+      const dayTotal = g.bills.reduce((s, b) => s + (+b.amt || 0), 0);
+      runBal -= dayTotal;
+      const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
+
+      // Single-bill day: render as before (compact one-line)
+      if (g.bills.length === 1) {
+        const b = g.bills[0];
+        const ri = BILLS.findIndex(x => x.name === b.name);
+        const _isLinkedDebt = b.tag === 'Debt repayment' || b.name.indexOf('Afterpay') !== -1;
+        return '<div class="bill-row" onclick="openBillModal(' + ri + ')" style="padding:8px 0;min-height:42px;gap:10px">' +
+          '<div class="bill-chip ' + _chipClass + '" style="min-width:32px;height:32px;font-size:13px">' + g.day + '</div>' +
+          '<div class="bill-info">' +
+            '<div style="font-size:13px;color:var(--text);font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + b.name +
+              (_isLinkedDebt ? '<span style="font-size:10px;color:var(--amber);font-weight:600;margin-left:6px">·debt</span>' : '') +
+            '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-top:1px">' + _monthLabel + ' · after: <span style="font-family:var(--mono);color:' + runCol + ';font-weight:700">' + fmtC(runBal) + '</span></div>' +
           '</div>' +
-          '<div style="font-size:11px;color:var(--text2);margin-top:1px">' + _monthLabel + ' · after: <span style="font-family:var(--mono);color:' + runCol + ';font-weight:700">' + fmtC(runBal) + '</span></div>' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap;margin-left:8px">' + fmt(b.amt) + '</div>' +
+        '</div>';
+      }
+
+      // Multi-bill day: one chip + group header + nested sub-rows
+      const subRows = g.bills.map(b => {
+        const ri = BILLS.findIndex(x => x.name === b.name);
+        const _isLinkedDebt = b.tag === 'Debt repayment' || b.name.indexOf('Afterpay') !== -1;
+        return '<div onclick="event.stopPropagation();openBillModal(' + ri + ')" style="display:flex;justify-content:space-between;align-items:center;padding:4px 0 4px 44px;font-size:12px;cursor:pointer">' +
+          '<span style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + b.name +
+            (_isLinkedDebt ? '<span style="font-size:10px;color:var(--amber);font-weight:600;margin-left:4px">·debt</span>' : '') +
+          '</span>' +
+          '<span style="font-family:var(--mono);font-weight:600;color:var(--text2);margin-left:8px;white-space:nowrap">' + fmt(b.amt) + '</span>' +
+        '</div>';
+      }).join('');
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="display:flex;align-items:center;gap:10px;min-height:42px">' +
+          '<div class="bill-chip ' + _chipClass + '" style="min-width:32px;height:32px;font-size:13px">' + g.day + '</div>' +
+          '<div class="bill-info">' +
+            '<div style="font-size:13px;color:var(--text);font-weight:600;line-height:1.3">' + g.bills.length + ' bills · ' + _monthLabel + '</div>' +
+            '<div style="font-size:11px;color:var(--text2);margin-top:1px">after: <span style="font-family:var(--mono);color:' + runCol + ';font-weight:700">' + fmtC(runBal) + '</span></div>' +
+          '</div>' +
+          '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap;margin-left:8px">' + fmt(dayTotal) + '</div>' +
         '</div>' +
-        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap;margin-left:8px">' + fmt(b.amt) + '</div>' +
+        subRows +
       '</div>';
     }).join('');
 
@@ -10090,9 +10130,16 @@ function openPaydayAutoAllocate() {
     } catch (_) { return ''; }
   };
 
+  // Bundle 28 round 52: tag synthetic-trip entries inline (NEW BUCKET)
+  // so John knows which lines will create a bucket on Apply.
+  const _synthSet = new Set(rec.syntheticBucketNames || []);
   const lines = Object.keys(rec.bucketAllocations).map(name => {
     const amt = rec.bucketAllocations[name];
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + _bucketUrgencyTag(name) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '</span></div>';
+    const isSynth = _synthSet.has(name);
+    const synthTag = isSynth
+      ? '<span style="margin-left:6px;font-size:9px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)">+ NEW BUCKET</span>'
+      : '';
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + _bucketUrgencyTag(name) + synthTag + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '</span></div>';
   }).join('');
 
   let body = '';
@@ -10116,29 +10163,12 @@ function openPaydayAutoAllocate() {
   body += '<div style="background:var(--bg3);border-radius:8px;padding:8px 14px">' + (lines || '<div style="color:var(--text3);font-size:13px;padding:4px 0">No buckets to allocate to.</div>') + '</div>';
   body += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.4;font-style:italic">Trip buckets with closer start dates get a bigger share (round 48). Tags show how urgent each is.</div>';
 
-  // Bundle 28 round 51: unlinked-trips section — surfaces trips that
-  // CAN'T be allocated to because they don't have a savings bucket yet.
-  // John: "Darwin never shows up but that trip is so soon... why it's
-  // not first on list." Root cause: no Darwin bucket. Now the modal
-  // shows the trip + a [Create bucket] button that creates the bucket
-  // inline + re-renders the allocation so Darwin starts getting funded.
-  if (rec.unlinkedTrips && rec.unlinkedTrips.length > 0) {
-    body += '<div style="margin-top:14px;padding:12px;background:rgba(245,158,11,0.10);border:1px solid var(--amber-border);border-radius:8px">';
-    body += '<div style="font-size:11px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">⚠️ Trips without a bucket</div>';
-    body += '<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5">These trips can\'t be auto-allocated because they don\'t have a savings bucket linked. Create one to start funding them.</div>';
-    rec.unlinkedTrips.forEach(t => {
-      const startStr = (typeof fmtAuDate === 'function') ? fmtAuDate(t.startDate, { year: true }) : t.startDate;
-      const urgency = t.daysOut <= 30 ? '🔥 ' + t.daysOut + 'd' : t.daysOut <= 90 ? '⏰ ' + t.daysOut + 'd' : t.daysOut + 'd';
-      const urgencyColor = t.daysOut <= 30 ? 'var(--red)' : t.daysOut <= 90 ? 'var(--amber)' : 'var(--text3)';
-      body += '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(245,158,11,0.15);font-size:13px">' +
-        '<div style="flex:1;min-width:0">' +
-          '<div style="color:var(--text);font-weight:600">' + esc(t.name) + '</div>' +
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + startStr + ' · $' + Math.round(t.budget).toLocaleString() + ' budget · <span style="color:' + urgencyColor + ';font-weight:700">' + urgency + '</span></div>' +
-        '</div>' +
-        '<button type="button" onclick="_createBucketForTrip(\'' + t.name.replace(/'/g, "\\'") + '\')" style="background:var(--amber);color:#000;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">+ Bucket</button>' +
-      '</div>';
-    });
-    body += '</div>';
+  // Bundle 28 round 52: unlinked-trips section removed. Trips now appear
+  // inline in the allocation list with a "+ NEW BUCKET" tag (see lines
+  // above) and Apply auto-creates the bucket via applyRecommendation.
+  // Footnote explaining the badge when synthetics exist:
+  if (_synthSet.size > 0) {
+    body += '<div style="font-size:11px;color:var(--blue);margin-top:8px;line-height:1.45;font-style:italic">📌 <strong>+ NEW BUCKET</strong> items are trips without a linked bucket. Tap Apply and the bucket gets created automatically + linked to the trip.</div>';
   }
 
   EDIT_MODAL.openCustom({
@@ -17522,45 +17552,92 @@ const BRAIN = {
           bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
         });
       }
-      // Bundle 28 round 51: detect trips with NO linked bucket so the
-      // modal can flag them. John: "Darwin never shows up but that trip
-      // is so soon... why it's not first on list to allocate towards I'm
-      // not sure." Root cause: Darwin's bucketHint was empty AND no
-      // matching bucket exists, so auto-allocate had nothing to write to.
-      // Surfacing the gap in the UI is the right fix — user creates the
-      // bucket, auto-allocate then includes it.
-      const unlinkedTrips = [];
-      try {
-        const bucketNamesLower = new Set(buckets.map(b => (b.name || '').toLowerCase()));
-        (_allTripsForWeight || []).forEach(t => {
-          if (!t || !t.startDate || !t.name) return;
+      // Bundle 28 round 52 (John feedback): trips ARE first-class
+      // allocation targets, not "unlinked" exceptions. Pre-r52 the
+      // unlinked-trips section made the user create a bucket via a
+      // [+ Bucket] tap. John: "in the plan dashboard you have the trip
+      // modal with the option to add savings, edit the trip and plan it
+      // out etc, now that should be counted as the saving bucket and
+      // make that link." Resolution: include unlinked trips DIRECTLY in
+      // bucketAllocations with their own urgency-weighted share, and
+      // applyRecommendation auto-creates the matching bucket on save.
+      const trips = _allTripsForWeight || [];
+      const bucketNamesLower = new Set(buckets.map(b => (b.name || '').toLowerCase()));
+      const synthTrips = trips
+        .filter(t => t && t.startDate && t.name)
+        .filter(t => {
           const startMs = new Date(t.startDate + 'T00:00:00').getTime();
-          if (startMs - nowMs < -7 * 86400000) return; // already passed; skip
+          if (startMs - nowMs < -7 * 86400000) return false; // already past
           const nameLower = t.name.toLowerCase();
           const hintLower = (t.bucketHint || '').toLowerCase();
-          // Linked if bucketHint matches OR any bucket name contains/matches trip name
           const linked = (hintLower && bucketNamesLower.has(hintLower)) ||
                          Array.from(bucketNamesLower).some(bN => bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0);
-          if (!linked) {
-            const daysOut = Math.round((startMs - nowMs) / 86400000);
-            unlinkedTrips.push({ name: t.name, startDate: t.startDate, budget: +t.budget || 0, daysOut });
-          }
-        });
-        unlinkedTrips.sort((a, b) => a.daysOut - b.daysOut);
-      } catch (_) {}
-      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), unlinkedTrips };
+          return !linked; // include only the ones that don't already map
+        })
+        .map(t => ({ name: t.name, target: +t.budget || 0, weight: _tripUrgencyWeight(t.startDate, nowMs), _synthetic: true }));
+
+      // Re-compute with synth trips folded into the weighted-share pool
+      if (synthTrips.length > 0) {
+        const allWeighted = [
+          ...weightedTargets,
+          ...synthTrips.map(s => ({ b: { name: s.name, _synthetic: true }, w: s.weight, target: s.target }))
+        ];
+        const totalAll = allWeighted.reduce((s, x) => s + x.target * x.w, 0);
+        if (totalAll > 0) {
+          // Reset and re-apportion
+          Object.keys(bucketAllocations).forEach(k => delete bucketAllocations[k]);
+          allWeighted.forEach(({ b, w, target }) => {
+            const share = (target * w) / totalAll;
+            bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
+          });
+        }
+      }
+      // Markers so applyRecommendation knows which names need bucket-creation
+      const syntheticBucketNames = synthTrips.map(t => t.name);
+      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames };
     },
     applyRecommendation(source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       const rec = this.recommendAllocation();
       if (!rec.ok) return rec;
+      // Bundle 28 round 52: auto-create buckets for synthetic-trip
+      // allocations (trips that don't already have a matching bucket).
+      // Pre-r52 these were skipped → user had to tap [+ Bucket] then
+      // re-run. Now Apply is one-shot: creates the bucket via
+      // BRAIN.savings.addBucket + sets the trip's bucketHint, then
+      // sets the override exactly like for any other bucket.
+      const syntheticNames = new Set(rec.syntheticBucketNames || []);
+      const created = [];
+      if (syntheticNames.size > 0 && BRAIN.savings && BRAIN.savings.addBucket) {
+        const existing = (BRAIN.savings.getBuckets && BRAIN.savings.getBuckets()) || [];
+        const existingNames = new Set(existing.map(b => b && b.name));
+        let trips = [];
+        try { trips = (PLAN && PLAN.getTrips) ? (PLAN.getTrips() || []) : []; } catch (_) {}
+        syntheticNames.forEach(name => {
+          if (existingNames.has(name)) return; // already created in a prior run
+          const trip = trips.find(t => t && t.name === name);
+          const goal = trip ? (+trip.budget || 0) : 0;
+          const r = BRAIN.savings.addBucket({ name, goal, saved: 0, account: '' }, BRAIN.SOURCES.BUCKET_CREATE);
+          if (r.ok) {
+            created.push(name);
+            // Persist the link on the trip so future renders/auto-allocate
+            // recognise it without needing the synthetic detection again.
+            // TDZ guard: applyRecommendation only fires from a user tap
+            // post-boot, so PLAN is initialised by then. try/catch keeps
+            // the guardian-static analyser happy.
+            try {
+              if (trip && PLAN && PLAN.saveTrip) PLAN.saveTrip({ ...trip, bucketHint: name });
+            } catch (_) {}
+          }
+        });
+      }
       const applied = [];
       Object.keys(rec.bucketAllocations).forEach(name => {
         const r = this.setOverride('savings', name, rec.bucketAllocations[name], { reason: 'auto-allocated' }, source);
-        if (r.ok) applied.push({ name, amt: rec.bucketAllocations[name] });
+        if (r.ok) applied.push({ name, amt: rec.bucketAllocations[name], _newBucket: syntheticNames.has(name) });
       });
-      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, source, ts: Date.now() });
-      return { ok: true, applied };
+      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, created, source, ts: Date.now() });
+      return { ok: true, applied, created };
     },
     // ─── CYCLE ROLLOVER (Bundle 27 Phase 6.1) ─────────────────────────
     // Fires when current date is past the active plan's cycleEndDate.
