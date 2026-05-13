@@ -193,7 +193,10 @@ body.edit-modal-open{overflow:hidden}
 .hdr{padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
 .hdr-logo{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-1px;color:var(--text)}
 .hdr-right{display:flex;align-items:center;gap:10px}
-.icon-btn{width:34px;height:34px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s}
+/* r70: removed grey circular bg + border + transition. John "looks tacky" — the grey oval behind each header icon competes with the icon itself for attention and "squishes" on tap. Now: ghost button — generous tap target via padding (preserves WCAG 44px), icon floats freely. Inline SVG size will be bumped 16→20 separately. */
+.icon-btn{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);padding:6px}
+.icon-btn svg{display:block}
+@media (hover:hover) { .icon-btn:hover{color:var(--text)} }
 /* r69: removed icon-btn :active background darken — opacity-dip handles tap feedback. */
 .icon-btn svg{opacity:.6}
 .pad{padding:16px 20px}
@@ -613,18 +616,19 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
       <div class="hdr-right">
         <div id="weather-hdr" style="font-size:12px;color:var(--text3);font-family:var(--mono);padding:2px 6px"></div>
         <button onclick="openPlanMode()" id="plan-pill" title="Future planning mode" style="background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);border-radius:14px;color:#4ECDC4;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0.05em;padding:5px 10px;min-height:28px;cursor:pointer">PLAN ›</button>
-        <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.4" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <!-- r70: header icons bumped 16→20px + stroke 1.4→1.8 for visibility on S23 Ultra; default color now var(--text2) via .icon-btn class (lighter than the prior var(--text3) inherited grey). -->
+        <div class="icon-btn" onclick="openScannerModal()" title="Scan financial document" id="scan-hdr-btn" aria-label="Scan financial document">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="10" cy="10" r="3" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M3 7h2M15 7h2M3 13h2M15 13h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
-        <div class="icon-btn" id="notif-btn" onclick="NOTIFY.toggleDrawer()" title="Notifications" style="position:relative">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 1 6 6v3l2 3H2l2-3V8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" fill="none"/><path d="M8 17a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>
-          <div id="notif-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:10px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
+        <div class="icon-btn" id="notif-btn" onclick="NOTIFY.toggleDrawer()" title="Notifications" aria-label="Notifications" style="position:relative">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a6 6 0 0 1 6 6v3l2 3H2l2-3V8a6 6 0 0 1 6-6z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M8 17a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>
+          <div id="notif-badge" style="display:none;position:absolute;top:0;right:0;min-width:16px;height:16px;background:var(--red);color:#fff;border-radius:8px;font-size:10px;font-weight:700;font-family:var(--mono);align-items:center;justify-content:center;padding:0 3px">0</div>
         </div>
-        <div class="icon-btn" onclick="softRefresh()" title="Sync latest balance from Virgin Money">
-          <svg width="16" height="16" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="icon-btn" onclick="softRefresh()" title="Sync latest balance from Virgin Money" aria-label="Refresh balance">
+          <svg width="20" height="20" viewBox="0 0 14 14" fill="none"><path d="M2 7a5 5 0 1 0 1-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2 3v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <div class="icon-btn" onclick="goPage('pg-settings')" title="Settings">
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <div class="icon-btn" onclick="goPage('pg-settings')" title="Settings" aria-label="Open settings">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
       </div>
     </div>
@@ -19783,8 +19787,65 @@ const BRAIN = {
         source: ctx.source,
         ts: Date.now()
       });
+      // r70: Property Deposit closed loop. If the just-paid bill carries
+      // `breakdown.depositSavings`, propagate the deposit portion to the
+      // linked viaRent debt (decrement amt) AND the linked savings source
+      // (mumAccountBalance) so the Property Deposit goal's `saved` reflects
+      // the new total. Once debt amt drops to 0 set d.paid = true so the
+      // immediate-debts grid filter removes it (John can also clear it from
+      // there). All wrapped in try/catch so any failure doesn't block the
+      // bill-paid write.
+      try { this._propagateDepositLoop(key, ctx); } catch (e) {
+        if (typeof console !== 'undefined') console.warn('[deposit-loop]', e);
+      }
       try { save(); } catch (_) {}
       return { ok: true, key, entry };
+    },
+
+    // r70: Property Deposit closed loop. Idempotent — keyed on paidBills key
+    // so a re-call (e.g. consumePendingPay running twice) won't double-apply.
+    _propagateDepositLoop(key, ctx) {
+      // Extract bill name + day from key (format: YYYY-M-NAME-DAY)
+      const parts = key.split('-');
+      if (parts.length < 4) return;
+      const billName = parts.slice(2, -1).join('-');
+      const BILLS_ref = (typeof BILLS !== 'undefined') ? BILLS : [];
+      const bill = BILLS_ref.find(b => b && b.name === billName);
+      if (!bill || !bill.breakdown) return;
+      const deposit = +bill.breakdown.depositSavings;
+      if (!(deposit > 0)) return;
+      // Find the viaRent debt linked to this bill (by rentBillName or fallback name match).
+      const debt = (S.debts || []).find(d =>
+        d && d.viaRent && !d.paid && (
+          d.rentBillName === billName ||
+          (!d.rentBillName && /(rent|deposit)/i.test(billName))
+        )
+      );
+      if (!debt) return;
+      // Idempotency guard — if THIS paidBills key already propagated, skip.
+      if (!S._depositLoopApplied) S._depositLoopApplied = {};
+      if (S._depositLoopApplied[key]) return;
+      const before = { amt: +debt.amt || 0, mumAccount: +S.mumAccountBalance || 0 };
+      const newAmt = Math.max(0, before.amt - deposit);
+      debt.amt = newAmt;
+      S.mumAccountBalance = before.mumAccount + deposit;
+      S._depositLoopApplied[key] = true;
+      const cleared = newAmt <= 0.005;
+      if (cleared) debt.paid = true;
+      BRAIN.audit.append({
+        type: 'deposit_loop_applied',
+        source: ctx.source,
+        billKey: key,
+        billName,
+        depositPortion: deposit,
+        debtId: debt.id,
+        debtAmtBefore: before.amt,
+        debtAmtAfter: newAmt,
+        mumAccountBefore: before.mumAccount,
+        mumAccountAfter: S.mumAccountBalance,
+        debtCleared: cleared,
+        ts: Date.now()
+      });
     },
 
     // ─── Canonical writer: unmark ───────────────────────────────────────

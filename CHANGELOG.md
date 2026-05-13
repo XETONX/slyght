@@ -122,6 +122,33 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 70 — Property Deposit closed loop + header icon polish
+End-of-session two-fix wrap-up addressing John's final phone-verify items.
+
+**Header icon "grey oval" removed** (`index.html:196`) — `.icon-btn` was rendering as a 34×34 circle with `background:var(--bg3)` and `border:1px solid var(--border)`. The grey circular fill behind each header icon (scanner, bell, refresh, settings) competed visually with the icon glyph and "squished" on tap. Fix:
+- Removed background + border + transition. Icon now floats freely.
+- Bumped tap target via `min-width/min-height:44px` (WCAG-safe via padding instead of explicit dimensions).
+- Color shifted from inherited `--text3` (medium grey) → `var(--text2)` (lighter grey for distinguishability without being fully white).
+- SVG icons bumped 16px → 20px and stroke-width 1.4 → 1.8 for better visibility on the S23 Ultra.
+- Hover state gated on `@media (hover:hover)` — no stuck-hover shading on touch.
+- Bell notification badge re-anchored to icon corner since the surrounding circle wrapper is gone.
+
+**Property Deposit global closed loop** (`index.html:19773+`) — John ask: "$2500 each month should transfer to the property deposit savings goal in the PLAN dashboard and the $3000 will increase by the debt tile amount paid... so it all links". Implementation:
+- New `BRAIN.bills._propagateDepositLoop(key, ctx)` fires from `_setPaidEntry` after the paidBills entry is written.
+- Reads `bill.breakdown.depositSavings` for the just-paid bill.
+- Finds the matching viaRent debt (`d.rentBillName === billName` OR fallback name regex `/(rent|deposit)/i`).
+- Decrements `d.amt -= deposit` (clamped to 0) AND increments `S.mumAccountBalance += deposit`.
+- `S.mumAccountBalance` feeds `PLAN.getGoals().find(g => g.id === 'apartment').saved` (existing canonical path), so the Property Deposit goal in the PLAN dashboard auto-reflects the new total.
+- When `d.amt <= 0.005`, sets `d.paid = true` so the debt drops out of the immediate-debts filter.
+- Idempotent via `S._depositLoopApplied[key]` — re-calling markPaid for the same bill key won't double-apply.
+- Full audit-log entry on every propagation: `type: 'deposit_loop_applied'`, before/after amounts, deposit portion, debtCleared flag.
+
+Net effect: pay the May 15 "Rent + Deposit Savings" bill → Property Deposit debt drops $5,681 → $3,181 → Property Deposit goal saved jumps $3,000 → $5,500. Repeat monthly. After ~3 months the debt clears; the goal saved keeps growing toward $50k.
+
+**Deferred to next session** (memory: `slyght_debt_archive_pattern`): the generalized "$0 debt → Remove debt button → archive (preserve history)" pattern. r70 sets `d.paid = true` when amt drops to 0 (so the tile filters out), but a visible **Remove debt** quick-action button + move to `S.archivedDebts[]` is the next round.
+
+Gates: 65/65 tests, 51/51 runtime, 4/4 guardians green.
+
 ### Round 69 — Wrap-up: residual shading + paycheck framing + Property Deposit global sync
 End-of-session three-fix wrap-up per John's phone-verify feedback on r58-r68.
 
