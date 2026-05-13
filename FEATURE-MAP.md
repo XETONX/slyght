@@ -198,6 +198,39 @@ Hero balance was REMOVED from Settings Bundle 28 round 2 — dashboard hero is s
 - `explainMaxPerDay` → rich HTML rebuild (round 9). Hero gradient card + progress bar with colour-by-percentage + money breakdown grid table + time math + today's outflow split + timing-aware warning card
 - `buildSpendingPivot` debt category tip → reformatted (round 9). Bulleted category list + bold total + recommendation in muted text
 
+## Rounds 43–51 additions to the map
+
+**Phone-verify-driven fixes (rounds 45–51):**
+- `renderAlerts` "safe" calc — round 45 removed bucket double-subtraction + strict `< paydayDate` for debts on the safe line. The Canvas-wide `safe` value now matches John's "$11 - $31 = -$20" mental model.
+- `renderAllocateTile` (PLAN dashboard) — round 47 rewired to read `BRAIN.plan.getSnapshot()` (same source as Canvas) so both surfaces show identical "$X left to allocate" headline. Includes annual provisions in essentials.
+- `renderPaydayPlanRoot` — round 47 added Annual Provisions as 4th Essentials category with `🏦` icon. Tap → `explainAnnualProvisions()` modal showing per-month + per-year for each (Teachers Health / KIA insurance/service/rego/green slip).
+- `renderPaydayBills` — round 47 split each section (Before/After payday) into UNPAID (visible) + PAID (collapsed `<details>`). r50 then merged `today + week + next + later` into Monthly section so the comprehensive monthly view shows every bill in the cycle. r51 tightened row density (~25% denser).
+- `renderPaydayDebts` — round 47 includes viaRent debts sorted to the end with `🏠 VIA RENT` + `$X/mo via salary` subline tags. autoDebit debts get `🤖 AUTO`.
+- `openEditPaydayBill` — round 49 rewrote with Paid/Deferred toggle (was quick-pick grid). Defer mode opens amount + late-fee fields with live "carries to next cycle $X" preview.
+- `openEditPaydayDebt` — round 49 dropped 125%/150% rows from quick picks; now 0/25%/50%/75%/100% + Custom.
+- `openPaydayAutoAllocate` — round 49 led with `🔒 Already covered first` essentials breakdown; r51 added unlinked-trips section with `[+ Bucket]` action button (triggers `_createBucketForTrip`).
+- `buildDebtFreedomProjection` — r39 urgency-bucket sort; r42 within-bucket daysUntil tiebreaker; r48 included monthly-payment-freed compound effect.
+- `explainMaxPerDay` + `explainWeekProjection` — r45/r48 added "📈 What is pace?" card with concrete numbers (daily target / expected / actual / over-under).
+- New `fmtAuDate(d, opts)` helper at top of script (after `fmtC`). Style short `21 May` / long `21st May`. Auto-includes year when out-of-current-year.
+- `openBnplModal` — r36/r41/r48: per-payment + payments-remaining + freq + start. r48 calendar-aware date math via `setDate` (was UTC-via-toISOString — off-by-one). r50 preview now uses fmtAuDate.
+
+**Canonical writers (rounds 10–23, doc reference):**
+- `BRAIN.transaction.update(ts, patch, source)` + `removeByTsWithBalance` — round 10 + r11 (sign-fix) + r12 (idempotency)
+- `BRAIN.assets.setWrxValue` / `setWrxStatus` — round 13
+- `BRAIN.assets.setKiaEarlyRepayFee` / `resetKiaEarlyRepayFee` — round 19
+- `BRAIN.chat` bubble (12th) — round 14
+- `BRAIN.cycle` bubble (13th) — round 17 for paydayReceived lifecycle
+- `BRAIN.config.setApiKey` / `setApiAlertThreshold` — rounds 15/21
+- `BRAIN.audit.appendReconLog` / `query(criteria)` — rounds 18/20
+- 60+ `BRAIN.SOURCES` tags (frozen + `_SOURCE_SET` literal)
+- `_autoExpireDebts` helper called from `onStateChange` + post-load (r35/r42)
+- `_isBillActiveAsOf(b, asOfDate)` filter inside `getExpandedBills` (r35)
+- `BRAIN.audit.query({type, typePrefix, source, sourcePrefix, sinceTs, untilTs, predicate, limit})` — AI introspection API (r20)
+
+**ADRs + docs:**
+- `docs/adr/ADR-001-canonical-writer-pattern.md` — accepted, captures pattern + 13 bubbles
+- `docs/manual-amendments/AMENDMENT-001-noticed-action-plans.md` — phone-verify format
+
 ## Rounds 29–42 additions to the map
 
 **Debt tiles (round 29):**
