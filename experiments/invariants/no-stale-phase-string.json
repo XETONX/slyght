@@ -1,0 +1,49 @@
+{
+  "name": "no-stale-phase-string",
+  "version": "1.0.0",
+  "layer": 1,
+  "severity": "warn",
+  "anchor": "AUDIT-A1 root-cause #3, Bundle 28 §17.1.1",
+  "introduced": "2026-05-13",
+  "description": "Flag string literals that reference future-phase work after that phase has shipped.",
+  "rationale": "When 'coming Phase 7' survives past Phase 7 shipping, users see lies in the UI and the codebase carries dead promises. Bundle 27 left a stale 'lands Phase 7' toast at index.html:8369 even though Phase 7 was wired.",
+  "scope": {
+    "type": "string-literal",
+    "kinds": ["Literal", "TemplateLiteral"]
+  },
+  "pattern": {
+    "regex": "Phase\\s+\\d+\\s+(candidate|coming|lands|stub)",
+    "case_insensitive": true
+  },
+  "allow_contexts": [
+    {
+      "kind": "comment_above",
+      "marker": "guardian-allow: no-stale-phase-string",
+      "must_include_reason": true,
+      "removability_required": true
+    }
+  ],
+  "error_message_template": "Stale phase reference '{{match}}' at {{file}}:{{line}}. If this phase has shipped, remove the message. If not, add a // guardian-allow: no-stale-phase-string — <reason> (removable when X) comment.",
+  "test_fixtures": [
+    {
+      "name": "fires on stale toast",
+      "code": "showToast('Ask AI — full context lands Phase 7');",
+      "expected": "fail"
+    },
+    {
+      "name": "fires on stub alert",
+      "code": "alert('KIA extra editor — Phase 6 candidate');",
+      "expected": "fail"
+    },
+    {
+      "name": "passes with guardian-allow",
+      "code": "// guardian-allow: no-stale-phase-string — kept for cross-bundle reference (removable when Bundle 29 ships)\nshowToast('Phase 5 background work running...');",
+      "expected": "pass"
+    },
+    {
+      "name": "passes on unrelated text",
+      "code": "const phase = 'production';",
+      "expected": "pass"
+    }
+  ]
+}

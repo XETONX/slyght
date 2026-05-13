@@ -1,0 +1,49 @@
+{
+  "name": "no-direct-intents-write",
+  "version": "1.0.0",
+  "layer": 1,
+  "severity": "fail",
+  "anchor": "Bundle 28 §17.1.2",
+  "introduced": "2026-05-13",
+  "description": "Block direct mutation of S.planIntents outside BRAIN.plan.intent canonical writers.",
+  "rationale": "Every intent mutation must go through BRAIN.plan.intent.{add,update,remove,setBucket} so source-tag is validated and BRAIN.audit captures the change. Direct .push/.splice bypasses both. Mirrors no-direct-debts-mutation precedent.",
+  "scope": {
+    "type": "member-expression",
+    "object": "S",
+    "property": "planIntents",
+    "ops": ["push", "splice", "pop", "shift", "unshift"]
+  },
+  "also_block": {
+    "type": "assignment",
+    "target_pattern": "S.planIntents[*]"
+  },
+  "allow_contexts": [
+    {
+      "kind": "enclosing_fn",
+      "names": ["add", "update", "_archive", "setBucket", "load", "seedV25_collapseIntents"]
+    },
+    {
+      "kind": "comment_above",
+      "marker": "guardian-allow: no-direct-intents-write",
+      "must_include_reason": true
+    }
+  ],
+  "error_message_template": "Direct intents mutation at {{file}}:{{line}}. Use BRAIN.plan.intent.{add,update,remove,setBucket}(...) instead. (Canonical writers validate source-tag and audit the change.)",
+  "test_fixtures": [
+    {
+      "name": "fires on .push outside writer",
+      "code": "function someHandler() { S.planIntents.push({ id: 'foo' }); }",
+      "expected": "fail"
+    },
+    {
+      "name": "passes inside add()",
+      "code": "BRAIN.plan.intent = { add(intent, src) { S.planIntents.push(intent); } };",
+      "expected": "pass"
+    },
+    {
+      "name": "passes inside seedV25_collapseIntents",
+      "code": "function seedV25_collapseIntents() { S.planIntents.push(...); }",
+      "expected": "pass"
+    }
+  ]
+}

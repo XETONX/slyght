@@ -11,3 +11,7 @@ test-reports/
 SLYGHT ENV KEY.txt
 *.key
 *ENV*KEY*
+
+# Audit A1 cleanup — large binaries kept on disk, not in git history
+archive/exports/
+archive/screenshots/
