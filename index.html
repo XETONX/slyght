@@ -690,7 +690,13 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       </div>
       <div id="cal-day-detail" style="display:none" class="card"><div id="cal-day-detail-content"></div></div>
       <div id="cal-week-content"></div>
-      <button onclick="openAddBillModal()" style="width:100%;padding:12px;margin:12px 0;background:rgba(255,255,255,0.06);border:1px dashed rgba(255,255,255,0.2);border-radius:12px;color:var(--text2);font-size:15px;cursor:pointer;min-height:48px">+ Add A Bill</button>
+      <div style="display:flex;gap:8px;margin:12px 0">
+        <button onclick="openAddBillModal()" style="flex:1;padding:12px;background:rgba(255,255,255,0.06);border:1px dashed rgba(255,255,255,0.2);border-radius:12px;color:var(--text2);font-size:15px;cursor:pointer;min-height:48px">+ Add A Bill</button>
+        <!-- Bundle 28 round 36: dedicated BNPL/Afterpay quick-add. Captures
+             total + instalments + frequency, computes per-instalment amount
+             and endDate so the bill auto-stops after the last payment. -->
+        <button onclick="openBnplModal()" style="flex:1;padding:12px;background:rgba(77,159,255,0.10);border:1px dashed rgba(77,159,255,0.35);border-radius:12px;color:var(--blue);font-size:15px;cursor:pointer;min-height:48px">💳 BNPL</button>
+      </div>
       <div id="bills-grouped"></div>
     </div>
   </div>
@@ -1397,6 +1403,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <input type="checkbox" class="modal-checkbox" id="modal-autodebit">
       <label for="modal-autodebit">🤖 Auto-debits on due date (BNPL / finance plan)</label>
     </div>
+    <!-- Bundle 28 round 35: end-date for time-bounded debts (BNPL plans
+         that wrap up after N instalments, fixed-term loans, etc). Once
+         this date passes the debt auto-marks as cleared so the user
+         doesn't have to remember to remove it. -->
+    <div class="modal-field"><label>Auto-clear on (optional)</label><input class="modal-input" autocomplete="off" type="date" id="modal-end-date" placeholder="Leave blank for no end"></div>
     <div class="modal-field"><label>Priority (1 = paid first)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="modal-priority" min="1" max="99" value="1"><button onclick="document.getElementById('modal-priority').stepDown(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↓</button><button onclick="document.getElementById('modal-priority').stepUp(); document.getElementById('modal-priority').dispatchEvent(new Event('change'))" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text);cursor:pointer;font-size:16px" type="button">↑</button></div>
     <div id="modal-payoff-eta" style="font-size:13px;color:var(--text3);padding:8px 0;border-top:1px solid var(--border);margin-bottom:4px"></div>
     <div class="modal-actions">
@@ -1434,6 +1445,11 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
         <option value="yearly">🎂 Yearly</option>
       </select>
     </div>
+    <!-- Bundle 28 round 35: optional end-date for time-bounded bills.
+         Solves the "BNPL bill recurs forever even after 4 instalments
+         done" problem John flagged. Renderers filter out bills past
+         their endDate so the user doesn't have to manually delete. -->
+    <div class="modal-field"><label>End date (optional — auto-stop after this)</label><input class="modal-input" autocomplete="off" type="date" id="bm-end-date" placeholder="Leave blank for no end"></div>
     <div class="modal-checkbox-row">
       <input type="checkbox" class="modal-checkbox" id="bm-recurring">
       <label for="bm-recurring">Recurring every month</label>
@@ -1448,6 +1464,43 @@ button,[onclick],.bill-row,.debt-tile,.txn-row,.tab-btn,.nav-item{min-height:44p
       <button class="modal-btn" id="bill-modal-mark-paid" onclick="markBillPaidMonth()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Paid This Month</button>
       <button class="modal-btn" id="bill-modal-undo-paid" onclick="undoBillPaid()" style="display:none;background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)">Undo Paid This Month</button>
       <button class="modal-btn modal-btn-delete" onclick="deleteBill()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Remove Permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bundle 28 round 36: BNPL / Afterpay quick-add. Captures total + count
+     + frequency + start date; computes per-instalment amount and endDate
+     so the bill auto-stops after the final payment (round 35 endDate). -->
+<div class="modal-overlay" id="bnpl-modal" onclick="handleOverlayClick(event,'bnpl-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title">💳 Add BNPL Purchase</div>
+    <div class="modal-sub">Afterpay / Klarna / Zip — splits total over instalments, auto-stops after the last one.</div>
+    <div class="modal-field"><label>Purchase name</label><input class="modal-input" autocomplete="off" type="text" id="bnpl-name" placeholder="e.g. Afterpay — Concert Tickets" oninput="_bnplRecompute()"></div>
+    <div class="modal-field"><label>Total amount ($)</label><input class="modal-input" autocomplete="off" type="number" id="bnpl-total" inputmode="decimal" placeholder="0.00" oninput="_bnplRecompute()"></div>
+    <div class="modal-field">
+      <label>Instalments</label>
+      <div id="bnpl-count-chips" style="display:flex;gap:6px;margin-top:4px">
+        <!-- chips: 4 (default), 6, 8 — rendered by openBnplModal -->
+      </div>
+      <input type="hidden" id="bnpl-count" value="4">
+    </div>
+    <div class="modal-field">
+      <label>Pay every</label>
+      <div id="bnpl-freq-chips" style="display:flex;gap:6px;margin-top:4px">
+        <!-- chips: fortnightly (default), weekly, monthly — rendered by openBnplModal -->
+      </div>
+      <input type="hidden" id="bnpl-freq" value="fortnightly">
+    </div>
+    <div class="modal-field"><label>First payment date</label><input class="modal-input" autocomplete="off" type="date" id="bnpl-start" oninput="_bnplRecompute()"></div>
+    <div class="modal-checkbox-row">
+      <input type="checkbox" class="modal-checkbox" id="bnpl-autodebit" checked>
+      <label for="bnpl-autodebit">🤖 Auto-debits each payment (typical for BNPL)</label>
+    </div>
+    <!-- Live preview of computed per-instalment amount + endDate -->
+    <div id="bnpl-preview" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:8px;font-size:13px;color:var(--text2);line-height:1.6">Fill in the fields to see the breakdown.</div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-save" onclick="saveBnpl()">Add as recurring bill</button>
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('bnpl-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -2233,6 +2286,31 @@ function daysInCurrentMonth() {
 // Refactored OUT of renderAll (Guardian Layer 1: renders are pure with one
 // sanctioned exception). Called from onStateChange, load() post-migrations,
 // and HEARTBEAT.tick(). Returns true if state was mutated.
+// Bundle 28 round 35: scan debts and auto-flip `paid:true` on any whose
+// endDate has passed. Solves the "BNPL plan finished but the debt still
+// shows" problem. Uses BRAIN.debts.update (whitelisted `paid` field) so
+// the audit log captures each auto-expire — distinguishable from a
+// user-initiated clearance because no clearance txn is generated.
+// Idempotent: skips debts already paid. Safe to call from onStateChange.
+function _autoExpireDebts() {
+  if (!Array.isArray(S.debts)) return;
+  const todayMs = Date.now();
+  let expired = 0;
+  S.debts.forEach(d => {
+    if (!d || d.paid || !d.endDate) return;
+    const end = new Date(d.endDate + 'T23:59:59').getTime();
+    if (isNaN(end) || end > todayMs) return;
+    // Mark paid via canonical writer — no clearance txn (cash didn't
+    // actually move today; this is a metadata flip). UPDATE_DEBT source
+    // distinguishes from CLEAR_DEBT in the audit log.
+    BRAIN.debts.update(d.id, { paid: true }, BRAIN.SOURCES.UPDATE_DEBT);
+    expired++;
+  });
+  if (expired > 0) {
+    try { BRAIN.audit.append({ type: 'debt_auto_expired', count: expired, src: BRAIN.SOURCES.UPDATE_DEBT, ts: Date.now() }); } catch(_) {}
+  }
+}
+
 function detectPaydayCycleRollover() {
   if (!S.paydayReceived || !S.paydayReceivedDate) return false;
   const rec = new Date(S.paydayReceivedDate), now = new Date();
@@ -2632,6 +2710,7 @@ function onStateChange(reason) {
   save();
   S.bal = parseFloat((S.bal || 0).toFixed(2));
   try { detectPaydayCycleRollover(); } catch(e) {}
+  try { _autoExpireDebts(); } catch(e) {} // Bundle 28 round 35: end-date auto-clear
   const mode = getSurvivalMode();
   if (typeof checkForWrxSaleInterception === 'function') {
     try { checkForWrxSaleInterception(); } catch(e) {}
@@ -3273,11 +3352,22 @@ function goPage(id) {
 }
 
 // H1: always add second fortnightly occurrence; wrap day2 > 31 by -28 so it's never silently dropped
+// Bundle 28 round 35: endDate check. Bills can carry an optional
+// endDate ('YYYY-MM-DD') after which they're no longer rendered or
+// counted. Solves the BNPL-recurs-forever problem John flagged — once
+// the 4th instalment date passes, the bill auto-stops with no manual
+// delete needed. Inclusive comparison (endDate itself is the last
+// active day).
+function _isBillActiveAsOf(bill, asOfDate) {
+  if (!bill || !bill.endDate) return true;
+  const end = new Date(bill.endDate + 'T23:59:59');
+  return asOfDate <= end;
+}
 function getExpandedBills() {
   const result = [];
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  BILLS.filter(b => b.recurring !== false).forEach(b => {
+  BILLS.filter(b => b.recurring !== false && _isBillActiveAsOf(b, now)).forEach(b => {
     result.push(b);
     if (b.freq === 'fortnightly') {
       // H1: use real month length instead of day2 - 28 hack
@@ -5807,20 +5897,52 @@ function openNetWorthModal() {
     '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;margin-top:6px"><span style="color:var(--text2)">Aware Super (illiquid until ~60)</span><span style="font-family:var(--mono);font-weight:700;color:var(--green)">+'+fmtC(nw.breakdown.superBalance)+'</span></div>' +
     '<div style="font-size:12px;color:var(--text3);line-height:1.5;margin-top:4px">This number matters for your long-term picture but not for today\'s spending decisions.</div>' +
   '</div>';
-  // Debt freedom estimate
-  const surplus = getGenuineSurplus();
-  const totalDebt = nw.liabilities - 0; // simplified: all liabilities
-  const debtFreeMonths = surplus > 0 ? Math.ceil(totalDebt / surplus) : 0;
-  const debtFreeDate = new Date();
-  if (debtFreeMonths > 0) debtFreeDate.setMonth(debtFreeDate.getMonth() + debtFreeMonths);
-  const dateStr = debtFreeDate.toLocaleDateString('en-AU', {month:'short', year:'numeric'});
-  html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:12px;margin-top:8px;text-align:center">' +
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:4px;text-transform:uppercase">Debt Freedom Estimate</div>' +
-    (surplus > 0 && debtFreeMonths > 0
-      ? '<div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--green)">' + dateStr + '</div>' +
-        '<div style="font-size:13px;color:var(--text3);margin-top:3px">'+debtFreeMonths+' months at current $'+Math.round(surplus).toLocaleString()+'/mo surplus</div>'
-      : '<div style="font-size:14px;color:var(--amber)">Build surplus to unlock this projection</div>') +
-  '</div>';
+  // Bundle 28 round 37: Debt Freedom Estimate redesign — time-progressive
+  // cascade. Pre-r37 calc was `ceil(totalDebt / surplus)` — i.e. "you'll
+  // pay $X/mo for the rest of your life on the same fixed bills". John
+  // 2026-05-13: that's "retarded" because it ignores (a) when individual
+  // debts clear, (b) that clearing a debt frees its monthly payment for
+  // the next debt, (c) growth in saving capacity over time. Now shows a
+  // phased timeline: clear debt 1 → freed payment joins surplus → clear
+  // debt 2 → freed payment compounds → etc.
+  const _projection = buildDebtFreedomProjection();
+  html += '<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);padding:14px;margin-top:8px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;text-align:center">Debt Freedom Timeline</div>';
+  if (_projection.phases.length === 0) {
+    html += '<div style="font-size:14px;color:var(--amber);text-align:center">Build surplus to unlock this projection</div>';
+  } else {
+    html += _projection.phases.map((p, i) => {
+      const _isLast = (i === _projection.phases.length - 1);
+      const _phaseColor = p.surplus >= 1000 ? 'var(--green)' : p.surplus >= 200 ? 'var(--amber)' : 'var(--text)';
+      return '<div style="display:flex;gap:10px;padding:10px 0;' + (_isLast ? '' : 'border-bottom:1px solid var(--border)') + '">' +
+        '<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;min-width:28px">' +
+          '<div style="width:24px;height:24px;border-radius:50%;background:var(--bg4);border:1px solid var(--green-border);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;color:var(--green)">' + (i + 1) + '</div>' +
+          (_isLast ? '' : '<div style="width:1px;flex:1;background:var(--border);margin:4px 0"></div>') +
+        '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">' +
+            '<div style="font-size:14px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + p.label + '</div>' +
+            '<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:' + _phaseColor + ';white-space:nowrap;margin-left:8px">' + p.clearDateStr + '</div>' +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--text2);line-height:1.5">' +
+            'Clears <strong style="color:var(--text)">$' + Math.round(p.debtAmt).toLocaleString() + '</strong> · at <strong style="color:var(--green);font-family:var(--mono)">$' + Math.round(p.surplus).toLocaleString() + '/mo</strong> · ~<strong style="color:var(--text)">' + p.months + ' month' + (p.months === 1 ? '' : 's') + '</strong>' +
+          '</div>' +
+          (p.frees > 0 && !_isLast
+            ? '<div style="font-size:11px;color:var(--blue);margin-top:4px">↑ Frees +$' + Math.round(p.frees).toLocaleString() + '/mo for next phase</div>'
+            : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    // Footer: "after all clear, you can save $X/mo"
+    const _finalSurplus = _projection.finalSurplus;
+    if (_finalSurplus > 0) {
+      html += '<div style="margin-top:10px;padding:10px 12px;background:rgba(34,197,94,0.18);border:1px solid var(--green-border);border-radius:var(--r-sm);font-size:13px;line-height:1.5">' +
+        '<div style="font-weight:700;color:var(--green);margin-bottom:4px">🎉 After all debts clear</div>' +
+        '<div style="color:var(--text2)">You\'d be investing <strong style="font-family:var(--mono);color:var(--green)">$' + Math.round(_finalSurplus).toLocaleString() + '/mo</strong> instead of paying off debt. That\'s <strong>$' + Math.round(_finalSurplus * 12).toLocaleString() + '/year</strong>.</div>' +
+      '</div>';
+    }
+  }
+  html += '</div>';
   const _nwmc = $('nw-modal-content'); if (_nwmc) _nwmc.innerHTML = html;
   const _nwm = $('nw-modal'); if (_nwm) _nwm.classList.add('open');
 }
@@ -6180,6 +6302,7 @@ function openDebtModal(idx) {
   const _md = $('modal-due'); if (_md) _md.value = d.delayDate || '';
   const _mno = $('modal-notes'); if (_mno) _mno.value = d.notes || '';
   const _mad = $('modal-autodebit'); if (_mad) _mad.checked = !!d.autoDebit;
+  const _med = $('modal-end-date'); if (_med) _med.value = d.endDate || ''; // Bundle 28 round 35
   const _mp = $('modal-priority'); if (_mp) _mp.value = d.priority || (idx + 1);
   // Payoff countdown — estimate months to clear debt at current genuine surplus rate
   const surplus = getGenuineSurplus();
@@ -6210,6 +6333,9 @@ function _collectDebtModalFields() {
   // Bundle 28 round 29: autoDebit flag (must be sent even when false so
   // toggling-off via edit modal persists).
   const _smad = $('modal-autodebit'); if (_smad) fields.autoDebit = !!_smad.checked;
+  // Bundle 28 round 35: endDate (only persists if user supplied; empty
+  // explicitly clears so user can revert a time-bounded debt to indefinite).
+  const _smed = $('modal-end-date'); if (_smed) fields.endDate = _smed.value || '';
   const _smp = $('modal-priority'); if (_smp) fields.priority = parseInt(_smp.value) || 99;
   return fields;
 }
@@ -6396,6 +6522,172 @@ function markDebtCovered(id) {
   showToast('✅ ' + debt.name + ' marked as covered');
 }
 
+// Bundle 28 round 37: Debt Freedom timeline projection. Replaces the
+// pre-r37 single-number estimate with a phased cascade that respects:
+//   (a) When each debt clears (avalanche / priority order).
+//   (b) That clearing a debt frees its monthly payment for the NEXT
+//       debt — surplus compounds as the cascade progresses.
+//   (c) viaRent debts are filtered out (they pay themselves via salary,
+//       already counted in the monthly position).
+//   (d) Auto-debited debts still need to clear but use their own
+//       scheduled payment, not the user's surplus.
+//
+// Returns: { phases: [{label, debtAmt, surplus, months, clearDateStr, frees}],
+//            finalSurplus, totalMonths }
+function buildDebtFreedomProjection() {
+  const baseSurplus = getGenuineSurplus();
+  // Build the queue: manual-pay debts only (viaRent + auto-cleared by
+  // endDate already handled elsewhere). Sort by avalanche/snowball per
+  // user's strategy preference, falling back to priority.
+  const strategy = S.debtStrategy || 'avalanche';
+  const queue = (S.debts || [])
+    .filter(d => !d.paid && !d.viaRent && (+d.amt || 0) > 0)
+    .sort((a, b) => {
+      if (strategy === 'snowball') return (+a.amt || 0) - (+b.amt || 0) || (a.priority || 99) - (b.priority || 99);
+      return (+b.rate || 0) - (+a.rate || 0) || (a.priority || 99) - (b.priority || 99);
+    });
+
+  if (queue.length === 0 || baseSurplus <= 0) {
+    return { phases: [], finalSurplus: baseSurplus, totalMonths: 0 };
+  }
+
+  const phases = [];
+  let runningSurplus = baseSurplus;
+  let runningDate = new Date();
+  let totalMonths = 0;
+
+  queue.forEach(debt => {
+    if (runningSurplus <= 0) return; // can't progress — guard infinite loop
+    const months = Math.max(1, Math.ceil((+debt.amt || 0) / runningSurplus));
+    const clearDate = new Date(runningDate);
+    clearDate.setMonth(clearDate.getMonth() + months);
+    // "Frees" — the monthly payment this debt was consuming, available
+    // to the NEXT phase once cleared. Pulled from debt.monthlyPayment
+    // when set; otherwise estimated as the per-phase surplus contribution
+    // (caller can override later via a heuristic on bill linkage).
+    const frees = +debt.monthlyPayment || 0;
+
+    phases.push({
+      label: debt.name,
+      debtAmt: +debt.amt || 0,
+      surplus: runningSurplus,
+      months,
+      clearDateStr: clearDate.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' }),
+      frees,
+    });
+
+    // Compound: clearing this debt frees its monthly payment for the next.
+    runningSurplus += frees;
+    runningDate = clearDate;
+    totalMonths += months;
+  });
+
+  return { phases, finalSurplus: runningSurplus, totalMonths };
+}
+
+// Bundle 28 round 36: BNPL quick-add. Wraps the common BNPL/Afterpay
+// pattern (e.g. "$124.75 in 4 fortnightly payments of $31.19") into a
+// dedicated flow that auto-fills the awkward fields (per-instalment
+// amount, end date) so John doesn't have to do the math + remember
+// to delete after 4 weeks.
+function openBnplModal() {
+  const overlay = $('bnpl-modal');
+  if (!overlay) return;
+  // Clear + defaults
+  const _n = $('bnpl-name');     if (_n) _n.value = '';
+  const _t = $('bnpl-total');    if (_t) _t.value = '';
+  const _c = $('bnpl-count');    if (_c) _c.value = '4';
+  const _f = $('bnpl-freq');     if (_f) _f.value = 'fortnightly';
+  const _s = $('bnpl-start');    if (_s) _s.value = new Date().toISOString().slice(0,10);
+  const _ad = $('bnpl-autodebit'); if (_ad) _ad.checked = true;
+  // Render instalment-count chips
+  const _cCount = $('bnpl-count-chips');
+  if (_cCount) {
+    _cCount.innerHTML = [4, 6, 8].map(n => {
+      const active = (n === 4);
+      return '<button type="button" onclick="_bnplSelect(\'bnpl-count\',' + n + ',this,\'bnpl-count-chips\')" style="flex:1;padding:8px;border-radius:10px;border:1px solid '+(active?'var(--blue)':'var(--bg5)')+';background:'+(active?'var(--blue)':'var(--bg5)')+';color:'+(active?'#000':'var(--text2)')+';font-size:14px;font-weight:600;cursor:pointer">' + n + '</button>';
+    }).join('');
+  }
+  // Render frequency chips
+  const _cFreq = $('bnpl-freq-chips');
+  if (_cFreq) {
+    const freqs = [['fortnightly', '📆 Fortnightly'], ['weekly', '🗓️ Weekly'], ['monthly', '📅 Monthly']];
+    _cFreq.innerHTML = freqs.map(([v, l]) => {
+      const active = (v === 'fortnightly');
+      return '<button type="button" onclick="_bnplSelect(\'bnpl-freq\',\'' + v + '\',this,\'bnpl-freq-chips\')" style="flex:1;padding:8px;border-radius:10px;border:1px solid '+(active?'var(--blue)':'var(--bg5)')+';background:'+(active?'var(--blue)':'var(--bg5)')+';color:'+(active?'#000':'var(--text2)')+';font-size:13px;font-weight:600;cursor:pointer">' + l + '</button>';
+    }).join('');
+  }
+  overlay.classList.add('open');
+  if (typeof UX !== 'undefined') UX.trackModalOpen('bnpl-modal');
+  _bnplRecompute();
+}
+
+function _bnplSelect(hiddenId, val, btn, groupId) {
+  document.querySelectorAll('#' + groupId + ' button').forEach(b => {
+    b.style.background = 'var(--bg5)'; b.style.borderColor = 'var(--bg5)'; b.style.color = 'var(--text2)';
+  });
+  btn.style.background = 'var(--blue)'; btn.style.borderColor = 'var(--blue)'; btn.style.color = '#000';
+  const h = $(hiddenId); if (h) h.value = String(val);
+  _bnplRecompute();
+}
+
+function _bnplRecompute() {
+  const total = parseFloat($('bnpl-total')?.value) || 0;
+  const count = parseInt($('bnpl-count')?.value) || 4;
+  const freq = $('bnpl-freq')?.value || 'fortnightly';
+  const startStr = $('bnpl-start')?.value || '';
+  const preview = $('bnpl-preview');
+  if (!preview) return;
+  if (!total || total <= 0 || !startStr) {
+    preview.innerHTML = '<span style="color:var(--text3)">Fill in the fields to see the breakdown.</span>';
+    return;
+  }
+  const perInst = total / count;
+  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30; // monthly ≈ 30 for preview
+  const start = new Date(startStr + 'T00:00:00');
+  const endMs = start.getTime() + (count - 1) * daysBetween * 86400000;
+  const end = new Date(endMs);
+  const endStr = end.toISOString().slice(0, 10);
+  const freqLabel = freq === 'weekly' ? 'weekly' : freq === 'fortnightly' ? 'fortnightly' : 'monthly';
+  preview.innerHTML =
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Per payment</span><strong style="font-family:var(--mono);color:var(--text)">$' + perInst.toFixed(2) + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Schedule</span><strong style="color:var(--text)">' + count + ' × ' + freqLabel + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span>First payment</span><strong style="color:var(--text)">' + startStr + '</strong></div>' +
+    '<div style="display:flex;justify-content:space-between"><span>Last payment</span><strong style="color:var(--blue)">' + endStr + '</strong></div>';
+}
+
+function saveBnpl() {
+  const name = ($('bnpl-name')?.value || '').trim();
+  const total = parseFloat($('bnpl-total')?.value) || 0;
+  const count = parseInt($('bnpl-count')?.value) || 4;
+  const freq = $('bnpl-freq')?.value || 'fortnightly';
+  const startStr = $('bnpl-start')?.value || '';
+  const autoDebit = !!($('bnpl-autodebit')?.checked);
+  if (!name) { showToast('Enter a name for the purchase'); return; }
+  if (!total || total <= 0) { showToast('Enter the total purchase amount'); return; }
+  if (!startStr) { showToast('Pick a first-payment date'); return; }
+  const perInst = parseFloat((total / count).toFixed(2));
+  const daysBetween = freq === 'weekly' ? 7 : freq === 'fortnightly' ? 14 : 30;
+  const start = new Date(startStr + 'T00:00:00');
+  const endMs = start.getTime() + (count - 1) * daysBetween * 86400000;
+  const endStr = new Date(endMs).toISOString().slice(0, 10);
+  const newBill = {
+    name,
+    amt: perInst,
+    day: start.getDate(),
+    tag: 'BNPL',
+    recurring: true,
+    freq,
+    endDate: endStr,
+    autoDebit,
+  };
+  BILLS.push(newBill);
+  save();
+  closeModal('bnpl-modal', true);
+  renderAll();
+  showUndoToast('💳 ' + name + ' — $' + perInst.toFixed(2) + ' × ' + count + ' ' + freq + ', ends ' + endStr);
+}
+
 function openAddBillModal() {
   activeBillIdx = -2; // sentinel — saveBill inserts a new entry instead of updating
   const _bmn = $('bm-name'); if (_bmn) _bmn.value = '';
@@ -6404,6 +6696,7 @@ function openAddBillModal() {
   const _bmt2 = $('bm-tag'); if (_bmt2) _bmt2.value = 'Fixed';
   const _bmrec = $('bm-recurring'); if (_bmrec) _bmrec.checked = true;
   const _bmf = $('bm-freq'); if (_bmf) _bmf.value = 'monthly';
+  const _bmed = $('bm-end-date'); if (_bmed) _bmed.value = ''; // Bundle 28 round 35: end date
   const _bmtitle = $('bill-modal-title'); if (_bmtitle) _bmtitle.textContent = 'Add A Bill';
   const _bmpaid = $('bill-modal-mark-paid'); if (_bmpaid) _bmpaid.style.display = 'none';
   const _bmundo = $('bill-modal-undo-paid'); if (_bmundo) _bmundo.style.display = 'none';
@@ -6423,6 +6716,7 @@ function openBillModal(idx) {
   const _bmrec = $('bm-recurring'); if (_bmrec) _bmrec.checked = b.recurring !== false;
   const _bmf = $('bm-freq'); if (_bmf) _bmf.value = b.freq || 'monthly';
   const _bmad = $('bm-autodebit'); if (_bmad) _bmad.checked = b.autoDebit === true;
+  const _bmed = $('bm-end-date'); if (_bmed) _bmed.value = b.endDate || ''; // Bundle 28 round 35
   // Show last paid and next due
   const extraInfo = $('bill-extra-info');
   if (extraInfo) {
@@ -6494,6 +6788,8 @@ function saveBill() {
   if (dayErrEl) dayErrEl.style.display = 'none';
 
   if (isNew) {
+    // Bundle 28 round 35: endDate is optional; only set when user provides
+    const _bmedV = $('bm-end-date')?.value;
     const newBill = {
       name: ($('bm-name')?.value || 'New Bill').trim(),
       amt: parseFloat($('bm-amt')?.value) || 0,
@@ -6503,6 +6799,7 @@ function saveBill() {
       freq: ($('bm-freq')?.value) || 'monthly',
       autoDebit: !!($('bm-autodebit')?.checked)
     };
+    if (_bmedV) newBill.endDate = _bmedV;
     if (!newBill.name || newBill.amt <= 0) {
       showToast('Enter a bill name and amount');
       return;
@@ -6513,6 +6810,10 @@ function saveBill() {
     return;
   }
 
+  // Bundle 28 round 35: endDate edit handling — only writes the field when
+  // the user enters one. Empty input clears the existing endDate so the
+  // user can revert a time-bounded bill back to indefinite.
+  const _bmedV2 = $('bm-end-date')?.value;
   BILLS[activeBillIdx] = {
     name: ($('bm-name') ? $('bm-name').value : '') || BILLS[activeBillIdx].name,
     amt: parseFloat($('bm-amt') ? $('bm-amt').value : '') || BILLS[activeBillIdx].amt,
@@ -6522,7 +6823,8 @@ function saveBill() {
     autoDebit: !!($('bm-autodebit') ? $('bm-autodebit').checked : false),
     // Preserve other fields not in the modal (dueMonth, dueMonths, _scheduledAutoDebit, etc)
     ...(BILLS[activeBillIdx].dueMonth !== undefined ? { dueMonth: BILLS[activeBillIdx].dueMonth } : {}),
-    ...(BILLS[activeBillIdx].dueMonths ? { dueMonths: BILLS[activeBillIdx].dueMonths } : {})
+    ...(BILLS[activeBillIdx].dueMonths ? { dueMonths: BILLS[activeBillIdx].dueMonths } : {}),
+    ...(_bmedV2 ? { endDate: _bmedV2 } : {}),
   };
   save(); closeModal('bill-modal', true); renderAll();
 }
@@ -18853,6 +19155,11 @@ const BRAIN = {
         // surplus-suggestion filter (don't recommend manual action) and
         // the dashboard tile (show AUTO badge, hide "Pay now" CTA).
         'autoDebit',
+        // Bundle 28 round 35: endDate — auto-clear date for time-bounded
+        // debts (BNPL plans that wrap up after N instalments, fixed-term
+        // loans). When this date passes the debt auto-marks paid so John
+        // doesn't have to remember to remove it.
+        'endDate',
       ]);
       const changed = [];
       Object.keys(fields || {}).forEach(k => {

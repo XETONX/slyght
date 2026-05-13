@@ -106,6 +106,41 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Rounds 35–37 — End-date support + BNPL quick-add + Debt Freedom timeline
+Bigger asks from John's feedback batch after rounds 31–33. Memories from that turn (`feedback-slyght-info-density-discipline`, `feedback-slyght-text-contrast`) shaped the design choices below.
+
+**Round 35 — End-date on bills + debts**
+
+John: "I could add it as a recurring bill but then I need to remind myself after it's been paid for 4 weeks to delete, so there's no option to add an end date on a bill or debt."
+
+- New optional `endDate` field on bill schema. Surfaced in bill-modal as "End date (optional — auto-stop after this)". `getExpandedBills` now filters via new `_isBillActiveAsOf` helper so expired bills disappear from all downstream consumers (calendar, week projection, monthly total) without per-renderer edits.
+- New optional `endDate` field on debt schema. Surfaced in debt-modal as "Auto-clear on (optional)". Added to `BRAIN.debts.update` MUTABLE allow-set.
+- New `_autoExpireDebts()` helper called from `onStateChange` (and the post-load path). Scans debts, marks `paid:true` via canonical writer when `endDate` passes. No clearance txn (cash didn't actually move today — metadata flip only). Audit emits `debt_auto_expired` summary.
+
+**Round 36 — BNPL / Afterpay quick-add modal**
+
+John: "nice feature for a debt logged as Afterpay for it to have a different modal when creating that bill is that the total amount and then how it gets broken down into 4."
+
+- New `💳 BNPL` button next to `+ Add A Bill` in the Bills tab.
+- New `bnpl-modal` captures: purchase name, total amount, instalment count (chip picker: 4 / 6 / 8), frequency (chip picker: fortnightly / weekly / monthly), first-payment date, auto-debit flag.
+- Live preview panel shows the computed per-instalment amount + last-payment date as the user types.
+- On Save: creates a recurring bill with `amt = total / instalments`, `freq` per chip, `endDate` calculated as `start + (instalments-1) × freq_days`, `tag: 'BNPL'`, `autoDebit` from checkbox.
+- Result: one row to manage, auto-stops after the last instalment, John doesn't have to remember to delete it.
+
+**Round 37 — Debt Freedom Estimate redesign**
+
+John: "Debt freedom estimate in networth is retarded like as if I'm actually going to put away $95 a month for the rest of my life as if it's considering I'll always have these fixed bills with no growth etc."
+
+Pre-r37 calc: `ceil(totalDebt / surplus)` — one number, "X months at $Y/mo surplus." Ignored that clearing a debt frees its monthly payment for the next debt.
+
+Now a phased cascade:
+- New `buildDebtFreedomProjection()` helper. Sorts manual-pay debts by user's `debtStrategy` (avalanche/snowball). For each debt: computes months-to-clear at the current surplus, projects clear date, captures the `monthlyPayment` it frees up.
+- Each phase compounds: when debt 1 clears, its monthly payment joins the surplus for debt 2 → bigger surplus → faster clear.
+- Rendered as a vertical timeline in the Net Worth modal — numbered nodes, debt name + clear date + monthly surplus + months, plus a "↑ Frees +$X/mo for next phase" note where applicable.
+- Footer panel: "After all debts clear, you'd be investing $X/mo instead of paying off debt. That's $X×12/year."
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Round 34 — Quick wins from John's feedback batch
 Phone-verify on 31–33 returned 1/2/3/4/5 PASS. Item #3 PASS with question — "need to understand what this means - tappable or info tag etc". Plus a new feedback batch about Quick Log UX, bill frequency, and debt UX.
 
