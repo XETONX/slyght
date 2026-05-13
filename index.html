@@ -442,6 +442,11 @@ body:has(.edit-modal.open){overflow:hidden;position:relative}
 .nw-val.pos{color:var(--green)}.nw-val.neg{color:var(--red)}
 /* PRIORITY */
 .pri-badge{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:10px;font-weight:700;margin-right:5px;flex-shrink:0}
+/* Bundle 28 round 32: dt-tag is for wide text badges (AUTO / VIA RENT)
+   that can't fit in the 18×18 .pri-badge circle. Pill shape sized to
+   content, sits on its own row above the name so the name keeps full
+   horizontal width and the 2-line clamp (round 27) works as designed. */
+.dt-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.04em;white-space:nowrap;line-height:1.4;margin-bottom:6px}
 /* COMPACT INFO LINE */
 .info-line{font-size:13px;color:var(--text3);padding:2px 0;display:flex;align-items:center;gap:6px;margin-bottom:2px}
 /* EXPAND CARD */
@@ -2335,6 +2340,48 @@ function getMaxDay() {
 // that are interactive or clean and bold for me to understand with
 // percentages or visuals etc". Now uses HTML cards + gradient hero +
 // visual progress bar + bold $ + colour-coded sections.
+// Bundle 28 round 33: Monthly Bills math explainer. Tap on the "?" in
+// the Monthly Bills header → opens EDIT_MODAL.openInfo describing what
+// the running balance means + how the chip colors are picked.
+function explainMonthlyBills() {
+  try {
+    const body =
+      '<div style="line-height:1.6;color:var(--text2);font-size:14px">' +
+        '<div style="margin-bottom:12px">Every recurring bill due in the next ~30 days, in chronological order. The list helps you see what\'s coming and whether your balance covers it.</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Day badge color</div>' +
+          '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">' +
+            '<span class="bill-chip today">15</span><span><strong style="color:var(--red)">Red</strong> · due in 3 days or less</span>' +
+            '<span class="bill-chip soon">15</span><span><strong style="color:var(--amber)">Amber</strong> · due in 4–14 days</span>' +
+            '<span class="bill-chip normal">15</span><span><strong style="color:var(--text)">Normal</strong> · more than 14 days away</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">"After this $X" balance</div>' +
+          '<div style="color:var(--text2);font-size:13px">The projected balance after this bill debits, assuming all earlier bills land and payday income arrives on schedule. <strong style="color:var(--red)">Red</strong> means you\'d be in the negative; <strong style="color:var(--amber)">amber</strong> means under $200 buffer; <strong style="color:var(--green)">green</strong> means comfortable.</div>' +
+        '</div>' +
+
+        '<div style="background:var(--bg3);border-radius:8px;padding:12px;margin-bottom:10px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">"Same as debt" tag</div>' +
+          '<div style="color:var(--text2);font-size:13px">Bills like Afterpay also appear in your Immediate Debts list. The tag warns that paying it twice (once as bill, once as debt) double-counts.</div>' +
+        '</div>' +
+
+        '<div style="background:rgba(34,197,94,0.10);border:1px solid var(--green-border);border-radius:8px;padding:12px">' +
+          '<div style="font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Monthly total (unpaid)</div>' +
+          '<div style="color:var(--text2);font-size:13px">Sum of all bills above that are still unpaid this cycle. Bills already paid this month (collapsible row below) don\'t count.</div>' +
+        '</div>' +
+      '</div>';
+
+    if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+      EDIT_MODAL.openInfo({ title: '📋 Monthly bills — how to read', body });
+    }
+  } catch (e) {
+    console.warn('[explainMonthlyBills] failed:', e);
+  }
+}
+
 // Bundle 28 round 30: Week projection math explainer. Tap on the "?"
 // in the Dynamic Week Projection card → opens EDIT_MODAL.openInfo with
 // per-line math. Matches the explainMaxPerDay shape so the dashboard
@@ -5453,20 +5500,28 @@ function renderAll() {
     }
   }
   if (_paceDisp) {
-    const _weekAgo2 = Date.now() - 7*86400000;
-    // Bundle 28 Phase 28.0.5: dashboard pace tile now uses STRICT discretionary
-    // (computeSpentInRange) instead of LAX getDiscretionarySpend. Pre-fix the
-    // pace tile inflated by paid bills + savings transfers, falsely showing
-    // "over pace" after a bills-heavy week even when discretionary spend was
-    // fine. Closes OPEN-BUGS #8 for this renderer.
-    const _weekSpent = computeSpentInRange(_weekAgo2, Date.now());
-    const _weekAvg = _weekSpent / 7;
-    const _maxD2 = getDynamicDailyBudget();
-    const _diff = Math.abs(_weekAvg - _maxD2);
-    _paceDisp.textContent = _weekAvg <= _maxD2
-      ? 'Running $' + _diff.toFixed(2) + ' under pace this week ✅'
-      : 'Running $' + _diff.toFixed(2) + ' over pace this week ⚠️';
-    _paceDisp.style.color = _weekAvg <= _maxD2 ? 'var(--text3)' : 'var(--red)';
+    // Bundle 28 round 31: aligned with Bills tab Dynamic Week Projection
+    // pace calc. Pre-round-31 dashboard used a rolling-7-day average vs
+    // dailyBudget while the Bills tab used calendar-week (Mon→today) spent
+    // vs expected. Two "Running $X over pace this week" messages with
+    // DIFFERENT numbers — confusing and (per OPEN-BUGS info-density rule)
+    // misleading. Now both surfaces read getThisWeekProjection so they
+    // agree.
+    // Bundle 28 Phase 28.0.5 (history): the prior rolling-7-day path was
+    // STRICT discretionary via computeSpentInRange — still strict here,
+    // since getThisWeekProjection's spentSoFar reads from the same
+    // canonical helper.
+    const _proj = (typeof getThisWeekProjection === 'function') ? getThisWeekProjection() : null;
+    if (_proj) {
+      const _paceOver = _proj.spentSoFar - _proj.dailyRate * _proj.daysSoFarInWeek;
+      const _absDiff = Math.abs(_paceOver);
+      _paceDisp.textContent = _paceOver > 0
+        ? 'Running $' + _absDiff.toFixed(2) + ' over pace this week ⚠️'
+        : 'Running $' + _absDiff.toFixed(2) + ' under pace this week ✅';
+      _paceDisp.style.color = _paceOver > 0 ? 'var(--red)' : 'var(--text3)';
+    } else {
+      _paceDisp.textContent = '';
+    }
   }
 
 
@@ -5922,16 +5977,24 @@ function renderDebtTiles() {
         : '';
     }
 
-    // Bundle 28 round 29: badge override — viaRent shows VIA-RENT,
-    // autoDebit shows AUTO, otherwise the standard priority number.
-    let priBadge;
+    // Bundle 28 round 32: badge placement now branches by content shape.
+    //   Priority digit (1/2/3) → inline 18×18 circle, before the name on
+    //     same row (compact — round 29 behavior preserved for manual debts).
+    //   Wide text tag (AUTO / VIA RENT) → pill-shaped .dt-tag on its own
+    //     row ABOVE the name. The 2-line name clamp (round 27) then has
+    //     full horizontal width to work with, instead of wrapping around
+    //     a badge that's wider than .pri-badge's 18px and was squishing
+    //     into "AU / TO" vertical text (round 29 visual regression John
+    //     flagged 2026-05-13).
+    let inlineBadge = '';   // sits before the name on the same row
+    let tagRow = '';        // sits on its own row above the name
     if (isViaRent) {
-      priBadge = '<span class="pri-badge" style="background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border);font-size:9px;letter-spacing:0.04em">VIA RENT</span>';
+      tagRow = '<div><span class="dt-tag" style="background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)">VIA RENT</span></div>';
     } else if (isAuto) {
-      priBadge = '<span class="pri-badge" style="background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.4);font-size:9px;letter-spacing:0.04em">🤖 AUTO</span>';
+      tagRow = '<div><span class="dt-tag" style="background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.4)">🤖 AUTO</span></div>';
     } else {
       const pri = d.priority || (i+1);
-      priBadge = '<span class="pri-badge" style="background:' +
+      inlineBadge = '<span class="pri-badge" style="background:' +
         (pri===1?'var(--green-dim)':pri===2?'var(--amber-dim)':'var(--bg4)') + ';color:' +
         (pri===1?'var(--green)':pri===2?'var(--amber)':'var(--text3)') + ';border:1px solid ' +
         (pri===1?'var(--green-border)':pri===2?'var(--amber-border)':'var(--border2)') + '">' + pri + '</span>';
@@ -5957,7 +6020,8 @@ function renderDebtTiles() {
     }
 
     return '<div class="debt-tile" onclick="openDebtModal('+ri+')">' +
-      '<div class="dt-name">'+priBadge + esc(d.name) + (d.linkedLiability ? '<span style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:700;background:var(--red-dim);padding:1px 4px;border-radius:3px;margin-left:3px">⚠️ LINKED</span>' : '') + '</div>' +
+      tagRow +
+      '<div class="dt-name">'+inlineBadge + esc(d.name) + (d.linkedLiability ? '<span style="font-size:10px;color:var(--red);font-family:var(--mono);font-weight:700;background:var(--red-dim);padding:1px 4px;border-radius:3px;margin-left:3px">⚠️ LINKED</span>' : '') + '</div>' +
       '<div class="dt-amt '+col+'">' + fmt(d.amt) + '</div>' +
       intTicker +
       monthlyPayStr +
@@ -6941,6 +7005,22 @@ function renderBillsGrouped() {
       _checkpointDate = new Date(targetDate);
     }
 
+    // Bundle 28 round 33: Monthly Bills visual revamp matching the Week
+    // Projection redesign style (round 30). Key changes:
+    //   - bill-chip day badge (already used by Due Today / This Week groups
+    //     above — visual consistency across the Bills tab)
+    //   - Color-coded chip: red ≤3 days, amber ≤14, normal otherwise
+    //   - Better contrast: date labels were `--text3` on `--bg3` (per the
+    //     new contrast feedback memory — that combo is unreadable on phone).
+    //     Now month/year tag in `--text2`, running-balance amount in its
+    //     own color, name in full `--text`.
+    //   - Running balance shown as labelled `→ $X after` instead of bare
+    //     arrow (was ambiguous in the screenshots).
+    //   - Header has "?" tap → explainMonthlyBills() math modal.
+    //   - Footer total promoted to bold + larger, divider above.
+    const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const _todayMs = Date.now();
+
     const unpaidRows = _sortedUnpaid.map(b => {
       const ri = BILLS.findIndex(x => x.name === b.name);
       const _my = _billRenderedMY(b);
@@ -6948,29 +7028,56 @@ function renderBillsGrouped() {
       _addPaydaysUpTo(_billDate);
       runBal -= b.amt;
       const runCol = runBal < 0 ? 'var(--red)' : runBal < 200 ? 'var(--amber)' : 'var(--green)';
-      const _months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const _dateLabel = b.day + ' ' + _months[_my.m];
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="openBillModal('+ri+')">' +
-        '<div style="min-width:0"><div style="font-size:14px;color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+(b.tag==='Debt repayment'||b.name.indexOf('Afterpay')!==-1?'<span style="font-size:12px;color:var(--text3);margin-left:6px">(same as debt above)</span>':'')+'</div>' +
-        '<div style="font-size:12px;color:var(--text3)">'+_dateLabel+'</div></div>' +
-        '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">'+fmt(b.amt)+'</div>' +
-        '<div style="font-family:var(--mono);font-size:10px;color:'+runCol+'">→ '+fmtC(runBal)+'</div></div></div>';
+      const _daysUntil = Math.ceil((_billDate.getTime() - _todayMs) / 86400000);
+      const _chipClass = _daysUntil <= 3 ? 'today' : _daysUntil <= 14 ? 'soon' : 'normal';
+      const _monthLabel = _months[_my.m];
+      const _isLinkedDebt = b.tag === 'Debt repayment' || b.name.indexOf('Afterpay') !== -1;
+      return '<div class="bill-row" onclick="openBillModal('+ri+')">' +
+        '<div class="bill-chip ' + _chipClass + '">' + b.day + '</div>' +
+        '<div class="bill-info">' +
+          '<div style="font-size:14px;color:var(--text);font-weight:500;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + b.name +
+            (_isLinkedDebt ? '<span style="font-size:11px;color:var(--amber);font-weight:600;margin-left:6px">· same as debt</span>' : '') +
+          '</div>' +
+          '<div style="font-size:12px;color:var(--text2);margin-top:3px">' + _monthLabel + ' · after this <span style="font-family:var(--mono);color:' + runCol + ';font-weight:700">' + fmtC(runBal) + '</span></div>' +
+        '</div>' +
+        '<div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap;margin-left:8px">' + fmt(b.amt) + '</div>' +
+      '</div>';
     }).join('');
 
     const paidRows = upcomingPaid.map(b => {
       const ri = BILLS.findIndex(x => x.name === b.name);
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer;opacity:0.6" onclick="openBillModal('+ri+')">' +
-        '<div style="min-width:0"><div style="font-size:14px;color:var(--text3);text-decoration:line-through;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+b.name+'</div>' +
-        '<div style="font-size:12px;color:var(--text3)">day '+b.day+'</div></div>' +
-        '<div style="text-align:right;white-space:nowrap;margin-left:8px"><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text3)">'+fmt(b.amt)+'</div>' +
-        '<div style="font-family:var(--mono);font-size:10px;color:var(--green)">✓ paid</div></div></div>';
+      return '<div class="bill-row" onclick="openBillModal('+ri+')" style="opacity:0.55">' +
+        '<div class="bill-chip normal" style="text-decoration:line-through">' + b.day + '</div>' +
+        '<div class="bill-info">' +
+          '<div style="font-size:14px;color:var(--text2);text-decoration:line-through;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + b.name + '</div>' +
+          '<div style="font-size:12px;color:var(--green);margin-top:3px;font-weight:600">✓ paid</div>' +
+        '</div>' +
+        '<div style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text3);text-align:right;white-space:nowrap;margin-left:8px;text-decoration:line-through">' + fmt(b.amt) + '</div>' +
+      '</div>';
     }).join('');
 
-    monthlyHtml = '<div class="bills-group"><div class="bills-group-hdr"><div class="bills-group-title">Monthly Bills</div><div class="bills-group-total" style="color:var(--text3)">'+fmt(monthlyTotal)+'</div></div>' +
-      '<div class="card" style="padding:4px 16px">' + unpaidRows +
-      (upcomingPaid.length ? '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--text3);padding:8px 0;list-style:none">Paid this month ✓ ('+upcomingPaid.length+')</summary>'+paidRows+'</details>' : '') +
-      '<div style="display:flex;justify-content:space-between;padding:10px 0 4px"><span style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Monthly total (unpaid)</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text)">'+fmt(monthlyTotal)+'</span></div>' +
-      '</div></div>';
+    monthlyHtml =
+      // Header row with title + total + "?" math tap
+      '<div class="bills-group">' +
+        '<div class="bills-group-hdr" style="margin-bottom:10px">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<div class="bills-group-title">Monthly Bills</div>' +
+            '<button onclick="explainMonthlyBills()" aria-label="How this is calculated" style="background:var(--bg4);border:1px solid var(--border2);border-radius:50%;width:22px;height:22px;color:var(--text3);font-size:12px;font-weight:700;cursor:pointer;line-height:1;padding:0;flex-shrink:0">?</button>' +
+          '</div>' +
+          '<div class="bills-group-total" style="color:var(--text)">' + fmt(monthlyTotal) + '</div>' +
+        '</div>' +
+        '<div class="card" style="padding:4px 16px">' +
+          unpaidRows +
+          (upcomingPaid.length
+            ? '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--text2);padding:10px 0;list-style:none">▸ Paid this month ✓ (' + upcomingPaid.length + ')</summary>' + paidRows + '</details>'
+            : ''
+          ) +
+          '<div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0 8px;margin-top:4px;border-top:1px solid var(--border2)">' +
+            '<span style="font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Monthly total (unpaid)</span>' +
+            '<span style="font-family:var(--mono);font-size:16px;font-weight:800;color:var(--text)">' + fmt(monthlyTotal) + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
   }
   c.innerHTML = warn + renderGroup('Due Today', grouped.today, 'today') + renderGroup('This Week', grouped.week, 'week') + monthlyHtml;
 }

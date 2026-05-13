@@ -106,6 +106,48 @@ Closes 2 Noticed items from `315431c` surfacing.
 - `no-third-discretionary-filter-array` L14846 (`_DEBT_CATS` inline) — promoted to module-level canonical `_DEBT_CATEGORIES_SET` near `_NON_SPEND_CATS`; usage migrated to `Set.has()`
 - Gates: 0 FAILs, 41 pre-existing future-proofing WARNs (magic strings for survival mode + debt strategy — out of scope for this commit)
 
+### Rounds 31–33 — Pace alignment, debt badge fix, Monthly Bills revamp
+John feedback after rounds 29–30 surfaced three further issues. Two new memories saved on the same turn:
+- `feedback-slyght-text-contrast` — grey-on-grey hurts; numbers always `--text`, labels `--text2`, `--text3` for decorative only
+- `feedback-slyght-info-density-discipline` — before adding info to a tile, check: important? makes sense? fits 380px? conflicts with other tiles?
+
+**Round 31 — Pace alignment between Dashboard and Bills tab**
+
+John: "MAX per day text 'running over pace this week' is conflicting with the same message in bills tab in this week projection."
+
+Two surfaces showed `Running $X over pace this week` with DIFFERENT $X values because they used different calcs:
+- Dashboard: rolling 7-day average × daily-budget
+- Bills tab: calendar-week (Mon→today) spent × expected daily × elapsed days
+
+Now both read `getThisWeekProjection()` so they agree. Per the new info-density discipline memory, two tiles showing the same label with different numbers is worse than the info appearing once — even after the alignment, the dashboard pace line is shorter context (uses absDiff + simple direction).
+
+**Round 32 — Debt tile badge squish fix**
+
+John flagged screenshot: `🤖 AUTO` and `VIA RENT` badges from round 29 were squished into the 18×18 `.pri-badge` circle, wrapping internally as "AU/TO" vertical text and forcing the name into awkward two-line wraps.
+
+Root cause: `.pri-badge` CSS was sized for single-digit priority numbers (1, 2, 3). Text labels overflow the fixed 18px width.
+
+Fix:
+- New `.dt-tag` class — pill-shaped, padded, sized to content, `white-space:nowrap`
+- For viaRent / autoDebit debts, the tag renders on its OWN row above the name (full horizontal width for the 2-line name clamp)
+- Priority-digit debts keep the inline 18×18 `.pri-badge` circle (round 29 behavior preserved)
+
+**Round 33 — Monthly Bills visual revamp**
+
+John: "Monthly Bills tile needs to be formatted better visually same revamp as you did for dynamic weekly projection."
+
+Per the contrast feedback memory, the pre-round-33 render had `color:var(--text3)` on `var(--bg3)` everywhere — pretty but unreadable. Per the info-density discipline, `→ $7,594.23` was ambiguous (what is that number?). And visual consistency with the rest of the Bills tab was inconsistent (Due Today / This Week sections used `.bill-chip` day badges; Monthly Bills used plain text).
+
+Fix:
+- Reuse `.bill-row` + `.bill-chip` from Due-Today/This-Week sections — visual consistency across the tab
+- Color-coded day chip: red if ≤3 days away, amber if ≤14, normal otherwise
+- Date label: `--text2` not `--text3` (per contrast memory)
+- Running balance: labelled `after this $X` (was bare `→ $X` arrow), with `$X` color-coded by runway health
+- Header gets a `?` tap target → `explainMonthlyBills()` modal explaining chip color, running-balance meaning, "same as debt" tag, and monthly-total semantics
+- Footer total: bold 16px monospaced + divider above
+
+Gates: 0 FAILs, 49/49 tests, 51/51 runtime PASS.
+
 ### Rounds 29–30 — Surplus suggestion fix, dashboard/auto-sort parity, autoDebit flag, Week Projection redesign
 John phone-verify on rounds 25–28: rounds 25/27/28 PASS; round 26 needed user help (added memory `feedback-phone-verify-instructiveness`). New bugs surfaced:
 
