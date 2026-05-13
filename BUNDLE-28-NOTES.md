@@ -182,6 +182,31 @@ session.
 | `S.weekdayBudget` / `S.weekendBudget` | Read by `getDynamicDailyBudget` | Settings writes route through `BRAIN.config.setWeekdayBudget` (Bundle 22 v3 Phase 0). ✓ |
 | `S.bal` mutation in `applyBalanceCorrection` (L5269) | Direct `S.bal = ...` | Wrapped by `BRAIN.transaction.recordCorrection` for the txn side. Balance side stays direct because the legacy contract preserves it. **Acceptable but flag for future canonical-balance-writer pattern.** |
 
+### Round 5 pathway analysis (per John 2026-05-13 directive)
+
+**Pathways made canonical this round ✓**
+
+| Pathway | Previously | Now | Why |
+|---|---|---|---|
+| Ask AI prompt (`_buildPaydayAskAIPrompt`) | Read from `BRAIN.plan.getSnapshot` — which sources from `S.activePlan` (LAST LOCKED PLAN, often stale) | Direct readers: `S.bal`, `MODEL.daysToPayday`, `getBillsDue()`, `getActiveDebtsDueBeforePayday()`, `S.savingsBuckets[].saved`, `S.income`, `S.paydayReceived` | john saw $0 balance / 1 day / $5217 bills when reality was $340 / 2 days / different. Direct readers always reflect current state. AI agent can call same readers. |
+| Analysis breakdown (`renderTrend`, `renderCatBreakdown`) | Phase 28.0.5 used strict `getDiscretionaryByCategory` (excludes Debt/Savings/Loan) | New `getAllOutflowsByCategory` (excludes income + corrections + roundups, INCLUDES Debt/Savings) | john's "I need to track if money went to a debt or savings transfer". Strict filter still right for `renderCutSliders` ("what to cut"). |
+| Convert-to-loan flow | Reclassify only | Reclassify + offer to open `openAddDebtModal` pre-filled (name guessed from txn note, amount = txn.amt, rate = 0%) | john's "no debt tile is added or tracked... converting to loan then doesnt adjust for me to enter more details". Now user gets the full pipeline: reclassify → optional debt entry → adjustable modal → canonical write. |
+| `saveNewBucket` | Direct `S.savingsBuckets.push` (round 4) → `BRAIN.savings.addBucket` (canonical) | + `BRAIN.plan.intent.add` (kind=goal, bucketId=name) so bucket also appears in PLAN mode Goals tile | john's "KIA detail bucket shows in Savings plan but doesnt add to PLAN mode dashboard". Both bucket AND intent now exist + linked. |
+| `confirmNewGoal` | `PLAN.saveGoal` + `PLAN.writeSavedToSource` (legacy) | + `BRAIN.plan.intent.add` (canonical) | Goal now lives in both legacy + canonical entity stores. Bundle 29 migration drops legacy. |
+| `confirmNewTrip` | `PLAN.saveTrip` + `PLAN.writeSavedToSource` (legacy) | + `BRAIN.plan.intent.add` (canonical) | Same — trip in both stores. |
+| `renderPaydaySavings` footer | 1 link (+ Add bucket → ) | 3 buttons (+ Goal / + Trip / + Bucket) | john's "should we also have add trip in that allocation screen similar to add goal" |
+
+**Pathways still flagged for inspection (deferred to Bundle 29+)**
+
+| Pathway | Concern | Fix candidate |
+|---|---|---|
+| `BRAIN.plan.getSnapshot` returns stale data when `S.activePlan` unset | Snapshot's `currentBalance` field reflects S.bal correctly but other fields (income, bills, debts, savings) read from `S.activePlan` not live state | Add a fallback in `getSnapshot` — if `!S.activePlan.cycleEndDate` or it's expired, rebuild from live state. Or expose `BRAIN.plan.getLiveSnapshot()` parallel method that always reads live. |
+| `openAddDebtModal` → `saveNewDebt` | Verify it routes through `BRAIN.debts.add(name, amt, opts, source)` canonical writer (per ARCHITECTURE §4) | Inspect the save handler |
+| `saveBucketModal` rename of bucket doesn't propagate to linked `PLAN.intents` entry | If user renames "China Holiday" bucket → "China Trip", the intent with `bucketId: "China Holiday"` is orphaned | When bucket renamed via updateBucket, walk PLAN.intents and update any intent whose bucketId matches the old name |
+| `PLAN.saveTrip` / `PLAN.saveGoal` still write to legacy `S.tripDefs`/`S.goalDefs` directly | Two stores: legacy + intent. Drift risk if one writer updates without the other | Bundle 29: deprecate PLAN.saveTrip/saveGoal, callers route through BRAIN.plan.intent only. Legacy reads become view-over-intents. |
+| `addGoalSavings(goalId)` (renderGoalCards button) | Need to inspect — should route through BRAIN.savings.addToBucket | Verify in next iteration |
+| `editGoal(goalId)` modal save | Need to inspect — does it write to intent or just to legacy S.goalDefs? | Probably needs intent update too |
+
 ### Broader patterns flagged for inspection
 
 - **Settings form inputs** — Bundle 22 v3 migrated income/payday/budget/debt-strategy to `BRAIN.config.*` writers. **Inspect** the remaining form-input save paths to confirm none still write `S.X = $('s-X').value` directly. Specifically: `s-pin`, any not-yet-audited fields.

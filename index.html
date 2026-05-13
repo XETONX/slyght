@@ -2326,10 +2326,14 @@ function explainMaxPerDay() {
       'Today\'s MAX PER DAY: ' + f(finalMax),
       '',
       'How it\'s built:',
-      '  Balance:           ' + f(bal),
-      '  − Bills due:       ' + f(billsCommitted) + (billsList.length ? ' (' + billsList.length + ' before payday)' : ''),
-      '  − Debt minimums:   ' + f(debtsCommitted),
-      '  = Available:       ' + f(available),
+      '  Balance:                 ' + f(bal),
+      '  − Bills BEFORE payday:   ' + f(billsCommitted) +
+        (billsList.length
+          ? ' (' + billsList.length + ': ' + billsList.slice(0, 2).map(b => b.name).join(', ') +
+            (billsList.length > 2 ? '...' : '') + ')'
+          : ' (none — rent + others hit ON or AFTER payday)'),
+      '  − Debt minimums:         ' + f(debtsCommitted),
+      '  = Available:             ' + f(available),
       '',
       '  Available ÷ ' + days + ' days to payday',
       '  = ' + f(dailyAvailable) + '/day raw',
@@ -2339,6 +2343,10 @@ function explainMaxPerDay() {
       '',
       '  Already spent today: ' + f(todaySpent),
       '  = ' + f(finalMax) + ' left for the rest of today',
+      '',
+      'Note: Bills hitting ON payday (e.g. rent) aren\'t counted here —',
+      'they come out as your salary lands. This is your cash CUSHION',
+      'between now and payday morning.',
     ];
     if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
       EDIT_MODAL.openInfo({ title: 'Today\'s max per day', body: lines.join('\n') });
@@ -2492,10 +2500,41 @@ function computeSpentInRange(fromTs, toTs) {
   ).reduce((s,t) => s+t.amt, 0);
 }
 
+// Bundle 28 round 5: outflow-by-category — broader than getDiscretionaryByCategory.
+// INCLUDES Debt repayment + Savings + Loan + CC Payment etc so the Analysis tab
+// can answer "where did my money go?" (john's mental model: he needs to track
+// debt payments and savings transfers in the breakdown because those ARE where
+// the money went). EXCLUDES income + balance-corrections + roundups (those
+// aren't outflows or are aggregated separately).
+//
+// Difference from getDiscretionaryByCategory (which is for "what to CUT"):
+//   strict     — !income && !_NON_SPEND_CATS.has(cat) && !correction && !roundup
+//   outflows   — !income && !correction && !roundup     (this fn)
+//
+// Use this for analysis surfaces that want the full picture; use the strict
+// variant for cut-suggestions that should only target discretionary.
+function getAllOutflowsByCategory(fromTs, toTs) {
+  const result = {};
+  const from = fromTs || 0;
+  const to = toTs || Date.now();
+  (S.txns || []).filter(t =>
+    t.ts >= from && t.ts <= to &&
+    !t.income && !t._isCorrection && !t._isRoundup
+  ).forEach(t => {
+    const k = t.cat || 'Other';
+    if (!result[k]) result[k] = {total: 0, count: 0, txns: []};
+    result[k].total += t.amt;
+    result[k].count++;
+    result[k].txns.push(t);
+  });
+  return result;
+}
+
 // RC2: canonical "strict discretionary by category" — same filter as
 // computeSpentInRange (uses _NON_SPEND_CATS, drops corrections + roundups)
-// but groups by category. Used by Analysis pivot and Cut sliders so both
-// converge on the same categories + totals.
+// but groups by category. Used by Cut sliders ("what to cut" — discretionary
+// only) but NOT by Analysis breakdown (which wants full outflow picture —
+// see getAllOutflowsByCategory above).
 function getDiscretionaryByCategory(fromTs, toTs) {
   const result = {};
   const from = fromTs || 0;
@@ -4268,9 +4307,7 @@ function convertEditedTransactionToLoan() {
     'Convert this income to a "loan from person"?\n\n' +
     'The cash inflow stays ($' + Math.round(txn.amt) + ' was real money).\n' +
     'But the amount stops counting as income for daily-spend and surplus math.\n' +
-    'Category becomes "Loan".\n\n' +
-    'Tip: if you don\'t have a debt entry yet for who you borrowed from, ' +
-    'add one via "+ Add Debt" on the dashboard.';
+    'Category becomes "Loan".';
   if (!confirm(confirmMsg)) return;
   // Route through BRAIN.transaction.reclassify (canonical writer) so the
   // audit log captures it and AI agents can later read the change.
@@ -4287,9 +4324,50 @@ function convertEditedTransactionToLoan() {
     AUDITOR.record('TXN_CONVERT_INCOME_TO_LOAN', S.bal, S.bal, 0,
       'Converted income to loan-from-person: ' + (txn.note || 'no note') + ' ($' + txn.amt + ')');
   }
+  const txnAmt = +txn.amt || 0;
+  const txnNote = txn.note || '';
   closeModal('txn-edit-modal');
   onStateChange('txn-convert-loan');
   showToast('✓ Reclassified as loan from person');
+
+  // Bundle 28 round 5: extend the flow — offer to add a debt entry so the
+  // amount owed is TRACKED in slyght (not just classified as a loan). Without
+  // this step john's $500 mum-loan was reclassified but no debt entry existed
+  // for tracking who owes who (already had one externally but the app needs
+  // its own record). Defers 350ms so EDIT_MODAL DOM teardown finishes + user
+  // sees the toast before being asked the next question.
+  setTimeout(() => {
+    const personGuess = txnNote
+      ? (txnNote.match(/from\s+([A-Za-z][\w'-]*)/i) || [])[1] || ''
+      : '';
+    const wantDebt = confirm(
+      'Track who lent you this money?\n\n' +
+      'Adds a debt entry to the Immediate Debts tile so you can see it + ' +
+      'manage repayment. Skip if you already have a "Borrowed from X" debt ' +
+      'logged for the same loan.'
+    );
+    if (!wantDebt) return;
+    if (typeof openAddDebtModal !== 'function') {
+      showToast('Add Debt unavailable — log it via Dashboard');
+      return;
+    }
+    openAddDebtModal();
+    // Pre-fill the modal — sensible defaults the user can adjust before saving
+    setTimeout(() => {
+      const _mn = document.getElementById('modal-name');
+      const _ma = document.getElementById('modal-amt');
+      const _mr = document.getElementById('modal-rate');
+      const _mnotes = document.getElementById('modal-notes');
+      if (_mn && !_mn.value) _mn.value = personGuess
+        ? ('Borrowed from ' + personGuess)
+        : 'Borrowed from person';
+      if (_ma && !_ma.value) _ma.value = txnAmt;
+      if (_mr && !_mr.value) _mr.value = 0; // person loans usually 0%
+      if (_mnotes) _mnotes.value = 'Auto-linked from txn reclassify on ' +
+        new Date().toISOString().slice(0, 10) +
+        (txnNote ? ' · original note: ' + txnNote : '');
+    }, 100);
+  }, 350);
 }
 function saveEditedTransaction() {
   const idx = parseInt($('txn-edit-idx')?.value);
@@ -7027,9 +7105,31 @@ function saveNewBucket() {
     }
     return;
   }
+  // Bundle 28 round 5: also create a linked PLAN.intents entry so the bucket
+  // appears in PLAN mode Goals tile (not just inside the Payday Plan canvas
+  // Savings sub-screen). Without this john's new "KIA detail" bucket showed
+  // in Savings plan but NOT in PLAN mode home. Intent's bucketId == bucket
+  // name so the relationship is explicit + readable by AI agent.
+  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.add) {
+    const intentResult = BRAIN.plan.intent.add({
+      name,
+      kind: 'goal',
+      targetAmount: goal,
+      bucketId: name,
+      category: 'savings',
+      notes: 'Auto-linked from bucket creation',
+    }, BRAIN.SOURCES.PLAN_INTENT_ADD);
+    // Don't fail the whole flow if intent.add rejects (e.g. id-exists from
+    // a prior bucket with same slug) — bucket still got created, just no
+    // intent. Log to console for debug.
+    if (!intentResult.ok && typeof console !== 'undefined') {
+      console.warn('[saveNewBucket] intent.add failed:', intentResult.reason,
+        '— bucket created without canonical intent link');
+    }
+  }
   closeModal('add-bucket-modal', true);
   renderAll();
-  if (typeof showToast === 'function') showToast('✓ "' + name + '" bucket added');
+  if (typeof showToast === 'function') showToast('✓ "' + name + '" bucket added + linked to PLAN goal');
 }
 
 function renderSpendingCoach() {
@@ -7157,13 +7257,15 @@ function renderTrend() {
   const c = $('trend-view'); if (!c) return;
   const history = S.monthlyHistory || [];
   if (history.length < 2) { c.innerHTML = '<div class="empty-state">Trend data builds up as you use Slyght each month.</div>'; return; }
-  // Bundle 28 Phase 28.0.5: consume canonical getDiscretionaryByCategory
-  // (strict — excludes Debt repayment / Savings / Loan / Income / corrections
-  // / roundups) instead of bare `!t.income`. Pre-fix this surface counted
-  // paid debts and savings transfers as discretionary spend, so the trend
-  // showed wild swings the cycle after a debt clearance. Closes OPEN-BUGS
-  // #6 for this renderer. All-time scope preserved (0 → now).
-  const catData = getDiscretionaryByCategory(0, Date.now());
+  // Bundle 28 round 5: revert from strict (getDiscretionaryByCategory) to
+  // outflows (getAllOutflowsByCategory) per john 2026-05-13: "Analysis tab
+  // should have debt repayments etc, the tile at the top is saying where my
+  // money went, i need to track if my money went to a debt or savings
+  // transfer as that tile builds the picture on where everything is going."
+  // strict filter is right for "what to cut" but wrong for "where did it go".
+  // Excludes income + corrections + roundups; INCLUDES Debt repayment, Savings,
+  // Loan, etc.
+  const catData = getAllOutflowsByCategory(0, Date.now());
   const cats = {};
   Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
   c.innerHTML = Object.entries(cats).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
@@ -7178,12 +7280,10 @@ function renderCatBreakdown() {
   const c = $('cat-breakdown'); if (!c) return;
   if (!S.txns.length) { c.innerHTML = '<div class="empty-state">No transactions logged yet.</div>'; return; }
   // M8: show time period label
-  // Bundle 28 Phase 28.0.5: same migration as renderTrend — consume strict
-  // discretionary helper so paid debts + savings transfers stop appearing
-  // as "spending categories". Pre-fix: a $500 debt repayment showed up as
-  // its own giant red bar in the analysis breakdown. Closes OPEN-BUGS #6
-  // for this renderer. All-time scope preserved.
-  const catData = getDiscretionaryByCategory(0, Date.now());
+  // Bundle 28 round 5: revert from strict to outflows — Analysis breakdown
+  // is "where my money went" which should include Debt/Savings/Loan
+  // categories. Strict was right for renderCutSliders but wrong here.
+  const catData = getAllOutflowsByCategory(0, Date.now());
   const cats = {};
   Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
   const total = Object.values(cats).reduce((s,v) => s+v, 0);
@@ -8604,32 +8704,42 @@ function openPaydayAskAI() {
 }
 
 // Build the contextualised question shown in the chat input when openPaydayAskAI
-// fires. Reads from BRAIN.plan.getSnapshot — pure, no side effects. Returns a
-// fallback string if anything is unreachable so the input never lands empty.
+// fires. Bundle 28 round 5: switched to DIRECT readers (S.bal, MODEL.daysToPayday,
+// getBillsDue, getActiveDebtsDueBeforePayday, savingsBuckets) instead of
+// BRAIN.plan.getSnapshot. The snapshot reads from S.activePlan which is the
+// user's LAST LOCKED PLAN — if user hasn't locked a fresh plan for the current
+// cycle, the snapshot returns stale numbers (john saw Balance $0 / 1 day /
+// Bills $5217 when reality was $340 / 2 days / different bills). Direct readers
+// reflect current state always.
 function _buildPaydayAskAIPrompt() {
   try {
-    const snap = (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.getSnapshot)
-      ? BRAIN.plan.getSnapshot() : null;
-    if (!snap) return 'Walk me through this payday cycle — what should I focus on?';
-    const days = +snap.daysRemaining || 0;
-    const balance = Math.round(+snap.currentBalance || 0);
-    const free = Math.round((snap.derived && +snap.derived.freeTotal) || 0);
-    const bills = Math.round((snap.bills && +snap.bills.total) || 0);
-    const debts = Math.round((snap.debts && +snap.debts.total) || 0);
-    const savings = Math.round((snap.savings && +snap.savings.total) || 0);
-    const locked = !!snap.locked;
-    const upcoming = (snap.knownUpcoming && +snap.knownUpcoming.total) || 0;
+    const balance = Math.round(+S.bal || 0);
+    const days = Math.max(0, (typeof MODEL !== 'undefined' && +MODEL.daysToPayday) || 0);
+    const billsList = (typeof getBillsDue === 'function') ? (getBillsDue() || []) : [];
+    const bills = Math.round(billsList.reduce((s, b) => s + (+b.amt || 0), 0));
+    const debts = Math.round((typeof getActiveDebtsDueBeforePayday === 'function')
+      ? getActiveDebtsDueBeforePayday() : 0);
+    const savings = Math.round((S.savingsBuckets || [])
+      .reduce((s, b) => s + (+b.saved || 0), 0));
+    const free = Math.max(0, balance - bills - debts);
+    const incomeNext = Math.round(+S.income || 0);
+    const paydayReceived = !!S.paydayReceived;
+    const billNames = billsList.slice(0, 3).map(b => b.name).join(', ') +
+      (billsList.length > 3 ? '...' : '');
     const lines = [
       'Walk me through this payday cycle.',
       '',
       'Right now:',
-      '- Balance $' + balance + ' · ' + days + ' days to payday',
-      '- Bills due: $' + bills + ' · debt minimums: $' + debts,
-      '- Already allocated to savings: $' + savings + (upcoming > 0 ? ' · known upcoming: $' + Math.round(upcoming) : ''),
-      free > 0 ? '- Free to allocate: $' + free : '- Over-committed (no free money)',
-      '- ' + (locked ? 'Plan is locked' : 'Plan is still open to edit'),
+      '- Balance $' + balance + ' · ' + days + ' day' + (days === 1 ? '' : 's') + ' to payday',
+      '- Bills due BEFORE payday: $' + bills + (billsList.length ? ' (' + billsList.length + ': ' + billNames + ')' : ' (none)'),
+      '- Debt minimums BEFORE payday: $' + debts,
+      '- In savings buckets (long-term): $' + savings,
+      '- Cash leftover after upcoming bills + debt minimums: $' + free,
+      paydayReceived
+        ? '- Payday already received this cycle'
+        : '- Next payday income (estimate): $' + incomeNext,
       '',
-      'Where should I focus? Anything I should be cautious about this cycle?',
+      'Where should I focus this cycle? Anything I should be cautious about?',
     ];
     return lines.join('\n');
   } catch (e) {
@@ -9104,9 +9214,17 @@ function renderPaydaySavings() {
     });
     html += '</div>';
   }
-  // Footer
-  html += '<div class="settings-section-hint">Add new buckets in the Plan tab.</div>';
-  html += '<div class="settings-pointer-row"><a onclick="openAddBucketModal()">+ Add bucket →</a></div>';
+  // Bundle 28 round 5: Footer adds three creation paths so user can spawn a
+  // new goal, trip, or bucket directly from the allocation surface (per
+  // john's "should we also have add trip in that allocation screen similar
+  // to add goal"). Each routes through canonical writers + creates a
+  // PLAN.intents entry so AI/audit can see the new purpose.
+  html += '<div class="settings-section-hint" style="margin-top:14px">Add a new savings target:</div>';
+  html += '<div style="display:flex;gap:8px;margin-top:6px">' +
+    '<button onclick="addNewGoal()" style="flex:1;padding:10px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">🎯 Goal</button>' +
+    '<button onclick="addNewTrip()" style="flex:1;padding:10px 8px;background:rgba(78,205,196,0.12);border:1px solid rgba(78,205,196,0.3);border-radius:10px;color:#4ECDC4;font-size:13px;font-weight:600;cursor:pointer">✈️ Trip</button>' +
+    '<button onclick="openAddBucketModal()" style="flex:1;padding:10px 8px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer">💰 Bucket</button>' +
+    '</div>';
   body.innerHTML = html;
 }
 
@@ -19408,6 +19526,23 @@ function confirmNewTrip() {
   PLAN.saveTrip(newTrip);
   // Auto-create a bucket for this trip so future savings flow correctly.
   PLAN.writeSavedToSource(newTrip, 0);
+  // Bundle 28 round 5: also write to canonical PLAN.intents so the trip
+  // is AI-readable + visible in BRAIN.plan.intent.byKind('trip') alongside
+  // the legacy PLAN.getTrips view. Bridges the legacy shim and the
+  // canonical entity until full Bundle 29 migration.
+  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.add) {
+    BRAIN.plan.intent.add({
+      id: newTrip.id, name, emoji,
+      kind: 'trip',
+      targetAmount: budget,
+      startDate: start || null,
+      endDate: end || null,
+      bucketId: name,
+      category: 'travel',
+      notes,
+      meta: { days, gfSplitting: false },
+    }, BRAIN.SOURCES.PLAN_INTENT_ADD);
+  }
   // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
   // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
@@ -19733,12 +19868,31 @@ function confirmNewGoal() {
   PLAN.saveGoal(newGoal);
   // Auto-create a bucket for this goal so future savings flow correctly.
   PLAN.writeSavedToSource(newGoal, 0);
+  // Bundle 28 round 5: also create canonical intent so this goal lives in
+  // PLAN.intents (the AI-readable single-source-of-truth for purposes).
+  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.add) {
+    BRAIN.plan.intent.add({
+      id: newGoal.id, name, emoji,
+      kind: 'goal',
+      targetAmount: target,
+      bucketId: name,
+      category: 'goal',
+      notes: desc,
+      meta: { monthly, colour: '#4ECDC4', priority: 99 },
+    }, BRAIN.SOURCES.PLAN_INTENT_ADD);
+  }
   // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
   // for every modal exit (Save/Cancel/X/Close/etc). No per-handler logic needed.
   PLAN_MODAL.close();
   renderPlanMode();
   showToast('🎯 ' + emoji + ' ' + name + ' Goal Created!');
 }
+
+// addNewTrip + confirmNewTrip canonical-intent enhancement moved INTO the
+// original definitions at L19476-19526 (this duplicate block deleted —
+// guardian flagged it). Canonical intent creation now lives inside the
+// original confirmNewTrip body so both the legacy PLAN.saveTrip writer
+// AND the new BRAIN.plan.intent.add canonical writer fire together.
 
 function markGoalComplete(goalId) {
   const goal = PLAN.getGoals().find(g => g.id === goalId);
