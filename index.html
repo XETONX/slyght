@@ -10708,7 +10708,7 @@ function openPaydayAutoAllocate() {
     const amt = rec.bucketAllocations[name];
     const isSynth = _synthSet.has(name);
     const synthTag = isSynth
-      ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)">+ NEW BUCKET</span>'
+      ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)" title="First time this trip is being allocated — Apply will create + link a savings bucket so future cycles flow through it">1st cycle</span>'
       : '';
     const disp = isSynth ? { name: '✈️ ' + name, subtitle: null } : _resolveDisplayName(name);
     const subtitleHtml = disp.subtitle
@@ -10743,7 +10743,7 @@ function openPaydayAutoAllocate() {
   // above) and Apply auto-creates the bucket via applyRecommendation.
   // Footnote explaining the badge when synthetics exist:
   if (_synthSet.size > 0) {
-    body += '<div style="font-size:11px;color:var(--blue);margin-top:8px;line-height:1.45;font-style:italic">📌 <strong>+ NEW BUCKET</strong> items are trips without a linked bucket. Tap Apply and the bucket gets created automatically + linked to the trip.</div>';
+    body += '<div style="font-size:11px;color:var(--blue);margin-top:8px;line-height:1.45;font-style:italic">📌 <strong>1st cycle</strong> = trip exists in your dashboard but no savings bucket has been created yet. Tap Apply once and a bucket gets created + linked permanently. Future cycles will skip this step.</div>';
   }
 
   EDIT_MODAL.openCustom({
@@ -11350,7 +11350,15 @@ function _attachLivePreview(opts) {
         const tmp = document.createElement('div');
         tmp.innerHTML = innerHtml;
         const built = tmp.firstChild;
-        if (built) previewEl.innerHTML = built.innerHTML;
+        if (built) {
+          // Bundle 29 demon-time: the previewEl is a bare <div id="...">
+          // placeholder, NOT pre-classed. Copy the wrapper class so the
+          // .live-preview-box CSS applies. Pre-fix John saw "just text
+          // under the custom chip amounts" — the styling targeted a class
+          // that never made it onto the placeholder.
+          previewEl.className = built.className;
+          previewEl.innerHTML = built.innerHTML;
+        }
         lastRows = newRows.map(r => Object.assign({}, r));
       };
       const existingRows = previewEl.querySelectorAll('.lpb-row');
@@ -18889,16 +18897,42 @@ const BRAIN = {
         // 2) explicit bucketHint
         const hintLower = (trip.bucketHint || '').toLowerCase();
         if (hintLower && bucketNamesLower.has(hintLower)) return true;
-        // 3) substring either-direction
+        // 3) substring either-direction — BACKFILL bucketHint when found
         const nameLower = (trip.name || '').toLowerCase();
         for (const bN of bucketNamesLower) {
-          if (bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0) return true;
+          if (bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0) {
+            // Bundle 29 demon-time: self-healing linkage. When a trip
+            // matches a bucket by substring but bucketHint isn't set, save
+            // it now so the next pass takes the fast canonical path.
+            // Closes John 2026-05-14 "Darwin still shows as new bucket
+            // even though it's in the dashboard" feedback loop.
+            try {
+              if (!trip.bucketHint && PLAN && PLAN.saveTrip) {
+                const canonicalBucketName = Array.from(bucketNamesLower).indexOf(bN) >= 0
+                  ? (buckets.find(b => (b.name || '').toLowerCase() === bN) || {}).name
+                  : null;
+                if (canonicalBucketName) {
+                  PLAN.saveTrip({ ...trip, bucketHint: canonicalBucketName });
+                  BRAIN.audit.append({ type: 'trip_bucket_autolinked', tripId: trip.id, bucket: canonicalBucketName, via: 'substring', ts: Date.now() });
+                }
+              }
+            } catch (_) {}
+            return true;
+          }
         }
-        // 4) word-token overlap
+        // 4) word-token overlap — also BACKFILL on hit
         const tripTokens = new Set(_tokenize(trip.name));
         for (const b of _bucketTokens) {
           for (const t of tripTokens) {
-            if (b.tokens.has(t)) return true;
+            if (b.tokens.has(t)) {
+              try {
+                if (!trip.bucketHint && PLAN && PLAN.saveTrip) {
+                  PLAN.saveTrip({ ...trip, bucketHint: b.name });
+                  BRAIN.audit.append({ type: 'trip_bucket_autolinked', tripId: trip.id, bucket: b.name, via: 'token:' + t, ts: Date.now() });
+                }
+              } catch (_) {}
+              return true;
+            }
           }
         }
         return false;
@@ -22366,16 +22400,23 @@ function renderAllocateTile() {
   // looked $298 higher than the Canvas figure.
   let _provisionsTotalDash = 0;
   try { _provisionsTotalDash = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+  // Bundle 29 demon-time: dashboard tile now shows the SAME "Remainder
+  // after essentials" figure the canvas hero shows. Pre-fix dashboard
+  // subtracted savings+upcoming on TOP of essentials → reported $172 while
+  // canvas reported $1372 for the same state. John 2026-05-14: "in the
+  // homescreen of PLAN dashboard it doesnt update the remainder to allocate
+  // like within payday plan, must have its own calculation and doesnt link".
+  // Now both surfaces compute remainder = totalToPlan − essentials, and
+  // the "already allocated" figure surfaces as a sub-line for context.
   const essentialsTotal = (snap.bills?.total || 0) + (snap.debts?.total || 0) + (snap.dailyLiving?.plannedTotal || 0) + _provisionsTotalDash;
   const remainder = (snap.totalToPlan || 0) - essentialsTotal;
   const allocatedTotal = (snap.savings?.total || 0) + (snap.knownUpcoming?.total || 0);
-  const stillFree = remainder - allocatedTotal;
-  const isPositive = stillFree >= 0;
+  const isPositive = remainder >= 0;
   const col = isPositive ? '#4ECDC4' : '#E74C3C';
-  const fmt = '$' + Math.abs(Math.round(stillFree)).toLocaleString();
+  const fmt = '$' + Math.abs(Math.round(remainder)).toLocaleString();
   // Subline: explain the math source briefly so it's not a magic number
   const subline = allocatedTotal > 0
-    ? `${snap.daysRemaining || 0} days until next payday · ${allocatedTotal > 0 ? '$' + Math.round(allocatedTotal).toLocaleString() + ' already allocated · ' : ''}open full plan canvas`
+    ? `${snap.daysRemaining || 0} days until next payday · $${Math.round(allocatedTotal).toLocaleString()} of it already allocated · open canvas`
     : `${snap.daysRemaining || 0} days until next payday · open full plan canvas`;
   return `
     <button onclick="openPaydayPlan()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
