@@ -11788,7 +11788,26 @@ function renderPaydaySavings() {
   // due within this months cycle."
   const isProvisionBucket = (name) => /rego|insurance|service|provision/i.test(name || '');
   const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
-  const buckets = allBuckets.filter(b => !isProvisionBucket(b.name));
+  // Bundle 29 demon-time: also hide abandoned buckets from the Savings
+  // sub-screen UI (matches the recommendAllocation filter). A bucket is
+  // "abandoned" when saved=\$0 AND no override AND no intent linkage.
+  // Stale seed-data like "Gifts & Celebrations" no longer clutters the
+  // goals list. John 2026-05-14 phone-verify findings: bucket appeared
+  // in Savings list despite never being configured.
+  const _ovsForFilter = (S.activePlan && S.activePlan.overrides) || {};
+  const _hasIntent = (bName) => {
+    try {
+      if (!BRAIN.plan.intent || !BRAIN.plan.intent.byBucket) return false;
+      return (BRAIN.plan.intent.byBucket(bName) || []).length > 0;
+    } catch (_) { return false; }
+  };
+  const _isAbandonedBucket = (b) => {
+    if ((+b.saved || 0) > 0) return false;
+    if (_ovsForFilter['savings:' + b.name]) return false;
+    if (_hasIntent(b.name)) return false;
+    return true;
+  };
+  const buckets = allBuckets.filter(b => !isProvisionBucket(b.name) && !_isAbandonedBucket(b));
   const provisionBuckets = allBuckets.filter(b => isProvisionBucket(b.name));
   const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.savings) || {};
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
@@ -11818,9 +11837,35 @@ function renderPaydaySavings() {
   html += '</div>';
   // Trips section (Phase 6.2) — upcoming PLAN trips with budget targets.
   // Treat each trip as an allocation target this cycle.
+  // Bundle 29 demon-time: dedupe — when a trip ALREADY has a matching
+  // bucket (via name, hint, or token-overlap), DON'T show it as a
+  // separate trip-row. The bucket row in "Your savings goals" already
+  // covers it. Closes John 2026-05-14 finding: Darwin appearing in BOTH
+  // Upcoming Trips AND Savings Goals after Apply created a bucket.
   // guardian-allow-block-start: tdz-safe-engine-access — renderPaydaySavings is invoked at user-action time (sub-screen open or post-edit re-render), post-boot; PLAN is initialised. Defensive null check, not a TDZ guard (permanent — see openPaydayCategory call path)
-  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []).filter(t => t && t.endDate && new Date(t.endDate).getTime() > Date.now() && (+t.budget || 0) > 0) : [];
+  const _allTrips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
   // guardian-allow-block-end: tdz-safe-engine-access
+  const _tokenize = (s) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+  const _bucketNamesLowerS = new Set(buckets.map(b => (b.name || '').toLowerCase()));
+  const _bucketTokensS = buckets.map(b => ({ name: b.name, tokens: new Set(_tokenize(b.name)) }));
+  const _tripHasBucket = (t) => {
+    const hintLower = (t.bucketHint || '').toLowerCase();
+    if (hintLower && _bucketNamesLowerS.has(hintLower)) return true;
+    const nameLower = (t.name || '').toLowerCase();
+    for (const bN of _bucketNamesLowerS) {
+      if (bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0) return true;
+    }
+    const tripTokens = new Set(_tokenize(t.name));
+    for (const b of _bucketTokensS) {
+      for (const t2 of tripTokens) {
+        if (b.tokens.has(t2)) return true;
+      }
+    }
+    return false;
+  };
+  const trips = _allTrips
+    .filter(t => t && t.endDate && new Date(t.endDate).getTime() > Date.now() && (+t.budget || 0) > 0)
+    .filter(t => !_tripHasBucket(t));
   if (trips.length) {
     html += '<div class="settings-group-title">Upcoming trips</div>';
     html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">Allocate part of this cycle toward each trip\'s budget.</div>';
