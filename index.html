@@ -99,9 +99,13 @@ button,input,select,textarea{font-family:var(--sans)}
 .toggle input:focus-visible + .toggle-track{outline:2px solid var(--green);outline-offset:2px}
 /* Bundle 22 v3 Phase 4a: reusable edit-modal — center card, scroll-locked, focus-contained. */
 .edit-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:700;background:rgba(0,0,0,0.72);padding:20px;-webkit-tap-highlight-color:transparent}
-.edit-modal.open{display:flex;animation:edit-modal-fade .15s ease-out}
-@keyframes edit-modal-fade{from{opacity:0}to{opacity:1}}
-.edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .2s ease-out}
+/* r75 (John 2026-05-14 "glitchy on every click"): drop the backdrop fade.
+   Backdrop now paints at full opacity instantly so the underlying canvas
+   tile (Darwin card etc.) is masked immediately. The card-only slide-in
+   below still provides the "modal appears" feel without exposing the
+   tile underneath for 150ms. */
+.edit-modal.open{display:flex}
+.edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .18s ease-out}
 @keyframes edit-modal-slide{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
 .edit-modal-title{font-size:19px;font-weight:700;color:var(--text);margin-bottom:6px}
 .edit-modal-hint{font-size:13px;color:var(--text3);margin-bottom:18px;line-height:1.5}
@@ -9810,9 +9814,11 @@ function openPaydayCategory(subId) {
   const parent = document.getElementById('pg-payday-plan');
   if (!sub || !parent) return;
   parent.scrollTop = 0;
-  parent.classList.add('has-active-subscreen');
-  sub.classList.add('payday-active');
-  // Bundle 27 Phase 3: render the sub-screen body on open with live data.
+  // r75 (John 2026-05-14 — "glitchy on every click"): render the body
+  // BEFORE adding the active class. Previously the slide-in animation
+  // started immediately with stale content from the last open, then
+  // innerHTML updated mid-slide producing a visible double-paint flash.
+  // Rendering first means the slide-in shows correct content from frame 1.
   const rendererMap = {
     'payday-bills': renderPaydayBills,
     'payday-debts': renderPaydayDebts,
@@ -9822,6 +9828,8 @@ function openPaydayCategory(subId) {
   };
   const fn = rendererMap[subId];
   if (typeof fn === 'function') fn();
+  parent.classList.add('has-active-subscreen');
+  sub.classList.add('payday-active');
 }
 function closePaydayCategory(subId) {
   const sub = document.getElementById(subId);
