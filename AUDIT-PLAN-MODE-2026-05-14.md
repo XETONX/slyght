@@ -1461,3 +1461,187 @@ That's a 60-80% reduction in session-burden from today's pattern. None of the pi
 - **Independent operation:** Achievable in 4-6 bundles via Bundle 23 (sync) → Bundle 29 (decision-support + auto-detect) → Phase 7 CF Worker (push) → Bundle 30 (AI tool-use). Today: ~30-50 interactions/cycle. Target: ~20 minutes intentional + 2-3 push-driven reactions/week.
 
 **End of audit + fix sprint + strategic synthesis. Tonight's planning session is ready.**
+
+---
+
+## STEP 3.6 — Deep visual UX analysis (Bundle 29 Phase 0 follow-up)
+
+> _John 2026-05-14: "Deep analyse every recent capture and really understand what needs to change from a UX perspective. Is this pleasing? Is this fun to interact with? Can he see what he's actually tapping? If I tap in does it have another modal to map that option?"_
+
+Methodology baked into reusable memory at `slyght_persona_audit_pattern.md` (per-capture visual UX questions section).
+
+### Per-capture findings (Section 10 — 17 captures from `npm run layerV:deep`)
+
+#### #53 canvas-root
+- ✅ R3 visual confirmed: legend dots colour-keyed to bar segments; no Mum-bubble redundancy; "Pay landed today?" pill prominent in green-on-white outline.
+- ✅ Cycle-end copy "Cycle 14 Apr → 14 May · Cycle ended — next payday begins this cycle" reads as transition not deficit.
+- 🟡 **Affordance:** "Pay landed today?" pill is small (11px font, padding 4×10px). For the SINGLE most consequential action this cycle (telling the app payday landed), it's visually understated. Consider promotion to 36–44px touch height + slightly larger emphasis when paydayReceived=false.
+- 🟡 **Number meaning:** "$12 now → $736 left when next pay hits" — the math is unclear without context. $12 (current balance) → $736 projected at next payday. Tap-to-explain would help — currently the row is static.
+- 🟡 **Scrolls required:** canvas root + REMAINDER + Allocating-the-remainder + 3 action rows = ~1 full viewport. Tonight John needs to scroll to see the LOCK button. Slight friction.
+- **Verdict:** 🟢 ship-quality with two P1 polish candidates (pill prominence · projected-balance tap-to-explain).
+
+#### #54 canvas-sub-bills
+- ✅ Layout clean. UNPAID-visible + PAID-collapsed split works.
+- 🟡 **Date confusion:** rows say "15 Apr · 16 Apr · 18 Apr · 25 Apr · 30 Apr · 14 Apr (Afterpay before payday)" — but it's MAY today. Day-of-month derives from `b.day` but rendered as if cycle dates. The cycle spans 14 Apr → 14 May, so an Allianz CTP "30 Apr" actually means 30th of THIS cycle (which was Apr 30). User would parse "30 Apr" as "past — should be paid by now." Should render the cycle-relative date OR "due 30 May" if the bill recurs next cycle. **P1 fix candidate.**
+- 🟡 **Affordance asymmetry:** checkbox + tappable row + chevron — three tap targets per row. Tap the checkbox = tick paid. Tap the row = open edit modal. Tap the chevron = also open edit modal? Unclear. Need consistent affordance.
+- 🟡 **Paid bills hidden:** "6 already paid ($158)" — a collapsed `<details>` element. User doesn't see WHICH 6 from the surface. Expanding adds depth but the count-only header is opaque. **P2: surface paid bill names as inline subtext when collapsed.**
+- **Verdict:** 🟢 functional. Two P1/P2 polish items.
+
+#### #55 canvas-sub-debts
+- ✅ viaRent tag + monthly contribution subline reads cleanly.
+- 🔴 **Number-meaning bug:** header "$718 · 0 of 2" but visible rows show 3 debts (Michael · Bowie vet · Property Deposit via Mum). The "of 2" excludes viaRent debts from the counter. Confusing for the user — they see 3 rows. Fix: either "$718 · 0 of 2 immediate · 1 via rent" OR drop the count and just show "$718 immediate · $5,681 via rent." **P1 fix.**
+- 🟡 **Urgency:** Bowie vet due 15 May (tomorrow), Michael due 16 May (day after) — no urgency styling (no red text, no badge, no "due in 1 day" sub). Adjacent surface (Annual Provisions) uses 🔥 30d / ⏰ 90d urgency tags in auto-allocate. Should mirror here.
+- 🟡 **Affordance asymmetry:** Property Deposit row has NO checkbox (it's viaRent so paid via the bill flow). User might wonder why. Add a small "auto via rent" badge or grey-out the checkbox slot.
+- **Verdict:** 🟡 fixable. 1 P1 (counter math) + 2 P2 (urgency · viaRent affordance).
+
+#### #56 canvas-sub-living
+- ✅ Most coherent surface of all 5 sub-screens. Hero $25/day formula card + Floors + Context + About.
+- 🟡 **Status mental-model gap:** "Status · 👀 Tight" — but Recent average $63/day vs Planned $25/day means John is OVERSPENDING by $38/day, not "barely covering." "Tight" suggests "barely making it"; reality is "spending much more than planned." Should be "⚠️ Over budget by $38/day (last 30)" with sharper warning.
+- 🟡 **About formula confusion:** "(To plan − Bills − Debts − Savings − Known upcoming) ÷ days" doesn't match the displayed $25 floor (which is a USER-SET minimum, not computed). The Planned $25 matches; the floor is independent. About card creates ambiguity.
+- **Verdict:** 🟡 fixable. 1 P1 (Status accuracy) + 1 P2 (About formula clarity).
+
+#### #57 canvas-sub-savings
+- ✅ R1 verified — Freedom buffer + Property Deposit visible by goal name with bucket sublines. Pool $566 prominent. Trips section with days-until. "Other savings goals" synthetic section at bottom.
+- 🟡 **Density:** 8 rows visible (2 trips + 3 buckets + 3 goals in synthetic) on one viewport. On 412×915 phone this is workable but tight; goal projections (3-strategy table from PLAN-tab Goals tile) NOT shown — depth gap vs Mother surface, addressed in Bundle 29 Phase 1.
+- 🟡 **"China holiday" + "China" trip:** "China holiday · $97 of $5,000 goal (2%) · stored in China Holiday" AND Trips row "🇨🇳 China · $97 of $5,000 (2%) · in 200 days" — both show the same $97 saved. The goal-and-trip linkage is correct (goal.bucketId === trip.bucketHint === 'China Holiday') but the user sees the same number on two rows without explanation that they're the same money. **P2: collapse the goal under the trip when bucket is shared.**
+- **Verdict:** 🟢 R1 quick-fix shipped; remaining depth queued Bundle 29 Phase 1 Tier-3.
+
+#### #58 canvas-sub-upcoming
+- 🟡 **Empty state alignment:** "No upcoming items yet" center-aligned vs rest of layout left-aligned. Inconsistent.
+- 🟡 **Empty-state CTA:** "+ Add item" button is small, low-contrast (light grey bg, dark border), left-aligned in vast empty area. Should be larger, more prominent, possibly centered or with green CTA-styled background to invite first action.
+- 🟡 **Copy duplicated:** "Things you know you'll need to buy this cycle — gifts, essentials, events, one-offs. Tap below to add." appears in the centered empty state AND as a footer hint below the button. Redundant.
+- **Verdict:** 🟡 fixable. P1 empty-state visual upgrade.
+
+#### #59 canvas-modal-edit-bonus
+- ✅ Quick-pick grid clear. Status select clean.
+- 🟡 **Number formatting:** Net pay input shows "7282" — bare number, no $ symbol, no comma separator. Easy to mistype. Should format as $7,282 with caret/lose-focus formatting OR use `<input type="number" inputmode="decimal">` with display-side formatting.
+- 🟡 **Toggle state visual:** "Include bonus?" is OFF in capture but the bonus amount section + status are at full opacity (should be at 0.4 per L10257 code — Playwright didn't fire change event). **Harness gap:** capture should run an actual toggle-on then toggle-off interaction to verify the dim state actually applies.
+- 🟡 **Custom button:** styled differently from price buttons (dashed border, italic placeholder). Ambiguous priority. Could be tertiary CTA but reads as "fallback" not "do something different."
+- **Verdict:** 🟢 functional. 1 P1 (number formatting) + harness gap (toggle state verify).
+
+#### #60 canvas-modal-edit-bill-rent
+- ✅ Two-mode toggle (Pay in full · Defer part) is excellent UX win from r49.
+- 🟡 **No-op gate:** when "Pay in full" + reason "No change", tapping Save is a no-op. Could short-circuit (just close modal) OR change Save label to "Done."
+- 🔴 **Harness gap CRITICAL:** capture only shows "Pay in full" mode. The DEFER mode (with amount input + late-fee toggle + "carries to next cycle $X" live preview) is NEVER captured. Tonight John may use defer; we should capture that state to verify the math preview renders correctly.
+- **Verdict:** 🟢 base modal. 1 P2 (no-op gate) + harness gap (defer mode capture).
+
+#### #61 canvas-modal-edit-debt-michael
+- ✅ r49 quick-picks [0, 25, 50, 75, 100]% of $500 = [$0, $130, $250, $380, $500] — clean.
+- ✅ "$500 (selected, green border)" — current is set to normal amount.
+- 🟡 Same number formatting note as bonus modal (no thousands separator on bigger amounts; not an issue here).
+- **Verdict:** 🟢 ship-quality.
+
+#### #62 canvas-modal-edit-savings-r1
+- ✅ R1 verified — title "🛡️ Freedom buffer — this cycle", subtitle "Stored in your 'Rainy Day Fund' bucket."
+- ✅ Quick-pick + Custom + Delete this savings goal + Cancel/Save.
+- 🟡 **"Delete this savings goal" placement:** destructive action lives inline above Save. Should be separated visually (e.g. dim, smaller, separated by a divider) so user doesn't fat-finger it next to Save. Currently has red text on light-red bg which signals danger but the proximity to Save is still risky.
+- **Verdict:** 🟢 R1 success. 1 P2 (delete affordance separation).
+
+#### #63 canvas-modal-edit-kia-extra
+- ✅ Title "Extra toward KIA loan" reads action-first.
+- ✅ Subtitle "Beyond the minimum. Snowball/avalanche choice is set in Settings." explicit reference to strategy.
+- ✅ KIA balance $23,214 visible — gives context for the contribution decision.
+- ✅ "Extra payment this cycle (avalanche strategy):" — surfaces current strategy inline.
+- 🟢 Quick-picks [$0, $50, $100, $200, $300, $500, $1,000] + Custom.
+- 🟡 Quick-picks are wider range than debt modal (which is %-of-normal). Different scales = different cognitive load. Acceptable since this is discretionary extra payment.
+- **Verdict:** 🟢 excellent.
+
+#### #64 canvas-modal-edit-trip-alloc-darwin
+- ✅ Title "Allocate to Darwin" — action-first.
+- ✅ "Saved so far: $0 of $900" + "Need $300/week to hit it before the trip." — TWO data points + 1 recommendation. Excellent decision-support inline.
+- ✅ Quick-picks scaled to budget [$0, $100, $200, $300, $500, $750, $1,000] + Custom.
+- 🟡 "Delete this trip" destructive button placement same as savings modal — proximity to Save is risky.
+- 🟡 **Number meaning:** $900 budget but $300/week target = ~$1,200/month. The trip is 24 days out so we have ~3 weeks. The math is "3 weeks × $300 = $900" — checks out. But "$300/week to hit it" doesn't say "for 3 weeks" — could read as ongoing commitment.
+- **Verdict:** 🟢 best decision-support modal in the bunch.
+
+#### #65 canvas-modal-auto-allocate (SHORTFALL STATE captured, not happy-path)
+- ✅ "🚨 Can't auto-allocate · You're $171 short for essentials + buffer this cycle." Specific deficit.
+- ✅ 3 actionable options bulleted.
+- 🔴 **Options are static text not buttons.** "Reduce a Bill / Debt override" could be a tap-target opening Bills sub. "Defer a bill" could open Bills with defer mode preselected. "Lower daily-living floor" could open openEditPaydayLivingFloor. Currently the user reads the options + must navigate manually. Friction.
+- 🔴 **Harness gap:** the HAPPY-PATH auto-allocate (with bucket allocation list + 🔥 urgency tags + NEW BUCKET synthetic tags) is NEVER captured. Today's fixture state is short by $171 so we only see the error state. Need a fixture-mutate to capture the success state for tonight's verification.
+- **Verdict:** 🟡 error state clear but options should be tappable. P1 fix.
+
+#### #66 canvas-modal-lock-plan
+- ✅ Title "🔒 Lock this cycle's plan?" clean question framing.
+- ✅ "After locking:" 3 ✓ items.
+- 🟡 **All-positive framing:** all 3 list items are "✓" which reads as benefits-only. No mention of the downside (changes require Re-plan; streak resets on Re-plan). User may lock-then-regret without understanding the commitment.
+- 🔴 **Harness gap:** the "Can't lock yet" state (when remainder < 0) is never captured. Today's state has remainder $268 which is non-negative — modal shows the happy path. Need to capture both states.
+- **Verdict:** 🟡 functional. P2 downside-framing + harness gap.
+
+#### #67 canvas-modal-explain-annual-provisions
+- ✅ Title "🏦 Annual provisions" clean.
+- ✅ Amber explainer card: "These are lumpy yearly/quarterly bills…"
+- ✅ Per-row layout: name + frequency + next-due-date + per-month $X.XX + per-year $XXX. Excellent depth.
+- ✅ "Monthly total to set aside $298.47" green-highlighted card at bottom.
+- 🟢 **The most info-dense modal of the set.** Every number tappable would be ideal (currently it's read-only).
+- 🟡 **Edit affordance:** there's no ✏️ button on each row (the canvas explainer is read-only; edit happens via the R2 PLAN-tab manage-provisions modal which IS editable). Could surface a "Manage in PLAN tab →" link.
+- **Verdict:** 🟢 best info-modal in the app.
+
+#### #68 canvas-modal-explain-max-per-day
+- ✅ Title "💰 Today's max per day" + red gradient hero card "LEFT FOR TODAY $0 of $30 weekday budget."
+- ✅ 4 sub-cards: BUDGET USED TODAY · YOUR MONEY RIGHT NOW · TIME MATH · WHAT IS PACE.
+- ✅ TIME MATH walks the calculation step by step ($0 ÷ 1 day = $0/day raw · capped by $30 · -already spent $0 = $0 left).
+- 🟡 **"$0 of $30 weekday budget":** the gradient red is alarming. When budget is fresh and unspent ($0 spent of $30), the red signals "danger" but actually the situation is "you have your full $30 to spend." The "LEFT FOR TODAY $0" reads as "you have $0" — but in context (after deducting bills + debts) the cash cushion IS $0, so the gradient IS correct. Just needs clearer framing — maybe "📉 Cash cushion is $0 today" with explanation.
+- 🟢 r9 rich-HTML rebuild is genuinely impressive. The TIME MATH transparency is the strongest part — would love to see this pattern (step-by-step formula display) replicated for other surfaces (REMAINDER tile, projected-balance row on canvas root).
+- **Verdict:** 🟢 reference-impl for info-modal depth.
+
+#### #69 plan-tab-modal-manage-provisions
+- ✅ R2 verified — full row content visible after the `var(--text)` contrast fix.
+- ✅ Per-row: name + frequency + next-due + per-month $X.XX (amber/mono) + ✏️ edit button.
+- 🟡 **Annual line subtlety:** "$1,038/yr" subtext in dim grey under the $/mo. Tonight John might want to see annual + monthly with equal emphasis when deciding to bump a provision.
+- **Verdict:** 🟢 R2 success.
+
+### Cross-cutting visual UX themes (from §3.6 walks)
+
+**A. Number formatting inconsistency.** Net pay input (#59) shows "7282" bare. Property Deposit $5,681 displayed with comma. Some surfaces use `var(--mono)` font, others not. Aim for one canonical money-format helper used everywhere.
+
+**B. Affordance asymmetry across rows.** Some rows have checkboxes + chevrons + clickable name area. Three tap-targets per row varies in intent. Consider canonical row pattern: full-row tap = primary action; checkbox = tick paid; explicit ✏️ icon = edit.
+
+**C. Destructive actions placed too close to primary save.** "Delete this savings goal" + "Delete this trip" sit immediately above Save button in their modals. Should be visually separated (smaller, dimmer, divider above) OR moved to a secondary "manage" sub-modal.
+
+**D. Static options where tap-targets would help.** Auto-allocate shortfall modal lists 3 options as bullet text — they could be tappable buttons. Same pattern in other "what next?" screens.
+
+**E. Missing tap-to-explain on key numbers.** Projected-balance row "$12 now → $736 left when next pay hits" is static. Should match the explainMaxPerDay pattern (#68) — every number tappable opens a step-by-step formula breakdown.
+
+**F. Empty states inconsistent.** #58 Upcoming has center-aligned headline + left-aligned button + repeated explanatory copy. Should be standardised across all sub-screens (Bills empty / Debts empty / Trips empty etc).
+
+**G. Urgency styling absent from row-level surfaces.** Bowie vet (due tomorrow) renders identical to a debt due in 6 months. Auto-allocate modal HAS urgency tags (🔥 30d / ⏰ 90d / overdue). Should propagate to canvas sub-screen rows.
+
+**H. Date rendering mental-model issue.** Bills show "30 Apr" for a recurring bill in a cycle that spans 14 Apr → 14 May. User parses as past-due. Should disambiguate cycle-relative dates vs anchor dates.
+
+### Harness extensions queued (Bundle 29 Phase 0 iteration 2)
+
+**Add these capture steps to `scripts/layerV-capture.js` Section 10:**
+
+1. **Edit-bill DEFER mode** — currently only captures Pay-in-full. Need a capture that taps "Defer part" + types an amount + shows the "carries to next cycle $X" live preview.
+2. **Auto-allocate HAPPY-PATH state** — currently captures the shortfall error state only. Need a fixture-mutate (or seed inflation) so totalToPlan > essentials + buffer, then capture the urgency-weighted bucket split + NEW BUCKET tags.
+3. **Lock-plan CAN'T-LOCK state** — currently captures the happy path. Need a fixture-mutate so remainder < 0, capture the "Can't lock yet" message.
+4. **Bonus modal toggle-ON state** — currently captures toggle-OFF with bonus section at full opacity (Playwright didn't fire the change event). Need explicit `await page.locator('#bonus-include').click()` + waitForTimeout + capture.
+5. **Bonus modal AMOUNT-SELECTED state** — tap a quick-pick chip, capture the active state.
+6. **Keyboard-open states on every input field** — tap text/number input, capture viewport showing how the on-screen keyboard overlaps the field + save button. Critical for John's phone form-fill experience.
+7. **Edit-modal MID-TRANSITION** — capture during the slide-in animation (waitForTimeout 100-150ms post-open) to verify transition smoothness.
+8. **Quick-Log modal from CANVAS context** — currently captured only from dashboard (#33). When opened mid-payday-plan, does it return the user to canvas after save? Capture the round-trip.
+9. **Tick post-lock state** — after locking, the tick boxes activate for real transactions. Currently never captured. Need: lock plan → tap tick on a row → capture the resulting state (txn fires, balance updates, row strikes through, toast appears).
+10. **Trip-allocation OVERRIDE-SAVED state** — after saving $200 to Darwin, the canvas root REMAINDER should drop by $200. Capture the before/after pair.
+11. **Multi-step flow capture** — chain of taps: tap row → modal opens → fill → save → row updated. Currently each step is captured in isolation; the FLOW is invisible.
+12. **Scroll-distance instrumentation** — record `el.scrollHeight` vs `el.clientHeight` for each surface, surface as "this screen requires N scrolls."
+13. **Long-press capture** — for surfaces with hold-to-reveal patterns (none yet in PLAN mode, but the Bundle 27 deferred long-press-untick would need this).
+14. **Empty-state ALL-PAID-section state** — when EVERY bill in "Before payday" is paid, the section renders "✓ All N bills in this section already paid." Currently captures with unpaid bills present. Need state-mutate to verify.
+15. **Tutorial overlay capture (deliberate)** — the one-time welcome overlay. Currently we PRE-SET the seen-flag to avoid contamination. But verifying the tutorial itself renders correctly requires a one-time fresh-localStorage capture path.
+
+### Bundle 29 Phase 0 iteration plan (next round of code-touching work)
+
+- **Phase 0.1** — add the 15 harness extensions above to `scripts/layerV-capture.js` as sub-sections under Section 10. Estimated ~200 LOC + ~10 new captures (some pair with existing).
+- **Phase 0.2** — re-run the deep visual UX analysis against the iteration-2 captures. Findings feed Bundle 29 Phase 5 narration + rigidity backlog.
+- **Phase 0.3** — produce a "tonight-session ready" report from the captures alone (would-it-work pre-walk for John before he opens the app).
+
+### Verdict on Section 10 visual UX quality
+
+- 🟢 **2 surfaces are reference-impl quality:** #63 KIA Extra modal (action-first title + strategy context + scaled quick-picks) and #68 explainMaxPerDay (transparent step-by-step time math).
+- 🟢 **10 surfaces are ship-quality:** #53, #56, #57 (post-R1), #59, #61, #62, #64, #67, #69 — minor polish queued.
+- 🟡 **5 surfaces have P1 polish candidates:** #54 (date rendering), #55 (counter math + urgency), #58 (empty-state), #60 (defer-mode harness gap), #65 (options-as-buttons), #66 (downside-framing).
+- 🔴 **0 surfaces ship-blocking** for tonight's session.
+
+Tonight is GO. The polish items are Bundle 29 Phase 5 narration + rigidity backlog.
+
+---

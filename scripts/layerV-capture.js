@@ -18,6 +18,13 @@ function getArg(name, fallback) {
   return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback;
 }
 const useLocal = args.includes('--local');
+// Bundle 29 Phase 0 follow-up: stage Section 10 canvas-deep coverage as its
+// own optional pass per John 2026-05-14 "stage as npm run layerV:deep for
+// the canvas-deep portion". `--skip-deep` runs only Sections 1-9 (baseline);
+// `--deep-only` runs only Section 10 (canvas + modals coverage); default
+// runs both (npm run layerV:all). See package.json scripts.
+const skipDeep = args.includes('--skip-deep');
+const deepOnly = args.includes('--deep-only');
 const todayISO = new Date().toISOString().slice(0, 10);
 
 const FIXTURE_PATH = path.resolve(__dirname, '..', 'state-snapshot.json');
@@ -204,6 +211,11 @@ async function step(name, fn) {
   await page.waitForSelector('#splash-screen', { state: 'hidden' }).catch(() => {});
   await page.waitForTimeout(900);
 
+  // Bundle 29 Phase 0 follow-up: gate Sections 1-9 (baseline coverage)
+  // behind --skip-deep / --deep-only flags so callers can run JUST the
+  // canvas-deep Section 10 (npm run layerV:deep) without re-shooting all
+  // 52 baseline captures. Reduces deep iteration cycle ~45s → ~15s.
+  if (!deepOnly) {
   console.log('\n=== SECTION 1 — Dashboard ===');
   // 01 Dashboard top
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -874,6 +886,9 @@ async function step(name, fn) {
   });
   await shoot(page, 52, 'modal-add-trip', 'new trip — empty form');
 
+  } // end if (!deepOnly) — baseline Sections 1-9
+
+  if (!skipDeep) {
   // ─── SECTION 10 — Canvas sub-screens + canvas modals (Bundle 29 Phase 0) ─
   // Pre-Bundle-29 Layer V never navigated INTO the Payday Plan canvas. Section
   // 3 only captured the PLAN-tab tile-state (capture #20 plan-payday-plan).
@@ -934,6 +949,11 @@ async function step(name, fn) {
       // Make sure the canvas itself isn't already active (clear stale state)
       const canvas = document.getElementById('pg-payday-plan');
       if (canvas) canvas.classList.remove('payday-active', 'has-active-subscreen');
+      // Pre-set the tutorial-seen flag BEFORE openPaydayPlan fires its 400ms
+      // tutorial-overlay timer. Otherwise the overlay leaks into every
+      // capture that follows (tutorial uses EDIT_MODAL.openInfo on #edit-modal,
+      // same DOM target as our captured modals, so it covers them).
+      try { localStorage.setItem('slyght_payday_canvas_seen', '1'); } catch (_) {}
       // Go to PLAN tab so openPaydayPlan can fire from the expected context
       if (typeof goPage === 'function') goPage('pg-plan');
     });
@@ -941,19 +961,18 @@ async function step(name, fn) {
     await page.evaluate(() => {
       if (typeof openPaydayPlan === 'function') openPaydayPlan();
     });
-    await page.waitForTimeout(800); // canvas slide-in + render + (potential 400ms tutorial overlay defer)
-    // Dismiss tutorial overlay if it fired (first-canvas-open one-time)
+    await page.waitForTimeout(800); // canvas slide-in + render
+    // Defensive: still clean any tutorial that snuck through (shouldn't, given
+    // the pre-set localStorage flag, but cheap insurance).
     await page.evaluate(() => {
-      try { localStorage.setItem('slyght_payday_canvas_seen', '1'); } catch (_) {}
-      document.querySelectorAll('.edit-modal.show, .edit-modal[style*="flex"]').forEach(m => {
-        const isTutorial = m.textContent && m.textContent.indexOf('Welcome to Payday Plan') >= 0;
-        if (isTutorial) {
-          m.classList.remove('show');
+      document.querySelectorAll('.edit-modal').forEach(m => {
+        if (m.textContent && m.textContent.indexOf('Welcome to Payday Plan') >= 0) {
+          m.classList.remove('show', 'open');
           m.style.display = 'none';
         }
       });
     });
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(150);
   };
 
   // 53 — Canvas root (post-r72 visual state: no Mum-bubble · coloured-dot
@@ -1073,6 +1092,8 @@ async function step(name, fn) {
     await page.waitForTimeout(500);
   });
   await shoot(page, 69, 'plan-tab-modal-manage-provisions', 'R2 verify: nav-row → editable manage modal');
+
+  } // end if (!skipDeep) — Section 10 canvas-deep
 
   // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
