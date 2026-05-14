@@ -19224,11 +19224,26 @@ const BRAIN = {
       const syntheticBucketNames = synthTrips.map(t => t.name);
       // Surface current allocations so the modal can render "already
       // allocated $X → proposed $Y (delta $Z)" rows when isReallocatingLocked.
+      // Bundle 29 demon-time: also map `trip-<id>` override keys to their
+      // trip NAME so the delta lights up for synth-trip allocations the
+      // user has already set. Pre-fix: setting $500 to Darwin via the
+      // trip-card produced overrides['savings:trip-darwin-2026']=500 but
+      // bucketAllocations is keyed by 'Darwin' (the synth bucket name).
+      // Names didn't match → delta hidden → Apply silently overwrote.
       const currentAllocations = {};
       const ovs = (S.activePlan && S.activePlan.overrides) || {};
+      const _tripsForMap = _allTripsForWeight || [];
       Object.keys(ovs).forEach(k => {
-        if (k.startsWith('savings:')) {
-          currentAllocations[k.slice('savings:'.length)] = +ovs[k].thisCycleAmount || 0;
+        if (!k.startsWith('savings:')) return;
+        const id = k.slice('savings:'.length);
+        const amt = +ovs[k].thisCycleAmount || 0;
+        if (id.startsWith('trip-')) {
+          const tripId = id.slice('trip-'.length);
+          const trip = _tripsForMap.find(t => t && t.id === tripId);
+          if (trip && trip.name) currentAllocations[trip.name] = (currentAllocations[trip.name] || 0) + amt;
+          else currentAllocations[id] = amt;
+        } else {
+          currentAllocations[id] = (currentAllocations[id] || 0) + amt;
         }
       });
       return { ok: true, bucketAllocations, bucketReasoning, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames, isReallocatingLocked, currentAllocations };

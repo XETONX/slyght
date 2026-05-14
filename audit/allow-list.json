@@ -1,5 +1,5 @@
 {
-  "lastGenerated": "2026-05-14T08:29:28.939Z",
+  "lastGenerated": "2026-05-14T08:31:52.486Z",
   "totalAllows": 54,
   "unusedAllows": 10,
   "byRule": {
@@ -97,7 +97,7 @@
       },
       {
         "type": "single",
-        "line": 21181,
+        "line": 21196,
         "removability": "permanent",
         "reason": "key resolved by caller via paidBillKey; structured Bundle 7+ shape carrying the txn back-reference for reversible undo",
         "condition": "BRAIN.bills internal write helper consumed by markPaid and consumePendingPay",
@@ -105,7 +105,7 @@
       },
       {
         "type": "single",
-        "line": 21323,
+        "line": 21338,
         "removability": "permanent",
         "reason": "key handed in by caller as a stored paidBills lookup; this is the canonical delete in BRAIN.bills.unmark, the un-mark equivalent of paidBillKey-based access",
         "condition": "BRAIN.bills.unmark canonical deletion",
@@ -113,7 +113,7 @@
       },
       {
         "type": "single",
-        "line": 21482,
+        "line": 21497,
         "removability": "permanent",
         "reason": "invariant scan over Object.keys; reads paidBills directly here (BRAIN.bills.isAutoDebit is the canonical reader for the flag check below)",
         "condition": "invariant logic owned by Bills, reads its own state",
@@ -280,7 +280,7 @@
       },
       {
         "type": "single",
-        "line": 21946,
+        "line": 21961,
         "removability": "permanent",
         "reason": "provisions list explicitly enumerates each provision-bucket entry; the names ARE the canonical provision identifiers",
         "condition": "see PLAN.getAnnualProvisions design: provisions are a fixed enumeration, not a derived view of BILLS",
@@ -288,7 +288,7 @@
       },
       {
         "type": "single",
-        "line": 22076,
+        "line": 22091,
         "removability": "removable",
         "reason": "\"other bills\" excludes the locked-non-negotiable items (Rent, KIA Loan, Fuel) accounted for separately in the WRX impact calc above; tag-based exclusion would be cleaner",
         "condition": "bills get a 'locked' tag attribute and this filter migrates to tag-check — earliest review with Plan Mode v2",
@@ -296,7 +296,7 @@
       },
       {
         "type": "single",
-        "line": 22341,
+        "line": 22356,
         "removability": "permanent",
         "reason": "modal title is intentionally specific to the KIA loan; this dialog explains THIS bill, not a generic loan view",
         "condition": "see showKiaLoanInfo design",
@@ -304,7 +304,7 @@
       },
       {
         "type": "single",
-        "line": 23097,
+        "line": 23112,
         "removability": "permanent",
         "reason": "locked-items breakdown enumerates specific provisions for the user-facing display; matches PLAN.getAnnualProvisions enumeration",
         "condition": "see locked-items breakdown design",
@@ -324,7 +324,7 @@
     "no-direct-bucket-saved-write": [
       {
         "type": "single",
-        "line": 20113,
+        "line": 20128,
         "removability": "permanent",
         "reason": "this IS the canonical writer; all other call sites must route through this function; the rule's job is to forbid direct writes everywhere else",
         "condition": "BRAIN.savings.setBucketSaved is the chokepoint by design",
@@ -453,8 +453,8 @@
       },
       {
         "type": "block",
-        "startLine": 19712,
-        "endLine": 19720,
+        "startLine": 19727,
+        "endLine": 19735,
         "removability": "permanent",
         "reason": "BRAIN.assets.setMumAccount is invoked from EDIT_MODAL save handlers which only fire post-boot (user taps a Settings row); PLAN is fully initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive null-check, not a TDZ guard",
         "condition": "see Settings edit-modal save call path",
@@ -462,8 +462,8 @@
       },
       {
         "type": "block",
-        "startLine": 20254,
-        "endLine": 20299,
+        "startLine": 20269,
+        "endLine": 20314,
         "removability": "permanent",
         "reason": "getRoundUpDestinationName + setRoundUpDestination are methods on BRAIN.savings called only at user-event time (render, edit, txn save), never during boot; PLAN const has been initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive, not a TDZ guard",
         "condition": "see UI handler call paths",
