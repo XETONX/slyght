@@ -1375,7 +1375,7 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
           </div>
           <div style="padding:12px 16px;border-top:1px solid var(--border)">
             <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Destination</div>
-            <select id="sub-roundup-dest" onchange="onSubRoundupDestChange(this.value)" style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px"></select>
+            <select id="sub-roundup-dest" onchange="onSubRoundupDestChange(this.value)" class="payday-dropdown-select" aria-label="Roundup destination" style="width:100%"></select>
           </div>
         </div>
         <div class="settings-section-hint">If the chosen goal is met, round-ups continue accruing in the bucket — adjust target anytime.</div>
@@ -10064,7 +10064,10 @@ const _UPCOMING_CATEGORY_OPTIONS = [
 ];
 function _buildDropdown(label, id, options, currentValue) {
   const opts = options.map(o => '<option value="' + o.value + '"' + (o.value === currentValue ? ' selected' : '') + '>' + o.label + '</option>').join('');
-  return '<div class="payday-dropdown"><label class="payday-dropdown-label" for="' + id + '">' + label + '</label><select class="payday-dropdown-select" id="' + id + '">' + opts + '</select></div>';
+  // Bundle 29 demon-time: aria-label for screen reader users — the visible
+  // <label for> works for sighted users but assistive tech sometimes ignores
+  // the linkage in custom modals. Belt-and-braces.
+  return '<div class="payday-dropdown"><label class="payday-dropdown-label" for="' + id + '">' + label + '</label><select class="payday-dropdown-select" id="' + id + '" aria-label="' + label.replace(/"/g, '&quot;') + '">' + opts + '</select></div>';
 }
 
 // ─── Bill editor ────────────────────────────────────────────────────────
@@ -10569,7 +10572,13 @@ function openEditPaydayBonus() {
       // Toggle on/off shows/hides bonus amount section
       const toggle = document.getElementById('bonus-include');
       const section = document.getElementById('bonus-amount-section');
-      const sync = () => { if (section) section.style.opacity = toggle.checked ? '1' : '0.4'; };
+      const sync = () => {
+        if (!section) return;
+        // Bundle 29 demon-time: hide the section when bonus is off (was
+        // opacity 0.4 which still allowed focus + tap-thru creating
+        // confusing tab order). display:none disables interaction cleanly.
+        section.style.display = toggle.checked ? 'block' : 'none';
+      };
       if (toggle) { toggle.addEventListener('change', sync); sync(); }
       _attachLivePreview({
         previewId: 'bonus-live-preview',
@@ -10612,6 +10621,11 @@ function openEditPaydayBonus() {
       const r = BRAIN.plan.setBonus({ amount: amt || 0, included, status }, BRAIN.SOURCES.PLAN_BONUS_EDIT);
       if (!r.ok) return r;
       renderPaydayPlanRoot();
+      // Bundle 29 demon-time: also re-render PLAN dashboard so its tile +
+      // payday-received indicator update when status flips to 'confirmed'.
+      // Pre-fix the modal closed and the dashboard stayed stale until next refresh.
+      try { if (typeof renderPlanMode === 'function') renderPlanMode(); } catch (_) {}
+      try { if (typeof renderAll === 'function') renderAll(); } catch (_) {}
       if (typeof _haptic === 'function') _haptic('medium');
       if (typeof showToast === 'function') showToast('✓ Pay + bonus updated');
       return { ok: true };
