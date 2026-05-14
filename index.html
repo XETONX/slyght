@@ -23209,10 +23209,7 @@ function renderAllocateTile() {
         <span style="font-family:var(--mono);font-size:30px;font-weight:800;color:${_amtCol};line-height:1">${isPositive ? '' : '-'}${fmt}</span>
         <span style="font-size:12px;color:var(--text2);font-weight:600">left to allocate</span>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">
-        ${allocatedTotal > 0 ? `$${Math.round(allocatedTotal).toLocaleString()} of $${Math.round(remainder).toLocaleString()} allocated · ${_allocPct}%` : `$0 allocated yet · ${daysRem}d to next payday`}
-      </div>
-      ${allocatedTotal > 0 ? `<div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden"><div style="height:100%;width:${_allocPct}%;background:var(--green);transition:width .35s ease-out"></div></div>` : ''}
+      ${allocatedTotal > 0 ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$${Math.round(allocatedTotal).toLocaleString()} of $${Math.round(remainder).toLocaleString()} allocated · ${_allocPct}%</div><div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden"><div style="height:100%;width:${_allocPct}%;background:var(--green);transition:width .35s ease-out"></div></div>` : '<div style="font-size:11px;color:var(--text3);margin-top:6px;font-style:italic">Tap to start allocating</div>'}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--text3)">
         <span>${daysRem}d to next payday · tap to walk the canvas</span>
         <span style="font-size:18px;color:${_amtCol};line-height:1">›</span>
