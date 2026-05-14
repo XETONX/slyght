@@ -13209,7 +13209,16 @@ const EDIT_MODAL = {
     if (this._isCustom) {
       if (this._save) {
         _hideForSave();
-        const r = this._save();
+        let r;
+        try { r = this._save(); }
+        catch (e) {
+          // r79.1: save threw — restore modal so user can see error, don't
+          // leave them with an invisible-but-still-open modal.
+          _restoreForError();
+          this.showError('Save failed: ' + (e && e.message ? e.message : 'error'));
+          if (typeof console !== 'undefined') console.error('[EDIT_MODAL save] threw:', e);
+          return;
+        }
         if (r && r.ok === false) { _restoreForError(); this.showError(r.reason || 'Save failed'); return; }
       }
       const afterCb = this._onAfter;
@@ -13231,7 +13240,14 @@ const EDIT_MODAL = {
     }
     if (this._save) {
       _hideForSave();
-      const r = this._save(val);
+      let r;
+      try { r = this._save(val); }
+      catch (e) {
+        _restoreForError();
+        this.showError('Save failed: ' + (e && e.message ? e.message : 'error'));
+        if (typeof console !== 'undefined') console.error('[EDIT_MODAL save] threw:', e);
+        return;
+      }
       if (r && r.ok === false) { _restoreForError(); this.showError(r.reason || 'Save failed'); return; }
     }
     const afterCb = this._onAfter;
