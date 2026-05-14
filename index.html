@@ -9704,8 +9704,18 @@ function renderPaydayPlanRoot() {
   const fmt = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   const inc = snap.income || {};
   const bonus = inc.bonus || { amount: 0, included: false, status: 'expected' };
+  // Bundle 29 demon-time: surface bonus status as a small pill instead
+  // of just italic "(expected)". When confirmed, show "✓ landed" so John
+  // sees the money-in-account state at a glance. Closes a follow-up gap
+  // from Scenario C walkthrough where bonus.confirmed wasn't visually
+  // distinct from bonus.expected on canvas root.
+  const _bonusStatusPill = bonus.included
+    ? (bonus.status === 'confirmed'
+        ? ' <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(34,197,94,0.12);color:var(--green);border:1px solid var(--green-border);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;letter-spacing:0.04em;text-transform:uppercase">✓ landed</span>'
+        : ' <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(245,158,11,0.10);color:var(--amber);border:1px solid rgba(245,158,11,0.30);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;letter-spacing:0.04em;text-transform:uppercase">expected</span>')
+    : '';
   const bonusBadge = bonus.included
-    ? ('<span style="color:var(--green);font-family:var(--mono);font-weight:600">+' + fmt(bonus.amount) + '</span> bonus' + (bonus.status === 'expected' ? ' <span style="color:var(--text3);font-size:12px;font-style:italic">(expected)</span>' : ''))
+    ? ('<span style="color:var(--green);font-family:var(--mono);font-weight:600">+' + fmt(bonus.amount) + '</span> bonus' + _bonusStatusPill)
     : '<span style="color:var(--text3)">no bonus this cycle</span>';
   // Proportion bar segments
   const total = Math.max(1, snap.derived.claimedTotal);
@@ -9786,7 +9796,12 @@ function renderPaydayPlanRoot() {
     ? bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button>'
     : '<button onclick="openEditPaydayBonus()" aria-label="Add bonus" style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.10);border:1px solid var(--green-border);color:var(--green);font-size:12px;font-weight:600;padding:4px 10px;border-radius:14px;cursor:pointer;margin-left:6px">＋ Add bonus</button>';
   html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono);color:var(--text2)">' + fmt(inc.netPay || 0) + '</span> net pay ' + _bonusInlineCtl + '</div>';
-  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> left when next pay hits</div>';
+  // Bundle 29 demon-time: project-label adapts to paydayReceived state.
+  // When the user has marked payday landed, "now → X left when next pay
+  // hits" implies money is coming that ISN'T coming. Switch the trailing
+  // copy to "left to cover this cycle".
+  const _projTrailLabel = S.paydayReceived ? 'left to cover this cycle' : 'left when next pay hits';
+  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> ' + _projTrailLabel + '</div>';
   html += '</div>';
 
   // Bundle 28 round 47 (John feedback sync): Annual Provisions
