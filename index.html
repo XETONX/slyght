@@ -10444,8 +10444,22 @@ function confirmUntickAllocation(category, itemId) {
     return;
   }
   try { if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.close) EDIT_MODAL.close(); } catch (_) {}
-  if (typeof renderPaydaySavings === 'function') renderPaydaySavings();
+  // BIG BRAIN cascade — match paydayTick's fan-out so unticks update every
+  // surface (bills calendar, debt tiles, dashboard, PLAN tile) instantly.
+  const _subRenders = {
+    bill: () => typeof renderPaydayBills === 'function' && renderPaydayBills(),
+    debt: () => typeof renderPaydayDebts === 'function' && renderPaydayDebts(),
+    savings: () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    'kia-extra': () => typeof renderPaydaySavings === 'function' && renderPaydaySavings(),
+    upcoming: () => typeof renderPaydayUpcoming === 'function' && renderPaydayUpcoming(),
+  };
+  const _r = _subRenders[category]; if (_r) _r();
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  if (typeof renderAll === 'function') renderAll();
+  try { if (typeof renderBillsGrouped === 'function') renderBillsGrouped(); } catch (_) {}
+  try { if (typeof renderCalendar === 'function') renderCalendar(); } catch (_) {}
+  try { if (typeof renderDebtTiles === 'function') renderDebtTiles(); } catch (_) {}
+  try { if (typeof renderPlanMode === 'function') renderPlanMode(); } catch (_) {}
   if (typeof _haptic === 'function') _haptic('warning');
   if (typeof showToast === 'function') showToast('↩ Unticked — transfer reversed');
 }
@@ -11553,6 +11567,15 @@ function paydayTick(category, itemId, sourceTag) {
   if (fn) fn();
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
   if (typeof renderAll === 'function') renderAll();
+  // Bundle 29 BIG BRAIN cascade — John 2026-05-14: "everything must update
+  // like one big BRAIN that knows everything and theres no misyncs".
+  // renderAll already cascades but gates bills-tab renders on pg-cal being
+  // active. Force-fire the un-gated paths so EVERY surface is fresh whether
+  // John navigates to it now or in 5 minutes.
+  try { if (typeof renderBillsGrouped === 'function') renderBillsGrouped(); } catch (_) {}
+  try { if (typeof renderCalendar === 'function') renderCalendar(); } catch (_) {}
+  try { if (typeof renderDebtTiles === 'function') renderDebtTiles(); } catch (_) {}
+  try { if (typeof renderPlanMode === 'function') renderPlanMode(); } catch (_) {}
   // Bundle 29 alive: haptic feedback + bills-all-paid celebration
   if (typeof _haptic === 'function') _haptic('light');
   // Detect bills-all-paid celebration: post-tick, check if every bill in
