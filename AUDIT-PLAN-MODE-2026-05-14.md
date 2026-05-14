@@ -727,6 +727,153 @@ No P0/P1 — surface is clean and audited.
 
 ---
 
+## SURFACES 7-15: Canvas modals (combined walk)
+
+All canvas modals use the `EDIT_MODAL.openCustom` / `openInfo` plumbing (Bundle 22 v3 Phase 4) — focus-locked, body-scroll-locked, Android back-button intercept, `{ok, reason?}` validation envelope. Per-modal compact walk below.
+
+### SURFACE 7: `openEditPaydayBonus` (L10230) — Pay & bonus modal
+
+**r46 promoted the entry-point pill.** Modal contents:
+
+- Net pay input (number, monospace).
+- "Include bonus?" toggle.
+- Bonus amount quick-pick grid [500, 800, 1000, 1200, 1500, 2000, 3000] + Custom.
+- Status dropdown: Expected (not in account yet) · Confirmed (already landed).
+- Dim-section-when-toggle-off pattern (opacity 0.4).
+
+**Save path:** L10268-10272 — netPay edit goes via `BRAIN.config.setIncome` AND manually patches `S.activePlan.income.netPay` (the activePlan mirror). Bonus via `BRAIN.plan.setBonus`. **Two-store mirror smell:** netPay lives at both `S.income` and `S.activePlan.income.netPay`. Manual sync at L10270 is the cleanup site. **Adjacent finding — Tier 1 / Bundle 29 hygiene.**
+
+**Tonight-session check:** ✅ for tonight. John taps `＋ Add bonus` → enters $X → status: expected → save. setBonus persists ✓. Re-renders root ✓. The renderer shows the new bonus inline ✓.
+
+**Sticky-state pairing:** the modal does NOT fix the rollover wipe — that's a separate fix in `rolloverIfNeeded` per P0.1.
+
+🟢 modal works. P0 fix is upstream in rolloverIfNeeded.
+
+### SURFACE 8: `openEditPaydayBill` (L9856) — r49 Paid/Defer toggle
+
+**r49 replaced the percent-grid with a two-mode toggle.** Modal contents:
+- Normal-amount label.
+- Two-button mode toggle: ✅ **Pay in full** (default) · ↪ **Defer part**.
+- Defer-fields panel (hidden unless defer-mode): amount input · "Add a late fee" checkbox · late-fee input · live "carries to next cycle: $X" preview.
+- Reason dropdown (no-change / tight-month / trip-expense / unexpected-cost / bill-went-up / bill-went-down / other).
+
+**Save path:** L9905-9933 — `BRAIN.plan.setOverride('bill', billName, amt, {reason, deferAction, lateFee}, PLAN_OVERRIDE_SET)`. If deferred, sets `deferAction: 'create_known_upcoming_next_cycle'` so `rolloverIfNeeded` carries the shortfall to next cycle's Known Upcoming.
+
+**Tonight-session check:** ✅ John taps Rent + Deposit Savings → currently in full at $3,000 → can flip to defer if cash flow tight → carries shortfall to next cycle. Or set late-fee on top. Works.
+
+**One minor:** `window._billEditMode` (L10/9908/9941) is a global window-scoped variable for toggle state. Functional but global-state code smell. Bundle 29 hygiene.
+
+🟢 ship-quality.
+
+### SURFACE 9: `openEditPaydayDebt` (L9983) — r49 simplified quick-picks
+
+Modal contents (similar shape):
+- Normal-amount label.
+- Quick-pick grid [0, 25%, 50%, 75%, 100%] of normal (r49 dropped 125/150%).
+- Reason dropdown.
+
+**Save path:** `BRAIN.plan.setOverride('debt', id||name, amt, …, PLAN_OVERRIDE_SET)`.
+
+**Tonight-session check:** ✅ John handles Michael ($500), Bowie vet ($217.50) — pays in full or partials. Property Deposit (viaRent) renders but is special-cased (no per-cycle minimum to set).
+
+🟢 ship-quality.
+
+### SURFACE 10: `openEditPaydaySavings` (L10016) — bucket allocation
+
+Modal contents:
+- Quick-pick grid [0, 100, 200, 300, 500, 750, 1000].
+- Bucket-specific subline.
+
+**Save path:** `BRAIN.plan.setOverride('savings', b.name, amt, …, PLAN_SAVINGS_EDIT)`.
+
+**Tonight-session check:** ✅ for the buckets that render. **MIRRORS THE INTENT-VS-BUCKET MISMATCH** from Savings sub — John tapping "Rainy Day Fund" expects to be allocating to "Freedom Buffer." The modal title currently uses the bucket name. Goal-context could be added in the modal subtitle.
+
+🟡 modal works but the mismatch propagates here. Goal-context subtitle would help.
+
+### SURFACE 11: `openEditPaydayKiaExtra` (L10099) — KIA acceleration
+
+Modal for adding extra-over-minimum payment on KIA loan. Quick-pick grid + Custom. Routes through `BRAIN.plan.setOverride('kia-extra', 'KIA', …, PLAN_KIA_EXTRA_EDIT)`.
+
+**Tonight-session check:** ✅ John has KIA loan $23,214; can add $50-$500 extra to accelerate snowball/avalanche strategy. Strategy badge shows current strategy.
+
+🟢 ship-quality.
+
+### SURFACE 12: `openEditPaydayTripAlloc` (L10141) — trip allocation
+
+Per-trip allocation modal. Quick-pick grid scaled to trip budget. Routes through `setOverride('savings', 'trip-'+id, amt, …, PLAN_TRIP_ALLOC_EDIT)`.
+
+**Tonight-session check:** ✅ **CRITICAL for tonight.** John taps Darwin → enters allocation → save → carries to bucket-linked savings. Darwin's bucket linkage is empty (`bucketHint: ''`) — auto-allocate has a name-fallback r51 path that links by substring. Tonight if he sets a manual allocation here, it sets the override AND `_createBucketForTrip('Darwin')` (auto-allocate path) would create the bucket.
+
+But manual trip-alloc tap doesn't auto-create the bucket — that's auto-allocate's path. John could set $300 Darwin allocation in the override, but it'd live in `S.activePlan.overrides['savings:trip-darwin-2026']` not in a bucket. **Adjacent finding:** the trip allocation override path doesn't propagate to a bucket without auto-allocate. Tonight if John manual-allocates Darwin, he expects the savings to materialise as a Darwin bucket — currently it just sits in override. **🟡 verify on phone tonight or audit fix.**
+
+🟡 modal works but trip-alloc → bucket linkage is auto-allocate-only.
+
+### SURFACE 13: `openEditPaydayLivingFloor` (L10645) + `openEditPaydayBufferFloor` (L10670)
+
+Two minimal modals — quick-pick grid for floor value. Routes through `BRAIN.plan.setDailyLivingFloor` / `setBufferFloor`.
+
+**Tonight-session check:** ✅ John adjusts daily floor; recompute fires; status badge updates. Works.
+
+🟢 ship-quality.
+
+### SURFACE 14: `openPaydayAutoAllocate` (L10321) — Auto-allocate
+
+**The most sophisticated modal.** Contents (r48 + r49d + r51 + r52):
+
+1. **"Already covered first (Essentials)" red-tinted block:** itemised — 🏠 Bills · 💳 Debts (minimums) · 📅 Daily living · 🏦 Annual provisions · 🛡 Safety buffer. **Closes John's r49 feedback "auto-allocate seemed to skip my essentials."**
+2. **"Allocatable" green-tinted headline:** monospace value.
+3. **Suggested split (urgency-weighted) list:** per-bucket lines with:
+   - Urgency tag: 🔥 Nd (≤30d) / ⏰ Nd (≤90d) / "Nd" / "overdue".
+   - "+ NEW BUCKET" tag (r52) for synthetic trip-bucket entries.
+4. Footer hint: "📌 + NEW BUCKET items are trips without a linked bucket…" (when synthetics exist).
+5. Apply button → `BRAIN.plan.applyRecommendation(CANVAS_AUTO_APPLY)` → re-renders root + savings.
+
+**Tonight-session check:** ✅ **HUGELY VALUABLE for tonight.** John taps Auto-allocate → sees:
+- His essentials already covered ($X bills + $Y debts + $Z living + provisions + buffer = locked).
+- His allocatable amount.
+- Suggested split — Darwin (24d out → 🔥 24d → big share), China (200d+ out → smaller), Rainy Day, Gifts.
+- Apply → overrides set across buckets.
+
+**Failure mode:** shortfall path (`rec.ok === false, reason: 'shortfall'`) → opens info modal with deficit + options. Clear ✓.
+
+**One thing:** when Property Deposit / Freedom Buffer goals are mis-rendered upstream, the auto-allocate split here may exclude them or include them via bucket names. Need to trace if `recommendAllocation` weighs by buckets or intents. Per L17783-17839 — it weighs buckets, with intent-linkage to find associated trips. **Goals not directly weighted — Property Deposit (no bucket) excluded; Freedom Buffer weighted as Rainy Day Fund bucket.** Same mismatch propagates.
+
+🟡 modal is excellent BUT inherits the bucket-vs-intent mismatch. Auto-allocate today won't propose anything for Property Deposit because no real bucket exists.
+
+### SURFACE 15: `openPaydayLockPlan` (L10422) + `openPaydayUnlockPlan` (search needed)
+
+Lock modal: confirmation with "After locking: ✓ Bills/Debts/Savings committed · ✓ Known Upcoming stays editable · ✓ Tick boxes activate." Tight-buffer warning. Routes through `BRAIN.allocation.lock` + stamps `S.activePlan.lockedAt`.
+
+Unlock: similar pattern (search confirms exists via L9744 ref `openPaydayUnlockPlan`).
+
+**Tonight-session check:** ✅ Once John has set bonus + overrides + allocations + adjusted living, he'll lock. After lock the tick UI activates for paydayTick.
+
+🟢 ship-quality.
+
+### SURFACE 16: `explainAnnualProvisions` (L2541)
+
+Info modal listing each provision with per-month + annual figure. From earlier read: Teachers Health $86.47/mo · Car service $42/mo · KIA registration $39/mo · KIA green slip $46/mo · KIA insurance (NRMA) $85/mo = ~$298/mo. Pure read-only ✓.
+
+**Tonight-session check:** ✅ Useful context.
+
+🟢 ship-quality.
+
+### SURFACE 17: `explainMaxPerDay` (L2709)
+
+Info modal — the rich-HTML rebuild per r9. Hero gradient + progress bar + math breakdown + time math + timing-aware warning card. Linked from dashboard MAX PER DAY card; reachable from PLAN context via Daily Living sub explainer flow.
+
+**Tonight-session check:** ✅ John may consult to understand "$26.85/day max."
+
+🟢 ship-quality.
+
+---
+
+_(Surfaces 7-17 done — 9 canvas modals walked. Pattern: all use EDIT_MODAL canonical plumbing, all route writes through BRAIN.plan.* canonical writers with typed source tags, all re-render canvas root + their associated sub-screen on save. Two adjacent findings carried forward:_
+- _Window-global `_billEditMode` — Bundle 29 hygiene._
+- _Bucket-vs-intent mismatch propagates from Savings sub → openEditPaydaySavings + openEditPaydayTripAlloc + openPaydayAutoAllocate — all addressed by the same Tier 3 SDD draft in cross-cutting §E._)_
+
+---
+
 ---
 
 ## STEP 2.2 — Cross-cutting passes
