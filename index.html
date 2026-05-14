@@ -105,8 +105,14 @@ button,input,select,textarea{font-family:var(--sans)}
    below still provides the "modal appears" feel without exposing the
    tile underneath for 150ms. */
 .edit-modal.open{display:flex}
-.edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .18s ease-out}
-@keyframes edit-modal-slide{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+.edit-modal-card{background:var(--bg2);border-radius:16px;padding:22px 20px 18px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,0.5);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;animation:edit-modal-slide .18s cubic-bezier(.2,.7,.2,1)}
+/* r78 (John 2026-05-15 "still glitchy in PLAN mode"): drop the opacity
+   0 → 1 part of the card animation. The card is the OPAQUE foreground;
+   fading it from transparent means for ~50ms the dark backdrop shows
+   THROUGH the card body — that's the residual "background flash" John
+   reported after r75 fixed the backdrop fade. Card now slides up only,
+   stays fully opaque from frame 1. */
+@keyframes edit-modal-slide{from{transform:translateY(14px)}to{transform:translateY(0)}}
 .edit-modal-title{font-size:19px;font-weight:700;color:var(--text);margin-bottom:6px}
 .edit-modal-hint{font-size:13px;color:var(--text3);margin-bottom:18px;line-height:1.5}
 .edit-modal-input{width:100%;padding:14px;background:var(--bg);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:17px;margin-bottom:14px;-webkit-appearance:none;font-family:inherit}
