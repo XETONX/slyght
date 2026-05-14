@@ -11000,8 +11000,12 @@ function openPaydayLockPlan() {
     title: '🔒 Lock this cycle\'s plan?',
     hint: 'Once locked, your overrides commit. Tick items as you handle them.',
     bodyHtml: body,
-    saveLabel: 'Lock',
-    danger: false,
+    saveLabel: tight ? 'Lock anyway' : 'Lock',
+    // Bundle 29 F-22/E-12 fix: when tight-buffer warning is present, the
+    // Lock button down-styles to red (btn-danger) so it doesn't read as
+    // "go ahead" while the amber warning says "be careful". Label flips
+    // to "Lock anyway" to surface the intent.
+    danger: !!tight,
     save: () => {
       const snapshot = {
         cycleId: snap.cycleId,
@@ -11281,7 +11285,11 @@ function openEditPaydayBufferFloor() {
           const newRemainder = snap.totalToPlan - _committedExBuffer - _provs - snap.dailyLiving.plannedTotal;
           const floorVsMax = snap.dailyLiving.floor - newMaxAfford;
           const rows = [
-            { label: 'Safety buffer', value: '$' + Math.round(newBuffer).toLocaleString() + (bufferDelta !== 0 ? ' (' + (bufferDelta > 0 ? '+' : '') + '$' + Math.abs(Math.round(bufferDelta)).toLocaleString() + ')' : ''), kind: bufferDelta > 0 ? 'pos' : bufferDelta < 0 ? 'warn' : '' },
+            // Bundle 29 F-11 fix: buffer delta is contextually neutral — bigger
+            // buffer = safer for surprises BUT smaller max-affordable-per-day.
+            // Don't claim 'pos' on increase. Let the max-affordable row's kind
+            // carry the warning when buffer-up squeezes daily.
+            { label: 'Safety buffer', value: '$' + Math.round(newBuffer).toLocaleString() + (bufferDelta !== 0 ? ' (' + (bufferDelta > 0 ? '+' : '') + '$' + Math.abs(Math.round(bufferDelta)).toLocaleString() + ')' : ''), kind: '' },
             { label: 'Max affordable / day', value: '$' + Math.round(newMaxAfford).toLocaleString(), kind: floorVsMax > 0 ? 'neg' : floorVsMax > -5 ? 'warn' : 'pos' },
             { label: 'Your current floor', value: '$' + snap.dailyLiving.floor + '/day', kind: floorVsMax > 0 ? 'neg' : '' },
             { label: 'Cycle remainder', value: '$' + Math.round(newRemainder).toLocaleString(), kind: newRemainder >= newBuffer ? 'pos' : newRemainder >= 0 ? 'warn' : 'neg' },
@@ -11981,7 +11989,18 @@ function renderPaydaySavings() {
   html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + fmtC2(allocatable) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">left to split across goals</span></div>';
   if (bufferReserved > 0) {
     const surplusBeforeBuffer = Math.max(0, freeTotal);
-    html += '<div style="font-size:12px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$' + Math.round(surplusBeforeBuffer).toLocaleString() + ' surplus − $' + Math.round(bufferReserved).toLocaleString() + ' safety buffer = $' + Math.round(allocatable).toLocaleString() + '</div>';
+    // Bundle 29 F-02/E-01 fix: equation as displayed must balance. Previously
+    // the math sub-line read "$X surplus − $Y buffer = $Z" but the actual
+    // computation also subtracts provisions ($298/mo). Opus E-01 caught this
+    // — three-term display so the user can do the arithmetic themselves.
+    let _provsForMath = 0;
+    // guardian-allow-block-start: tdz-safe-engine-access — savings sub-screen renders only at user-action time post-boot; PLAN is initialised. typeof guard is defensive null-check, not a TDZ guard (permanent — see openPaydayCategory call path)
+    try { _provsForMath = (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+    // guardian-allow-block-end: tdz-safe-engine-access
+    const provsHtml = _provsForMath > 0
+      ? ' − $' + Math.round(_provsForMath).toLocaleString() + ' provisions'
+      : '';
+    html += '<div style="font-size:12px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$' + Math.round(surplusBeforeBuffer).toLocaleString() + ' surplus' + provsHtml + ' − $' + Math.round(bufferReserved).toLocaleString() + ' safety buffer = $' + Math.round(allocatable).toLocaleString() + '</div>';
   }
   if (allocated > 0) {
     html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Already allocated this cycle: <strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocated) + '</strong></div>';
@@ -13454,7 +13473,12 @@ function showToast(msg) {
     // 800 sits above everything modal-tier (canvas 510, modals 600, recon
     // 620, edit-modal 700) so toasts are always visible regardless of
     // which surface is open when they fire.
-    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
+    // Bundle 29 F-23/E-05 fix: dropped white-space:nowrap because long
+    // lock-confirmation strings ("🔒 Plan locked — tick items as you handle
+    // them · 🔥 N cycle streak · 💰 payday recorded as landed") exceeded
+    // 380px viewport and clipped left + right. Now wraps. max-width keeps
+    // it inside viewport. text-align:center for multi-line balance.
+    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;max-width:calc(100vw - 48px);white-space:normal;text-align:center;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
     document.body.appendChild(el);
   }
   el.textContent = msg;
