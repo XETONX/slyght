@@ -9526,7 +9526,10 @@ function markPaydayLandedToday() {
   }
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
   if (typeof renderAll === 'function') renderAll();
-  if (typeof showToast === 'function') showToast('✓ Payday marked landed today');
+  // Bundle 29 alive: success-haptic on payday-landed — biggest single
+  // cycle event, deserves the satisfying double-pulse pattern
+  if (typeof _haptic === 'function') _haptic('success');
+  if (typeof showToast === 'function') showToast('💰 Payday landed today · time to plan');
 }
 
 // Bundle 27 Phase 6.1: Canvas-wide undo wrapper. Calls BRAIN.plan.undoLast
@@ -10721,7 +10724,11 @@ function openPaydayLockPlan() {
         try { SNAPSHOTS.take('payday-plan-locked', { cycleId: snap.cycleId }); } catch (_) {}
       }
       renderPaydayPlanRoot();
-      if (typeof showToast === 'function') showToast('🔒 Plan locked — tick items as you handle them');
+      // Bundle 29 alive: medium haptic on lock + streak-aware celebration
+      if (typeof _haptic === 'function') _haptic('medium');
+      const newStreak = +(S.activePlan && S.activePlan.streak) || 0;
+      const streakBit = newStreak > 1 ? ' · 🔥 ' + newStreak + ' cycle streak' : '';
+      if (typeof showToast === 'function') showToast('🔒 Plan locked — tick items as you handle them' + streakBit);
       return { ok: true };
     },
   });
@@ -10993,7 +11000,26 @@ function paydayTick(category, itemId, sourceTag) {
   if (fn) fn();
   if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
   if (typeof renderAll === 'function') renderAll();
-  if (typeof showToast === 'function') showToast('✓ Marked done');
+  // Bundle 29 alive: haptic feedback + bills-all-paid celebration
+  if (typeof _haptic === 'function') _haptic('light');
+  // Detect bills-all-paid celebration: post-tick, check if every bill in
+  // this cycle is now ticked. If yes, celebrate beyond the standard
+  // "Marked done" toast.
+  let allDone = false;
+  try {
+    if (category === 'bill' && typeof BRAIN !== 'undefined' && BRAIN.bills && BRAIN.bills.getThisCycle) {
+      const allBills = BRAIN.bills.getThisCycle();
+      const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks.bill) || {};
+      const isPaid = (b) => ticks[b.name] || (typeof isThisMonthlyBillPaid === 'function' && isThisMonthlyBillPaid(b.name, b.day));
+      allDone = allBills.length > 0 && allBills.every(isPaid);
+    }
+  } catch (_) {}
+  if (allDone) {
+    if (typeof showToast === 'function') showToast('🎉 All bills covered for this cycle — great cycle!');
+    if (typeof _haptic === 'function') _haptic('success');
+  } else {
+    if (typeof showToast === 'function') showToast('✓ Marked done');
+  }
 }
 // paydayUntick deleted Bundle 28 Phase 0.1 — was defined Bundle 27 but no UI
 // caller existed (verified via grep). When long-press untick lands as a real
@@ -11138,10 +11164,17 @@ function _attachLivePreview(opts) {
     inp.addEventListener('input', update);
     inp.addEventListener('change', update);
   });
-  // Also wire quick-pick selections (any .quickpick click in scope)
+  // Also wire quick-pick selections (any .quickpick click in scope) AND
+  // the Custom input's own input event — when user types into Custom,
+  // the value changes without the chip-grid click event firing.
   const grid = root.querySelector('#quickpick-grid');
   if (grid) {
     grid.addEventListener('click', () => setTimeout(update, 30));
+  }
+  const customInput = root.querySelector('#quickpick-custom-input') || document.getElementById('quickpick-custom-input');
+  if (customInput) {
+    customInput.addEventListener('input', update);
+    customInput.addEventListener('change', update);
   }
   // Run once for initial render
   update();
@@ -11455,7 +11488,7 @@ function renderPaydaySavings() {
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         onTap: "openEditPaydayTripAlloc('" + t.id + "')",
-        onTickTap: snap.locked ? "paydayTick('savings', 'trip-" + t.id + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)" : "alert('" + _PAYDAY_TICK_HINT_PRE + "')",
+        onTickTap: snap.locked ? "paydayTick('savings', 'trip-" + t.id + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)" : "showToast('" + _PAYDAY_TICK_HINT_PRE + "')",
       });
     });
     html += '</div>';
@@ -11628,10 +11661,19 @@ function renderPaydayUpcoming() {
     });
     html += '</div>';
   } else {
-    html += '<div class="subscreen-placeholder">No upcoming items yet.<br><br>Things you know you\'ll need to buy this cycle — gifts, essentials, events, one-offs. Tap below to add.</div>';
+    // Bundle 29 alive: empty-state playfulness — animated emoji + green CTA + microcopy
+    html += '<div class="empty-playful">'
+      + '<div class="ep-emoji">🎯</div>'
+      + '<div class="ep-headline">Add what you know is coming</div>'
+      + '<div class="ep-body">Gifts · essentials · events · one-offs. The AI uses these when you ask "can I afford X."</div>'
+      + '<button class="ep-cta" onclick="openEditPaydayUpcoming(null)">＋ Add the first thing</button>'
+      + '</div>';
   }
-  html += '<div class="settings-pointer-row"><a onclick="openEditPaydayUpcoming(null)">+ Add item</a></div>';
-  html += '<div class="settings-section-hint" style="margin-top:14px">Things you know you\'ll need to buy this cycle. The AI will know about these when you ask "can I afford X."</div>';
+  // Show the +Add row only when there are existing items (else the playful CTA above handles it)
+  if (list.length) {
+    html += '<div class="settings-pointer-row"><a onclick="openEditPaydayUpcoming(null)">+ Add item</a></div>';
+    html += '<div class="settings-section-hint" style="margin-top:14px">Things you know you\'ll need to buy this cycle. The AI will know about these when you ask "can I afford X."</div>';
+  }
   body.innerHTML = html;
 }
 
@@ -23296,6 +23338,8 @@ function confirmGoalComplete(goalId) {
   }
   PLAN_MODAL.close();
   renderPlanMode();
+  // Bundle 29 alive: heavy-haptic celebration on goal complete
+  if (typeof _haptic === 'function') _haptic('heavy');
   showToast('🎉 Goal Complete — Well Done!');
 }
 
