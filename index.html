@@ -848,6 +848,8 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
         </div>
       </div>
     </div>
+    <!-- r77: PLAN-active banner — visible across pg-dash, mirrors pg-cal/pg-spend. -->
+    <div id="plan-active-banner-dash"></div>
     <div class="hero-section pad" style="padding-bottom:0">
       <div class="hero-ctx">Virgin Money</div>
       <div class="hero-bal" id="h-bal" onclick="openHeroBalEdit()" title="Tap to update balance" style="cursor:pointer">$0.00</div>
@@ -907,6 +909,9 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
   <!-- BILLS (Calendar) -->
   <div class="screen" id="pg-cal">
     <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:14px;font-weight:600;color:var(--text2)">Bills</div></div>
+    <!-- r77: PLAN-active banner — visible across pg-cal, mirrors pg-dash banner.
+         John 2026-05-15: "plan must hold a flag until i press unlock". -->
+    <div id="plan-active-banner-cal"></div>
     <div class="pad">
       <div class="card" style="padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -973,6 +978,8 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
   <!-- ANALYSIS -->
   <div class="screen" id="pg-spend">
     <div class="hdr"><div class="hdr-logo">SLYGHT</div><div style="font-size:14px;font-weight:600;color:var(--text2)">Analysis</div></div>
+    <!-- r77: PLAN-active banner on analysis surface too. -->
+    <div id="plan-active-banner-spend"></div>
     <div class="pad">
       <div id="analysis-content"></div>
       <div id="monthly-position" style="margin-top:12px"></div>
@@ -3219,22 +3226,61 @@ function renderSurvivalBanner(safe) {
   } else {
     el.innerHTML = '';
   }
-  // r74 (C-03 fix): post-lock awareness. When the user has locked their
-  // plan and ticked bills, the survival banner above speaks in raw
-  // bank-balance terms — "$X CRITICAL" — which contradicts the canvas
-  // "ALL PAID · free money $Y" celebration. Append a thin acknowledgement
-  // line so the dashboard surface knows the cycle plan is locked.
-  try {
-    if (S.activePlan && S.activePlan.lockedAt) {
-      const tBill = (S.activePlan.ticks && S.activePlan.ticks.bill) || {};
-      const tDebt = (S.activePlan.ticks && S.activePlan.ticks.debt) || {};
-      const tSav = (S.activePlan.ticks && S.activePlan.ticks.savings) || {};
-      const totalTicks = Object.keys(tBill).length + Object.keys(tDebt).length + Object.keys(tSav).length;
-      if (totalTicks > 0) {
-        el.innerHTML += '<div class="alert" style="margin-bottom:8px;background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);color:var(--text2);font-size:13px;padding:8px 12px;cursor:pointer" onclick="openPaydayPlan()" role="button" aria-label="Open Payday Plan canvas">🔒 <strong>Cycle plan locked</strong> · ' + totalTicks + ' item' + (totalTicks === 1 ? '' : 's') + ' tracked this cycle · <span style="text-decoration:underline">tap for canvas</span></div>';
-      }
-    }
-  } catch (_) {}
+  // r77 (John 2026-05-15 ask: "must hold a flag until i press unlock"):
+  // moved the PLAN-active banner into its own dedicated renderer
+  // (renderPlanActiveBanner) so it can be reused across pg-dash, pg-cal,
+  // and pg-spend. Banner now ALWAYS shows when S.activePlan.lockedAt is
+  // truthy, even with zero ticks — the user explicitly locked the plan
+  // and we treat that lock as a permanent flag until they tap Unlock.
+}
+
+// r77: render the persistent PLAN-ACTIVE banner. Called for each main
+// tab so the lock state is visible across the app. Tap = open canvas.
+// "Unlock" inline button = unlockPlanWithConfirm() — explicit release.
+function renderPlanActiveBanner(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  if (!S.activePlan || !S.activePlan.lockedAt) {
+    el.innerHTML = '';
+    return;
+  }
+  const tBill = (S.activePlan.ticks && S.activePlan.ticks.bill) || {};
+  const tDebt = (S.activePlan.ticks && S.activePlan.ticks.debt) || {};
+  const tSav = (S.activePlan.ticks && S.activePlan.ticks.savings) || {};
+  const tUpc = (S.activePlan.ticks && S.activePlan.ticks.upcoming) || {};
+  const tKia = (S.activePlan.ticks && S.activePlan.ticks['kia-extra']) || {};
+  const totalTicks = Object.keys(tBill).length + Object.keys(tDebt).length +
+                     Object.keys(tSav).length + Object.keys(tUpc).length + Object.keys(tKia).length;
+  const lockedDate = new Date(S.activePlan.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+  const tracked = totalTicks > 0
+    ? totalTicks + ' tracked'
+    : 'no items ticked yet';
+  el.innerHTML =
+    '<div style="margin:8px 16px 0;background:linear-gradient(135deg,rgba(0,232,122,0.10),rgba(0,232,122,0.03));border:1px solid var(--green-border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:12px" role="status" aria-label="Cycle plan is locked">' +
+      '<div style="width:36px;height:36px;border-radius:50%;background:rgba(0,232,122,0.18);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔒</div>' +
+      '<div onclick="openPaydayPlan()" style="flex:1;min-width:0;cursor:pointer" role="button" aria-label="Open Payday Plan canvas">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--green);line-height:1.3">Plan active · locked ' + lockedDate + '</div>' +
+        '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + tracked + ' · <span style="text-decoration:underline">tap for canvas</span></div>' +
+      '</div>' +
+      '<button onclick="event.stopPropagation();unlockPlanWithConfirm()" aria-label="Unlock this cycle plan" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);border-radius:10px;color:var(--text2);font-size:11px;font-weight:700;padding:6px 10px;cursor:pointer;letter-spacing:.04em;text-transform:uppercase;flex-shrink:0">Unlock</button>' +
+    '</div>';
+}
+
+// r77 (John 2026-05-15 ask: "until i say no"): explicit user-initiated
+// unlock. Clears S.activePlan.lockedAt + the streak-eligibility token,
+// preserves ticks (history is valuable). Confirms before clearing so a
+// stray tap doesn't undo a deliberate lock.
+function unlockPlanWithConfirm() {
+  if (!S.activePlan || !S.activePlan.lockedAt) return;
+  const ok = window.confirm('Unlock this plan? Your tick history stays; the lock flag clears so you can re-allocate.');
+  if (!ok) return;
+  S.activePlan.lockedAt = null;
+  S.activePlan.lastStreakedCycleId = null;  // re-allow streak credit on re-lock
+  try { BRAIN.audit.append({ type: 'plan_unlocked_by_user', cycleId: S.activePlan.cycleId, ts: Date.now() }); } catch (_) {}
+  if (typeof save === 'function') save();
+  if (typeof showToast === 'function') showToast('🔓 Plan unlocked');
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
 }
 function checkDayBudgetAlert() {
   const todaySpent = getTodayDiscretionarySpend();
@@ -6174,6 +6220,14 @@ function renderAll() {
   // for tight/cautious modes, replacing the separate "Very tight" alert that
   // renderAlerts now suppresses in non-normal modes.
   renderSurvivalBanner(safe);
+  // r77: persistent PLAN-active banner across dashboard + bills + analysis.
+  // Visible whenever S.activePlan.lockedAt is set; only an explicit
+  // unlockPlanWithConfirm() tap clears it.
+  if (typeof renderPlanActiveBanner === 'function') {
+    renderPlanActiveBanner('plan-active-banner-dash');
+    renderPlanActiveBanner('plan-active-banner-cal');
+    renderPlanActiveBanner('plan-active-banner-spend');
+  }
 
   // 3 metrics (FIX 3)
   const dailyBudget = getDailyBudget();
