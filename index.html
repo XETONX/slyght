@@ -10056,6 +10056,23 @@ function openEditPaydaySavings(bucketName) {
   const ov = overrides['savings:' + bucketName];
   const current = ov ? ov.thisCycleAmount : (+planSavings[bucketName] || 0);
   const monthly = +bucket.monthly || 0;
+  // Bundle 28 round 72+ (R1): goal-context modal title.
+  // If a goal intent links to this bucket, title shows the goal NAME, with
+  // bucket name relegated to subtitle. Closes the "this is my goal, why does
+  // the modal call it the bucket name" mental-model gap.
+  let _goalDef = null;
+  try {
+    if (BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
+      const _intent = (BRAIN.plan.intent.byBucket(bucketName) || []).find(i => i && i.kind === 'goal');
+      if (_intent) _goalDef = (S.goalDefs || []).find(g => g.id === _intent.id);
+    }
+  } catch (_) {}
+  const _modalTitle = (_goalDef && _goalDef.name && _goalDef.name !== bucketName)
+    ? ((_goalDef.emoji || '🎯') + ' ' + _goalDef.name + ' — this cycle')
+    : ('💰 ' + bucketName + ' — this cycle');
+  const _modalHint = (_goalDef && _goalDef.name && _goalDef.name !== bucketName)
+    ? ('Stored in your "' + bucketName + '" bucket. How much goes to this goal this cycle.')
+    : 'How much of your remainder goes to this goal this cycle.';
   let body = '';
   if (monthly > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Monthly target: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(monthly).toLocaleString() + '</strong></div>';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Allocate this cycle:</div>';
@@ -10068,8 +10085,8 @@ function openEditPaydaySavings(bucketName) {
     '<button onclick="confirmDeleteBucketFromCanvas(\'' + bucketName.replace(/'/g, "\\'") + '\')" style="width:100%;padding:10px;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.25);border-radius:8px;color:rgba(231,76,60,0.85);font-size:13px;font-weight:600;cursor:pointer">🗑️ Delete this savings goal</button>' +
     '</div>';
   EDIT_MODAL.openCustom({
-    title: 'Allocate to ' + bucketName,
-    hint: 'How much of your remainder goes to this goal this cycle.',
+    title: _modalTitle,
+    hint: _modalHint,
     bodyHtml: body,
     onReady: _wireQuickPickGrid,
     save: () => {
@@ -11084,6 +11101,19 @@ function renderPaydaySavings() {
     });
     html += '</div>';
   }
+  // Bundle 28 round 72+ (R1): reverse-lookup intent linkage so goal NAMES
+  // surface here instead of bucket names. Closes John's morning gap where
+  // "Freedom Buffer" rendered as "Rainy Day Fund" and "Property Deposit"
+  // didn't render at all (its bucket is the synthetic __mum-account__ token).
+  // Full intent-driven redesign queued Bundle 29; this is the R1 quick-fix.
+  // SDD-2026-05-14-intent-driven-goal-subtitle.
+  const _intentForBucket = (bName) => {
+    try {
+      if (!BRAIN.plan.intent || !BRAIN.plan.intent.byBucket) return null;
+      const list = BRAIN.plan.intent.byBucket(bName) || [];
+      return list.find(i => i && i.kind === 'goal') || null;
+    } catch (_) { return null; }
+  };
   // Bucket rows
   if (buckets.length) {
     html += '<div class="settings-group-title">Your savings goals</div>';
@@ -11094,19 +11124,29 @@ function renderPaydaySavings() {
       const ov = overrides[key];
       const amt = ov ? ov.thisCycleAmount : (+planSavings[b.name] || 0);
       const saved = (+b.saved || 0);
-      const target = (+b.goal || 0);
+      const bucketTarget = (+b.goal || 0);
+      const intent = _intentForBucket(b.name);
+      const goalDef = intent ? (S.goalDefs || []).find(g => g.id === intent.id) : null;
+      const displayName = goalDef ? goalDef.name : b.name;
+      const displayTarget = goalDef && (+goalDef.target || 0) > 0 ? +goalDef.target : bucketTarget;
       const subParts = [];
-      if (target > 0) {
-        const pct = Math.round(saved / target * 100);
-        subParts.push('$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(target).toLocaleString() + ' goal (' + pct + '%)');
+      if (displayTarget > 0) {
+        const pct = Math.round(saved / displayTarget * 100);
+        subParts.push('$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(displayTarget).toLocaleString() + ' goal (' + pct + '%)');
       } else {
         subParts.push('$' + Math.round(saved).toLocaleString() + ' saved');
       }
-      const bucketEmoji = /china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /gift/i.test(b.name) ? '🎁' : '💰';
+      // When goal name and bucket name differ, surface the bucket context
+      // so user knows "Freedom Buffer is stored in your Rainy Day Fund bucket"
+      if (goalDef && b.name !== goalDef.name) {
+        subParts.push('stored in ' + b.name);
+      }
+      const bucketEmoji = (goalDef && goalDef.emoji)
+        || (/china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /gift/i.test(b.name) ? '🎁' : '💰');
       html += _paydayRow({
         ticked: !!ticks[b.name],
         icon: bucketEmoji,
-        name: b.name,
+        name: displayName,
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         onTap: "openEditPaydaySavings('" + b.name.replace(/'/g, "\\'") + "')",
@@ -11115,6 +11155,48 @@ function renderPaydaySavings() {
     });
     html += '</div>';
   }
+  // Bundle 28 round 72+ (R1): render goal-only entries (intents linked to
+  // synthetic accounts like __mum-account__ that have NO real bucket). These
+  // need a row so John can SEE the goal exists; they don't get a per-cycle
+  // allocation override because the per-cycle flow is the bill-driven closed
+  // loop (e.g. Property Deposit increments come from paying the Rent + Deposit
+  // Savings bill, not from allocating here). Tap goes to the canonical
+  // Goals-tile editor (editGoal) — same affordance PLAN-tab uses.
+  try {
+    const allGoalIntents = (BRAIN.plan.intent && BRAIN.plan.intent.byKind) ? (BRAIN.plan.intent.byKind('goal') || []) : [];
+    const renderedBucketNames = new Set(buckets.map(b => b.name));
+    const syntheticGoals = allGoalIntents.filter(i => {
+      if (!i || !i.bucketId) return false;
+      if (renderedBucketNames.has(i.bucketId)) return false;
+      return /^__/.test(i.bucketId);
+    });
+    if (syntheticGoals.length) {
+      html += '<div class="settings-group-title">Other savings goals</div>';
+      html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">These goals don\'t have a per-cycle slider here — money flows in via the linked bill or account.</div>';
+      html += '<div class="settings-group-card">';
+      syntheticGoals.forEach(intent => {
+        const goalDef = (S.goalDefs || []).find(g => g.id === intent.id);
+        if (!goalDef) return;
+        const saved = +goalDef.saved || 0;
+        const target = +goalDef.target || 0;
+        const pct = target > 0 ? Math.round(saved / target * 100) : 0;
+        const subParts = [];
+        if (target > 0) subParts.push('$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(target).toLocaleString() + ' goal (' + pct + '%)');
+        else subParts.push('$' + Math.round(saved).toLocaleString() + ' saved');
+        const accountLabel = intent.bucketId === '__mum-account__' ? 'via Mum-managed savings' : ('via ' + intent.bucketId.replace(/^__|__$/g, ''));
+        subParts.push(accountLabel);
+        html += _paydayRow({
+          ticked: false,
+          icon: goalDef.emoji || '🎯',
+          name: goalDef.name,
+          sub: subParts.join(' · '),
+          value: '',
+          onTap: "editGoal('" + intent.id + "')",
+        });
+      });
+      html += '</div>';
+    }
+  } catch (_) {}
   // Annual provisions note (rego/insurance bucket filter)
   if (provisionBuckets.length) {
     html += '<div class="settings-group-title">Annual provisions</div>';
