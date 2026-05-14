@@ -197,8 +197,12 @@ body.edit-modal-open{overflow:hidden}
 .living-card .lc-status-pill[data-status="tight"]{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)}
 .living-card .lc-status-pill[data-status="critical"]{background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)}
 .living-card .lc-status-pill[data-status="impossible"]{background:rgba(127,29,29,0.18);color:#fca5a5;border:1px solid #7f1d1d;animation:alive-pulse-neg 1.4s ease-in-out infinite}
-.living-card .lc-ceiling{font-size:13px;color:var(--text2);background:var(--bg3);border-radius:8px;padding:8px 12px;margin:6px 0 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.living-card .lc-ceiling{font-size:13px;color:var(--text2);background:var(--bg3);border-radius:8px;padding:8px 12px;margin:6px 0 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;transition:background .2s,color .2s,border .2s;border:1px solid transparent}
 .living-card .lc-ceiling strong{font-family:var(--mono);color:var(--text);font-weight:700}
+.living-card .lc-ceiling-broken{background:rgba(127,29,29,0.18);color:#fca5a5;border-color:#7f1d1d;font-weight:600}
+.living-card .lc-ceiling-broken strong{color:#fca5a5}
+.living-card .lc-slider-impossible .living-floor-slider{background:linear-gradient(90deg,var(--bg3) 0%,var(--bg3) 50%,rgba(231,76,60,0.35) 50%,rgba(231,76,60,0.35) 100%)}
+.living-card .lc-slider-impossible .living-floor-slider::-webkit-slider-thumb{background:var(--red);box-shadow:0 0 0 4px rgba(231,76,60,0.25);animation:alive-pulse-neg 1.4s ease-in-out infinite}
 .living-card .lc-slider-wrap{padding:6px 0 26px}
 .living-card .lc-slider-track{position:relative}
 .living-card .lc-slider-marker{position:absolute;top:18px;transform:translateX(-50%);pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1;white-space:nowrap}
@@ -11919,7 +11923,12 @@ function _computeLivingStatus(floor, ctx) {
   const maxAfford = +ctx.maxAffordablePerDay || 0;
   const recent = ctx.recentAvgPerDay;
   const recommended = +ctx.recommendedFloor || 0;
-  if (maxAfford > 0 && floor > maxAfford) {
+  // Bundle 29 demon-time fix: IMPOSSIBLE when floor exceeds max — must
+  // fire even when max is $0 (the "buffer ate everything" case John
+  // 2026-05-14 caught: buffer $1000 + floor $200 + max $0 incorrectly
+  // showed Healthy). Removed the `maxAfford > 0` guards so the math-
+  // broken state surfaces no matter the absolute size of max.
+  if (floor > maxAfford) {
     return { key: 'impossible', emoji: '🚫', text: 'Impossible', tone: 'neg' };
   }
   if (maxAfford > 0 && floor > maxAfford * 0.95) {
@@ -11953,21 +11962,30 @@ function renderPaydayLiving() {
   // recommendedFloor: the "sweet spot" we suggest. Sits at recent_avg + $10
   // headroom if data available, else at 70% of maxAffordable, clamped to
   // [20, maxAffordable * 0.9]. Rounded to nearest $5 to match slider step.
-  const _rec_raw = recentAvgPerDay != null
-    ? recentAvgPerDay + 10
-    : maxAffordablePerDay * 0.7;
-  const _rec_clamped = Math.max(20, Math.min(_rec_raw, Math.max(20, maxAffordablePerDay * 0.9)));
-  const recommendedFloor = Math.round(_rec_clamped / 5) * 5;
+  // Returns null when maxAfford ≤ 0 — there's no safe value to recommend.
+  let recommendedFloor = null;
+  if (maxAffordablePerDay > 20) {
+    const _rec_raw = recentAvgPerDay != null
+      ? recentAvgPerDay + 10
+      : maxAffordablePerDay * 0.7;
+    const _rec_clamped = Math.max(20, Math.min(_rec_raw, maxAffordablePerDay * 0.9));
+    recommendedFloor = Math.round(_rec_clamped / 5) * 5;
+  }
   const ctx = { maxAffordablePerDay, recentAvgPerDay, recommendedFloor };
   const status = _computeLivingStatus(floor, ctx);
-  // Slider range — pin top at min(200, ceil(maxAfford)) so user can't pick
-  // a literally-impossible floor by accident. Floor of 20 stays.
-  const sliderMax = Math.max(40, Math.min(200, Math.ceil(maxAffordablePerDay) || 200));
-  // Position calc for recommended-marker on slider (percentage offset).
-  const recMarkerPct = Math.max(0, Math.min(100, ((recommendedFloor - 20) / (sliderMax - 20)) * 100));
+  // Slider range — keep full 20–200 range so user can SEE the no-go zone
+  // beyond max-affordable (rather than pretending it doesn't exist by
+  // capping). The slider stays interactive but the IMPOSSIBLE state
+  // surfaces immediately + the ceiling line turns red.
+  const sliderMax = 200;
+  // Position calc for markers on slider (percentage offset).
+  const recMarkerPct = recommendedFloor != null
+    ? Math.max(0, Math.min(100, ((recommendedFloor - 20) / (sliderMax - 20)) * 100))
+    : null;
   const maxMarkerPct = maxAffordablePerDay > 0 && maxAffordablePerDay < sliderMax
     ? Math.max(0, Math.min(100, ((maxAffordablePerDay - 20) / (sliderMax - 20)) * 100))
     : null;
+  const isImpossible = floor > maxAffordablePerDay;
   let html = '';
   html += '<div class="living-card">';
   html += '  <h3>📆 Daily Living</h3>';
@@ -11985,21 +12003,31 @@ function renderPaydayLiving() {
        +  '    <span class="lc-status-pill" id="living-status-pill" data-status="' + status.key + '">' + status.emoji + ' ' + status.text + '</span>'
        +  '    <span style="color:var(--text3);margin-left:auto;font-size:11px">drag to change</span>'
        +  '  </div>';
-  // Max affordable line — surfaces the ceiling so John SEES what's left for daily
-  html += '  <div class="lc-ceiling">'
-       +  '    💵 Math says you can afford up to <strong id="living-max-afford">$' + Math.round(maxAffordablePerDay) + '/day</strong>'
-       +  '    <span style="color:var(--text3);font-size:11px">after bills · debts · savings · upcoming · buffer</span>'
+  // Max affordable line — surfaces the ceiling so John SEES what's left for daily.
+  // When floor > max, ceiling turns red + headline becomes "🚨 Math is broken".
+  const _ceilCls = isImpossible ? 'lc-ceiling lc-ceiling-broken' : 'lc-ceiling';
+  const _ceilHeadline = isImpossible
+    ? '🚨 Math is broken — your floor exceeds what you can afford'
+    : '💵 Math says you can afford up to <strong id="living-max-afford">$' + Math.round(maxAffordablePerDay) + '/day</strong>';
+  const _ceilSub = isImpossible
+    ? 'Drop the buffer, lower the floor, or trim a savings goal to fix this.'
+    : 'after bills · debts · savings · upcoming · buffer';
+  html += '  <div class="' + _ceilCls + '">'
+       +  '    ' + _ceilHeadline
+       +  '    <span style="color:var(--text3);font-size:11px;display:block;width:100%;margin-top:2px">' + _ceilSub + '</span>'
        +  '  </div>';
-  // Slider with recommended marker overlay
+  // Slider with recommended-marker (when defined) + max-marker overlay
   html += '  <div class="lc-slider-wrap">'
        +  '    <div class="lc-slider-labels">'
        +  '      <span>$20</span>'
        +  '      <span class="lc-current" id="living-current-label">$' + Math.round(floor) + '/day</span>'
        +  '      <span>$' + sliderMax + '</span>'
        +  '    </div>'
-       +  '    <div class="lc-slider-track">'
+       +  '    <div class="lc-slider-track' + (isImpossible ? ' lc-slider-impossible' : '') + '">'
        +  '      <input type="range" min="20" max="' + sliderMax + '" step="5" value="' + Math.round(Math.min(floor, sliderMax)) + '" id="living-floor-slider" class="living-floor-slider" aria-label="Daily living floor in dollars">'
-       +  '      <div class="lc-slider-marker lc-marker-rec" id="living-marker-rec" style="left:' + recMarkerPct.toFixed(1) + '%" title="Recommended: $' + recommendedFloor + '/day"><span>🎯 $' + recommendedFloor + '</span></div>'
+       + (recMarkerPct != null
+          ? ('      <div class="lc-slider-marker lc-marker-rec" id="living-marker-rec" style="left:' + recMarkerPct.toFixed(1) + '%" title="Recommended: $' + recommendedFloor + '/day"><span>🎯 $' + recommendedFloor + '</span></div>')
+          : '')
        + (maxMarkerPct != null
           ? ('      <div class="lc-slider-marker lc-marker-max" id="living-marker-max" style="left:' + maxMarkerPct.toFixed(1) + '%" title="Max affordable: $' + Math.round(maxAffordablePerDay) + '/day"><span>🚫 max</span></div>')
           : '')
@@ -12040,6 +12068,8 @@ function renderPaydayLiving() {
     const currentLabelEl = document.getElementById('living-current-label');
     const cycleTotalEl = document.getElementById('living-cycle-total');
     const statusPillEl = document.getElementById('living-status-pill');
+    const ceilingEl = document.querySelector('.living-card .lc-ceiling');
+    const sliderTrackEl = document.querySelector('.living-card .lc-slider-track');
     if (slider) {
       const updateLive = () => {
         const v = +slider.value || 0;
@@ -12051,6 +12081,11 @@ function renderPaydayLiving() {
           statusPillEl.dataset.status = s.key;
           statusPillEl.textContent = s.emoji + ' ' + s.text;
         }
+        // Bundle 29 demon-time: toggle impossible state on ceiling +
+        // slider-track so the visual matches the status pill at all times.
+        const nowImpossible = v > maxAffordablePerDay;
+        if (ceilingEl) ceilingEl.classList.toggle('lc-ceiling-broken', nowImpossible);
+        if (sliderTrackEl) sliderTrackEl.classList.toggle('lc-slider-impossible', nowImpossible);
       };
       slider.addEventListener('input', updateLive);
       slider.addEventListener('change', () => {
