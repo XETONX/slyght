@@ -344,6 +344,8 @@ John verdict: _"Bills sub-screen does its job. Trust it for tonight."_
 
 ---
 
+_(Surface 2-3 walked above — Bills + Debts. Continuing with Daily Living · Savings · Upcoming.)_
+
 ## SURFACE 3: Debts sub-screen (`renderPaydayDebts`)
 
 **Capture:** none (sub-screen gap §F) · **Code:** `index.html` L10932–10987 · **DOM target:** `#payday-debts-body` · **Entry:** `openPaydayCategory('payday-debts')`
@@ -425,6 +427,303 @@ The Michael debt is "Due 16 May" — tomorrow. John will see this row clearly. T
 ### Verdict
 
 🟢 **Ship-quality.** Tonight John will use this surface for the 3 active non-paid non-viaRent debts (Michael · Bowie vet · viaRent property). Renders are accurate; tap-targets correct. One micro-concern about row density with viaRent multi-tag rows on 380px — verify on tonight's phone walk.
+
+---
+
+## SURFACE 4: Daily Living sub-screen (`renderPaydayLiving`)
+
+**Capture:** none (sub-screen gap) · **Code:** L11163–11227 · **DOM:** `#payday-living-body`
+
+### Round-46-to-71 reconciliation
+
+Not directly touched in r46–r71 by name. Stable since Bundle 27 Phase 3. Reads from `BRAIN.summary.total('last30days')` at L11176 — relies on Bundle 28 Phase 28.0.5 era summary bubble.
+
+### What's on screen
+
+1. Header: `$plannedTotal` (the total daily living budget for cycle).
+2. **Current** card: `$X/day × N days = $Y` monospace formula.
+3. **Floors** group: two editable rows — "Minimum daily" ($25) + "Safety buffer" ($364 from live state).
+4. **Context** card (read-only): Status (Healthy/Tight/Below-floor) · Floor · Planned · Recent average from BRAIN.summary.
+5. **About** card: explains formula `(To plan − Bills − Debts − Savings − Known upcoming) ÷ days` + "To increase your daily, reduce one of the categories above."
+
+### Specific-vs-generic
+
+All specific. The Status badge reads as actual computed state. Recent-average pulls real data from summary bubble. Floor + safety buffer values from `S.activePlan` ✓.
+
+### Interactive element trace
+
+| Element | WRITE | Propagation |
+|---|---|---|
+| "Minimum daily" row tap | `openEditPaydayLivingFloor()` L10645 → `BRAIN.plan.setDailyLivingFloor(amt, PLAN_DAILY_FLOOR_EDIT)` | re-renders living + root ✓ |
+| "Safety buffer" row tap | `openEditPaydayBufferFloor()` L10670 → `BRAIN.plan.setBufferFloor(amt, PLAN_BUFFER_FLOOR_EDIT)` | re-renders living + root ✓ |
+
+### 8-grep audit (dailyLivingFloor + bufferFloor)
+
+Direct writes only via `setDailyLivingFloor` / `setBufferFloor` ✓. Reads via `S.activePlan.dailyLivingFloor` or `S.activePlan.bufferFloor` in: getSnapshot, renderPaydayLiving, getDynamicDailyBudget (search confirms). All consumers go through canonical state. Audit-log entries via `plan_daily_floor_edit` / `plan_buffer_floor_edit` ✓.
+
+### Number divergence
+
+| Number | Source | Cross-tile |
+|---|---|---|
+| `perDay` | `livingTotal / daysInCycle` (snap.dailyLiving.perDay) | Single source ✓ |
+| `recent average` | `BRAIN.summary.total('last30days') / 30` | only this surface |
+
+**Status threshold** uses `floor` and `floor * 1.2` — magic-number-ish. Not a bug, but tightens to floor's role.
+
+### Static text audit
+
+- "Daily living is what you spend on day-to-day stuff that **isn't** a known upcoming item" ✓ Plain English.
+- Formula line `(To plan − Bills − Debts − Savings − Known upcoming) ÷ days` ✓ honest.
+- "To increase your daily, reduce one of the categories above." ✓ actionable.
+
+### Empty state
+
+Always renders with computed defaults (floor $30 default, perDay $0 if all categories sum to plan total). No empty branch needed.
+
+### Transition check
+
+Standard sub-screen ✓.
+
+### Density check
+
+Floor + buffer rows ~64px ✓. Context card line-height 2 = readable. About card 14px line-height 1.6 = comfortable. 380px viewport: all rows fit.
+
+### Tonight-session check
+
+**Critical for tonight.** John explicitly said: "when I adjust living cost I can visualise what it will look like and if I can afford to live okay or its still tight."
+
+- Tap Minimum daily → set $30 (or whatever) → save → re-render shows new floor.
+- Recent-average comparison via BRAIN.summary tells him if his floor is realistic.
+- Status badge gives immediate verdict (Healthy/Tight/Below floor).
+
+⚠️ **One gap:** the "perDay" computed (snap.dailyLiving.perDay) is what's PLANNED — not what's been ACTUAL so far. If John's tonight session asks "am I on pace?", the "Recent average" gives one answer (last-30-days actual) and the Status gives another (planned-vs-floor). They don't directly reconcile. **Minor — surfacing for awareness, not P0.**
+
+### Adjacent observations
+
+| Obs | Room | Action |
+|---|---|---|
+| Status threshold magic `floor * 1.2` for "Tight" | E: extract const / D: n/a / CI: yes / F: ok / U: n/a — 3/5 | 🟢 minor, queue Bundle 29 hygiene |
+| Recent average uses BRAIN.summary which assumes 30-day window — but planning is per-cycle (~30 days too, but not identical) | E: ok / D: ok / CI: align? / F: ok / U: ok — 1/5 fork | 🟢 acceptable approximation |
+
+### Verdict
+
+🟢 **Ship-quality.** Tonight John can adjust the floor + watch the Pool re-flow into discretionary. Works.
+
+---
+
+## SURFACE 5: Savings sub-screen (`renderPaydaySavings`) — THE BIG ONE
+
+**Capture:** `captures/slyght-layerV-2026-05-14-18-plan-add-savings-modal.png` (modal only, not sub-screen body) · **Code:** L10989–11123 · **DOM:** `#payday-savings-body`
+
+**Why this surface matters for tonight:** John's morning complaints clustered HERE — "savings goals are generic, can't see Freedom Buffer or Property Deposit · China appears 3× · Annual Provisions section · Add new savings target is just text · shopping list section needed."
+
+### Round-46-to-71 reconciliation
+
+- **r3 (Bundle 27 P3)** filtered out annual-provision buckets via `isProvisionBucket` regex (`/rego|insurance|service|provision/i`) at L10999. Per John 2026-05-13 quoted in code comment.
+- **r5 (Bundle 28)** added the 3-button footer for + Goal · + Trip · + Bucket (L11116-11121). The "Add new savings target" hint precedes them. **John's morning "just text" likely refers to the HINT, not the missing CTAs** — they exist.
+- **r6 (Phase 6.2)** added Trips section (L11027) — upcoming trips with allocation rows.
+- **r9** added 🗑️ delete buttons on card siblings.
+- **r51** added unlinked-trips section in Auto-allocate modal (sibling surface) with [+ Bucket] action.
+
+### What's on screen
+
+1. Header: `_paydayShellHeader(snap, 'savings')` — total + count of buckets.
+2. **Pool to allocate** card — big monospace `$unallocated` + "left to split across goals" + "Already allocated this cycle: $X" if any.
+3. **Upcoming trips** group (when trips exist) — Darwin + China rows with `$saved of $budget (X%) · in N days`.
+4. **Your savings goals** group — bucket rows with emoji-by-name (China Holiday 🌏 · Rainy Day Fund 🌧️ · Gifts & Celebrations 🎁) showing `$saved of $target (X%)`.
+5. **Annual provisions** info card (when provision buckets exist) — names them inline, explains they're managed in PLAN > Annual Provisions.
+6. **Extra debt payment** group (when carloan > 0) — single KIA extra row with strategy hint.
+7. Footer: "Add a new savings target:" hint + 3 buttons (🎯 Goal · ✈️ Trip · 💰 Bucket).
+
+### Specific-vs-generic — THE CRITICAL TABLE
+
+| Element | Verdict | Detail |
+|---|---|---|
+| Pool to allocate $X label | [SPECIFIC] | derives from snap.derived.freeTotal |
+| Darwin trip row | [SPECIFIC] | Real trip + budget + days-until |
+| China trip row | [SPECIFIC] | Real trip + budget + days-until |
+| Bucket "China Holiday" row | [SPECIFIC] | Real bucket $96.62 / $4,000 |
+| Bucket "Rainy Day Fund" row | [SPECIFIC-but-MISLABELED] | This bucket is what the **Freedom Buffer goal** in `S.goalDefs` is linked to (per `S.planIntents[freedom-buffer].bucketId === 'Rainy Day Fund'`). Renders as "Rainy Day Fund" — John sees the bucket name, not the goal name "Freedom Buffer". **John's "Can't see Freedom Buffer" complaint roots here.** |
+| Bucket "Gifts & Celebrations" row | [SPECIFIC] | Real |
+| **[MISSING] Property Deposit goal** | — | `S.goalDefs[apartment]` exists with target $50,000 + monthly $2,500. Intent links to `__mum-account__` token, NOT a real bucket. So `BRAIN.savings.getBuckets()` doesn't include it → not rendered. **John's "Can't see Property Deposit" complaint roots here.** |
+| **[MISSING] Test goal / Kia detail** | — | `S.planIntents` has `Test goal` and `Kia detail` entries with bucketIds `"Test goal"` and `"Kia detail"` — IF those exist as buckets they'd render. Earlier dump showed no such buckets, so they don't render here either. But they DO clutter Goals tile on PLAN tab. State-pollution. **Cross-cut §A drag.** |
+| **[MISSING] "Freedom Buffer" name** | — | Goal exists in `S.goalDefs.freedom-buffer.name === "Freedom buffer"` but the bucket is named "Rainy Day Fund" → renderer shows bucket name. Two stores diverge. |
+| "Add new savings target:" hint | [SEMI-GENERIC] | Plain hint text, not a primary CTA. Followed by real buttons. **John's "just text" complaint — partially valid. The 3 buttons under it ARE real CTAs but the hint LOOKS like the affordance.** |
+| Annual provisions card "🚗 Rego & Insurance" | [SPECIFIC] | Names the actual filtered-out bucket(s). |
+| Annual provisions explainer "These are sinking funds…" | [SPECIFIC] | ✓ matches r47 architecture |
+
+### Interactive element trace
+
+| Element | WRITE | Propagation |
+|---|---|---|
+| Trip row tap | `openEditPaydayTripAlloc(t.id)` L10141 → setOverride('savings', 'trip-'+id, amt, …, PLAN_TRIP_ALLOC_EDIT) | re-renders savings + root ✓ |
+| Bucket row tap | `openEditPaydaySavings(b.name)` L10016 → setOverride('savings', b.name, amt, …, PLAN_SAVINGS_EDIT) | re-renders savings + root ✓ |
+| Tick (pre-lock) | `alert(_PAYDAY_TICK_HINT_PRE)` — native alert ⚠️ | none — and **native alert violates UX contract §6 "No native confirm() or alert()"** (per CC-MANUAL). **Audit P1.** |
+| Tick (post-lock) | `paydayTick('savings', name, PLAN_SAVINGS_TICK)` | ✓ |
+| KIA extra row tap | `openEditPaydayKiaExtra()` L10099 → setOverride('kia-extra', 'KIA', …, PLAN_KIA_EXTRA_EDIT) | ✓ |
+| 🎯 Goal button | `addNewGoal()` — opens PLAN_MODAL goal-create flow | creates intent + S.goalDefs entry, re-renders ✓ |
+| ✈️ Trip button | `addNewTrip()` — opens PLAN_MODAL trip-create flow | creates intent + S.tripDefs entry, re-renders ✓ |
+| 💰 Bucket button | `openAddBucketModal()` | creates bucket via BRAIN.savings.addBucket, re-renders ✓ |
+
+### 8-grep audit for `S.savingsBuckets` + `S.activePlan.overrides['savings:*']` + `S.activePlan.savings`
+
+1. Direct writes: `BRAIN.savings.{setBucketSaved, addToBucket, addBucket, updateBucket, removeBucket}` for buckets; `BRAIN.plan.setOverride('savings',…)` for plan amounts ✓
+2. Direct reads outside canonical: render reads `S.activePlan.savings` legacy mirror at L11005 — **fallback path only when override missing** (acceptable post-Bundle-27 P6.2)
+3. BRAIN readers: getSnapshot (L17430-17440) reads buckets via BRAIN.savings.getBuckets + override fallback to legacy mirror
+4. Render consumers: renderPaydaySavings, renderPaydayPlanRoot (via snap.savings), renderAllocateTile (PLAN-tab tile, same snapshot), renderGoalCards (PLAN-tab, different path), Settings Round-up dest dropdown
+5. Audit-log refs: PLAN_SAVINGS_EDIT · PLAN_TRIP_ALLOC_EDIT · PLAN_KIA_EXTRA_EDIT · BUCKET_ADD · BUCKET_UPDATE · BUCKET_DELETE
+6. AI context: snap.savings + bucket detail in `_buildPaydayAskAIPrompt` (verify includes intents vs buckets — §B)
+7. Test fixtures: state-snapshot.json has 1 active override `savings:China Holiday`
+8. Migration paths: seedV25 (Phase 0) populated S.planIntents from S.savingsBuckets + tripDefs/goalDefs
+
+### Number divergence
+
+| Number | Source | Cross-tile? |
+|---|---|---|
+| Pool $unallocated | `Math.max(0, snap.derived.freeTotal)` (L11012) | canonical via getSnapshot ✓ |
+| Per-bucket override amt | `ov ? ov.thisCycleAmount : (+planSavings[b.name] || 0)` (L11061) | renderPaydayPlanRoot uses same path via snap.savings reduce ✓ |
+| Per-trip override amt | `ov ? ov.thisCycleAmount : 0` (L11034) — note: no legacy fallback for trips | trips never had a legacy mirror, fine ✓ |
+| Trip pct | `Math.round(saved / budget * 100)` (L11037) — `t.saved` reads from `PLAN.getTrips()` which mirrors bucket-linked saved via `PLAN.readSavedFromSource` | **Verify** that `t.saved` matches the linked bucket's actual saved. Per Bundle-7 OPEN-BUGS #1, the `goal/saved` propagation has been fragile. **Audit flag §G.** |
+
+### Static text audit
+
+- "Pool to allocate" / "left to split across goals" / "Tap a goal below to allocate part of your free money to it this cycle." ✓ specific
+- "Upcoming trips" / "Allocate part of this cycle toward each trip's budget." ✓ specific
+- "Your savings goals" / "Lifetime targets shown for context. The amount on the right is what you're putting in *this cycle only*." ✓ This explainer addresses a known confusion ✓
+- "Annual provisions" + "These are sinking funds for yearly costs… They're managed in Plan mode under Annual Provisions — not here. When one is due this cycle it'll show in Bills." ✓ r47 architecture spelled out
+- "Extra debt payment" + "pay over the minimum · {snowball|avalanche} strategy" ✓ specific
+- "Add a new savings target:" — labeled as a hint, but **John's morning ask suggests this reads as a non-CTA**. The 3 buttons below ARE CTAs (with colour-coded background + border). The hint COULD be promoted to a section title or removed entirely; the buttons stand on their own.
+
+### Empty state
+
+- Pool: always renders.
+- Trips: only renders when ≥1 trip with budget>0 and future endDate. Empty state = section absent.
+- Buckets: only renders when ≥1 non-provision bucket. Empty state = section absent. ⚠️ If John deletes all his buckets, this section disappears silently — would be jarring. **Audit P2 — add "no goals yet · tap below to add one" empty state.**
+- Annual provisions: only renders when provision-buckets exist.
+- KIA extra: only renders when carloan > 0.
+- All-empty case: just Pool + the 3-button footer. Functional but bare.
+
+### Transition check
+
+Standard sub-screen ✓.
+
+### Density check
+
+Each row ~56-64px. Multiple sections + multiple rows can scroll. 380px viewport: bucket name + subline can wrap if name is long ("Gifts & Celebrations" → 18 chars fits). 3-button footer at L11117-11121: each button `flex:1` ~120px wide, padded comfortably ✓.
+
+### Tonight-session check
+
+**This is the centre of gravity for tonight.** John's flow tonight:
+
+1. Tap Savings goals nav row from canvas root → opens this sub-screen.
+2. Sees Pool: e.g. `$Z left to split` (depends on bonus + essentials).
+3. **Scans for his goals.** Property Deposit — MISSING. Freedom Buffer — RENDERED AS "Rainy Day Fund" (mislabeled). China Holiday — present ✓.
+4. Walks Darwin trip allocation — current allocation $0. Taps → enters $X → save.
+5. Walks China trip allocation — current allocation $0 (current override). Taps → adjusts.
+6. Considers Property Deposit — **CAN'T from this screen.** Property Deposit goal is governed by `S.goalDefs.apartment.monthly = $2500` and the closed-loop landed in r70 (Property Deposit increments come from paying the Rent + Deposit Savings bill). So tonight when John ticks "Rent + Deposit Savings" as paid, $2,500 flows to PD goal via r70 path. The Savings sub doesn't need to allocate it.
+
+**Net for tonight:** the surface mostly works but the **mental-model gap** is real:
+- John expects to see Property Deposit as a goal allocation row (intuitive — it's where he's "saving" $2,500/mo).
+- The actual mechanic is: paying Rent + Deposit Savings bill triggers the closed-loop. Not an allocation here.
+- Freedom Buffer's bucket-name "Rainy Day Fund" is the legacy bucket; the goal name "Freedom buffer" is in `S.goalDefs`. Rendering bucket name loses goal-name context.
+
+### Tonight-session P0/P1 candidates from this surface
+
+**P0 — Render goal NAMES via intent linkage, not bucket NAMES.** When `S.planIntents` has a `kind: 'goal'` entry linked to a bucket, render the GOAL name with bucket as subline ("Freedom Buffer · stored in Rainy Day Fund $0/$9,000"). Same for Property Deposit ("Property Deposit · via Mum-managed account · $3,000/$50,000"). This single change closes John's morning "generic goals" complaint.
+
+**P1 — "Add new savings target" hint phrasing.** Either drop the text and let the 3 buttons stand, or promote to a section title like "🎯 ADD" or "Want to track something new?"
+
+**P1 — Empty state for "Your savings goals" section** when no non-provision buckets exist.
+
+**P1 — Drop native `alert()` in pre-lock tick at L11048.** Use a toast or inline hint per UX contract §6.
+
+### Adjacent observations
+
+| Obs | Room | Action |
+|---|---|---|
+| Pre-lock alert() violates UX contract §6 | E: must fix / D: must fix / CI: must fix / F: n/a / U: yes — 4/5 converge | **🟡 fixable this session — P1 polish** |
+| `S.planIntents` has 2 test-pollution entries (Test goal · Kia detail) — they'll render IF their bucket names exist | All converge | **Cross-cut §A · cleanup migration candidate, queue Bundle 29** |
+| The bucket-vs-intent name mismatch IS the root of multiple complaints (Freedom Buffer label, Property Deposit missing). The Mother Bundle-29 redesign Tier-3 proposal MUST address this: intent-driven rendering. | All converge | **Tier 3 candidate — queue SDD draft in §E** |
+| Trip `t.saved` propagation reliability per Bundle-7 OPEN-BUGS #1 | All converge | **Verify on §G cross-cut** |
+
+### Verdict
+
+🔴 **Needs John's call AND P0 fix.**
+
+- 🔴 (John call): the bucket-vs-intent mismatch is the **single largest tonight-session UX gap**. Render Freedom Buffer + Property Deposit as goals (with bucket subline) OR keep current bucket-only rendering with explanation?
+- P0 if approved: intent-driven goal rendering with bucket subline (~30-50 LOC change, audit-clean).
+- 🟡 fixable this session: native alert L11048 → toast or inline hint.
+- 🟡 fixable this session: empty-state for goals section.
+- 🟡 fixable this session: hint-vs-CTA on the "Add new savings target" footer.
+
+John verdict: _"Pool works, trips work, but the goals section doesn't speak my language — Property Deposit and Freedom Buffer are what I think about, not buckets."_
+
+---
+
+## SURFACE 6: Upcoming sub-screen (`renderPaydayUpcoming`)
+
+**Capture:** none (sub-screen gap) · **Code:** L11125–11161 · **DOM:** `#payday-upcoming-body`
+
+### Round-46-to-71 reconciliation
+
+- **carried-from-prior-cycle** items get the 🔁 icon (L11141-2). Bundle 27 P6.1 rollover carry-over wiring.
+
+### What's on screen
+
+1. Header summary.
+2. If items: "Items" group with rows: emoji-by-category · name · date · notes · amount.
+3. Empty state: "No upcoming items yet. Things you know you'll need to buy this cycle — gifts, essentials, events, one-offs. Tap below to add."
+4. Footer: "+ Add item" pointer + hint: "Things you know you'll need to buy this cycle. The AI will know about these when you ask 'can I afford X.'"
+
+### Specific-vs-generic
+
+Real item names. Category emoji-map (8 categories). ✓
+
+### Interactive element trace
+
+| Element | WRITE | Propagation |
+|---|---|---|
+| Item row tap | `openEditPaydayUpcoming(id)` L10195 → BRAIN.plan.{add/update/remove}KnownUpcoming | re-renders upcoming + root ✓ |
+| Tick | `paydayTick('upcoming', id, PLAN_UPCOMING_TICK)` ✓ |
+| "+ Add item" | `openEditPaydayUpcoming(null)` | ✓ |
+
+### 8-grep audit for `S.activePlan.knownUpcoming`
+
+All writes through `BRAIN.plan.{addKnownUpcoming, removeKnownUpcoming, updateKnownUpcoming}`. ✓ canonical. Audit tags: `known_upcoming_add` / `_remove` / `_update`. AI context: included via getSnapshot.knownUpcoming. Carried-over items via rolloverIfNeeded with source `CARRIED_FROM_PRIOR_CYCLE`.
+
+### Number divergence
+
+None — single renderer, single source.
+
+### Static text audit
+
+- "Items" / "+ Add item" ✓
+- "Things you know you'll need to buy this cycle. The AI will know about these when you ask 'can I afford X.'" ✓ specific
+- Empty state copy ✓ instructive
+
+### Empty state
+
+L11156: clear, actionable ✓.
+
+### Transition check
+
+Standard sub-screen ✓. Items carried via rollover get 🔁 icon — verifiable visual signal.
+
+### Density check
+
+Row pattern standard ✓.
+
+### Tonight-session check
+
+For tonight's session, John has `knownUpcoming: []` (live state). He may add 1-2 items if he anticipates a known purchase before next payday. Works ✓.
+
+### Adjacent observations
+
+No P0/P1 — surface is clean and audited.
+
+### Verdict
+
+🟢 **Ship-quality.**
 
 ---
 
