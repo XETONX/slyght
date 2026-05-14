@@ -10708,6 +10708,7 @@ function openPaydayAutoAllocate() {
   };
   const currentAllocs = rec.currentAllocations || {};
   const isLockedReroll = !!rec.isReallocatingLocked;
+  const reasoning = rec.bucketReasoning || {};
   const lines = Object.keys(rec.bucketAllocations).map(name => {
     const amt = rec.bucketAllocations[name];
     const currentAmt = +currentAllocs[name] || 0;
@@ -10717,14 +10718,17 @@ function openPaydayAutoAllocate() {
       ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)" title="First time this trip is being allocated — Apply will create + link a savings bucket so future cycles flow through it">1st cycle</span>'
       : '';
     const disp = isSynth ? { name: '✈️ ' + name, subtitle: null } : _resolveDisplayName(name);
-    const subtitleHtml = disp.subtitle
-      ? '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + disp.subtitle + '</div>'
-      : '';
+    // Build subtitle: reasoning first, then bucket-context as a smaller line.
+    const reason = reasoning[name];
+    const subtitleParts = [];
+    if (reason) subtitleParts.push('<div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4">↳ ' + reason + '</div>');
+    if (disp.subtitle) subtitleParts.push('<div style="font-size:10px;color:var(--text3);margin-top:1px">' + disp.subtitle + '</div>');
+    const subtitleHtml = subtitleParts.join('');
     // Bundle 29 demon-time: when locked, show current → proposed with delta
     const valueCell = (isLockedReroll && currentAmt > 0)
       ? '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-family:var(--mono);color:var(--text3);font-size:11px;text-decoration:line-through">' + fmt(currentAmt) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + (delta !== 0 ? '<span style="font-size:10px;color:' + (delta > 0 ? 'var(--green)' : 'var(--red)') + ';margin-left:4px">' + (delta > 0 ? '+' : '−') + '$' + Math.abs(Math.round(delta)) + '</span>' : '') + '</span></div>'
       : '<span style="font-family:var(--mono);color:var(--green);font-weight:600;white-space:nowrap;padding-left:8px">' + fmt(amt) + '</span>';
-    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;font-size:14px"><div style="flex:1"><span style="color:var(--text2)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div>' + valueCell + '</div>';
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.04)"><div style="flex:1;min-width:0"><span style="color:var(--text)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div>' + valueCell + '</div>';
   }).join('');
 
   let body = '';
@@ -10857,16 +10861,36 @@ function openPaydayLockPlan() {
           showToast('⚠️ Lock saved in memory but disk write failed — export your data');
         }
       }
+      // Bundle 29 demon-time: if bonus.status === 'confirmed' AND included,
+      // user is telling us the money has actually landed in the account.
+      // Treat lock as the moment to fire markPaydayLanded so paydayReceived
+      // flips to true + balance projections reflect "money in hand". John
+      // 2026-05-14: "if i press confirmed already landed it shoudlre cgonise
+      // that means i have got paid into my virigin account and then it
+      // updates the balance everywhere ... once I hit Lock the plan".
+      let _confirmedLanded = false;
+      try {
+        const _bonus = (S.activePlan && S.activePlan.income && S.activePlan.income.bonus) || null;
+        if (_bonus && _bonus.included && _bonus.status === 'confirmed' && !S.paydayReceived) {
+          const r2 = BRAIN.plan.markPaydayLanded(Date.now(), BRAIN.SOURCES.CANVAS_LOCK);
+          if (r2 && r2.ok) _confirmedLanded = true;
+        }
+      } catch (e) { if (typeof console !== 'undefined') console.warn('[lock] confirmed-landed propagation failed', e); }
       // Optional manual snapshot for restore safety
       if (typeof SNAPSHOTS !== 'undefined' && SNAPSHOTS.take) {
         try { SNAPSHOTS.take('payday-plan-locked', { cycleId: snap.cycleId }); } catch (_) {}
       }
       renderPaydayPlanRoot();
+      // Re-render the dashboard tile + any other top-level surfaces so the
+      // new locked + landed state propagates immediately.
+      try { if (typeof renderPlanMode === 'function') renderPlanMode(); } catch (_) {}
+      try { if (typeof renderAll === 'function') renderAll(); } catch (_) {}
       // Bundle 29 alive: medium haptic on lock + streak-aware celebration
       if (typeof _haptic === 'function') _haptic('medium');
       const newStreak = +(S.activePlan && S.activePlan.streak) || 0;
       const streakBit = newStreak > 1 ? ' · 🔥 ' + newStreak + ' cycle streak' : '';
-      if (typeof showToast === 'function') showToast('🔒 Plan locked — tick items as you handle them' + streakBit);
+      const landedBit = _confirmedLanded ? ' · 💰 payday recorded as landed' : '';
+      if (typeof showToast === 'function') showToast('🔒 Plan locked — tick items as you handle them' + streakBit + landedBit);
       return { ok: true };
     },
   });
@@ -18930,15 +18954,59 @@ const BRAIN = {
         } catch (_) {}
         return Number.MAX_SAFE_INTEGER;
       };
+      // Bundle 29 demon-time: smarter weighting — factor in (target − saved)
+      // so a 80%-funded bucket doesn't grab the same share as a 0%-funded one.
+      // Plus surface PER-LINE reasoning so John sees WHY each amount was
+      // chosen (urgency, progress-gap, priority). Closes John 2026-05-14:
+      // "suggestions actually are good suggestions — e.g should i put more
+      // to property savings or should i build that freedome buffer".
       const weightedTargets = buckets
-        .map(b => ({ b, w: _bucketWeight(b), target: +b.goal || 0, _sort: _bucketStartDate(b) }))
+        .map(b => {
+          const target = +b.goal || 0;
+          const saved = +b.saved || 0;
+          const remaining = Math.max(0, target - saved);
+          return {
+            b,
+            w: _bucketWeight(b),
+            target,
+            saved,
+            remaining,
+            _sort: _bucketStartDate(b),
+          };
+        })
         .sort((a, b) => a._sort - b._sort);
-      const totalWeighted = weightedTargets.reduce((s, x) => s + x.target * x.w, 0);
+      const totalWeightedRemaining = weightedTargets.reduce((s, x) => s + x.remaining * x.w, 0);
       const bucketAllocations = {};
-      if (totalWeighted > 0) {
-        weightedTargets.forEach(({ b, w, target }) => {
-          const share = (target * w) / totalWeighted;
+      const bucketReasoning = {};
+      if (totalWeightedRemaining > 0) {
+        weightedTargets.forEach(({ b, w, target, saved, remaining }) => {
+          const share = (remaining * w) / totalWeightedRemaining;
           bucketAllocations[b.name] = _roundClean(allocatable * share);
+          // Build reasoning string
+          const reasons = [];
+          const startDate = _bucketStartDate(b);
+          if (startDate < Number.MAX_SAFE_INTEGER) {
+            const days = Math.round((startDate - nowMs) / 86400000);
+            if (days <= 30) reasons.push('🔥 ' + days + 'd urgent');
+            else if (days <= 90) reasons.push('⏰ ' + days + 'd soon');
+            else reasons.push(days + 'd out');
+          }
+          if (target > 0) {
+            const pct = Math.round((saved / target) * 100);
+            if (pct >= 80) reasons.push('mostly funded (' + pct + '%) — small top-up');
+            else if (pct >= 50) reasons.push('half-funded (' + pct + '%)');
+            else if (pct > 0) reasons.push((pct) + '% complete — push it forward');
+            else reasons.push('starting from \$0');
+          }
+          if (remaining === 0 && target > 0) reasons.push('target met — no allocation needed');
+          bucketReasoning[b.name] = reasons.join(' · ');
+        });
+      } else if (weightedTargets.length > 0) {
+        // All buckets fully funded — distribute evenly to keep contributions flowing
+        const perBucket = _roundClean(allocatable / weightedTargets.length);
+        weightedTargets.forEach(({ b }) => {
+          bucketAllocations[b.name] = perBucket;
+          bucketReasoning[b.name] = 'all goals fully funded — flat split';
         });
       }
       // Bundle 28 round 52 (John feedback): trips ARE first-class
@@ -19055,7 +19123,7 @@ const BRAIN = {
           currentAllocations[k.slice('savings:'.length)] = +ovs[k].thisCycleAmount || 0;
         }
       });
-      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames, isReallocatingLocked, currentAllocations };
+      return { ok: true, bucketAllocations, bucketReasoning, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames, isReallocatingLocked, currentAllocations };
     },
     applyRecommendation(source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
