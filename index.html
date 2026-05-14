@@ -149,8 +149,38 @@ body.edit-modal-open{overflow:hidden}
 .payday-nav-row .row-subtitle{font-size:13px;color:var(--text3)}
 .payday-nav-row .row-chevron{font-size:20px;color:var(--text3);margin-left:8px;line-height:1}
 .payday-prop-bar{display:flex;width:100%;height:14px;background:var(--bg3);border-radius:8px;overflow:hidden;margin:8px 0}
-.payday-prop-seg{height:100%;transition:width .3s ease-out}
+.payday-prop-seg{height:100%;transition:width .35s cubic-bezier(0.4,0,0.2,1)}
 .payday-hero{background:var(--bg2);border-radius:14px;padding:18px 16px;margin-bottom:14px}
+/* Bundle 29 alive-upgrade — micro-animation foundation. Pulse a tile when its
+   value flips sign or crosses a threshold. Counter-rolling animations are
+   driven by JS (_animateCounter helper), CSS only handles the pulse + the
+   smooth bar resize above. Live-Preview Box gets its own subtle reveal. */
+@keyframes alive-pulse-pos{0%{box-shadow:0 0 0 0 rgba(0,232,122,0)}30%{box-shadow:0 0 0 8px rgba(0,232,122,0.32)}100%{box-shadow:0 0 0 0 rgba(0,232,122,0)}}
+@keyframes alive-pulse-neg{0%{box-shadow:0 0 0 0 rgba(255,68,85,0)}30%{box-shadow:0 0 0 8px rgba(255,68,85,0.32)}100%{box-shadow:0 0 0 0 rgba(255,68,85,0)}}
+@keyframes alive-pulse-amber{0%{box-shadow:0 0 0 0 rgba(245,166,35,0)}30%{box-shadow:0 0 0 8px rgba(245,166,35,0.32)}100%{box-shadow:0 0 0 0 rgba(245,166,35,0)}}
+.alive-pulse-pos{animation:alive-pulse-pos 900ms ease-out 1}
+.alive-pulse-neg{animation:alive-pulse-neg 900ms ease-out 1}
+.alive-pulse-amber{animation:alive-pulse-amber 900ms ease-out 1}
+@keyframes alive-counter-bump{0%{transform:scale(1)}40%{transform:scale(1.06)}100%{transform:scale(1)}}
+.alive-counter-bump{animation:alive-counter-bump 280ms ease-out 1;display:inline-block}
+.live-preview-box{background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--text2);line-height:1.55;animation:fade-in-soft 180ms ease-out 1}
+.live-preview-box .lpb-title{font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.live-preview-box .lpb-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;font-family:var(--mono);font-size:13px}
+.live-preview-box .lpb-row span:first-child{font-family:inherit;color:var(--text3)}
+.live-preview-box .lpb-row.lpb-pos span:last-child{color:var(--green);font-weight:600}
+.live-preview-box .lpb-row.lpb-neg span:last-child{color:var(--red);font-weight:600}
+.live-preview-box .lpb-row.lpb-warn span:last-child{color:var(--amber);font-weight:600}
+.live-preview-box .lpb-row.lpb-strong{border-top:1px solid var(--border);padding-top:6px;margin-top:4px;font-weight:700}
+.live-preview-box .lpb-hint{font-size:11px;color:var(--text3);margin-top:6px;font-style:italic}
+@keyframes fade-in-soft{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+/* Empty-state playfulness */
+.empty-playful{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;gap:14px}
+.empty-playful .ep-emoji{font-size:48px;line-height:1;animation:gentle-bob 2.4s ease-in-out infinite}
+.empty-playful .ep-headline{font-size:15px;font-weight:600;color:var(--text)}
+.empty-playful .ep-body{font-size:13px;color:var(--text3);line-height:1.55;max-width:280px}
+.empty-playful .ep-cta{margin-top:6px;padding:12px 22px;background:var(--green);color:#000;border:none;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,232,122,0.25);transition:transform .15s ease-out, box-shadow .15s ease-out}
+.empty-playful .ep-cta:active{transform:scale(0.97);box-shadow:0 2px 6px rgba(0,232,122,0.18)}
+@keyframes gentle-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .payday-action-row{display:flex;align-items:center;padding:14px 16px;background:var(--bg2);border:none;color:var(--text);min-height:52px;text-align:left;cursor:pointer;width:100%}
 /* Bundle 27 Phase 4: quick-pick amount grid (used inside edit-modal custom body). */
 .quickpick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
@@ -9623,13 +9653,17 @@ function renderPaydayPlanRoot() {
     : '<span style="color:var(--text3)">no bonus this cycle</span>';
   // Proportion bar segments
   const total = Math.max(1, snap.derived.claimedTotal);
-  const seg = (v, color) => '<div class="payday-prop-seg" style="width:' + (Math.max(0, v) / total * 100).toFixed(1) + '%;background:' + color + '"></div>';
+  // Bundle 29 alive: bar segments get IDs so post-render JS can drive smooth
+  // width transitions (CSS transition fires on width property changes after
+  // innerHTML replacement only if we re-set the width via JS). See post-render
+  // animation block at end of this fn.
+  const seg = (v, color, segId) => `<div class="payday-prop-seg" id="${segId}" style="width:${(Math.max(0, v) / total * 100).toFixed(1)}%;background:${color}"></div>`;
   const propBar = '<div class="payday-prop-bar">'
-    + seg(snap.bills.total, 'var(--blue)')
-    + seg(snap.debts.total, 'var(--red)')
-    + seg(snap.savings.total, 'var(--green)')
-    + seg(snap.knownUpcoming.total, 'var(--amber)')
-    + seg(snap.dailyLiving.plannedTotal, 'var(--text3)')
+    + seg(snap.bills.total, 'var(--blue)', 'payday-bar-bills')
+    + seg(snap.debts.total, 'var(--red)', 'payday-bar-debts')
+    + seg(snap.savings.total, 'var(--green)', 'payday-bar-savings')
+    + seg(snap.knownUpcoming.total, 'var(--amber)', 'payday-bar-upcoming')
+    + seg(snap.dailyLiving.plannedTotal, 'var(--text3)', 'payday-bar-living')
     + '</div>';
   // Bundle 27 Phase 7: drift detection banner. When locked, if cycle is
   // N% elapsed but ticked-paid bills are < (N - driftSensitivity)%, the
@@ -9668,7 +9702,7 @@ function renderPaydayPlanRoot() {
   //     so the breakdown is legible without scrolling.
   html += '<div class="payday-hero">';
   html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in this cycle</div>';
-  html += '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
+  html += '<div id="payday-hero-total" style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
   // Net pay + bonus row — bonus-add button promoted to inline pill when absent
   const _bonusInlineCtl = bonus.included
     ? bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button>'
@@ -9746,9 +9780,9 @@ function renderPaydayPlanRoot() {
 
   // ── REMAINDER tile (the headline number — where $634 comes from) ──
   const remainderCol = remainder >= snap.bufferFloor ? 'var(--green)' : remainder >= 0 ? 'var(--amber)' : 'var(--red)';
-  html += '<div style="background:' + (remainder >= 0 ? 'rgba(78,205,196,0.08)' : 'rgba(231,76,60,0.08)') + ';border:1px solid ' + (remainder >= 0 ? 'rgba(78,205,196,0.25)' : 'rgba(231,76,60,0.25)') + ';border-radius:12px;padding:14px 16px;margin-bottom:14px">';
+  html += '<div id="payday-remainder-tile" style="background:' + (remainder >= 0 ? 'rgba(78,205,196,0.08)' : 'rgba(231,76,60,0.08)') + ';border:1px solid ' + (remainder >= 0 ? 'rgba(78,205,196,0.25)' : 'rgba(231,76,60,0.25)') + ';border-radius:12px;padding:14px 16px;margin-bottom:14px">';
   html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">🎯 Remainder after essentials</div>';
-  html += '<div style="font-family:var(--mono);font-size:28px;font-weight:800;color:' + remainderCol + ';line-height:1">' + fmt(remainder) + '</div>';
+  html += '<div id="payday-remainder-value" style="font-family:var(--mono);font-size:28px;font-weight:800;color:' + remainderCol + ';line-height:1">' + fmt(remainder) + '</div>';
   html += '<div style="font-size:12px;color:var(--text3);margin-top:6px">' + fmt(snap.totalToPlan) + ' coming in − ' + fmt(essentialsTotal) + ' essentials = ' + fmt(remainder) + '</div>';
   html += '</div>';
 
@@ -9791,6 +9825,79 @@ function renderPaydayPlanRoot() {
   html += '<button class="payday-nav-row" onclick="' + (isLocked ? 'openPaydayUnlockPlan()' : 'openPaydayLockPlan()') + '" aria-label="' + lockLabel + '" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '"><span class="row-icon">' + (isLocked ? '🔓' : '🔒') + '</span><span class="row-text"><span class="row-title" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">' + lockLabel + '</span><span class="row-subtitle">' + lockSub + '</span></span><span class="row-chevron" style="color:' + (isLocked ? 'var(--amber)' : 'var(--green)') + '">›</span></button>';
   html += '</div>';
   el.innerHTML = html;
+  // ─── Bundle 29 alive-upgrade: post-render animations ─────────────────
+  // Compare against the prior snapshot we cached on window. If values
+  // changed, animate the change so the user SEES what just happened.
+  // First render: just cache + skip animations (nothing to animate against).
+  try {
+    const prev = window._lastPaydayRootSnap;
+    const prevTotal = prev ? prev.totalToPlan : null;
+    const prevRem = prev ? prev.remainder : null;
+    const prevSegs = prev ? prev.segs : null;
+    if (prev) {
+      // Counter-roll on hero "Money coming in this cycle"
+      const heroEl = document.getElementById('payday-hero-total');
+      if (heroEl && Math.abs((+prevTotal || 0) - snap.totalToPlan) > 0.5) {
+        _animateCounter({ el: heroEl, from: +prevTotal || 0, to: snap.totalToPlan, durationMs: 360 });
+      }
+      // Counter-roll + pulse on REMAINDER tile
+      const remValEl = document.getElementById('payday-remainder-value');
+      const remTileEl = document.getElementById('payday-remainder-tile');
+      if (remValEl && Math.abs((+prevRem || 0) - remainder) > 0.5) {
+        _animateCounter({ el: remValEl, from: +prevRem || 0, to: remainder, durationMs: 360 });
+      }
+      if (remTileEl) {
+        const delta = remainder - (+prevRem || 0);
+        if (Math.abs(delta) > 5) {
+          // Pulse colour matches the direction (more remainder = green pos,
+          // less remainder = amber if still pos / red if it crossed below zero).
+          const dir = delta > 0
+            ? 'pos'
+            : (remainder < 0 ? 'neg' : 'amber');
+          _pulseEl(remTileEl, dir);
+        }
+      }
+      // Smooth proportion-bar transition: re-set widths from OLD values
+      // then transition to NEW (CSS transition fires on width changes).
+      if (prevSegs) {
+        const segMap = [
+          ['payday-bar-bills',     prevSegs.bills,    snap.bills.total],
+          ['payday-bar-debts',     prevSegs.debts,    snap.debts.total],
+          ['payday-bar-savings',   prevSegs.savings,  snap.savings.total],
+          ['payday-bar-upcoming',  prevSegs.upcoming, snap.knownUpcoming.total],
+          ['payday-bar-living',    prevSegs.living,   snap.dailyLiving.plannedTotal],
+        ];
+        const newTotal = Math.max(1, snap.derived.claimedTotal);
+        const oldTotal = Math.max(1, prev.claimedTotal || 1);
+        segMap.forEach(([id, oldV, newV]) => {
+          const segEl = document.getElementById(id);
+          if (!segEl) return;
+          const oldPct = (Math.max(0, oldV) / oldTotal * 100).toFixed(1);
+          const newPct = (Math.max(0, newV) / newTotal * 100).toFixed(1);
+          // Set to OLD width immediately (no transition since we're matching the
+          // initial inline width assignment). Then in next frame, set to NEW
+          // width — transition fires.
+          segEl.style.width = oldPct + '%';
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => { segEl.style.width = newPct + '%'; });
+          });
+        });
+      }
+    }
+    // Cache snapshot for the NEXT render's diff
+    window._lastPaydayRootSnap = {
+      totalToPlan: snap.totalToPlan,
+      remainder,
+      claimedTotal: snap.derived.claimedTotal,
+      segs: {
+        bills: snap.bills.total,
+        debts: snap.debts.total,
+        savings: snap.savings.total,
+        upcoming: snap.knownUpcoming.total,
+        living: snap.dailyLiving.plannedTotal,
+      },
+    };
+  } catch (e) { try { console.warn('[alive] post-render animation failed:', e); } catch (_) {} }
 }
 
 // ─── Bundle 27 Phase 4: Payday Plan editor modals (interactive) ──────────
@@ -10791,6 +10898,143 @@ function _fmtCycleDay(day) {
   // If day < start day, it's in the next month of the cycle.
   if (day < start.getDate()) d.setMonth(d.getMonth() + 1);
   return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+}
+
+// Bundle 29 Phase 0.1 alive-upgrade helpers (the foundation for the
+// "make it react / make it fun" round). Each helper is small, pure-ish,
+// and reused everywhere. Together they turn the app from data-reactive
+// (silent re-renders) into experience-reactive (numbers roll, tiles
+// pulse, tap fires haptic, modals show live preview before save).
+
+// _animateCounter — roll a number element from oldVal to newVal over N ms.
+// Uses requestAnimationFrame for smooth per-frame interpolation. Formatter
+// controls $/comma display. Bumps the element with a brief scale on land.
+//   opts.el          — DOM element whose textContent gets updated
+//   opts.from        — starting numeric value
+//   opts.to          — ending numeric value
+//   opts.durationMs  — animation length (default 320)
+//   opts.format      — function(n) → string (default: rounded $ formatter)
+//   opts.bump        — add bump class on completion (default true)
+function _animateCounter(opts) {
+  const el = opts && opts.el;
+  if (!el) return;
+  const from = +opts.from || 0;
+  const to = +opts.to || 0;
+  const duration = +opts.durationMs || 320;
+  const format = opts.format || ((n) => '$' + Math.abs(Math.round(n)).toLocaleString());
+  if (Math.abs(to - from) < 0.5) {
+    el.textContent = format(to);
+    return;
+  }
+  const startTs = performance.now();
+  function frame(now) {
+    const elapsed = now - startTs;
+    const t = Math.min(1, elapsed / duration);
+    // ease-out cubic
+    const eased = 1 - Math.pow(1 - t, 3);
+    const current = from + (to - from) * eased;
+    el.textContent = format(current);
+    if (t < 1) requestAnimationFrame(frame);
+    else if (opts.bump !== false) {
+      el.classList.remove('alive-counter-bump');
+      void el.offsetWidth; // restart animation
+      el.classList.add('alive-counter-bump');
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// _pulseEl — apply a one-shot pulse animation class to an element.
+// Direction: 'pos' (green) | 'neg' (red) | 'amber'. Class self-clears
+// via CSS animation; we re-add by removing + reflowing.
+function _pulseEl(el, direction) {
+  if (!el) return;
+  const cls = direction === 'neg' ? 'alive-pulse-neg'
+            : direction === 'amber' ? 'alive-pulse-amber'
+            : 'alive-pulse-pos';
+  el.classList.remove('alive-pulse-pos', 'alive-pulse-neg', 'alive-pulse-amber');
+  void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(() => { try { el.classList.remove(cls); } catch (_) {} }, 1000);
+}
+
+// _haptic — wrap navigator.vibrate with sensible patterns. PWA-safe (no-op
+// when not supported). Use for: tick (light), lock (medium), goal-complete
+// (heavy), payday-landed (medium).
+function _haptic(intensity) {
+  try {
+    if (!navigator.vibrate) return;
+    const patterns = {
+      light: 25,
+      medium: [40, 20, 40],
+      heavy: [60, 30, 90, 30, 60],
+      success: [30, 60, 30],
+      warning: [80, 40, 80],
+    };
+    const p = patterns[intensity] || patterns.light;
+    navigator.vibrate(p);
+  } catch (_) {}
+}
+
+// _buildLivePreviewBox — render the standardized "🔮 IF YOU SAVE" preview
+// block. Each row is { label, value, kind? } where kind = 'pos'/'neg'/'warn'/'strong'.
+// Returns HTML string. The receiving container should have id `<modalKey>-live-preview`.
+//   opts.title   — header label (default "🔮 If you save:")
+//   opts.rows    — array of { label, value, kind?, hint? }
+//   opts.hint    — optional bottom hint string
+function _buildLivePreviewBox(opts) {
+  opts = opts || {};
+  const title = opts.title || '🔮 If you save:';
+  const rows = (opts.rows || []).map(r => {
+    const kindCls = r.kind ? ' lpb-' + r.kind : '';
+    return '<div class="lpb-row' + kindCls + '"><span>' + (r.label || '') + '</span><span>' + (r.value || '') + '</span></div>';
+  }).join('');
+  const hint = opts.hint ? '<div class="lpb-hint">' + opts.hint + '</div>' : '';
+  return '<div class="live-preview-box" id="' + (opts.id || 'live-preview') + '"><div class="lpb-title">' + title + '</div>' + rows + hint + '</div>';
+}
+
+// _attachLivePreview — wire one or more inputs to a recompute function that
+// re-renders a preview box. Recompute returns rows + optional hint.
+//   opts.modalRoot  — DOM root to scope queries to (default document)
+//   opts.inputIds   — array of input element ids to listen on (input + change)
+//   opts.previewId  — DOM id of the preview box element to update
+//   opts.recompute  — function that returns { title?, rows, hint? }
+function _attachLivePreview(opts) {
+  if (!opts) return;
+  const root = opts.modalRoot || document;
+  const previewEl = document.getElementById(opts.previewId);
+  if (!previewEl) return;
+  const update = () => {
+    try {
+      const result = opts.recompute() || {};
+      const innerHtml = _buildLivePreviewBox({
+        id: opts.previewId,
+        title: result.title,
+        rows: result.rows || [],
+        hint: result.hint,
+      });
+      // Strip the outer div from helper output (we want inner content)
+      const tmp = document.createElement('div');
+      tmp.innerHTML = innerHtml;
+      const built = tmp.firstChild;
+      if (built) previewEl.innerHTML = built.innerHTML;
+    } catch (e) {
+      console.warn('[livePreview] recompute failed:', e);
+    }
+  };
+  (opts.inputIds || []).forEach(id => {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    inp.addEventListener('input', update);
+    inp.addEventListener('change', update);
+  });
+  // Also wire quick-pick selections (any .quickpick click in scope)
+  const grid = root.querySelector('#quickpick-grid');
+  if (grid) {
+    grid.addEventListener('click', () => setTimeout(update, 30));
+  }
+  // Run once for initial render
+  update();
 }
 
 // Bundle 28 Phase 0.1: reusable progress bar. CSS-only (no SVG). Used by
