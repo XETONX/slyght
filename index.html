@@ -9707,13 +9707,20 @@ function renderPaydayPlanRoot() {
   const bonus = inc.bonus || { amount: 0, included: false, status: 'expected' };
   // Bundle 29 demon-time: surface bonus status as a small pill instead
   // of just italic "(expected)". When confirmed, show "✓ landed" so John
-  // sees the money-in-account state at a glance. Closes a follow-up gap
-  // from Scenario C walkthrough where bonus.confirmed wasn't visually
-  // distinct from bonus.expected on canvas root.
+  // sees the money-in-account state at a glance.
+  // Bundle 29 F-05 add-on: when bonus.confirmed AND NOT paydayReceived AND
+  // plan not yet locked, show a soft hint that locking will record payday.
+  // Closes the "LANDED pill + 'Pay landed today?' both visible" semantic gap.
   const _bonusStatusPill = bonus.included
     ? (bonus.status === 'confirmed'
         ? ' <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(34,197,94,0.12);color:var(--green);border:1px solid var(--green-border);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;letter-spacing:0.04em;text-transform:uppercase">✓ landed</span>'
         : ' <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(245,158,11,0.10);color:var(--amber);border:1px solid rgba(245,158,11,0.30);font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;letter-spacing:0.04em;text-transform:uppercase">expected</span>')
+    : '';
+  // F-17 subscript when locked: bonus stays editable post-lock (it's
+  // inherently uncertain) but make the contract explicit so user knows
+  // it's NOT part of the lock commitment.
+  const _bonusLockSubscript = (snap.lockedAt && bonus.included)
+    ? '<div style="font-size:10px;color:var(--text3);margin-top:1px;font-style:italic">Bonus stays editable post-lock — uncertainty by nature</div>'
     : '';
   const bonusBadge = bonus.included
     ? ('<span style="color:var(--green);font-family:var(--mono);font-weight:600">+' + fmt(bonus.amount) + '</span> bonus' + _bonusStatusPill)
@@ -9797,6 +9804,11 @@ function renderPaydayPlanRoot() {
     ? bonusBadge + ' <button onclick="openEditPaydayBonus()" aria-label="Edit bonus" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px">✏️</button>'
     : '<button onclick="openEditPaydayBonus()" aria-label="Add bonus" style="display:inline-flex;align-items:center;gap:4px;background:rgba(34,197,94,0.10);border:1px solid var(--green-border);color:var(--green);font-size:12px;font-weight:600;padding:4px 10px;border-radius:14px;cursor:pointer;margin-left:6px">＋ Add bonus</button>';
   html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><span style="font-family:var(--mono);color:var(--text2)">' + fmt(inc.netPay || 0) + '</span> net pay ' + _bonusInlineCtl + '</div>';
+  html += _bonusLockSubscript;
+  // F-05: hint near LANDED pill when bonus.confirmed AND !paydayReceived AND !locked
+  if (bonus.included && bonus.status === 'confirmed' && !S.paydayReceived && !snap.lockedAt) {
+    html += '<div style="font-size:11px;color:var(--blue);margin-top:4px;font-style:italic">💡 Lock the plan to record payday landed</div>';
+  }
   // Bundle 29 demon-time: project-label adapts to paydayReceived state.
   // When the user has marked payday landed, "now → X left when next pay
   // hits" implies money is coming that ISN'T coming. Switch the trailing
@@ -10956,17 +10968,30 @@ function openPaydayAutoAllocate() {
     body += '<div style="font-size:11px;color:var(--blue);margin-top:8px;line-height:1.45;font-style:italic">📌 <strong>1st cycle</strong> = trip exists in your dashboard but no savings bucket has been created yet. Tap Apply once and a bucket gets created + linked permanently. Future cycles will skip this step.</div>';
   }
 
+  // Bundle 29 F-18 fix: contract toggle for "respect manual allocations".
+  // Pre-fix Apply blindly overwrote manual allocations. Default to "respect
+  // manual" so user's deliberate choices win. Apply respects the toggle.
+  // Closes Opus E-09 + John's "auto allocate vs manual" ambiguity.
+  const _hasAnyCurrent = Object.values(currentAllocs).some(v => +v > 0);
+  if (_hasAnyCurrent) {
+    body += '<div style="margin-top:14px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:10px"><label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;color:var(--text)"><input type="checkbox" id="auto-respect-manual" checked style="width:18px;height:18px;accent-color:var(--green);cursor:pointer"><div style="flex:1;line-height:1.4">Respect my manual allocations<div style="font-size:11px;color:var(--text3);margin-top:2px">When OFF, Apply overwrites everything. When ON, only buckets with no existing allocation get filled.</div></div></label></div>';
+  }
+
   EDIT_MODAL.openCustom({
     title: '⚙️ Auto-allocate',
     hint: 'Bills/debts/provisions are covered first. This splits what\'s left.',
     bodyHtml: body,
     saveLabel: 'Apply',
     save: () => {
-      const r = BRAIN.plan.applyRecommendation(BRAIN.SOURCES.CANVAS_AUTO_APPLY);
+      const respectManual = !!(document.getElementById('auto-respect-manual')?.checked);
+      const r = BRAIN.plan.applyRecommendation(BRAIN.SOURCES.CANVAS_AUTO_APPLY, { respectManual });
       if (!r.ok) return r;
       renderPaydayPlanRoot();
       renderPaydaySavings();
-      if (typeof showToast === 'function') showToast('✓ Auto-allocated across ' + r.applied.length + ' goal' + (r.applied.length === 1 ? '' : 's'));
+      if (typeof showToast === 'function') {
+        const skippedBit = (r.skipped && r.skipped.length) ? ' · ' + r.skipped.length + ' kept manual' : '';
+        showToast('✓ Auto-allocated across ' + r.applied.length + ' goal' + (r.applied.length === 1 ? '' : 's') + skippedBit);
+      }
       return { ok: true };
     },
   });
@@ -19406,10 +19431,15 @@ const BRAIN = {
       });
       return { ok: true, bucketAllocations, bucketReasoning, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames, isReallocatingLocked, currentAllocations };
     },
-    applyRecommendation(source) {
+    applyRecommendation(source, opts) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       const rec = this.recommendAllocation();
       if (!rec.ok) return rec;
+      // Bundle 29 F-18: when opts.respectManual is true, skip any bucket
+      // that already has a manual allocation (>0). Default false for
+      // backwards compat. Closes Opus E-09 ambiguity.
+      const respectManual = !!(opts && opts.respectManual);
+      const currentAllocs = rec.currentAllocations || {};
       // Bundle 28 round 52: auto-create buckets for synthetic-trip
       // allocations (trips that don't already have a matching bucket).
       // Pre-r52 these were skipped → user had to tap [+ Bucket] then
@@ -19470,8 +19500,14 @@ const BRAIN = {
         return { stripped: false };
       };
       const applied = [];
+      const skipped = [];
       const dedupedTrips = [];
       Object.keys(rec.bucketAllocations).forEach(name => {
+        // F-18: if respectManual AND user already allocated to this bucket, skip
+        if (respectManual && (+currentAllocs[name] || 0) > 0) {
+          skipped.push({ name, currentAmt: currentAllocs[name], proposed: rec.bucketAllocations[name] });
+          return;
+        }
         const r = this.setOverride('savings', name, rec.bucketAllocations[name], { reason: 'auto-allocated' }, source);
         if (r.ok) {
           applied.push({ name, amt: rec.bucketAllocations[name], _newBucket: syntheticNames.has(name) });
@@ -19479,8 +19515,8 @@ const BRAIN = {
           if (dedup.stripped) dedupedTrips.push({ bucket: name, tripId: dedup.tripId });
         }
       });
-      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, created, dedupedTrips, source, ts: Date.now() });
-      return { ok: true, applied, created, dedupedTrips };
+      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, skipped, created, dedupedTrips, respectManual, source, ts: Date.now() });
+      return { ok: true, applied, skipped, created, dedupedTrips, respectManual };
     },
     // ─── CYCLE ROLLOVER (Bundle 27 Phase 6.1) ─────────────────────────
     // Fires when current date is past the active plan's cycleEndDate.
