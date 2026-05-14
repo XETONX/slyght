@@ -23155,23 +23155,40 @@ function renderAllocateTile() {
   const remainder = (snap.totalToPlan || 0) - essentialsTotal;
   const allocatedTotal = (snap.savings?.total || 0) + (snap.knownUpcoming?.total || 0);
   const isPositive = remainder >= 0;
-  const col = isPositive ? '#4ECDC4' : '#E74C3C';
   const fmt = '$' + Math.abs(Math.round(remainder)).toLocaleString();
-  // Subline: explain the math source briefly so it's not a magic number
-  const subline = allocatedTotal > 0
-    ? `${snap.daysRemaining || 0} days until next payday · $${Math.round(allocatedTotal).toLocaleString()} of it already allocated · open canvas`
-    : `${snap.daysRemaining || 0} days until next payday · open full plan canvas`;
+  const daysRem = snap.daysRemaining || 0;
+  // Bundle 29 demon-time: PLAN dashboard Payday Plan tile gets the bubble
+  // treatment that matches the canvas REMAINDER card. Premium green glow
+  // (or red when overcommitted), large mono headline, "x of y allocated"
+  // sub-stat, lock badge top-right when locked, animated chevron.
+  const _wrapBg = isPositive
+    ? 'linear-gradient(135deg,rgba(0,232,122,0.10),rgba(0,232,122,0.02))'
+    : 'linear-gradient(135deg,rgba(255,68,85,0.10),rgba(255,68,85,0.02))';
+  const _wrapBorder = isPositive ? 'var(--green-border)' : 'var(--red-border)';
+  const _amtCol = isPositive ? 'var(--green)' : 'var(--red)';
+  const lockBadge = isLocked
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:10px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.40);color:var(--amber);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em">🔒 locked</span>`
+    : '';
+  // Allocation progress = how much of the remainder has been earmarked.
+  const _allocPct = remainder > 0 ? Math.min(100, Math.round((allocatedTotal / remainder) * 100)) : 0;
   return `
-    <button onclick="openPaydayPlan()" style="width:100%;background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:14px;padding:18px 16px;margin:16px 0;display:flex;align-items:center;justify-content:space-between;cursor:pointer;text-align:left;color:inherit">
-      <div style="flex:1">
-        <div style="font-size:13px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">📋 Payday Plan${isLocked ? ' · 🔒 locked' : ''}</div>
-        <div style="display:flex;align-items:baseline;gap:8px">
-          <span style="font-family:var(--mono);font-size:26px;font-weight:800;color:${col}">${isPositive ? '' : '-'}${fmt}</span>
-          <span style="font-size:13px;color:rgba(255,255,255,0.5)">left to allocate</span>
-        </div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.4);margin-top:4px">${subline}</div>
+    <button onclick="openPaydayPlan()" style="width:100%;background:${_wrapBg};border:1px solid ${_wrapBorder};border-radius:18px;padding:18px 18px 14px;margin:16px 0;display:block;cursor:pointer;text-align:left;color:inherit;position:relative;overflow:hidden;font-family:inherit">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:800;color:${_amtCol};text-transform:uppercase;letter-spacing:.08em">📋 Payday Plan · this cycle</div>
+        ${lockBadge}
       </div>
-      <span style="font-size:24px;color:rgba(255,255,255,0.4);margin-left:8px">›</span>
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:30px;font-weight:800;color:${_amtCol};line-height:1">${isPositive ? '' : '-'}${fmt}</span>
+        <span style="font-size:12px;color:var(--text2);font-weight:600">left to allocate</span>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">
+        ${allocatedTotal > 0 ? `$${Math.round(allocatedTotal).toLocaleString()} of $${Math.round(remainder).toLocaleString()} allocated · ${_allocPct}%` : `$0 allocated yet · ${daysRem}d to next payday`}
+      </div>
+      ${allocatedTotal > 0 ? `<div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden"><div style="height:100%;width:${_allocPct}%;background:var(--green);transition:width .35s ease-out"></div></div>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--text3)">
+        <span>${daysRem}d to next payday · tap to walk the canvas</span>
+        <span style="font-size:18px;color:${_amtCol};line-height:1">›</span>
+      </div>
     </button>`;
 }
 
