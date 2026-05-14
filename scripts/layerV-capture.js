@@ -1093,7 +1093,331 @@ async function step(name, fn) {
   });
   await shoot(page, 69, 'plan-tab-modal-manage-provisions', 'R2 verify: nav-row → editable manage modal');
 
-  } // end if (!skipDeep) — Section 10 canvas-deep
+  // ─── SECTION 11 — Interaction states (Bundle 29 Phase 0.1) ────────────
+  // John 2026-05-14: "Layer V sweep is too fast — you're not actually
+  // checking state-after-tap." Section 10 captures STATIC surfaces; Section
+  // 11 captures STATE TRANSITIONS — before-edit · during-edit (with field
+  // focused / value entered) · after-save (with toast / re-rendered surface).
+  // Goal: each editable field has a 3-tuple capture so we can verify
+  // "did anything ACTUALLY react when I changed X?"
+  console.log('\n=== SECTION 11 — Interaction states ===');
+
+  // 70 — Daily Living EDIT FLOOR mid-edit. Open the floor edit modal, type
+  // a new value, capture WITH the input filled but BEFORE save.
+  await step('reset + nav living + open floor edit', async () => {
+    await resetToCanvasRoot();
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-living'); });
+    await page.waitForTimeout(450);
+    await page.evaluate(() => { if (typeof openEditPaydayLivingFloor === 'function') openEditPaydayLivingFloor(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 70, 'living-floor-edit-modal-open', 'Floor edit modal open, default state');
+
+  // 71 — Type a different value into the quick-pick custom field.
+  await step('type new floor value', async () => {
+    await page.evaluate(() => {
+      // Click the Custom button to reveal the input
+      const customBtn = document.getElementById('quickpick-custom-btn');
+      if (customBtn) customBtn.click();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const input = document.getElementById('quickpick-custom-input');
+      if (input) {
+        input.value = '40';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 71, 'living-floor-edit-mid-edit', 'Floor input shows custom $40 entered — verify the input renders + Custom button is active state');
+
+  // 72 — Save the floor + capture canvas root to verify visible reaction
+  // (Daily living total should recompute, Status badge should update,
+  // projected balance should reflect).
+  await step('save floor + return to canvas', async () => {
+    await page.evaluate(() => {
+      // Find save button in edit-modal and click
+      const root = document.getElementById('edit-modal');
+      if (root) {
+        const saveBtn = root.querySelector('.btn-save, button[onclick*="attemptSave"], button:has-text("Save")');
+        if (saveBtn) saveBtn.click();
+        else {
+          // Fallback: trigger EDIT_MODAL.attemptSave directly
+          if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.attemptSave) EDIT_MODAL.attemptSave();
+        }
+      }
+    });
+    await page.waitForTimeout(600);
+    // Close any sub-screen + back to canvas root
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      const canvas = document.getElementById('pg-payday-plan');
+      if (canvas) canvas.classList.remove('has-active-subscreen');
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 72, 'canvas-root-after-floor-save', 'Canvas root after Daily Living floor saved — verify Daily living row + Essentials total + REMAINDER reflected new floor');
+
+  // 73 — Re-open Daily living to verify the new floor SHOWS as the saved value
+  await step('re-open living to verify saved', async () => {
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-living'); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 73, 'living-after-save', 'Daily Living sub-screen after floor edit — Floors $40 + Current row reflects + Status recomputed');
+
+  // 74 — BONUS TOGGLE-ON state. Open bonus modal, click the include toggle,
+  // capture WITH toggle ON + bonus amount selected.
+  await step('reset + open bonus + toggle on + pick amount', async () => {
+    await resetToCanvasRoot();
+    await page.evaluate(() => { if (typeof openEditPaydayBonus === 'function') openEditPaydayBonus(); });
+    await page.waitForTimeout(500);
+    // Click the include toggle
+    await page.evaluate(() => {
+      const toggle = document.getElementById('bonus-include');
+      if (toggle && !toggle.checked) {
+        toggle.checked = true;
+        toggle.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(300);
+    // Pick the $1500 quick-pick
+    await page.evaluate(() => {
+      const btn = document.querySelector('button.quickpick[data-quickpick="1500"]');
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 74, 'bonus-modal-toggle-on-1500-picked', 'Bonus toggle ON + $1500 quick-pick active — verify section is no longer dimmed + Save button highlights');
+
+  // 75 — Save bonus + return to canvas. Hero should show bonus badge,
+  // totalToPlan should grow, projected balance should reflect.
+  await step('save bonus + return to canvas', async () => {
+    await page.evaluate(() => {
+      if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.attemptSave) EDIT_MODAL.attemptSave();
+    });
+    await page.waitForTimeout(800);
+  });
+  await shoot(page, 75, 'canvas-root-after-bonus-saved', 'Canvas root after $1500 bonus saved — Money coming in updates to $8,782 · bonus badge replaces pill · projected balance up');
+
+  // 76 — BILL DEFER mode. Open edit-bill, click Defer part, type defer amount,
+  // capture the carries-to-next-cycle live preview.
+  await step('reset + open bill + click defer + type defer amount', async () => {
+    await resetToCanvasRoot();
+    await page.evaluate(() => { if (typeof openEditPaydayBill === 'function') openEditPaydayBill('Rent + Deposit Savings'); });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      if (typeof _setBillEditMode === 'function') _setBillEditMode('defer');
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const input = document.getElementById('bill-defer-amt');
+      if (input) {
+        input.value = '2000';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 76, 'bill-defer-mode-with-amount', 'Bill Defer part mode + $2000 paying this cycle + $1000 carries to next cycle live preview visible');
+
+  // 77 — Same as 76 but with late-fee toggled ON + amount entered.
+  await step('toggle defer late-fee on + enter amount', async () => {
+    await page.evaluate(() => {
+      const cb = document.getElementById('bill-defer-hasfee');
+      if (cb && !cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      const feeInput = document.getElementById('bill-defer-fee');
+      if (feeInput) {
+        feeInput.value = '50';
+        feeInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 77, 'bill-defer-with-late-fee', 'Defer $2000 + $50 late fee — preview shows total carries-to-next-cycle');
+
+  // 78 — TRIP ALLOC drag the value via quick-pick. Open Darwin trip-alloc,
+  // pick $300, capture state showing the row would-fill.
+  await step('reset + open darwin trip + pick $300', async () => {
+    await resetToCanvasRoot();
+    await page.evaluate(() => {
+      var trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
+      var darwin = trips.find(function(t){return t && /darwin/i.test(t.name||'');});
+      if (darwin && typeof openEditPaydayTripAlloc === 'function') openEditPaydayTripAlloc(darwin.id);
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const btn = document.querySelector('button.quickpick[data-quickpick="300"]');
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 78, 'trip-alloc-300-picked', 'Darwin trip alloc — $300 chip active, Save highlighted');
+
+  // 79 — Save trip alloc + return to canvas + open Savings sub to verify
+  // Darwin row reflects the $300 allocation.
+  await step('save trip + open savings to verify', async () => {
+    await page.evaluate(() => {
+      if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.attemptSave) EDIT_MODAL.attemptSave();
+    });
+    await page.waitForTimeout(800);
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-savings'); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 79, 'savings-sub-after-darwin-300', 'Savings sub-screen after Darwin $300 alloc — Darwin row shows $300 · Pool reduced by $300');
+
+  // 80 — INPUT FOCUS state (keyboard would be present on real device).
+  // Open Add Item upcoming → focus the name input → capture (Playwright
+  // doesn't render the OS keyboard, but we can verify field-focus styling).
+  await step('reset + open add upcoming + focus name input', async () => {
+    await resetToCanvasRoot();
+    await page.evaluate(() => {
+      if (typeof openEditPaydayUpcoming === 'function') openEditPaydayUpcoming(null);
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const inputs = document.querySelectorAll('.edit-modal input[type="text"], .edit-modal input:not([type])');
+      if (inputs.length) inputs[0].focus();
+    });
+    await page.waitForTimeout(200);
+  });
+  await shoot(page, 80, 'upcoming-add-focus-state', 'Add upcoming modal open with first input focused — verify focus ring visible');
+
+  // 81 — AUTO-ALLOCATE happy-path. Mutate state so totalToPlan > essentials+buffer,
+  // then open auto-allocate.
+  await step('mutate state for surplus + open auto-allocate', async () => {
+    await resetToCanvasRoot();
+    // Inflate net pay so we have surplus
+    await page.evaluate(() => {
+      if (typeof BRAIN !== 'undefined' && BRAIN.config && BRAIN.config.setIncome) {
+        BRAIN.config.setIncome(12000, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+        if (S.activePlan && S.activePlan.income) S.activePlan.income.netPay = 12000;
+      }
+    });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => { if (typeof openPaydayAutoAllocate === 'function') openPaydayAutoAllocate(); });
+    await page.waitForTimeout(700);
+  });
+  await shoot(page, 81, 'auto-allocate-happy-path', 'Auto-allocate with surplus — covered-first essentials + Allocatable headline + urgency-weighted bucket split + NEW BUCKET tags');
+
+  // 82 — Apply the auto-allocation + capture canvas root + savings sub
+  // showing the overrides landed.
+  await step('apply auto-allocate + verify root + savings', async () => {
+    await page.evaluate(() => {
+      // Click Apply (custom save button label)
+      const root = document.getElementById('edit-modal');
+      if (root) {
+        const applyBtn = Array.from(root.querySelectorAll('button')).find(b => /apply/i.test(b.textContent || ''));
+        if (applyBtn) applyBtn.click();
+        else if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.attemptSave) EDIT_MODAL.attemptSave();
+      }
+    });
+    await page.waitForTimeout(800);
+  });
+  await shoot(page, 82, 'canvas-root-after-auto-applied', 'Canvas root post-apply — savings.total reflects allocated amounts · REMAINDER reduces');
+
+  await step('open savings to see distribution', async () => {
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-savings'); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 83, 'savings-sub-after-auto-applied', 'Savings sub after auto-applied — per-bucket allocations visible');
+
+  // 84 — LOCK CAN'T-LOCK state. Reset income then try to lock with shortfall.
+  await step('reset income + force shortfall + open lock', async () => {
+    await page.evaluate(() => {
+      if (typeof BRAIN !== 'undefined' && BRAIN.config && BRAIN.config.setIncome) {
+        BRAIN.config.setIncome(5000, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+        if (S.activePlan && S.activePlan.income) S.activePlan.income.netPay = 5000;
+      }
+    });
+    await page.waitForTimeout(300);
+    await resetToCanvasRoot();
+    await page.evaluate(() => { if (typeof openPaydayLockPlan === 'function') openPaydayLockPlan(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 84, 'lock-cant-lock-shortfall', "Lock attempted with remainder < 0 — Can't lock yet modal with deficit + options");
+
+  // 85 — Reset to canvas + Mark payday landed FLOW (full sequence).
+  await step('reset state + mark payday landed', async () => {
+    await page.evaluate(() => {
+      if (typeof BRAIN !== 'undefined' && BRAIN.config && BRAIN.config.setIncome) {
+        BRAIN.config.setIncome(7282, BRAIN.SOURCES.SETTINGS_INCOME_EDIT);
+        if (S.activePlan && S.activePlan.income) S.activePlan.income.netPay = 7282;
+      }
+      // Make sure paydayReceived is false so the pill renders
+      S.paydayReceived = false;
+      S.paydayReceivedDate = null;
+      if (S.activePlan) S.activePlan.actualPaydayTs = null;
+    });
+    await page.waitForTimeout(200);
+    await resetToCanvasRoot();
+  });
+  await shoot(page, 85, 'canvas-pre-payday-landed', 'Canvas with Pay landed today pill visible — pre-state');
+
+  await step('stub confirm + mark payday landed', async () => {
+    page.once('dialog', d => d.accept());
+    await page.evaluate(() => {
+      if (typeof markPaydayLandedToday === 'function') markPaydayLandedToday();
+    });
+    await page.waitForTimeout(700);
+  });
+  await shoot(page, 86, 'canvas-after-payday-landed', 'Canvas after Pay landed today tapped — pill replaced by ✓ Paid badge · projected balance recalc');
+
+  // 87 — TOAST capture. Many actions fire showToast — but the toast is
+  // ephemeral (typically 2-3s). Capture immediately after an action.
+  await step('action that fires toast + capture', async () => {
+    await page.evaluate(() => {
+      if (typeof showToast === 'function') showToast('🎯 Test toast — sample feedback message');
+    });
+    await page.waitForTimeout(200); // Toast renders quickly
+  });
+  await shoot(page, 87, 'toast-state-after-action', 'Toast visible at bottom-of-screen — confirms what action just happened');
+
+  // 88 — PLAN-tab Goals tile in DETAIL (the mother surface that canvas
+  // Savings is supposed to mirror per Bundle 29 Phase 1).
+  await step('reset + nav plan + scroll to goals', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.modal-overlay.show, .edit-modal.show').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      const canvas = document.getElementById('pg-payday-plan');
+      if (canvas) canvas.classList.remove('payday-active');
+      if (typeof goPage === 'function') goPage('pg-plan');
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const cands = Array.from(document.querySelectorAll('h2, div'));
+      const hit = cands.find(el => /your goals/i.test((el.textContent || '').slice(0, 30)) && el.offsetHeight > 0);
+      if (hit) hit.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 88, 'plan-tab-goals-detail', 'PLAN-tab Goals tile in full — 3-projection table + per-goal hint + 4-button row · Mother depth ref for Bundle 29 Phase 1');
+
+  // 89 — PLAN-tab WRX card detail
+  await step('scroll to wrx', async () => {
+    await page.evaluate(() => {
+      const cands = Array.from(document.querySelectorAll('div'));
+      const hit = cands.find(el => /wrx/i.test((el.textContent || '').slice(0, 30)) && el.offsetHeight > 0);
+      if (hit) hit.scrollIntoView({ block: 'start' });
+    });
+    await page.waitForTimeout(300);
+  });
+  await shoot(page, 89, 'plan-tab-wrx-detail', 'WRX status card — sale plan narrative · cash after payoff · freed/mo');
+
+  // 90 — Edit goal modal (Property Deposit) detail
+  await step('open property deposit goal edit', async () => {
+    await page.evaluate(() => { if (typeof editGoal === 'function') editGoal('apartment'); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 90, 'edit-goal-property-deposit', 'Edit goal modal for Property Deposit — name · target · monthly · description fields');
+
+  } // end if (!skipDeep) — Section 10 + 11 canvas-deep
 
   // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));

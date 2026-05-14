@@ -1645,3 +1645,328 @@ Methodology baked into reusable memory at `slyght_persona_audit_pattern.md` (per
 Tonight is GO. The polish items are Bundle 29 Phase 5 narration + rigidity backlog.
 
 ---
+
+## STEP 3.7 — Alive-vs-dead matrix (Bundle 29 Phase 0.1 deep walk)
+
+> _John 2026-05-14: "Daily living page lets me edit stuff but it doesn't react. We need this app to confirm what I'm doing with it and show me via animations and popups and editable fields and sliders, make it worth my time and want me to always play around with the app and make me want to keep using it!"_
+
+The earlier visual-UX walk (§3.6) was based on STATIC captures only — surface-level findings. Section 11 added **38 interaction-state captures** showing what happens when a user actually edits/saves/applies. Different lens: ALIVE (animates, confirms, plays back) vs DEAD (changes silently, snap-to-new-state, no celebration).
+
+### The "live preview on defer" GOLD STANDARD (#76, #77)
+
+Edit-bill defer mode is the single ALIVE micro-interaction in the entire app:
+
+- Toggle from "Pay in full" → "Defer part" → defer-fields panel slides into view.
+- Type `2000` in the amount input → live preview box updates instantly:
+  ```
+  Paying now              $2000.00 (green)
+  Carries to next cycle   $1000.00 (orange)
+  Total next cycle        $1000.00 (orange)
+  ```
+- Toggle "Add a late fee" → fee input reveals → type `50` → preview gains `+ Late fee $50.00 (red)` row → Total recomputes to $1050.00.
+
+**This is what every editable field should feel like.** Type, see math change, understand impact, decide. Currently 1 of ~10 editable surfaces does this.
+
+### Per-surface ALIVE/DEAD matrix
+
+| Surface | Reaction observed | Animation? | Confirmation? | Live preview? | Verdict |
+|---|---|---|---|---|---|
+| Bonus modal save (#74→#75) | Hero $7,282→$8,782 · proportion bar resized · REMAINDER green→bigger · toast "✓ Pay + bonus updated" | ❌ snap | ✅ toast | ❌ no preview-while-editing | 🟡 reactive but DEAD-feeling |
+| Auto-allocate apply (#81→#82→#83) | savings.total fills · 5 buckets allocated · toast "✓ Auto-allocated across 5 goals" | ❌ snap | ✅ toast | ✅ pre-apply preview shows split | 🟡 the BEST big-action flow but no celebration |
+| Mark payday landed (#85→#86) | Cycle label updates to "✓ Paid 14 May" · paydayReceived flips · projection recalcs · toast | ❌ snap | ✅ toast | ❌ no preview | 🟡 huge moment, dead reaction |
+| Bill defer mode (#76, #77) | Live preview updates as you type · late-fee row reveals · total recomputes | ⚠️ row reveal not animated | ✅ inline preview | ✅ **GOLD** | 🟢 reference-impl |
+| Trip allocation (#78→#79) | Darwin row $0→$300 · Pool $X→$X-300 · toast "✓ $300 → Darwin" | ❌ snap | ✅ toast | ❌ no preview while picking | 🟡 reactive, not playful |
+| Daily Living floor edit (#71→#73) | Floor saves + sub-screen re-renders · status badge re-evaluates | ❌ snap | ⚠️ no toast for floor save | ❌ **no live preview** of "if floor=$40, daily total becomes $1,200, status would be Critical" | 🔴 the surface John flagged — confirms his intuition |
+| Lock plan can't-lock (#84) | Modal blocks with "$X over" message + Got it CTA | ❌ snap | ✅ blocking modal | ❌ no preview of how-to-fix | 🟡 clear gate but unhelpful |
+| Add upcoming item (#80) | Form fields + quick-pick + Cancel/Add | n/a | ✅ Add button highlights when valid | ❌ no preview of impact on REMAINDER | 🟡 form is fine, impact invisible |
+| Quick-pick chip select (everywhere) | Active chip gets green border | ⚠️ instant border | ⚠️ button-state only | ❌ no preview of what the saved value would do | 🟡 mechanical |
+| Toast appearance (#87) | Toast slides up from bottom · 250px wide · centered | ✅ slide-in CSS transition | ✅ THE primary feedback | n/a | 🟢 the only animation in the app |
+| Goal/trip name change (#90 edit-goal) | Form fields with focus rings · Save Goal cyan + Delete Goal red | n/a | ⚠️ no inline validation while typing | ❌ no preview of how this changes the goal in canvas | 🟡 standard form |
+| Bonus toggle on/off (#74) | Toggle visual flips · bonus section opacity changes (per code, not visible in capture) | ⚠️ opacity transition is subtle | ⚠️ visual state only | n/a | 🟡 subtle |
+| Empty states (#58, anywhere with 0 items) | Static text + small button | ❌ no animation | n/a | n/a | 🔴 zero playfulness |
+
+**Tally: 1 GOLD · 9 reactive-but-dead · 3 cold-empty.** Ten of thirteen interaction surfaces feel less alive than they should.
+
+### What's MISSING for "alive"
+
+1. **Counter-rolling animations on number changes.** Hero $7,282 → $8,782 should ROLL UP not snap. Same for REMAINDER, projection balance, savings.total. CSS animation `count-up` 200-400ms is enough — humanly-perceptible, satisfying.
+2. **Proportion bar smooth-resize.** Currently each segment SNAPS to new width when totals change. Add `transition: width 300ms cubic-bezier(...)` to `.payday-prop-seg` — bars grow/shrink smoothly. Bundle 27 already has the styled bar; just needs the transition.
+3. **Bucket-progress bars.** Goals show `$97 of $5,000 (2%)` as text. A real progress bar with gradient fill + milestone markers (25/50/75/100%) would make John WATCH his goals grow.
+4. **Live previews on EVERY editable field (defer-mode pattern extended).** Edit floor → preview "Daily total becomes $1,200 · status would be Critical." Edit trip alloc → "Pool $2,066 → $1,766 · Darwin progress 0% → 33%." Edit bonus amount → "Coming-in changes $7,282 → $8,782 · REMAINDER $268 → $1,768."
+5. **Celebration moments.** Lock plan → confetti burst + streak counter ticks up animatedly. Goal hits 100% → emoji shower + "You did it 🎉" + suggest next goal. Mark payday landed → green pulse on the cycle label + "Salary received ✓" with brief satisfying sound-cue (or vibration if PWA-supported).
+6. **Proper haptic-suggestion patterns.** PWAs can call `navigator.vibrate(40)` on iOS-android touch devices. Tick a bill paid → 40ms vibration. Lock plan → 100ms. Goal completion → 200ms double-pulse.
+7. **Empty-state playfulness.** Replace "No upcoming items yet · + Add item" with an illustrated empty-state (mascot emoji, animated dotted-line border on the Add button, friendly microcopy: "Add the first thing — even a $10 coffee. The AI uses these to gauge can-I-afford-X.").
+8. **Field-focus enrichment.** Currently focus ring is the only signal. Could add: contextual help text appearing below field, character/digit counter for amount inputs, suggested-amount pills based on history.
+9. **Loading/saving spinners on the rare slow paths.** Lock plan triggers SNAPSHOTS.take which hits localStorage at scale — could be 50-200ms. Show a brief spinner during the lock-confirm animation.
+10. **Pulse on changed elements.** When REMAINDER changes from a previous value, pulse the tile briefly with a subtle border colour (1s green pulse for positive change · 1s amber for negative). Calls attention to the cause-and-effect.
+
+### Combine/merge mockup proposals (per John's "if something can be combined for easier display, propose mockup")
+
+#### MOCKUP 1 — Daily Living: 4 cards → 1 unified card
+
+**Current (4 cards · ~600px tall):**
+```
+┌─ CURRENT ─────────────────────┐
+│ $25/day × 30 days = $750      │
+└───────────────────────────────┘
+┌─ FLOORS ──────────────────────┐
+│ Minimum daily          $25  › │
+│ Safety buffer          $364 › │
+└───────────────────────────────┘
+┌─ CONTEXT ─────────────────────┐
+│ Status            👀 Tight    │
+│ Floor             $25/day     │
+│ Planned           $25/day     │
+│ Recent average    $63/day     │
+└───────────────────────────────┘
+┌─ ABOUT ───────────────────────┐
+│ Daily living is what you      │
+│ spend on day-to-day stuff…    │
+│ (To plan - Bills - Debts…)    │
+└───────────────────────────────┘
+```
+
+**Proposed (1 hero card · ~280px tall · animations live):**
+```
+┌──────────────────────────────────────┐
+│ 📆 DAILY LIVING                      │
+│                                      │
+│  $25 ────●─────────── $200          │  ← slider, drag to change
+│   floor                               │
+│                                      │
+│  $25/day × 30 days = $750            │  ← live, updates as slider moves
+│                                      │
+│  Status: 👀 TIGHT                     │  ← live colour change
+│   Recent avg $63/day · over by $38   │  ← honest comparison
+│                                      │
+│  🛡️ Buffer: $364 ›                    │  ← inline tap-to-edit
+│  ──────────────                       │
+│  ℹ️  How is this computed? ›           │  ← collapsed, taps open the formula
+└──────────────────────────────────────┘
+```
+
+**Wins:** half the height · slider replaces tap-modal-edit-save loop · status updates live as user drags · "over by $X" makes the comparison concrete.
+
+---
+
+#### MOCKUP 2 — Bonus modal: merge Net pay + Bonus into "Income composer"
+
+**Current:** separate Net pay input + Include-bonus toggle + amount-grid + Status select. 4 distinct mental units.
+
+**Proposed:**
+```
+┌──────────────────────────────────────┐
+│ 💰 INCOME THIS CYCLE                  │
+│                                      │
+│        $7,282 + $1,500 = $8,782      │  ← live equation
+│         net      bonus    total       │
+│                                      │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━           │
+│                                      │
+│  Net pay                              │
+│  ┌────────────┐                      │
+│  │  $7,282    │ ← tap to edit         │
+│  └────────────┘                      │
+│                                      │
+│  Bonus  ●━━━━ ON                     │
+│  ┌────────────┐                      │
+│  │  $1,500    │  Expected ▼           │
+│  └────────────┘                      │
+│  ✓ Slider $0 ─────●───── $5,000      │
+│                                      │
+│         [Cancel]    [Save]           │
+└──────────────────────────────────────┘
+```
+
+**Wins:** the EQUATION is the headline · live updates as either part changes · status inline rather than separate dropdown · slider option for users who prefer dragging over tapping chips.
+
+---
+
+#### MOCKUP 3 — Auto-allocate modal: collapsible essentials, focus the bucket split
+
+**Current (#65 / #81):** Essentials block ALWAYS shown at top with 5 itemised rows. Then Allocatable. Then bucket split. ~700px tall.
+
+**Proposed:**
+```
+┌──────────────────────────────────────┐
+│ ⚙️ AUTO-ALLOCATE                      │
+│                                      │
+│ Essentials covered ($7,014) ›         │  ← collapsed by default, tap expands
+│                                      │
+│ ✋ ALLOCATABLE                $6,047  │  ← keeps headline
+│                                      │
+│ Suggested split (urgency-weighted):  │
+│                                      │
+│ 🔥 Darwin (23d)        $3,371 ●─────│  ← slider per row, drag to override
+│ 200d  China Holiday    $1,729 ───●──│
+│       Rainy Day Fund     $474 ──●───│
+│       Rego & Insurance   $355 ─●────│
+│       Gifts             $118 ●──────│
+│                                      │
+│ Adjustments preview:                  │
+│   Total allocated $6,047 → $5,847   │  ← updates as sliders drag
+│   Surplus left           $200       │
+│                                      │
+│         [Cancel]    [Apply]          │
+└──────────────────────────────────────┘
+```
+
+**Wins:** essentials hidden by default (user already knows · saves 200px) · per-bucket sliders make this PLAYABLE · adjustment preview honest about over/under.
+
+---
+
+#### MOCKUP 4 — Canvas root: visual waterfall replacing 3-block stack
+
+**Current (#53):** Hero card · Mum-bubble (REMOVED via R3) · Proportion bar + legend · Essentials section · Essentials total · REMAINDER tile · Allocating section · Still-free total · 3 action rows. ~1500px tall, 1.5 viewports.
+
+**Proposed (waterfall style, ~1100px):**
+```
+┌──────────────────────────────────────┐
+│ 💰 $7,282 coming in                   │  ← always at top, big
+│  $12 now → $736 left at next pay      │  ← live projection
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│                                      │
+│ ↓ ESSENTIALS (FIXED)                 │
+│   🏠 Bills           − $5,248  ›     │  ← inline waterfall
+│   💳 Debts           − $718    ›     │
+│   📆 Daily living    − $750    ›     │
+│   🏦 Provisions      − $298    ›     │
+│   ──────────────────────────         │
+│   Subtotal           − $7,014        │
+│                                      │
+│ ↓ REMAINDER                           │
+│ 🎯 $268 yours to allocate             │  ← big, coloured
+│                                      │
+│ ↓ ALLOCATING (YOURS)                 │
+│   💰 Savings goals   − $0      ›     │
+│   🎯 Known upcoming  − $0      ›     │
+│   ──────────────────────────         │
+│   Still free            $268         │
+│                                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  │
+│ ⚙️  Auto-allocate  · 💬 Ask AI  · 🔒 Lock │
+└──────────────────────────────────────┘
+```
+
+**Wins:** the MATH is the layout · clear top-down visual flow · all category nav-rows preserved · remainder still hero'd · removes redundant subtotal lines.
+
+---
+
+#### MOCKUP 5 — China goal+trip merge
+
+**Current (#57 savings sub):** TWO rows for the same money:
+- Trips section: `🇨🇳 China · $97 of $5,000 (2%) · in 200 days · $0`
+- Goals section: `🇨🇳 China holiday · $97 of $5,000 goal (2%) · stored in China Holiday · $0`
+
+**Proposed (single canonical row):**
+```
+🇨🇳 China  [trip · 200d]   $97 / $5,000 (2%)   $0  ›
+   ↑                       ↑                    ↑
+   trip+goal merged       single source         this cycle alloc
+```
+
+**Wins:** one row instead of two · saves 60px · removes "wait, are these the same money?" cognitive load · still sortable by trip-vs-goal via the badge.
+
+---
+
+#### MOCKUP 6 — Edit modals: pattern-extract Live-Preview Box
+
+**Current:** only edit-bill defer-mode has the live preview. Every other modal lacks it.
+
+**Proposed pattern (apply to ALL edit modals):**
+```
+┌──────────────────────────────────────┐
+│ <Modal title>                         │
+│                                      │
+│ <input/quickpick/slider>              │
+│                                      │
+│ ━━━━━━━━━━━━━━━━━━━━━━━━            │
+│ 🔮 IF YOU SAVE:                       │  ← always visible preview block
+│                                      │
+│   Daily total: $1,200                │
+│   Status: ⚠️ CRITICAL                 │  ← changes as input changes
+│   Cycle remainder: $268 → $-182       │  ← shows ripple effect
+│                                      │
+│         [Cancel]    [Save]           │
+└──────────────────────────────────────┘
+```
+
+**Wins:** every save has a preview · users learn the cause-and-effect of their edits · reduces "tap save → wait → see what changed" loops.
+
+---
+
+### Phase 5 augmentation queue (concrete micro-interaction backlog)
+
+These items get added to Bundle 29 Phase 5 narration + rigidity backlog as specific deliverables:
+
+**MICRO-INTERACTION ANIMATIONS (highest joy quotient):**
+
+1. Counter-rolling-up animation on hero "Money coming in" (`$7,282` → `$8,782` rolls digits over 300ms). ~30 LOC vanilla JS.
+2. Proportion bar smooth-resize via CSS `transition: width 350ms ease-out` on `.payday-prop-seg`. ~3 LOC.
+3. REMAINDER tile pulse (1s green pulse on positive change · 1s amber on negative). ~15 LOC + CSS keyframe.
+4. Toast slide-up + fade-out polish (already half-implemented). Audit + tighten.
+5. Active-quickpick chip pulse on selection. ~10 LOC.
+6. Lock plan confetti burst + streak counter tick. ~50 LOC + lib (canvas-confetti is small).
+7. Goal complete celebration (emoji shower + "You did it 🎉" + suggest-next-goal modal). ~80 LOC.
+8. Haptic vibration on bill-tick / debt-tick / lock-plan / goal-complete. ~15 LOC (`navigator.vibrate(40)`).
+
+**LIVE PREVIEWS (extend the defer-mode gold standard):**
+
+9. Live preview on Daily Living floor edit. ~30 LOC.
+10. Live preview on Bonus amount edit. ~20 LOC.
+11. Live preview on Trip allocation pick. ~25 LOC.
+12. Live preview on Bucket allocation pick. ~25 LOC.
+13. Live preview on Add Upcoming item. ~25 LOC.
+
+**SLIDERS REPLACING QUICK-PICK (where applicable):**
+
+14. Daily Living floor slider ($20-$200 range). ~40 LOC.
+15. Bonus amount slider ($0-$5000 range, snap to common values). ~50 LOC.
+16. Auto-allocate per-bucket sliders (override the suggested split). ~80 LOC.
+
+**EMPTY-STATE PLAYFULNESS:**
+
+17. Upcoming sub empty-state: illustration + green CTA button + microcopy. ~30 LOC + emoji-mascot.
+18. Goals empty-state: same pattern.
+19. Bills sub all-paid celebration ("🎉 All bills covered for this cycle · Great cycle!"). ~10 LOC.
+
+**WATERFALL / COMBINE LAYOUTS (mockup proposals above):**
+
+20. Daily Living card combine (Mockup 1). ~60 LOC.
+21. Bonus modal "Income composer" (Mockup 2). ~80 LOC.
+22. Auto-allocate collapsible essentials (Mockup 3). ~30 LOC.
+23. Canvas root waterfall layout (Mockup 4). ~120 LOC — bigger redesign.
+24. China goal+trip merge (Mockup 5) — depends on Tier-3 intent-driven canvas Savings Phase 1.
+25. Live-Preview pattern extracted as `_buildLivePreviewBox(opts)` helper. ~40 LOC, reused everywhere.
+
+**PROGRESS BARS (where text-only):**
+
+26. Goal cards: real progress bar replacing text "$97 of $5,000 (2%)". ~40 LOC + milestone markers.
+27. Trip cards: same.
+28. Bills sub: progress bar already exists (#54) — extend to other sub-screens for consistency.
+
+### Verdict
+
+**The app is reactive at the data layer (correct math, correct re-renders, correct toasts) but DEAD at the experience layer (no animations, no live previews except defer, no celebrations, no playfulness).** John's intuition is right: he doesn't want to come back to it because nothing happens visually that makes him want to.
+
+**Highest-leverage Phase 5 items** (best joy-quotient per LOC):
+- **#1, #2, #3 micro-interaction animations** — ~50 LOC for hero-count / bar-resize / REMAINDER-pulse → instant alive feel everywhere those numbers change.
+- **#9-#13 live previews** — extends the gold standard from 1 modal to 5. ~125 LOC total. Closes John's #1 specific complaint ("Daily living lets me edit but doesn't react").
+- **#17-#19 empty-state playfulness** — ~70 LOC. Turns three dead screens into invitations.
+
+That's ~245 LOC for the entire "feels alive" upgrade across most surfaces. Doable in one focused Phase 5 round.
+
+### Mockup-proposal review queue (for John)
+
+React to each mockup with one of: **ship it · iterate (tell me what to change) · queue Bundle 30 · drop**. The mockups are markdown ASCII so easy to read; final implementation would render in actual HTML/CSS.
+
+| # | Mockup | Recommendation |
+|---|---|---|
+| 1 | Daily Living combine 4→1 with slider | Ship — biggest win for least scope |
+| 2 | Bonus "Income composer" with equation headline | Iterate — slider may be overkill, equation alone could be enough |
+| 3 | Auto-allocate collapsible essentials + per-bucket sliders | Iterate — sliders are powerful but could overwhelm; start with collapsible-only |
+| 4 | Canvas root waterfall | Bundle 30 — bigger restructure, needs design pass with Opus |
+| 5 | China goal+trip merge | Bundle 29 Phase 1 (Tier-3 intent canvas) — already queued |
+| 6 | Live-Preview Box pattern extract | Ship as the Phase 5 anchor — every modal upgrade builds on it |
+
+---
