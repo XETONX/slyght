@@ -236,7 +236,9 @@ body.edit-modal-open{overflow:hidden}
 .quickpick.custom{font-style:italic;background:transparent;border:1px dashed var(--border2);color:var(--text2);font-family:inherit;font-size:14px}
 .payday-dropdown{display:flex;flex-direction:column;gap:4px;margin:14px 0 6px}
 .payday-dropdown-label{font-size:13px;color:var(--text3)}
-.payday-dropdown-select{min-height:44px;padding:0 12px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:15px;font-family:inherit}
+.payday-dropdown-select{min-height:44px;padding:0 38px 0 14px;border:1px solid var(--border2);border-radius:10px;background:var(--bg);color:var(--text);font-size:15px;font-family:inherit;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1.5L6 6.5L11 1.5' stroke='%2399a3b3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 14px center;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.payday-dropdown-select:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,0.12)}
+.payday-dropdown-select option{background:var(--bg2);color:var(--text);padding:8px}
 .payday-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;margin:6px 0}
 .payday-toggle-label{flex:1;font-size:14px;color:var(--text2)}
 .screen::-webkit-scrollbar{display:none}
@@ -18822,7 +18824,28 @@ const BRAIN = {
       // allocation into them double-counts. Same filter as renderPaydaySavings.
       const _isProvision = (name) => /rego|insurance|service|provision/i.test(name || '');
       const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
-      const buckets = allBuckets.filter(b => !_isProvision(b.name));
+      // Bundle 29 demon-time: also skip "abandoned" buckets — saved=$0,
+      // no linked goal/trip-intent, no current override. Catches stale
+      // seed-data buckets like "Gifts & Celebrations" that John never
+      // configured and doesn't see on the PLAN dashboard. Excluding them
+      // from the auto-allocate split prevents silent allocation to
+      // nothing-buckets. John 2026-05-14: "gifts and celebrations is
+      // still showing up even though thats not a bucket in the home screen".
+      const _activeOverrides = (S.activePlan && S.activePlan.overrides) || {};
+      const _hasIntentLink = (b) => {
+        try {
+          if (!this.intent || !this.intent.byBucket) return false;
+          const list = this.intent.byBucket(b.name) || [];
+          return list.length > 0;
+        } catch (_) { return false; }
+      };
+      const _isAbandoned = (b) => {
+        if ((+b.saved || 0) > 0) return false;
+        if (_activeOverrides['savings:' + b.name]) return false;
+        if (_hasIntentLink(b)) return false;
+        return true;
+      };
+      const buckets = allBuckets.filter(b => !_isProvision(b.name) && !_isAbandoned(b));
       const totalBucketTarget = buckets.reduce((s, b) => s + (+b.goal || 0), 0);
       // Bundle 29 demon-time: use canonical snap.derived.surplus so this
       // matches what the Savings sub-screen displays as the pool. Previously
