@@ -31,6 +31,14 @@ const deepOnly = args.includes('--deep-only');
 // PNG copies), METADATA.md stub, and the four phase markdown placeholders.
 // Captures still write to captures/ as usual; package is an additional output.
 const sweepSlug = getArg('sweep-package', null);
+// Bundle 29 demon-time: theme override. John 2026-05-14 — "my phone is in
+// dark mode but captures are always in light mode". slyght's CSS defaults
+// to dark and overrides via @media (prefers-color-scheme: light). Playwright's
+// default emulated colorScheme is 'light' on mobile contexts so we land in
+// the light branch. Add --theme dark|light to control. Default switched to
+// DARK so captures match John's phone-default.
+const themeArg = (getArg('theme', 'dark') || 'dark').toLowerCase();
+const themeColorScheme = themeArg === 'light' ? 'light' : 'dark';
 const todayISO = new Date().toISOString().slice(0, 10);
 
 const FIXTURE_PATH = path.resolve(__dirname, '..', 'state-snapshot.json');
@@ -157,9 +165,14 @@ async function step(name, fn) {
     isMobile: true,
     hasTouch: true,
     userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+    colorScheme: themeColorScheme,
   });
+  console.log(`Theme: ${themeColorScheme} (--theme ${themeArg})`);
   const page = await ctx.newPage();
   await page.clock.install({ time: new Date(FROZEN_ISO) });
+  // Belt-and-braces: also fire emulateMedia per-page in case the context-level
+  // colorScheme doesn't propagate fully through addInitScript timing.
+  try { await page.emulateMedia({ colorScheme: themeColorScheme }); } catch (_) {}
 
   await ctx.addInitScript((args) => {
     try { localStorage.setItem('slyght_v5', JSON.stringify(args.seed)); } catch (_) {}

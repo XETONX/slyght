@@ -15,6 +15,9 @@
     "layerV:deep": "node scripts/layerV-capture.js --local --deep-only",
     "layerV:all": "node scripts/layerV-capture.js --local",
     "layerV:sweep": "node scripts/layerV-capture.js --local --deep-only --sweep-package",
+    "layerV:dark": "node scripts/layerV-capture.js --local --deep-only --theme dark",
+    "layerV:light": "node scripts/layerV-capture.js --local --deep-only --theme light",
+    "layerV:sweep:dark": "node scripts/layerV-capture.js --local --deep-only --theme dark --sweep-package",
     "test:interaction": "node scripts/mission-i/run.js",
     "test:interaction:dry": "node scripts/mission-i/run.js --dry-run",
     "test": "node guardian-all.js && node guardian-static.js && node tests/core.test.js"
