@@ -211,9 +211,10 @@ body.edit-modal-open{overflow:hidden}
 .pd-cycle-head .pd-cycle-state{color:var(--text3)}
 /* Bundle 29 sub-screen ROW CARDS — _paydayRow bubble redesign. Each row
    is a card with avatar circle + name/sub + value + tick + progress. */
-.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden}
+.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden;outline:none}
 .pd-row-card:hover{border-color:var(--border2)}
 .pd-row-card:active{transform:scale(0.992)}
+.pd-row-card:focus-visible{border-color:var(--green);box-shadow:0 0 0 2px var(--green-dim)}
 .pd-row-card.is-ticked{background:linear-gradient(135deg,rgba(0,232,122,0.05),transparent 40%);border-color:var(--green-border)}
 .pd-row-card .pd-row-avatar{grid-row:1 / span 2;width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;border:1px solid var(--border)}
 .pd-row-card .pd-row-text{grid-column:2;display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -11911,8 +11912,11 @@ function _paydayRow(opts) {
   const tickCls = ticked ? 'pd-row-tick ticked' : 'pd-row-tick';
   const valueCol = opts.valueWarn ? 'var(--amber)' : 'var(--text)';
   const warnGlyph = opts.valueWarn ? ' <span style="color:var(--amber)">⚠️</span>' : '';
-  const progressHtml = (opts.progressPct != null && opts.progressPct >= 0)
-    ? '<div class="pd-row-progress"><span style="width:' + Math.max(0, Math.min(100, opts.progressPct)).toFixed(0) + '%"></span></div>'
+  // Only render progress when meaningfully non-zero. progressPct=0 creates
+  // a 3px empty container that shows as a thin grey strip — looks like
+  // a layout artifact in dark mode. Skip render under 1%.
+  const progressHtml = (opts.progressPct != null && opts.progressPct >= 1)
+    ? '<div class="pd-row-progress"><span style="width:' + Math.max(1, Math.min(100, opts.progressPct)).toFixed(0) + '%"></span></div>'
     : '';
   const avatarHtml = '<div class="pd-row-avatar">' + (opts.icon || '💰') + '</div>';
   const tickHtml = (opts.onTickTap)
@@ -13670,12 +13674,13 @@ function showToast(msg) {
     // 800 sits above everything modal-tier (canvas 510, modals 600, recon
     // 620, edit-modal 700) so toasts are always visible regardless of
     // which surface is open when they fire.
-    // Bundle 29 F-23/E-05 fix: dropped white-space:nowrap because long
-    // lock-confirmation strings ("🔒 Plan locked — tick items as you handle
-    // them · 🔥 N cycle streak · 💰 payday recorded as landed") exceeded
-    // 380px viewport and clipped left + right. Now wraps. max-width keeps
-    // it inside viewport. text-align:center for multi-line balance.
-    el.style.cssText = 'position:fixed;bottom:180px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;max-width:calc(100vw - 48px);white-space:normal;text-align:center;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
+    // Bundle 29 F-23/E-05 + F-03 fix: dropped white-space:nowrap (was
+    // clipping long lock-confirmation strings) AND moved toast position
+    // bottom:180px → bottom:24px so it sits below typical content rows
+    // instead of overlapping the REMAINDER card / Daily Living tile.
+    // max-width keeps it inside viewport, white-space:normal wraps long
+    // strings, text-align:center balances multi-line.
+    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;max-width:calc(100vw - 48px);white-space:normal;text-align:center;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
     document.body.appendChild(el);
   }
   el.textContent = msg;
