@@ -181,6 +181,35 @@ body.edit-modal-open{overflow:hidden}
 .empty-playful .ep-cta{margin-top:6px;padding:12px 22px;background:var(--green);color:#000;border:none;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,232,122,0.25);transition:transform .15s ease-out, box-shadow .15s ease-out}
 .empty-playful .ep-cta:active{transform:scale(0.97);box-shadow:0 2px 6px rgba(0,232,122,0.18)}
 @keyframes gentle-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+/* Bundle 29 Mockup 1 — unified Daily Living card slider */
+.living-card{background:var(--bg2);border-radius:14px;padding:16px;margin-bottom:14px}
+.living-card h3{margin:0 0 4px 0;font-size:14px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:6px}
+.living-card .lc-formula{font-family:var(--mono);font-size:18px;color:var(--text);margin:10px 0 4px;display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.living-card .lc-formula .lc-total{font-weight:800;font-size:24px}
+.living-card .lc-status-row{display:flex;align-items:center;gap:8px;margin:8px 0 14px;font-size:13px}
+.living-card .lc-status-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;letter-spacing:.02em;transition:background .25s,color .25s,border-color .25s}
+.living-card .lc-status-pill[data-status="healthy"]{background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)}
+.living-card .lc-status-pill[data-status="tight"]{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)}
+.living-card .lc-status-pill[data-status="critical"]{background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)}
+.living-card .lc-slider-wrap{padding:6px 0 14px}
+.living-card .lc-slider-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:6px}
+.living-card .lc-slider-labels .lc-current{color:var(--green);font-weight:700;font-size:13px}
+.living-floor-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--bg3);border-radius:3px;outline:none;margin:0;padding:0}
+.living-floor-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:26px;height:26px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 0 0 4px var(--green-dim);transition:transform .15s ease-out, box-shadow .15s ease-out}
+.living-floor-slider::-webkit-slider-thumb:active{transform:scale(1.18);box-shadow:0 0 0 7px var(--green-dim)}
+.living-floor-slider::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:var(--green);cursor:pointer;border:none;box-shadow:0 0 0 4px var(--green-dim)}
+.living-floor-slider:focus-visible{outline:2px solid var(--green);outline-offset:4px}
+.living-card .lc-recent{font-size:13px;color:var(--text2);line-height:1.55;margin-top:4px}
+.living-card .lc-recent strong{color:var(--text);font-family:var(--mono)}
+.living-card .lc-buffer-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;margin-top:10px;border-top:1px solid var(--border);font-size:13px;color:var(--text2)}
+.living-card .lc-buffer-row button{background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:14px;font-weight:600;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;min-height:36px}
+.living-card details{margin-top:10px;border-top:1px solid var(--border);padding-top:8px}
+.living-card details summary{font-size:13px;color:var(--text3);cursor:pointer;list-style:none;padding:4px 0}
+.living-card details summary::-webkit-details-marker{display:none}
+.living-card details summary::before{content:'▸ ';color:var(--text3)}
+.living-card details[open] summary::before{content:'▾ '}
+.living-card details .lc-help{font-size:13px;color:var(--text3);line-height:1.6;padding:6px 0}
+.living-card details .lc-help code{font-family:var(--mono);font-size:12px;background:var(--bg3);padding:2px 6px;border-radius:4px;color:var(--text2)}
 .payday-action-row{display:flex;align-items:center;padding:14px 16px;background:var(--bg2);border:none;color:var(--text);min-height:52px;text-align:left;cursor:pointer;width:100%}
 /* Bundle 27 Phase 4: quick-pick amount grid (used inside edit-modal custom body). */
 .quickpick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 4px}
@@ -11685,62 +11714,117 @@ function renderPaydayLiving() {
   const perDay = snap.dailyLiving.perDay;
   const daysInCycle = snap.daysInCycle;
   const plannedTotal = snap.dailyLiving.plannedTotal;
+  const buffer = +snap.bufferFloor || 0;
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
-  // 3-cycle avg (rough — needs monthlyHistory, fallback to last30days avg)
-  let avgLabel = '—';
+  let recentAvgPerDay = null;
   try {
     if (typeof BRAIN !== 'undefined' && BRAIN.summary && BRAIN.summary.total) {
       const last30Spend = BRAIN.summary.total('last30days');
-      avgLabel = '$' + (last30Spend / 30).toFixed(0) + '/day (last 30 days)';
+      recentAvgPerDay = last30Spend / 30;
     }
   } catch (_) {}
-  // Status
-  let statusLabel = '✅ Healthy', statusCol = 'var(--green)';
-  if (perDay < floor) { statusLabel = '⚠️ Below floor'; statusCol = 'var(--red)'; }
-  else if (perDay < floor * 1.2) { statusLabel = '👀 Tight'; statusCol = 'var(--amber)'; }
+  // Bundle 29 Mockup 1 — single unified Daily Living card with floor SLIDER.
+  // Replaces the 4-card stack (Current/Floors/Context/About) with one
+  // hero-card: live formula + slider + status pill + recent-avg comparison
+  // + inline buffer-floor edit + collapsible help. Slider drives BRAIN.plan
+  // .setDailyLivingFloor on `change` (release), with `input` event updating
+  // the on-screen labels live during drag.
+  // Status definition (clarified per audit §3.6 + §3.7 finding):
+  //   - planned (perDay) < floor → CRITICAL  (math doesn't reach minimum)
+  //   - recent_avg > floor by 30%+ → TIGHT  (you're spending a lot more than min)
+  //   - else → HEALTHY
+  const isCritical = perDay < floor;
+  const isTight = !isCritical && recentAvgPerDay !== null && recentAvgPerDay > floor * 1.3;
+  const statusKey = isCritical ? 'critical' : isTight ? 'tight' : 'healthy';
+  const statusEmoji = isCritical ? '⚠️' : isTight ? '👀' : '✅';
+  const statusText = isCritical ? 'Critical' : isTight ? 'Tight' : 'Healthy';
   let html = '';
-  html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + fmtC2(plannedTotal) + '</div>';
-  // Current
-  html += '<div class="settings-group-title">Current</div>';
-  html += '<div class="settings-group-card" style="padding:14px 16px">';
-  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text)">$' + perDay.toFixed(0) + '/day × ' + daysInCycle + ' days = <strong>' + fmtC2(plannedTotal) + '</strong></div>';
-  html += '</div>';
-  // Floor + safety buffer (editable)
-  html += '<div class="settings-group-title">Floors</div>';
-  html += '<div class="settings-group-card">';
-  html += '<button class="settings-edit-row" onclick="openEditPaydayLivingFloor()" aria-label="Minimum daily floor, tap to edit" data-brain-key="plan.dailyLivingFloor">' +
-    '<span class="row-multi">' +
-      '<span style="font-size:15px;color:var(--text)">Minimum daily</span>' +
-      '<span class="row-sub">Below this triggers a warning</span>' +
-    '</span>' +
-    '<span class="row-value">$' + floor + '</span>' +
-    '<span class="row-chevron">›</span>' +
-  '</button>';
-  html += '<button class="settings-edit-row" onclick="openEditPaydayBufferFloor()" aria-label="Safety buffer, tap to edit" data-brain-key="plan.bufferFloor">' +
-    '<span class="row-multi">' +
-      '<span style="font-size:15px;color:var(--text)">Safety buffer</span>' +
-      '<span class="row-sub">Reserve auto-allocate keeps for surprises. Set $0 to disable.</span>' +
-    '</span>' +
-    '<span class="row-value">$' + (snap.bufferFloor || 0) + '</span>' +
-    '<span class="row-chevron">›</span>' +
-  '</button>';
-  html += '</div>';
-  // Context
-  html += '<div class="settings-group-title">Context</div>';
-  html += '<div class="settings-group-card" style="padding:14px 16px;font-size:14px;line-height:2;color:var(--text2)">';
-  html += '<div style="display:flex;justify-content:space-between"><span>Status</span><strong style="color:' + statusCol + '">' + statusLabel + '</strong></div>';
-  html += '<div style="display:flex;justify-content:space-between"><span>Floor</span><strong style="font-family:var(--mono);color:var(--text)">$' + floor + '/day</strong></div>';
-  html += '<div style="display:flex;justify-content:space-between"><span>Planned</span><strong style="font-family:var(--mono);color:var(--text)">$' + perDay.toFixed(0) + '/day</strong></div>';
-  html += '<div style="display:flex;justify-content:space-between"><span>Recent average</span><strong style="font-family:var(--mono);color:var(--text)">' + avgLabel + '</strong></div>';
-  html += '</div>';
-  // About
-  html += '<div class="settings-group-title">About</div>';
-  html += '<div class="settings-group-card" style="padding:14px 16px;font-size:14px;color:var(--text2);line-height:1.6">';
-  html += '<p style="margin:0 0 10px 0">Daily living is what you spend on day-to-day stuff that <em>isn\'t</em> a known upcoming item — groceries, fuel, coffee, transport.</p>';
-  html += '<p style="margin:0 0 10px 0">It\'s computed:<br><span style="font-family:var(--mono);font-size:13px;color:var(--text3)">(To plan − Bills − Debts − Savings − Known upcoming) ÷ days</span></p>';
-  html += '<p style="margin:0;color:var(--text3)">To increase your daily, reduce one of the categories above.</p>';
+  html += '<div class="living-card">';
+  html += '  <h3>📆 Daily Living</h3>';
+  // Live formula line (updates on slider input)
+  html += '  <div class="lc-formula">'
+       +  '    <span class="lc-total" id="living-perday">$' + Math.round(floor) + '</span>'
+       +  '    <span style="color:var(--text3)">/day ×</span>'
+       +  '    <span style="color:var(--text2)">' + daysInCycle + ' days</span>'
+       +  '    <span style="color:var(--text3)">=</span>'
+       +  '    <strong id="living-cycle-total">' + fmtC2(floor * daysInCycle) + '</strong>'
+       +  '  </div>';
+  // Status row
+  html += '  <div class="lc-status-row">'
+       +  '    <span style="color:var(--text3)">Status:</span>'
+       +  '    <span class="lc-status-pill" id="living-status-pill" data-status="' + statusKey + '">' + statusEmoji + ' ' + statusText + '</span>'
+       +  '    <span style="color:var(--text3);margin-left:auto;font-size:11px">drag to change</span>'
+       +  '  </div>';
+  // Slider
+  html += '  <div class="lc-slider-wrap">'
+       +  '    <div class="lc-slider-labels">'
+       +  '      <span>$20</span>'
+       +  '      <span class="lc-current" id="living-current-label">$' + Math.round(floor) + '/day</span>'
+       +  '      <span>$200</span>'
+       +  '    </div>'
+       +  '    <input type="range" min="20" max="200" step="5" value="' + Math.round(floor) + '" id="living-floor-slider" class="living-floor-slider" aria-label="Daily living floor in dollars">'
+       +  '  </div>';
+  // Recent average context line
+  if (recentAvgPerDay !== null) {
+    const diff = recentAvgPerDay - floor;
+    const verdict = diff > 5
+      ? '<strong style="color:var(--amber)">$' + Math.round(diff) + '/day over your floor</strong>'
+      : diff < -5
+        ? '<strong style="color:var(--green)">$' + Math.abs(Math.round(diff)) + '/day under your floor</strong>'
+        : '<strong>roughly matching your floor</strong>';
+    html += '  <div class="lc-recent">📊 Last 30 days you actually spent <strong>$' + Math.round(recentAvgPerDay) + '/day</strong> — ' + verdict + '.</div>';
+  }
+  // Buffer floor inline edit
+  html += '  <div class="lc-buffer-row">'
+       +  '    <span>🛡️ Safety buffer for surprises</span>'
+       +  '    <button onclick="openEditPaydayBufferFloor()">$' + buffer + ' ›</button>'
+       +  '  </div>';
+  // Collapsible "How is this computed?"
+  html += '  <details>'
+       +  '    <summary>How is the cycle remainder computed?</summary>'
+       +  '    <div class="lc-help">'
+       +  '      Daily living is what you spend on day-to-day stuff that <em>isn\'t</em> a known upcoming item — groceries, fuel, coffee, transport.<br><br>'
+       +  '      Cycle remainder = <code>(To plan − Bills − Debts − Provisions − Daily living × days)</code><br><br>'
+       +  '      To grow your daily floor, free up money in any of those committed categories.'
+       +  '    </div>'
+       +  '  </details>';
   html += '</div>';
   body.innerHTML = html;
+  // Wire the slider to live-update labels during drag, and write to BRAIN
+  // on release (change event). Status pill recomputes live too.
+  try {
+    const slider = document.getElementById('living-floor-slider');
+    const perdayEl = document.getElementById('living-perday');
+    const currentLabelEl = document.getElementById('living-current-label');
+    const cycleTotalEl = document.getElementById('living-cycle-total');
+    const statusPillEl = document.getElementById('living-status-pill');
+    if (slider) {
+      const updateLive = () => {
+        const v = +slider.value || 0;
+        if (perdayEl) perdayEl.textContent = '$' + v;
+        if (currentLabelEl) currentLabelEl.textContent = '$' + v + '/day';
+        if (cycleTotalEl) cycleTotalEl.textContent = fmtC2(v * daysInCycle);
+        if (statusPillEl) {
+          const liveCritical = perDay < v; // perDay (math result) < new floor
+          const liveTight = !liveCritical && recentAvgPerDay !== null && recentAvgPerDay > v * 1.3;
+          const newKey = liveCritical ? 'critical' : liveTight ? 'tight' : 'healthy';
+          const newEmoji = liveCritical ? '⚠️' : liveTight ? '👀' : '✅';
+          const newText = liveCritical ? 'Critical' : liveTight ? 'Tight' : 'Healthy';
+          statusPillEl.dataset.status = newKey;
+          statusPillEl.textContent = newEmoji + ' ' + newText;
+        }
+      };
+      slider.addEventListener('input', updateLive);
+      slider.addEventListener('change', () => {
+        const v = +slider.value || 0;
+        const r = BRAIN.plan.setDailyLivingFloor(v, BRAIN.SOURCES.PLAN_DAILY_FLOOR_EDIT);
+        if (!r.ok) { if (typeof showToast === 'function') showToast('Couldn\'t save: ' + r.reason); return; }
+        if (typeof _haptic === 'function') _haptic('light');
+        if (typeof showToast === 'function') showToast('✓ Daily floor: $' + v);
+        if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      });
+    }
+  } catch (e) { try { console.warn('[living slider] wiring failed:', e); } catch (_) {} }
 }
 
 // ─── Bundle 27 Phase 0: BRAIN.plan helpers ────────────────────────────────
