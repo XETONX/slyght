@@ -6075,7 +6075,22 @@ function renderAll() {
   const isPayday = today === (S.payday || 15);
 
   const _hbal = $('h-bal');
-  if (_hbal) { _hbal.textContent = fmtC(liveBal); _hbal.className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok'); }
+  if (_hbal) {
+    // r76 (John 2026-05-14 ask: "pulsing and shading and transition"):
+    // animate the hero balance value when it changes — counter rolls
+    // from previous to current, then the element pulses green (balance
+    // up) or red (balance down). Skip on first render (no previous).
+    const _prev = parseFloat(_hbal.dataset.lastVal);
+    const _next = +liveBal;
+    if (typeof _animateCounter === 'function' && !isNaN(_prev) && Math.abs(_next - _prev) >= 0.5) {
+      _animateCounter({ el: _hbal, from: _prev, to: _next, durationMs: 380, format: (n) => fmtC(n) });
+      if (typeof _pulseEl === 'function') _pulseEl(_hbal, _next > _prev ? 'pos' : 'neg');
+    } else {
+      _hbal.textContent = fmtC(liveBal);
+    }
+    _hbal.dataset.lastVal = String(_next);
+    _hbal.className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
+  }
   const hn = $('h-note');
   if (hn) {
     // Bundle 28 round 24: surface every outflow class explicitly so any
@@ -6112,7 +6127,17 @@ function renderAll() {
   const nwEl = $('nw-val');
   if (nwEl) {
     const _nwLiquid = (MODEL && !isNaN(MODEL.liquidNet)) ? MODEL.liquidNet : 0;
-    nwEl.textContent = (_nwLiquid >= 0 ? '+' : '') + fmtC(_nwLiquid);
+    // r76: animate NW changes to match the hero balance liveliness.
+    const _prevNw = parseFloat(nwEl.dataset.lastVal);
+    if (typeof _animateCounter === 'function' && !isNaN(_prevNw) && Math.abs(_nwLiquid - _prevNw) >= 0.5) {
+      _animateCounter({
+        el: nwEl, from: _prevNw, to: _nwLiquid, durationMs: 380,
+        format: (n) => (n >= 0 ? '+' : '') + fmtC(n)
+      });
+    } else {
+      nwEl.textContent = (_nwLiquid >= 0 ? '+' : '') + fmtC(_nwLiquid);
+    }
+    nwEl.dataset.lastVal = String(_nwLiquid);
     nwEl.className = 'nw-val ' + (_nwLiquid >= 0 ? 'pos' : 'neg');
   }
 
@@ -6153,7 +6178,14 @@ function renderAll() {
   if (_maxDayDisp) {
     const _m = MODEL || computeFinancialModel();
     const _ddb = _m.safeToSpendToday;
-    _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
+    // r76: animate MAX PER DAY value changes too.
+    const _prevMpd = parseFloat(_maxDayDisp.dataset.lastVal);
+    if (typeof _animateCounter === 'function' && !isNaN(_prevMpd) && Math.abs(_ddb - _prevMpd) >= 0.5) {
+      _animateCounter({ el: _maxDayDisp, from: _prevMpd, to: _ddb, durationMs: 320, format: (n) => '$' + (+n).toFixed(2) });
+    } else {
+      _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
+    }
+    _maxDayDisp.dataset.lastVal = String(_ddb);
     _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
     // r76: swap pd-remainder-card state class so the gradient tints
     // green/amber/red to match the amount's severity. is-neg = red,
