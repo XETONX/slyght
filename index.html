@@ -10704,8 +10704,12 @@ function openPaydayAutoAllocate() {
     } catch (_) {}
     return { name: bucketName, subtitle: null };
   };
+  const currentAllocs = rec.currentAllocations || {};
+  const isLockedReroll = !!rec.isReallocatingLocked;
   const lines = Object.keys(rec.bucketAllocations).map(name => {
     const amt = rec.bucketAllocations[name];
+    const currentAmt = +currentAllocs[name] || 0;
+    const delta = amt - currentAmt;
     const isSynth = _synthSet.has(name);
     const synthTag = isSynth
       ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)" title="First time this trip is being allocated — Apply will create + link a savings bucket so future cycles flow through it">1st cycle</span>'
@@ -10714,10 +10718,20 @@ function openPaydayAutoAllocate() {
     const subtitleHtml = disp.subtitle
       ? '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + disp.subtitle + '</div>'
       : '';
-    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;font-size:14px"><div style="flex:1"><span style="color:var(--text2)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div><span style="font-family:var(--mono);color:var(--green);font-weight:600;white-space:nowrap;padding-left:8px">' + fmt(amt) + '</span></div>';
+    // Bundle 29 demon-time: when locked, show current → proposed with delta
+    const valueCell = (isLockedReroll && currentAmt > 0)
+      ? '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-family:var(--mono);color:var(--text3);font-size:11px;text-decoration:line-through">' + fmt(currentAmt) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + (delta !== 0 ? '<span style="font-size:10px;color:' + (delta > 0 ? 'var(--green)' : 'var(--red)') + ';margin-left:4px">' + (delta > 0 ? '+' : '−') + '$' + Math.abs(Math.round(delta)) + '</span>' : '') + '</span></div>'
+      : '<span style="font-family:var(--mono);color:var(--green);font-weight:600;white-space:nowrap;padding-left:8px">' + fmt(amt) + '</span>';
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;font-size:14px"><div style="flex:1"><span style="color:var(--text2)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div>' + valueCell + '</div>';
   }).join('');
 
   let body = '';
+  // Locked-mode banner — auto-allocate overwrites existing splits
+  if (isLockedReroll) {
+    body += '<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.35);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--amber);line-height:1.55">';
+    body += '<strong>🔒 Plan is locked.</strong> This suggestion will OVERWRITE your current splits if you Apply. Each line shows current → proposed (delta in red/green).';
+    body += '</div>';
+  }
   // Covered breakdown (transparent — these aren't "allocated to buckets",
   // they're already-committed before the bucket split happens).
   body += '<div style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--text2);line-height:1.7">';
@@ -11362,15 +11376,25 @@ function _attachLivePreview(opts) {
         lastRows = newRows.map(r => Object.assign({}, r));
       };
       const existingRows = previewEl.querySelectorAll('.lpb-row');
+      // Bundle 29 demon-time: kind-changes now handled surgically rather
+      // than triggering a full re-render. Pre-fix every kind-flip
+      // (e.g. cycle remainder pos→warn as user drags) triggered a full
+      // innerHTML swap → John saw Bonus modal flicker on every chip tap.
       const sameStructure = lastRows
         && lastRows.length === newRows.length
-        && existingRows.length === newRows.length
-        && lastRows.every((r, i) => (r.kind || '') === (newRows[i].kind || ''));
+        && existingRows.length === newRows.length;
       if (!sameStructure) { fullRender(); return; }
       // Per-row surgical update with anim-cancellation token.
       newRows.forEach((r, i) => {
         const rowEl = existingRows[i];
         if (!rowEl) return;
+        // Swap kind classes if changed (no innerHTML thrash).
+        const oldKind = (lastRows[i] && lastRows[i].kind) || '';
+        const newKind = r.kind || '';
+        if (oldKind !== newKind) {
+          if (oldKind) rowEl.classList.remove('lpb-' + oldKind);
+          if (newKind) rowEl.classList.add('lpb-' + newKind);
+        }
         const spans = rowEl.querySelectorAll('span');
         if (spans.length < 2) return;
         const labelEl = spans[0];
@@ -18353,11 +18377,26 @@ const BRAIN = {
       // clears the override but not the mirror) showed stale totals.
       const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets)
         ? BRAIN.savings.getBuckets() : [];
-      const savingsTotal = allBuckets.reduce((s, b) => {
+      // Bundle 29 demon-time: savingsTotal must count EVERY `savings:*`
+      // override key, not just bucket-keyed ones. Pre-fix iterated allBuckets
+      // only — so trip-allocations (`savings:trip-darwin-2026`) and KIA-extra
+      // adjacents weren't counted. John 2026-05-14: "allocate $500 to Darwin
+      // then the number at the top stays $0 allocated and POOL to allocate
+      // still says $699 left to split". Root cause was this read path.
+      const _bucketNameSet = new Set(allBuckets.map(b => b && b.name));
+      const _savingsOverrides = Object.keys(p.overrides || {}).filter(k => k.startsWith('savings:'));
+      const _bucketSavingsFromOv = allBuckets.reduce((s, b) => {
         const ov = (p.overrides || {})['savings:' + b.name];
         if (ov) return s + ov.thisCycleAmount;
         return s + (+((p.savings || {})[b.name]) || 0);
       }, 0);
+      const _tripOrOtherSavings = _savingsOverrides.reduce((s, k) => {
+        const itemId = k.slice('savings:'.length);
+        if (_bucketNameSet.has(itemId)) return s; // already counted via allBuckets path above
+        const ov = p.overrides[k];
+        return s + (+(ov && ov.thisCycleAmount) || 0);
+      }, 0);
+      const savingsTotal = _bucketSavingsFromOv + _tripOrOtherSavings;
       // Known Upcoming
       const upcomingTotal = (p.knownUpcoming || []).reduce((s, i) => s + (+i.amount || 0), 0);
       // Daily living
@@ -18833,6 +18872,20 @@ const BRAIN = {
         // 365 / daysOut: trip 30d out → weight ~12, 90d out → ~4, 365d out → 1
         return Math.max(1, Math.min(20, 365 / daysOut));
       }
+      // Bundle 29 demon-time: when plan is already locked, auto-allocate
+      // operates in OVERWRITE mode — the suggestion shows what a fresh
+      // re-allocation would look like, with already-allocated amounts
+      // visible as a sub-line so the user can compare. The applyRecommendation
+      // path will overwrite existing overrides (same setOverride canonical
+      // writer, just with new amounts). John 2026-05-14: "after plan ha sbeen
+      // locked i can hit auto allocate but then that aluto allocated
+      // suggestion should recognise the plan is locaked and that its
+      // suggestion counts as an overwrite".
+      const isReallocatingLocked = !!snap.lockedAt;
+      // Round-to-nearest-$5 helper — John 2026-05-14: "round to nearest $5
+      // or $10 or $50 so its clean when i make a transfer and the maths is
+      // easier". $5 step matches the slider granularity already in use.
+      const _roundClean = (n) => Math.round(n / 5) * 5;
       // Bundle 29 demon-time: sort buckets by trip startDate ASC so the
       // recommendation displays earliest-first (matches John's mental
       // model "auto allocate should prioritise by date"). Weighting math
@@ -18862,7 +18915,7 @@ const BRAIN = {
       if (totalWeighted > 0) {
         weightedTargets.forEach(({ b, w, target }) => {
           const share = (target * w) / totalWeighted;
-          bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
+          bucketAllocations[b.name] = _roundClean(allocatable * share);
         });
       }
       // Bundle 28 round 52 (John feedback): trips ARE first-class
@@ -18964,13 +19017,22 @@ const BRAIN = {
           Object.keys(bucketAllocations).forEach(k => delete bucketAllocations[k]);
           allWeighted.forEach(({ b, w, target }) => {
             const share = (target * w) / totalAll;
-            bucketAllocations[b.name] = parseFloat((allocatable * share).toFixed(2));
+            bucketAllocations[b.name] = _roundClean(allocatable * share);
           });
         }
       }
       // Markers so applyRecommendation knows which names need bucket-creation
       const syntheticBucketNames = synthTrips.map(t => t.name);
-      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames };
+      // Surface current allocations so the modal can render "already
+      // allocated $X → proposed $Y (delta $Z)" rows when isReallocatingLocked.
+      const currentAllocations = {};
+      const ovs = (S.activePlan && S.activePlan.overrides) || {};
+      Object.keys(ovs).forEach(k => {
+        if (k.startsWith('savings:')) {
+          currentAllocations[k.slice('savings:'.length)] = +ovs[k].thisCycleAmount || 0;
+        }
+      });
+      return { ok: true, bucketAllocations, kiaExtra: 0, leftAsBuffer: snap.bufferFloor, allocatable: parseFloat(allocatable.toFixed(2)), syntheticBucketNames, isReallocatingLocked, currentAllocations };
     },
     applyRecommendation(source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
@@ -19027,6 +19089,34 @@ const BRAIN = {
       const now = Date.now();
       const endMs = new Date(S.activePlan.cycleEndDate).getTime();
       if (now < endMs) return { ok: false, reason: 'not-yet' };
+      // Bundle 29 demon-time: protective guard against the "plan wiped
+      // every refresh" class of bug John 2026-05-14 reported. If the user
+      // has substantial work in the current plan (any override, savings
+      // allocation, bonus included, or lockedAt set) AND the cycle only
+      // just ended (less than 12h ago — borderline date math, timezone
+      // edge), DEFER the rollover for one more open. Surfaces a banner
+      // instead so the user can confirm "yes archive this and start
+      // new cycle" rather than losing work silently.
+      const ageMs = now - endMs;
+      const hasWork = !!(
+        S.activePlan.lockedAt ||
+        (S.activePlan.overrides && Object.keys(S.activePlan.overrides).length > 0) ||
+        (S.activePlan.savings && Object.keys(S.activePlan.savings).some(k => +S.activePlan.savings[k] > 0)) ||
+        (S.activePlan.income && S.activePlan.income.bonus && S.activePlan.income.bonus.included) ||
+        (S.activePlan.knownUpcoming && S.activePlan.knownUpcoming.length > 0)
+      );
+      if (hasWork && ageMs < 12 * 3600 * 1000) {
+        BRAIN.audit.append({
+          type: 'rollover_deferred_borderline',
+          cycleId: S.activePlan.cycleId,
+          endedAtMs: endMs,
+          ageMs,
+          hasWork: true,
+          ts: now,
+        });
+        if (typeof console !== 'undefined') console.warn('[rolloverIfNeeded] deferred — plan has work and ended <12h ago. cycleId', S.activePlan.cycleId);
+        return { ok: false, reason: 'deferred-protect-recent-work' };
+      }
       // Snapshot previous plan to history
       const prevPlan = S.activePlan;
       if (!S.planHistory) S.planHistory = [];
