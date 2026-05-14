@@ -9440,8 +9440,11 @@ function openPaydayPlan() {
   // Cycle rollover (Phase 6.1) — silent fail-safe
   try {
     const r = BRAIN.plan.rolloverIfNeeded();
-    if (r && r.ok && r.carried && r.carried.length) {
-      if (typeof showToast === 'function') showToast('🔁 New cycle started — ' + r.carried.length + ' deferred item(s) carried over');
+    if (r && r.ok) {
+      const _msgs = [];
+      if (r.carried && r.carried.length) _msgs.push(r.carried.length + ' deferred item' + (r.carried.length === 1 ? '' : 's') + ' carried over');
+      if (r.bonusCarried) _msgs.push('$' + Math.round(r.bonusCarried.amount).toLocaleString() + ' bonus carried forward');
+      if (_msgs.length && typeof showToast === 'function') showToast('🔁 New cycle started — ' + _msgs.join(' · '));
     }
   } catch (e) { console.error('[openPaydayPlan] rolloverIfNeeded failed:', e); }
   // Render — wrapped so any error shows in console but the canvas stays open
@@ -9475,6 +9478,25 @@ function openPaydayPlan() {
       }, 400);
     }
   } catch (_) {}
+}
+
+// Bundle 28 round 72+: wrapper for the "Pay landed today?" pill on canvas
+// cycle-label. One tap → confirm → BRAIN.plan.markPaydayLanded → full re-render
+// so projection math, hero subtitle, and downstream surfaces update together.
+function markPaydayLandedToday() {
+  if (!confirm('Mark today as the day payday landed for this cycle?\n\nThis updates app projections to treat your salary as received now.')) return;
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan || !BRAIN.plan.markPaydayLanded) {
+    if (typeof showToast === 'function') showToast('Payday-landed not available — try refreshing');
+    return;
+  }
+  const r = BRAIN.plan.markPaydayLanded(Date.now(), BRAIN.SOURCES.PAYDAY_MANUAL_LANDED);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Couldn\'t mark payday: ' + r.reason);
+    return;
+  }
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  if (typeof renderAll === 'function') renderAll();
+  if (typeof showToast === 'function') showToast('✓ Payday marked landed today');
 }
 
 // Bundle 27 Phase 6.1: Canvas-wide undo wrapper. Calls BRAIN.plan.undoLast
@@ -9579,7 +9601,19 @@ function renderPaydayPlanRoot() {
   if (cycleLabel) {
     const startTxt = snap.cycleStartDate ? new Date(snap.cycleStartDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—';
     const endTxt = snap.cycleEndDate ? new Date(snap.cycleEndDate).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—';
-    cycleLabel.textContent = 'Cycle ' + startTxt + ' → ' + endTxt + ' · ' + snap.daysRemaining + ' days left';
+    // Bundle 28 round 72+: payday-landed affordance + cycle-end-day copy.
+    // When paydayReceived=false: small "Pay landed today?" pill so John can
+    // log salary on a non-canonical day (early payday, late payday, weekend).
+    // When paydayReceived=true: "✓ Paid <date>" badge replaces the pill.
+    // When daysRemaining=0 (cycle-end-day): show "Cycle ended — payday tomorrow"
+    // instead of "0 days left" which read as deficit, not transition.
+    const _paidPill = S.paydayReceived
+      ? '<span style="margin-left:8px;color:var(--green);font-size:11px">✓ Paid' + (S.paydayReceivedDate ? ' ' + new Date(S.paydayReceivedDate).toLocaleDateString('en-AU', {day:'numeric',month:'short'}) : '') + '</span>'
+      : '<button onclick="markPaydayLandedToday()" aria-label="Mark payday landed today" style="margin-left:8px;background:rgba(34,197,94,0.10);border:1px solid var(--green-border);color:var(--green);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;cursor:pointer">Pay landed today?</button>';
+    const _cycleSuffix = snap.daysRemaining > 0
+      ? snap.daysRemaining + ' day' + (snap.daysRemaining === 1 ? '' : 's') + ' left'
+      : 'Cycle ended — next payday begins this cycle';
+    cycleLabel.innerHTML = 'Cycle ' + startTxt + ' → ' + endTxt + ' · ' + _cycleSuffix + _paidPill;
   }
   const fmt = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   const inc = snap.income || {};
@@ -11747,6 +11781,11 @@ window.addEventListener('DOMContentLoaded', () => {
       ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
       ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
       ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
+      ['BRAIN.plan.rolloverIfNeeded callable', () => { BRAIN.plan.rolloverIfNeeded(); return true; }],
+      ['BRAIN.plan.setBonus callable', () => typeof BRAIN.plan.setBonus === 'function'],
+      ['BRAIN.plan.markPaydayLanded reachable', () => typeof BRAIN.plan.markPaydayLanded === 'function'],
+      ['markPaydayLandedToday wrapper reachable', () => typeof markPaydayLandedToday === 'function'],
+      ['BRAIN.SOURCES.PAYDAY_MANUAL_LANDED defined', () => typeof BRAIN.SOURCES.PAYDAY_MANUAL_LANDED === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.PAYDAY_MANUAL_LANDED)],
       ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
       ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
       ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
@@ -16983,6 +17022,8 @@ const BRAIN = {
     KIA_FEE_RESET:             'kia-fee-reset',
     // Bundle 28 round 21 — API alert threshold
     SETTINGS_API_ALERT_THRESHOLD: 'settings-api-alert-threshold',
+    // Bundle 28 round 72+ — manual payday-landed affordance
+    PAYDAY_MANUAL_LANDED:        'payday-manual-landed',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -17037,6 +17078,8 @@ const BRAIN = {
     'kia-fee-edit', 'kia-fee-reset',
     // Bundle 28 round 21
     'settings-api-alert-threshold',
+    // Bundle 28 round 72+ — manual payday-landed affordance
+    'payday-manual-landed',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -17743,6 +17786,37 @@ const BRAIN = {
       try { save(); } catch (_) {}
       return { ok: true, removed };
     },
+    // ─── EARLY PAYDAY (manual landed) ─────────
+    // Bundle 28 round 72+: lets the user record "payday landed" on any
+    // day (not just the canonical S.payday-of-month). Salary lands early
+    // in real life; this affordance lets the app's projections catch up
+    // without faking S.payday. Writes S.activePlan.actualPaydayTs (per-
+    // cycle annotation) AND defers to BRAIN.cycle for the S.paydayReceived
+    // flag so the existing detect-cycle-rollover path stays canonical.
+    // SDD-2026-05-14-mark-payday-landed.
+    markPaydayLanded(tsArg, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      const ts = +tsArg || Date.now();
+      if (!isFinite(ts) || ts <= 0) return { ok: false, reason: 'invalid-ts' };
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      const old = S.activePlan.actualPaydayTs || null;
+      S.activePlan.actualPaydayTs = ts;
+      // Defer to BRAIN.cycle for the global S.paydayReceived flag.
+      try {
+        if (typeof BRAIN.cycle !== 'undefined' && BRAIN.cycle.markPaydayReceived) {
+          BRAIN.cycle.markPaydayReceived(BRAIN.SOURCES.CYCLE_PAYDAY_RECEIVED, ts);
+        } else {
+          S.paydayReceived = true;
+          S.paydayReceivedDate = new Date(ts).toISOString().slice(0, 10);
+        }
+      } catch (_) {
+        S.paydayReceived = true;
+        S.paydayReceivedDate = new Date(ts).toISOString().slice(0, 10);
+      }
+      BRAIN.audit.append({ type: 'payday_manual_landed', old, new: ts, source, ts: Date.now() });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: ts };
+    },
     // ─── BONUS ─────────────────────────────────
     setBonus(patch, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
@@ -17981,6 +18055,27 @@ const BRAIN = {
       newPlan.bufferFloor = prevPlan.bufferFloor || newPlan.bufferFloor;
       newPlan.driftSensitivity = prevPlan.driftSensitivity || newPlan.driftSensitivity;
       newPlan.streak = +prevPlan.streak || 0;  // preserve streak across cycles
+      // Bundle 28 round 72+: preserve EXPECTED bonus across cycle rollover.
+      // status='expected' = forward-looking user intent (anticipated future income),
+      // so a bonus added in the prior cycle in anticipation of THIS cycle's
+      // payday should carry. status='confirmed' = past-cycle accounting; don't carry.
+      // Without this preserve, opening canvas on cycle-end-day silently drops
+      // any pre-rollover bonus (root cause of John's recurring "added bonus,
+      // came back, gone" complaint). SDD-2026-05-14-bonus-rollover-preserve.
+      const _prevBonus = prevPlan.income && prevPlan.income.bonus;
+      let _bonusCarried = null;
+      if (_prevBonus && _prevBonus.included && _prevBonus.status === 'expected' && (+_prevBonus.amount || 0) > 0) {
+        newPlan.income = newPlan.income || { netPay: +S.income || 0, bonus: { amount: 0, included: false, status: 'expected' } };
+        newPlan.income.bonus = { amount: +_prevBonus.amount, included: true, status: 'expected' };
+        _bonusCarried = { amount: +_prevBonus.amount };
+        BRAIN.audit.append({
+          type: 'plan_bonus_carried_to_new_cycle',
+          amount: +_prevBonus.amount,
+          previousCycle: prevPlan.cycleId,
+          newCycle: newPlan.cycleId,
+          ts: Date.now(),
+        });
+      }
       // Seed carried-over items into new plan's knownUpcoming
       carryItems.forEach(item => {
         const id = 'ku-carry-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
@@ -18006,7 +18101,7 @@ const BRAIN = {
         ts: Date.now(),
       });
       try { save(); } catch (_) {}
-      return { ok: true, previousCycle: prevPlan.cycleId, newCycle: newPlan.cycleId, carried: carryItems };
+      return { ok: true, previousCycle: prevPlan.cycleId, newCycle: newPlan.cycleId, carried: carryItems, bonusCarried: _bonusCarried };
     },
 
     // ─── AI PROPOSAL FLOW ─────────────────────
