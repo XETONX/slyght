@@ -13285,7 +13285,13 @@ window.addEventListener('DOMContentLoaded', () => {
       ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
       ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
       ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
-      ['BRAIN.plan.rolloverIfNeeded callable', () => { BRAIN.plan.rolloverIfNeeded(); return true; }],
+      // r74 fix (John 2026-05-14: "after every commit the PLAN gets wiped"):
+      // MUST NOT invoke rolloverIfNeeded() in the boot self-test — it
+      // executes the side effect (archives current plan + creates fresh
+      // empty plan) when cycleEnd is in the past. On a once-per-month
+      // cycle this fires on EVERY boot once the cycle end-date has
+      // passed, silently wiping the plan. Switch to a type-check only.
+      ['BRAIN.plan.rolloverIfNeeded reachable', () => typeof BRAIN.plan.rolloverIfNeeded === 'function'],
       ['BRAIN.plan.setBonus callable', () => typeof BRAIN.plan.setBonus === 'function'],
       ['BRAIN.plan.markPaydayLanded reachable', () => typeof BRAIN.plan.markPaydayLanded === 'function'],
       ['markPaydayLandedToday wrapper reachable', () => typeof markPaydayLandedToday === 'function'],
