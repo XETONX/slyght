@@ -488,6 +488,35 @@ You don't get to say "done" without verification. Specifically:
 - Identify what verification step would have caught this earlier
 - Add that step to this manual as an amendment
 
+### 9.1 Strongest-assumption-first
+
+**The rule:** when verifying ANY claim John might push back on (especially persistence, data safety, "will this still work tomorrow"), the FIRST test you run must be the **strongest test you can think of**. Not the easiest, not the fastest — the strongest.
+
+**Why:** weak tests waste rounds. Pattern observed 2026-05-15:
+- Round 1: `page.reload()` to test lock persistence. Passed superficially but had a test bug (`addInitScript` fires again on reload, overwriting the state being tested).
+- Round 2: Guarded `addInitScript`. Test now passed cleanly but only same-browser-context.
+- Round 3: John pushed back ("are you sure?"). Closed the entire browser context, opened a fresh one with replayed storage, twice. STRONGEST simulation of force-quitting the PWA.
+
+The first round was useless and made John doubt the answer. Rounds 2 and 3 confirmed the same fact via stronger evidence — round 3 was what gave John actual confidence.
+
+**Don't do this.** Skip rounds 1 and 2. Build round 3 first.
+
+**Strongest-test catalogue (slyght-specific):**
+
+| Claim | Weak test | Strong test |
+|---|---|---|
+| State persists across reload | `page.reload()` | Close `BrowserContext` entirely, open a fresh one with `storageState` replay |
+| Lock survives the wipe paths | Open canvas, observe lockedAt | Set lockedAt, force-quit, reopen, reopen AGAIN — check ticks, lockedAt timestamp matches to the millisecond |
+| Math invariant holds across surfaces | Read hero, read sub-screen | Walk all 5 surfaces (dash, bills, plan, savings, analysis) capturing computed values; cross-check arithmetic |
+| Modal flash is gone | `page.screenshot()` (one frame) | Record `recordVideo` at native fps; inject CSS animation slow-down; capture every browser MutationObserver event during the flow |
+| Cascade fires through to surface X | Call writer + check S | Call writer, observe DOM mutation on surface X, verify computed value matches the writer's intent |
+
+**When to apply:** ANY answer where John might reasonably push back. Persistence, data safety, "this works on phone too?", "are you 100% sure?". If you've thought of a stronger test but reached for the easier one — STOP and use the stronger one.
+
+**Cost-benefit:** the stronger test usually takes 2–5x longer to write but eliminates the back-and-forth. Net time saved is in John's tolerance for "didn't you already verify this?"
+
+**Failure mode to avoid:** writing the easy test, claiming success, then having John doubt the result. You've now used 2x the time AND lost credibility. The strongest-first rule prevents both.
+
 ---
 
 ## 10. The adaptive feedback loop
