@@ -10806,11 +10806,40 @@ function openPaydayLockPlan() {
       };
       const r = BRAIN.allocation.lock(snapshot, BRAIN.SOURCES.CANVAS_LOCK);
       if (!r.ok) return r;
-      // Also stamp lockedAt onto S.activePlan so BRAIN.plan.getSnapshot reflects.
+      // Bundle 29 demon-time defensive lock-persist: John 2026-05-14 reported
+      // "lock basically does nothing — leaving canvas loses the lock". Couldn't
+      // repro from code-reading, so adding belt-and-braces:
+      //   1. Stamp S.activePlan.lockedAt + streak
+      //   2. Call save() with surfaced failure (no silent swallow)
+      //   3. Re-read localStorage after save to verify the lock landed
+      //   4. Audit-log mismatches so debugging the in-the-wild bug has data
       if (S.activePlan) {
         S.activePlan.lockedAt = Date.now();
         S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
-        try { save(); } catch (_) {}
+        let saveOk = true;
+        let saveErr = null;
+        try { save(); } catch (e) { saveOk = false; saveErr = String(e && e.message || e); }
+        // Re-read verification — does S.activePlan.lockedAt survive a round-trip?
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          const persistedLockedAt = parsed && parsed.S && parsed.S.activePlan && parsed.S.activePlan.lockedAt;
+          if (!persistedLockedAt || persistedLockedAt !== S.activePlan.lockedAt) {
+            BRAIN.audit.append({
+              type: 'lock_persist_mismatch',
+              expected: S.activePlan.lockedAt,
+              found: persistedLockedAt || null,
+              saveOk, saveErr,
+              ts: Date.now(),
+            });
+            if (typeof console !== 'undefined') console.warn('[lock] persist mismatch — expected', S.activePlan.lockedAt, 'found', persistedLockedAt, 'saveOk', saveOk, saveErr);
+          }
+        } catch (e) {
+          if (typeof console !== 'undefined') console.warn('[lock] re-read verify threw', e);
+        }
+        if (!saveOk && typeof showToast === 'function') {
+          showToast('⚠️ Lock saved in memory but disk write failed — export your data');
+        }
       }
       // Optional manual snapshot for restore safety
       if (typeof SNAPSHOTS !== 'undefined' && SNAPSHOTS.take) {
