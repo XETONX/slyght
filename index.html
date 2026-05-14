@@ -3159,6 +3159,22 @@ function renderSurvivalBanner(safe) {
     // 'normal' — no banner; everything is fine.
     el.innerHTML = '';
   }
+  // r74 (C-03 fix): post-lock awareness. When the user has locked their
+  // plan and ticked bills, the survival banner above speaks in raw
+  // bank-balance terms — "$X CRITICAL" — which contradicts the canvas
+  // "ALL PAID · free money $Y" celebration. Append a thin acknowledgement
+  // line so the dashboard surface knows the cycle plan is locked.
+  try {
+    if (S.activePlan && S.activePlan.lockedAt) {
+      const tBill = (S.activePlan.ticks && S.activePlan.ticks.bill) || {};
+      const tDebt = (S.activePlan.ticks && S.activePlan.ticks.debt) || {};
+      const tSav = (S.activePlan.ticks && S.activePlan.ticks.savings) || {};
+      const totalTicks = Object.keys(tBill).length + Object.keys(tDebt).length + Object.keys(tSav).length;
+      if (totalTicks > 0) {
+        el.innerHTML += '<div class="alert" style="margin-bottom:8px;background:rgba(0,200,100,0.08);border:1px solid rgba(0,200,100,0.3);color:var(--text2);font-size:13px;padding:8px 12px;cursor:pointer" onclick="openPaydayPlan()" role="button" aria-label="Open Payday Plan canvas">🔒 <strong>Cycle plan locked</strong> · ' + totalTicks + ' item' + (totalTicks === 1 ? '' : 's') + ' tracked this cycle · <span style="text-decoration:underline">tap for canvas</span></div>';
+      }
+    }
+  } catch (_) {}
 }
 function checkDayBudgetAlert() {
   const todaySpent = getTodayDiscretionarySpend();
@@ -5446,6 +5462,30 @@ function renderSurvivalForecast() {
     html += '<div style="font-size:14px;color:var(--text2);margin-bottom:12px">' +
       'At minimum spending ($' + f.minDailyNeeded.toFixed(0) + '/day) your balance runs out before payday on the ' + S.payday + 'th.' +
     '</div>';
+    // r74 (C-04 fix): post-lock awareness. The runway projection above
+    // reads pure transaction history — it has no idea that bills are
+    // pre-tracked in a locked plan. When the user has locked + ticked
+    // bills, surface that as a context line so the "run out" framing
+    // doesn't read as catastrophic news they don't already know about.
+    try {
+      if (S.activePlan && S.activePlan.lockedAt) {
+        const _tBill = (S.activePlan.ticks && S.activePlan.ticks.bill) || {};
+        const _trackedCount = Object.keys(_tBill).length;
+        if (_trackedCount > 0) {
+          // Compute the tracked total from this-cycle bills
+          let _trackedSum = 0;
+          try {
+            const _cycleBills = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+            _cycleBills.forEach(b => { if (_tBill[b.name]) _trackedSum += (+b.amt || 0); });
+          } catch (_) {}
+          html += '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;padding:8px 10px;background:rgba(0,200,100,0.08);border-left:3px solid rgba(0,200,100,0.5);border-radius:4px">' +
+            '🔒 <strong>Cycle plan locked</strong> · ' + _trackedCount + ' bill' + (_trackedCount === 1 ? '' : 's') +
+            (_trackedSum > 0 ? ' totalling $' + _trackedSum.toFixed(0) : '') +
+            ' already tracked — these are pre-committed and may already be reflected in your spent figure above. Check the canvas for the cycle picture.' +
+          '</div>';
+        }
+      }
+    } catch (_) {}
   } else {
     html += '<div style="font-size:16px;font-weight:700;color:var(--green);margin-bottom:4px">' +
       '✅ You can make it to payday' +
@@ -19828,33 +19868,37 @@ const BRAIN = {
       const now = Date.now();
       const endMs = new Date(S.activePlan.cycleEndDate).getTime();
       if (now < endMs) return { ok: false, reason: 'not-yet' };
-      // Bundle 29 demon-time: protective guard against the "plan wiped
-      // every refresh" class of bug John 2026-05-14 reported. If the user
-      // has substantial work in the current plan (any override, savings
-      // allocation, bonus included, or lockedAt set) AND the cycle only
-      // just ended (less than 12h ago — borderline date math, timezone
-      // edge), DEFER the rollover for one more open. Surfaces a banner
-      // instead so the user can confirm "yes archive this and start
-      // new cycle" rather than losing work silently.
+      // r74 (John 2026-05-14: "PLAN gets wiped after every commit"):
+      // ALWAYS defer the rollover when the user has work in the active
+      // plan. The previous 12h window was too narrow — by mid-afternoon
+      // on payday day, ageMs > 12h and the rollover would silently
+      // archive the lock+ticks the user had set that morning, replacing
+      // them with an empty plan. _emptyActivePlan returns the same
+      // cycleId because today IS the cycle boundary, so the wipe was
+      // invisible to the user — they just saw "0 of 15 paid" again.
+      // Auto-rollover now ONLY fires for cycles with no user work in
+      // them; cycles with any work require the user to start the new
+      // cycle manually (TODO: surface "Start new cycle" banner on canvas
+      // root when activePlan.cycleEndDate is in the past).
       const ageMs = now - endMs;
       const hasWork = !!(
         S.activePlan.lockedAt ||
         (S.activePlan.overrides && Object.keys(S.activePlan.overrides).length > 0) ||
         (S.activePlan.savings && Object.keys(S.activePlan.savings).some(k => +S.activePlan.savings[k] > 0)) ||
         (S.activePlan.income && S.activePlan.income.bonus && S.activePlan.income.bonus.included) ||
-        (S.activePlan.knownUpcoming && S.activePlan.knownUpcoming.length > 0)
+        (S.activePlan.knownUpcoming && S.activePlan.knownUpcoming.length > 0) ||
+        (S.activePlan.ticks && Object.values(S.activePlan.ticks).some(cat => cat && Object.keys(cat).length > 0))
       );
-      if (hasWork && ageMs < 12 * 3600 * 1000) {
+      if (hasWork) {
         BRAIN.audit.append({
-          type: 'rollover_deferred_borderline',
+          type: 'rollover_deferred_has_work',
           cycleId: S.activePlan.cycleId,
           endedAtMs: endMs,
           ageMs,
           hasWork: true,
           ts: now,
         });
-        if (typeof console !== 'undefined') console.warn('[rolloverIfNeeded] deferred — plan has work and ended <12h ago. cycleId', S.activePlan.cycleId);
-        return { ok: false, reason: 'deferred-protect-recent-work' };
+        return { ok: false, reason: 'deferred-has-work' };
       }
       // Snapshot previous plan to history
       const prevPlan = S.activePlan;
@@ -22018,12 +22062,23 @@ const BRAIN = {
       checkFutureKeyNotPaid() {
         const now = new Date();
         const todayY = now.getFullYear(), todayM = now.getMonth(), todayD = now.getDate();
+        // r74 (C-02 fix): when the user has locked their plan and ticked
+        // bills as part of the cycle (PLAN_BILLS_TICK source path),
+        // those paidBills entries are intentional — pre-committing money
+        // for the cycle's upcoming bills is the workflow. Skip bills
+        // whose name matches a tick in the active locked plan; only
+        // surface the warning for paidBills entries that originated
+        // outside the lock + tick path (e.g. accidental tap on the Bills
+        // tab calendar checkbox).
+        const intentionalTicks = (S.activePlan && S.activePlan.lockedAt &&
+                                  S.activePlan.ticks && S.activePlan.ticks.bill) || {};
         // guardian-allow: no-direct-paidbills-access - invariant scan over Object.keys; reads paidBills directly here (BRAIN.bills.isAutoDebit is the canonical reader for the flag check below) (permanent - invariant logic owned by Bills, reads its own state)
         const future = Object.keys(S.paidBills || {}).filter(k => {
           if (BRAIN.bills.isAutoDebit(k)) return false;
-          const m2 = k.match(/^(\d{4})-(\d{1,2})-.*-(\d{1,2})$/);
+          const m2 = k.match(/^(\d{4})-(\d{1,2})-(.*)-(\d{1,2})$/);
           if (!m2) return false;
-          const y = +m2[1], mo = +m2[2]-1, d = +m2[3];
+          const y = +m2[1], mo = +m2[2]-1, billName = m2[3], d = +m2[4];
+          if (intentionalTicks[billName]) return false;
           if (y > todayY) return true;
           if (y === todayY && mo > todayM) return true;
           if (y === todayY && mo === todayM && d > todayD) return true;
