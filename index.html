@@ -209,9 +209,18 @@ body.edit-modal-open{overflow:hidden}
 .pd-cycle-head{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px;font-size:12px;color:var(--text3);text-align:center;line-height:1.4}
 .pd-cycle-head .pd-cycle-range{font-weight:700;color:var(--text2);font-family:var(--mono)}
 .pd-cycle-head .pd-cycle-state{color:var(--text3)}
+/* Bundle 29 — transparent wrapper for grouping bubble row cards.
+   Replaces .settings-group-card around _paydayRow lists. The bubble
+   cards have their own bg+radius+border, so the parent wrapper just
+   needs to provide grouping margin. Without this, the nested bg from
+   .settings-group-card creates "bubble outside the box" visual that
+   John flagged 2026-05-14. */
+.pd-row-group{margin-bottom:10px}
 /* Bundle 29 sub-screen ROW CARDS — _paydayRow bubble redesign. Each row
    is a card with avatar circle + name/sub + value + tick + progress. */
-.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden;outline:none}
+.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden;outline:none;-webkit-tap-highlight-color:transparent;appearance:none;-webkit-appearance:none}
+.pd-row-card::-moz-focus-inner{border:0;padding:0}
+.pd-row-card:focus{outline:none}
 .pd-row-card:hover{border-color:var(--border2)}
 .pd-row-card:active{transform:scale(0.992)}
 .pd-row-card:focus-visible{border-color:var(--green);box-shadow:0 0 0 2px var(--green-dim)}
@@ -12050,18 +12059,16 @@ function renderPaydayBills() {
     const unpaid = list.filter(b => !isBillTicked(b));
     const paid   = list.filter(b => isBillTicked(b));
     let out = '<div class="settings-group-title">' + title + '</div>';
-    out += '<div class="settings-group-card">';
+    out += '<div class="pd-row-group">';
     if (unpaid.length === 0 && paid.length > 0) {
-      // Whole section already paid — short message instead of empty card
-      out += '<div style="padding:14px 16px;font-size:13px;color:var(--green);font-style:italic">✓ All ' + paid.length + ' bill' + (paid.length === 1 ? '' : 's') + ' in this section already paid</div>';
+      out += '<div style="padding:14px 16px;font-size:13px;color:var(--green);font-style:italic;background:var(--bg2);border:1px solid var(--border);border-radius:14px">✓ All ' + paid.length + ' bill' + (paid.length === 1 ? '' : 's') + ' in this section already paid</div>';
     } else {
       unpaid.forEach(b => { out += _renderBillRow(b); });
     }
     out += '</div>';
     if (paid.length > 0 && unpaid.length > 0) {
-      // Collapsed paid section — out of the way but still accessible
       out += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:13px;color:var(--text2);padding:8px 14px;list-style:none">▸ ' + paid.length + ' already paid ($' + fmtC2(paid.reduce((s, b) => { const ov = overrides['bill:' + b.name]; return s + (ov ? ov.thisCycleAmount : +b.amt || 0); }, 0)).replace('$', '') + ')</summary>';
-      out += '<div class="settings-group-card" style="margin-top:4px">';
+      out += '<div class="pd-row-group" style="margin-top:4px">';
       paid.forEach(b => { out += _renderBillRow(b); });
       out += '</div></details>';
     }
@@ -12101,7 +12108,7 @@ function renderPaydayDebts() {
   html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'debt') + '</div>';
   if (debts.length) {
     html += '<div class="settings-group-title">Minimum payments</div>';
-    html += '<div class="settings-group-card">';
+    html += '<div class="pd-row-group">';
     debts.forEach(d => {
       const key = 'debt:' + (d.id || d.name);
       const ov = overrides[key];
@@ -12239,7 +12246,7 @@ function renderPaydaySavings() {
   if (trips.length) {
     html += '<div class="settings-group-title">Upcoming trips</div>';
     html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">Allocate part of this cycle toward each trip\'s budget.</div>';
-    html += '<div class="settings-group-card">';
+    html += '<div class="pd-row-group">';
     trips.forEach(t => {
       const tripKey = 'savings:trip-' + t.id;
       const ov = overrides[tripKey];
@@ -12279,7 +12286,7 @@ function renderPaydaySavings() {
   if (buckets.length) {
     html += '<div class="settings-group-title">Your savings goals</div>';
     html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">Lifetime targets shown for context. The amount on the right is what you\'re putting in <em>this cycle only</em>.</div>';
-    html += '<div class="settings-group-card">';
+    html += '<div class="pd-row-group">';
     buckets.forEach(b => {
       const key = 'savings:' + b.name;
       const ov = overrides[key];
@@ -12338,7 +12345,7 @@ function renderPaydaySavings() {
     if (syntheticGoals.length) {
       html += '<div class="settings-group-title">Other savings goals</div>';
       html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">These goals don\'t have a per-cycle slider here — money flows in via the linked bill or account.</div>';
-      html += '<div class="settings-group-card">';
+      html += '<div class="pd-row-group">';
       syntheticGoals.forEach(intent => {
         const goalDef = (S.goalDefs || []).find(g => g.id === intent.id);
         if (!goalDef) return;
@@ -12374,7 +12381,7 @@ function renderPaydaySavings() {
   const kiaCarloan = +S.carloan || 0;
   if (kiaCarloan > 0) {
     html += '<div class="settings-group-title">Extra debt payment</div>';
-    html += '<div class="settings-group-card">';
+    html += '<div class="pd-row-group">';
     const key = 'kia-extra:KIA';
     const ov = overrides[key];
     const amt = ov ? ov.thisCycleAmount : 0;
@@ -12416,7 +12423,7 @@ function renderPaydayUpcoming() {
   html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'upcoming') + '</div>';
   if (list.length) {
     html += '<div class="settings-group-title">Items</div>';
-    html += '<div class="settings-group-card">';
+    html += '<div class="pd-row-group">';
     list.forEach(item => {
       const dateLabel = item.date ? new Date(item.date).toLocaleDateString('en-AU', { month: 'short', day: 'numeric' }) : 'No date';
       const carried = item.source === BRAIN.SOURCES.CARRIED_FROM_PRIOR_CYCLE;
