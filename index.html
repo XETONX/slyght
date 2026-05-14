@@ -291,7 +291,7 @@ body.edit-modal-open{overflow:hidden}
 .living-card .lc-ceiling-broken strong{color:#fca5a5}
 .living-card .lc-slider-impossible .living-floor-slider{background:linear-gradient(90deg,var(--bg3) 0%,var(--bg3) 50%,rgba(231,76,60,0.35) 50%,rgba(231,76,60,0.35) 100%)}
 .living-card .lc-slider-impossible .living-floor-slider::-webkit-slider-thumb{background:var(--red);box-shadow:0 0 0 4px rgba(231,76,60,0.25);animation:alive-pulse-neg 1.4s ease-in-out infinite}
-.living-card .lc-slider-wrap{padding:6px 0 26px}
+.living-card .lc-slider-wrap{padding:6px 0 64px}
 .living-card .lc-slider-track{position:relative}
 .living-card .lc-slider-marker{position:absolute;transform:translateX(-50%);pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1;white-space:nowrap}
 .living-card .lc-slider-marker::before{content:'';display:block;width:2px;height:10px;margin:0 auto 2px;border-radius:1px;background:currentColor;opacity:.55}
@@ -325,6 +325,17 @@ body.edit-modal-open{overflow:hidden}
 .payday-dropdown{display:flex;flex-direction:column;gap:4px;margin:14px 0 6px}
 .payday-dropdown-label{font-size:13px;color:var(--text3)}
 .payday-dropdown-select{min-height:44px;padding:0 14px;border:1px solid var(--border2);border-radius:10px;background:var(--bg);color:var(--text);font-size:15px;font-family:inherit;transition:border-color .15s,box-shadow .15s}
+/* Bundle 29 F-21 fix: $-prefix wrapper for currency inputs. Wrap the
+   <input type="number"> in <div class="pd-currency-input"> to get a
+   $ glyph on the left + indented input padding. Native number input
+   keyboard still fires on mobile. */
+.pd-currency-input{position:relative;display:block}
+.pd-currency-input::before{content:'$';position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-family:var(--mono);font-size:15px;pointer-events:none;font-weight:600}
+.pd-currency-input input{padding-left:30px !important}
+#quickpick-custom-input.pd-currency-input,#quickpick-custom-input{padding-left:30px !important}
+.pd-currency-input-inline{position:relative;display:inline-block}
+.pd-currency-input-inline::before{content:'$';position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text3);font-family:var(--mono);font-size:15px;pointer-events:none;font-weight:600}
+.pd-currency-input-inline input{padding-left:30px !important}
 select.payday-dropdown-select{padding-right:38px;appearance:none;-webkit-appearance:none;-moz-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'><path d='M1 1.5L6 6.5L11 1.5' stroke='%2399a3b3' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 14px center;cursor:pointer}
 .payday-dropdown-select:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,0.12)}
 select.payday-dropdown-select option{background:var(--bg2);color:var(--text);padding:8px}
@@ -10165,19 +10176,26 @@ function _buildQuickPickGrid(picks, currentValue) {
     const active = (Math.round(+currentValue) === p) ? ' active' : '';
     return '<button type="button" class="quickpick' + active + '" data-quickpick="' + p + '">$' + p.toLocaleString() + '</button>';
   }).join('');
+  // Bundle 29 F-21 fix: wrap Custom input in pd-currency-input so the $ glyph
+  // appears as a CSS-pseudo prefix. Wrapper is display:none until activated.
   return '<div class="quickpick-grid" id="quickpick-grid">' + pillHtml + '<button type="button" class="quickpick custom" id="quickpick-custom-btn">Custom</button></div>' +
-    '<input type="number" id="quickpick-custom-input" inputmode="decimal" placeholder="Custom amount" style="display:none;width:100%;padding:12px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px;font-family:var(--mono);margin-top:6px">';
+    '<div class="pd-currency-input" id="quickpick-custom-wrap" style="display:none;margin-top:6px"><input type="number" id="quickpick-custom-input" inputmode="decimal" placeholder="amount" style="width:100%;padding:12px 12px 12px 30px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:16px;font-family:var(--mono)"></div>';
 }
 function _wireQuickPickGrid() {
   // Called from onReady — wires pill taps + custom input toggle.
+  // Bundle 29 F-21: display toggle now targets the WRAPPER (pd-currency-input)
+  // not the bare input, so the $-prefix follows the input visibility.
   const grid = document.getElementById('quickpick-grid');
   if (!grid) return;
+  const _customWrap = () => document.getElementById('quickpick-custom-wrap');
   grid.querySelectorAll('.quickpick[data-quickpick]').forEach(b => {
     b.addEventListener('click', () => {
       grid.querySelectorAll('.quickpick').forEach(x => x.classList.remove('active'));
       b.classList.add('active');
+      const wrap = _customWrap();
       const customInput = document.getElementById('quickpick-custom-input');
-      if (customInput) { customInput.style.display = 'none'; customInput.value = ''; }
+      if (wrap) wrap.style.display = 'none';
+      if (customInput) customInput.value = '';
     });
   });
   const customBtn = document.getElementById('quickpick-custom-btn');
@@ -10186,7 +10204,8 @@ function _wireQuickPickGrid() {
     customBtn.addEventListener('click', () => {
       grid.querySelectorAll('.quickpick').forEach(x => x.classList.remove('active'));
       customBtn.classList.add('active');
-      customInput.style.display = 'block';
+      const wrap = _customWrap();
+      if (wrap) wrap.style.display = 'block';
       customInput.focus();
     });
   }
@@ -10194,7 +10213,10 @@ function _wireQuickPickGrid() {
 function _readQuickPickValue() {
   // Returns the currently-selected amount (pill or custom).
   const customInput = document.getElementById('quickpick-custom-input');
-  if (customInput && customInput.style.display !== 'none' && customInput.value !== '') {
+  const customWrap = document.getElementById('quickpick-custom-wrap');
+  // Custom is visible when its wrapper is shown.
+  const customVisible = customWrap ? customWrap.style.display !== 'none' : (customInput && customInput.style.display !== 'none');
+  if (customInput && customVisible && customInput.value !== '') {
     const v = +customInput.value;
     if (isFinite(v) && v >= 0) return v;
   }
@@ -10850,7 +10872,7 @@ function openEditPaydayBonus() {
   const bonus = inc.bonus || { amount: 0, included: false, status: 'expected' };
   let body = '';
   body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="bonus-netpay">Net pay this cycle</label>';
-  body += '<input type="number" inputmode="decimal" class="payday-dropdown-select" id="bonus-netpay" value="' + (inc.netPay || '') + '" style="font-family:var(--mono)"></div>';
+  body += '<div class="pd-currency-input"><input type="number" inputmode="decimal" class="payday-dropdown-select" id="bonus-netpay" value="' + (inc.netPay || '') + '" style="font-family:var(--mono)"></div></div>';
   body += '<div class="payday-toggle-row" style="margin:14px 0 6px"><span class="payday-toggle-label">Include bonus?</span>';
   body += '<label class="toggle" aria-label="Include bonus"><input type="checkbox" id="bonus-include"' + (bonus.included ? ' checked' : '') + '><span class="toggle-track"><span class="toggle-thumb"></span></span></label></div>';
   body += '<div id="bonus-amount-section">';
@@ -11198,7 +11220,16 @@ function openPaydayLockPlan() {
       //   4. Audit-log mismatches so debugging the in-the-wild bug has data
       if (S.activePlan) {
         S.activePlan.lockedAt = Date.now();
-        S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
+        // Bundle 29 F-09 fix: streak should increment ONCE per cycleId, not
+        // every lock. Pre-fix: unlock→relock within same cycle inflated streak.
+        // Now we track lastStreakedCycleId; only increment if the current
+        // cycleId hasn't been streaked yet. rolloverIfNeeded clears the gate
+        // implicitly by creating a new cycleId.
+        const _currentCycleId = S.activePlan.cycleId;
+        if (S.activePlan.lastStreakedCycleId !== _currentCycleId) {
+          S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
+          S.activePlan.lastStreakedCycleId = _currentCycleId;
+        }
         let saveOk = true;
         let saveErr = null;
         try { save(); } catch (e) { saveOk = false; saveErr = String(e && e.message || e); }
@@ -11427,6 +11458,10 @@ function openEditPaydayBufferFloor() {
   const _committedExBuffer = (snap.bills.total || 0) + (snap.debts.total || 0) + (snap.savings.total || 0) + (snap.knownUpcoming.total || 0);
   let body = '';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">The cushion Auto-allocate keeps aside for surprise bills or overspend. Higher = safer, less to allocate. Set $0 to allocate every dollar.</div>';
+  // Bundle 29 F-19 fix: surface the current value above the chip grid so user
+  // sees their existing setting even when it's not one of the preset chips
+  // ($364 isn't in [0,100,200,300,500,750,1000] so no chip lights up).
+  body += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px;padding:8px 12px;background:var(--bg3);border-radius:8px;display:flex;justify-content:space-between;align-items:baseline"><span>Current</span><strong style="font-family:var(--mono);color:var(--text);font-size:14px">$' + Math.round(current).toLocaleString() + '</strong></div>';
   body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
   // Bundle 29 demon-time: Live-Preview showing how buffer affects daily-living
   // max + cycle remainder — closes John 2026-05-14 "changing safety buffer
