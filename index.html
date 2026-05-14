@@ -9733,7 +9733,20 @@ function renderPaydayPlanRoot() {
   //   - Mum-readable one-line summary directly below the headline number
   //     so the breakdown is legible without scrolling.
   html += '<div class="payday-hero">';
-  html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in this cycle</div>';
+  // Bundle 29 demon-time: prominent unlock affordance in the hero when
+  // locked. Pre-existing nav-row at the bottom (line ~9857) flips its
+  // label to "🔓 Re-plan" when locked but John reported "no way to unlock"
+  // — the same row was too easy to miss. Add a sticky chip in the hero
+  // header so it's visible without scrolling. Tap fires the same
+  // openPaydayUnlockPlan() path so the audit trail stays consistent.
+  if (!!snap.lockedAt) {
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">';
+    html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Money coming in this cycle</div>';
+    html += '<button onclick="openPaydayUnlockPlan()" aria-label="Re-plan — unlock this cycle" style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.35);color:var(--amber);font-size:11px;font-weight:700;padding:4px 10px;border-radius:14px;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px">🔓 Re-plan</button>';
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Money coming in this cycle</div>';
+  }
   html += '<div id="payday-hero-total" style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">' + fmt(snap.totalToPlan) + '</div>';
   // Net pay + bonus row — bonus-add button promoted to inline pill when absent
   const _bonusInlineCtl = bonus.included
@@ -10248,7 +10261,9 @@ function openEditPaydaySavings(bucketName) {
           const newProgress = target > 0 ? Math.min(100, Math.round(((saved + newAlloc) / target) * 100)) : 0;
           const oldProgress = target > 0 ? Math.round((saved / target) * 100) : 0;
           const newSavingsTotal = (snap.savings.total || 0) + allocDelta;
+          // guardian-allow-block-start: tdz-safe-engine-access — Live-Preview recompute inside openEditPaydaySavings runs only when user opens the modal + interacts; PLAN is fully initialised by then. typeof guard is defensive null-check, not a TDZ guard (permanent — see EDIT_MODAL.openCustom user-event call path)
           const newRemainder = (snap.totalToPlan || 0) - ((snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + ((typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0));
+          // guardian-allow-block-end: tdz-safe-engine-access
           const newStillFree = newRemainder - newSavingsTotal - (snap.knownUpcoming.total || 0);
           const goalLabel = (_goalDef && _goalDef.name) || bucketName;
           const rows = [
@@ -10408,7 +10423,9 @@ function openEditPaydayTripAlloc(tripId) {
           const oldProgress = budget > 0 ? Math.round(saved / budget * 100) : 0;
           const stillNeeded = Math.max(0, budget - newSaved);
           const newSavingsTotal = (snap.savings.total || 0) + allocDelta;
+          // guardian-allow-block-start: tdz-safe-engine-access — Live-Preview recompute inside openEditPaydayTripAlloc runs only when user opens the modal + interacts; PLAN is fully initialised by then. typeof guard is defensive null-check, not a TDZ guard (permanent — see EDIT_MODAL.openCustom user-event call path)
           const newRemainder = (snap.totalToPlan || 0) - ((snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + ((typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0));
+          // guardian-allow-block-end: tdz-safe-engine-access
           const newStillFree = newRemainder - newSavingsTotal - (snap.knownUpcoming.total || 0);
           const rows = [
             { label: 'This cycle into ' + trip.name, value: '$' + Math.round(newAlloc).toLocaleString(), kind: newAlloc > 0 ? 'pos' : '' },
@@ -10522,7 +10539,9 @@ function openEditPaydayBonus() {
           const bonusAmt = included ? (picked == null ? (bonus.amount || 0) : picked) : 0;
           const newTotalToPlan = netPay + bonusAmt;
           const oldTotalToPlan = snap.totalToPlan;
+          // guardian-allow-block-start: tdz-safe-engine-access — Live-Preview recompute inside openEditPaydayBonus runs only when user opens the modal + interacts; PLAN is fully initialised by then. typeof guard is defensive null-check, not a TDZ guard (permanent — see EDIT_MODAL.openCustom user-event call path)
           const provisions = (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0;
+          // guardian-allow-block-end: tdz-safe-engine-access
           const essentials = (snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + provisions;
           const newRemainder = newTotalToPlan - essentials;
           const delta = newTotalToPlan - oldTotalToPlan;
@@ -10970,7 +10989,9 @@ function openEditPaydayLivingFloor() {
           const newDailyTotal = newFloor * days;
           const oldDailyTotal = current * days;
           const dailyDelta = newDailyTotal - oldDailyTotal;
+          // guardian-allow-block-start: tdz-safe-engine-access — Live-Preview recompute inside openEditPaydayLivingFloor runs only when user opens the modal + interacts; PLAN is fully initialised by then. typeof guard is defensive null-check, not a TDZ guard (permanent — see EDIT_MODAL.openCustom user-event call path)
           const newEssentials = (snap.bills.total || 0) + (snap.debts.total || 0) + newDailyTotal + (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions ? +PLAN.getTotalProvisions() : 0);
+          // guardian-allow-block-end: tdz-safe-engine-access
           const newRemainder = (snap.totalToPlan || 0) - newEssentials;
           const status = newFloor < (current * 0.6) ? '⚠️ Critical' : newFloor < current ? '👀 Tight' : '✅ Healthy';
           const rows = [
@@ -11169,20 +11190,82 @@ function _attachLivePreview(opts) {
   const root = opts.modalRoot || document;
   const previewEl = document.getElementById(opts.previewId);
   if (!previewEl) return;
+  // Bundle 29 demon-time: surgical row update instead of innerHTML swap.
+  // The old swap caused a layout flash + lost the smooth feel John flagged
+  // ("does weird glitchy thing when picking the different chips"). Now:
+  // first render = full HTML. Subsequent renders = update label/value
+  // text in-place; animate $-values via _animateCounter when they change.
+  // Falls back to full re-render only when row count or kinds diverge.
+  let lastRows = null;
+  const numericFromValue = (v) => {
+    if (v == null) return null;
+    const m = String(v).replace(/[, ]/g, '').match(/-?\$?(-?\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const formatPreserving = (template, n) => {
+    // If template was "$1,234" return "$" + n with commas.
+    if (typeof template !== 'string') return String(n);
+    const isCurrency = template.includes('$');
+    const rounded = Math.round(n);
+    const num = rounded.toLocaleString();
+    return isCurrency ? '$' + num : num;
+  };
   const update = () => {
     try {
       const result = opts.recompute() || {};
-      const innerHtml = _buildLivePreviewBox({
-        id: opts.previewId,
-        title: result.title,
-        rows: result.rows || [],
-        hint: result.hint,
+      const newRows = result.rows || [];
+      const fullRender = () => {
+        const innerHtml = _buildLivePreviewBox({
+          id: opts.previewId,
+          title: result.title,
+          rows: newRows,
+          hint: result.hint,
+        });
+        const tmp = document.createElement('div');
+        tmp.innerHTML = innerHtml;
+        const built = tmp.firstChild;
+        if (built) previewEl.innerHTML = built.innerHTML;
+        lastRows = newRows.map(r => Object.assign({}, r));
+      };
+      const existingRows = previewEl.querySelectorAll('.lpb-row');
+      const sameStructure = lastRows
+        && lastRows.length === newRows.length
+        && existingRows.length === newRows.length
+        && lastRows.every((r, i) => (r.kind || '') === (newRows[i].kind || ''));
+      if (!sameStructure) { fullRender(); return; }
+      // Per-row surgical update.
+      newRows.forEach((r, i) => {
+        const rowEl = existingRows[i];
+        if (!rowEl) return;
+        const spans = rowEl.querySelectorAll('span');
+        if (spans.length < 2) return;
+        const labelEl = spans[0];
+        const valueEl = spans[1];
+        const newLabel = r.label || '';
+        if (labelEl.textContent !== newLabel) labelEl.textContent = newLabel;
+        const newValue = r.value || '';
+        const oldValue = valueEl.textContent;
+        if (oldValue !== newValue) {
+          const oldNum = numericFromValue(oldValue);
+          const newNum = numericFromValue(newValue);
+          if (oldNum != null && newNum != null && Math.abs(oldNum - newNum) > 0.5) {
+            _animateCounter({
+              el: valueEl,
+              from: oldNum,
+              to: newNum,
+              durationMs: 220,
+              format: (v) => formatPreserving(newValue, v),
+            });
+          } else {
+            valueEl.textContent = newValue;
+          }
+        }
       });
-      // Strip the outer div from helper output (we want inner content)
-      const tmp = document.createElement('div');
-      tmp.innerHTML = innerHtml;
-      const built = tmp.firstChild;
-      if (built) previewEl.innerHTML = built.innerHTML;
+      // Update hint if changed.
+      const hintEl = previewEl.querySelector('.lpb-hint');
+      const newHint = result.hint || '';
+      if (hintEl && hintEl.textContent !== newHint) hintEl.textContent = newHint;
+      lastRows = newRows.map(r => Object.assign({}, r));
     } catch (e) {
       console.warn('[livePreview] recompute failed:', e);
     }
@@ -18191,6 +18274,22 @@ const BRAIN = {
       S.activePlan.overrides = S.activePlan.overrides || {};
       const key = category + ':' + itemId;
       const normalAmount = _resolveNormalAmount(category, itemId);
+      // Bundle 29 demon-time: if user picks "pay in full" via a quickpick,
+      // _roundNice can produce a pick that's $0.50 off the actual amt
+      // (e.g. amt=$487.65 → pick "$488"). The override then stores
+      // thisCycleAmount=488 vs normalAmount=487.65 → ⚠️ stale forever.
+      // Normalise: if within $0.50 of normal AND not bills (bills have a
+      // dedicated defer flow with explicit "in full" semantics), clear the
+      // override entirely. Same write-path as clearOverride for audit shape.
+      if (category !== 'bill' && normalAmount > 0 && Math.abs(n - normalAmount) <= 0.5) {
+        const old = S.activePlan.overrides[key];
+        if (old) {
+          delete S.activePlan.overrides[key];
+          BRAIN.audit.append({ type: 'plan_override_clear', key, removed: old, source, ts: Date.now(), reason: 'pay-in-full-normalised' });
+          try { save(); } catch (_) {}
+        }
+        return { ok: true, deferred: 0, normalAmount, newAmount: normalAmount, normalised: true };
+      }
       const old = S.activePlan.overrides[key];
       S.activePlan.overrides[key] = {
         normalAmount,
@@ -18475,7 +18574,30 @@ const BRAIN = {
         // 365 / daysOut: trip 30d out → weight ~12, 90d out → ~4, 365d out → 1
         return Math.max(1, Math.min(20, 365 / daysOut));
       }
-      const weightedTargets = buckets.map(b => ({ b, w: _bucketWeight(b), target: +b.goal || 0 }));
+      // Bundle 29 demon-time: sort buckets by trip startDate ASC so the
+      // recommendation displays earliest-first (matches John's mental
+      // model "auto allocate should prioritise by date"). Weighting math
+      // unchanged — this only orders the iteration. Buckets with no
+      // linked trip sort to the end (no urgency, no date).
+      const _bucketStartDate = (b) => {
+        try {
+          if (this.intent && this.intent.byBucket) {
+            const trip = (this.intent.byBucket(b.name) || []).find(i => i && i.kind === 'trip' && i.startDate);
+            if (trip) return new Date(trip.startDate + 'T00:00:00').getTime();
+          }
+          const bN = (b.name || '').toLowerCase();
+          const tripMatch = _allTripsForWeight.find(t => {
+            if (!t || !t.startDate) return false;
+            const tN = (t.name || '').toLowerCase();
+            return tN && (bN.indexOf(tN) >= 0 || tN.indexOf(bN) >= 0);
+          });
+          if (tripMatch) return new Date(tripMatch.startDate + 'T00:00:00').getTime();
+        } catch (_) {}
+        return Number.MAX_SAFE_INTEGER;
+      };
+      const weightedTargets = buckets
+        .map(b => ({ b, w: _bucketWeight(b), target: +b.goal || 0, _sort: _bucketStartDate(b) }))
+        .sort((a, b) => a._sort - b._sort);
       const totalWeighted = weightedTargets.reduce((s, x) => s + x.target * x.w, 0);
       const bucketAllocations = {};
       if (totalWeighted > 0) {
@@ -18510,13 +18632,19 @@ const BRAIN = {
 
       // Re-compute with synth trips folded into the weighted-share pool
       if (synthTrips.length > 0) {
+        // Bundle 29 demon-time: sort combined list by date ASC so synth
+        // trips weave into the right urgency position, not appended.
+        const _synthDate = (s) => {
+          const t = trips.find(t => t && t.name === s.name);
+          return t && t.startDate ? new Date(t.startDate + 'T00:00:00').getTime() : Number.MAX_SAFE_INTEGER;
+        };
         const allWeighted = [
           ...weightedTargets,
-          ...synthTrips.map(s => ({ b: { name: s.name, _synthetic: true }, w: s.weight, target: s.target }))
-        ];
+          ...synthTrips.map(s => ({ b: { name: s.name, _synthetic: true }, w: s.weight, target: s.target, _sort: _synthDate(s) }))
+        ].sort((a, b) => (a._sort || Number.MAX_SAFE_INTEGER) - (b._sort || Number.MAX_SAFE_INTEGER));
         const totalAll = allWeighted.reduce((s, x) => s + x.target * x.w, 0);
         if (totalAll > 0) {
-          // Reset and re-apportion
+          // Reset and re-apportion (insertion order preserves date sort)
           Object.keys(bucketAllocations).forEach(k => delete bucketAllocations[k]);
           allWeighted.forEach(({ b, w, target }) => {
             const share = (target * w) / totalAll;
