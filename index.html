@@ -5426,20 +5426,32 @@ function getSurvivalForecast() {
   // would see a forecast pinned to the past payday day. See OPEN-BUGS #31.
   const paydayDate = MODEL.paydayDate;
 
-  // Get all upcoming unpaid bills before payday (skip bills covered by a debt
-  // and bills that aren't actually due this calendar month). Mission C
-  // frame: end-of-current-cycle. Bills due ON paydayDate are next
-  // cycle's accounting (rent + KIA Loan land same day as salary).
-  const upcomingBills = getExpandedBills()
+  // r80 (John 2026-05-15 ask: "Plan mode should take priority on
+  // calculations"): use the canonical BRAIN.bills.getThisCycle() reader
+  // so Analysis breakdown matches Plan mode's bills.total. Previously
+  // had a parallel filter that excluded bills landing ON payday day
+  // ("next cycle's accounting") — which dropped Rent + Deposit Savings
+  // ($3000) from the BREAKDOWN TO PAYDAY, even though that money
+  // physically debits John's account before the next paycheck lands.
+  //
+  // New semantics: include every unpaid bill in the current cycle whose
+  // amount will leave the account before next payday hits. That includes
+  // payday-day bills (rent + KIA loan land same day as salary but
+  // arithmetically still need to be covered).
+  let _canonicalBills = [];
+  try {
+    if (typeof BRAIN !== 'undefined' && BRAIN.bills && BRAIN.bills.getThisCycle) {
+      _canonicalBills = BRAIN.bills.getThisCycle().filter(b => !b.paid);
+    } else {
+      _canonicalBills = getExpandedBills()
+        .filter(b => b.recurring !== false && isBillDueThisMonth(b) && !isThisMonthlyBillPaid(b.name, b.day));
+    }
+  } catch (_) { _canonicalBills = []; }
+  const upcomingBills = _canonicalBills
     .filter(b => {
-      if (b.recurring === false) return false;
-      if (!isBillDueThisMonth(b)) return false;
-      if (isThisMonthlyBillPaid(b.name, b.day)) return false;
-      // Build the bill's next occurrence date
-      let billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
-      if (billDate <= today) billDate.setMonth(billDate.getMonth() + 1);
-      if (billDate >= paydayDate) return false;
       // Skip if covered by a health-matching debt on the same date
+      let billDate = new Date(today.getFullYear(), today.getMonth(), b.day);
+      if (billDate < today) billDate.setMonth(billDate.getMonth() + 1);
       const billDateStr = billDate.toISOString().split('T')[0];
       const healthKW = ['health', 'insurance', 'teacher', 'medibank', 'bupa', 'nib'];
       const covered = (S.debts || []).some(d => {
