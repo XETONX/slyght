@@ -163,15 +163,19 @@ body.edit-modal-open{overflow:hidden}
 .alive-pulse-amber{animation:alive-pulse-amber 900ms ease-out 1}
 @keyframes alive-counter-bump{0%{transform:scale(1)}40%{transform:scale(1.06)}100%{transform:scale(1)}}
 .alive-counter-bump{animation:alive-counter-bump 280ms ease-out 1;display:inline-block}
-.live-preview-box{background:rgba(78,205,196,0.06);border:1px solid rgba(78,205,196,0.18);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;color:var(--text2);line-height:1.55;animation:fade-in-soft 180ms ease-out 1}
-.live-preview-box .lpb-title{font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
-.live-preview-box .lpb-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;font-family:var(--mono);font-size:13px}
-.live-preview-box .lpb-row span:first-child{font-family:inherit;color:var(--text3)}
-.live-preview-box .lpb-row.lpb-pos span:last-child{color:var(--green);font-weight:600}
-.live-preview-box .lpb-row.lpb-neg span:last-child{color:var(--red);font-weight:600}
-.live-preview-box .lpb-row.lpb-warn span:last-child{color:var(--amber);font-weight:600}
-.live-preview-box .lpb-row.lpb-strong{border-top:1px solid var(--border);padding-top:6px;margin-top:4px;font-weight:700}
-.live-preview-box .lpb-hint{font-size:11px;color:var(--text3);margin-top:6px;font-style:italic}
+.live-preview-box{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:14px 14px 12px;margin-top:14px;font-size:13px;color:var(--text2);line-height:1.5;animation:fade-in-soft 220ms ease-out 1;position:relative}
+.live-preview-box::before{content:'';position:absolute;top:-1px;left:14px;right:14px;height:2px;background:linear-gradient(90deg,transparent,var(--green-border),transparent);border-radius:2px}
+.live-preview-box .lpb-title{font-size:10px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:center;gap:5px}
+.live-preview-box .lpb-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);gap:10px}
+.live-preview-box .lpb-row:last-of-type{border-bottom:none}
+.live-preview-box .lpb-row span:first-child{font-family:inherit;color:var(--text3);font-size:12px;flex:1;min-width:0}
+.live-preview-box .lpb-row span:last-child{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;flex-shrink:0}
+.live-preview-box .lpb-row.lpb-pos span:last-child{color:var(--green)}
+.live-preview-box .lpb-row.lpb-neg span:last-child{color:var(--red)}
+.live-preview-box .lpb-row.lpb-warn span:last-child{color:var(--amber)}
+.live-preview-box .lpb-row.lpb-strong{border-top:1px solid var(--border);padding-top:8px;margin-top:6px;border-bottom:none}
+.live-preview-box .lpb-row.lpb-strong span:last-child{font-size:16px;font-weight:800}
+.live-preview-box .lpb-hint{font-size:11px;color:var(--text3);margin-top:10px;padding-top:8px;border-top:1px dashed var(--border);line-height:1.5}
 @keyframes fade-in-soft{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 /* Empty-state playfulness */
 .empty-playful{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;gap:14px}
@@ -10672,14 +10676,41 @@ function openPaydayAutoAllocate() {
 
   // Bundle 28 round 52: tag synthetic-trip entries inline (NEW BUCKET)
   // so John knows which lines will create a bucket on Apply.
+  // Bundle 29 demon-time: also surface the CANONICAL goal name (from
+  // S.goalDefs via intent linkage) instead of the stale bucket name when
+  // they differ — closes John's "Rainy Day Fund" vs "Freedom Buffer"
+  // recurring confusion. Bucket name shown as subtitle for traceability.
   const _synthSet = new Set(rec.syntheticBucketNames || []);
+  const _resolveDisplayName = (bucketName) => {
+    try {
+      if (!BRAIN.plan.intent || !BRAIN.plan.intent.byBucket) return { name: bucketName, subtitle: null };
+      const intents = BRAIN.plan.intent.byBucket(bucketName) || [];
+      // Prefer goal-intent's name, then trip-intent's name
+      const goal = intents.find(i => i && i.kind === 'goal');
+      if (goal) {
+        const goalDef = (S.goalDefs || []).find(g => g.id === goal.id);
+        if (goalDef && goalDef.name && goalDef.name !== bucketName) {
+          return { name: (goalDef.emoji || '🎯') + ' ' + goalDef.name, subtitle: 'in "' + bucketName + '" bucket' };
+        }
+      }
+      const trip = intents.find(i => i && i.kind === 'trip');
+      if (trip && trip.name && trip.name !== bucketName) {
+        return { name: '✈️ ' + trip.name, subtitle: 'in "' + bucketName + '" bucket' };
+      }
+    } catch (_) {}
+    return { name: bucketName, subtitle: null };
+  };
   const lines = Object.keys(rec.bucketAllocations).map(name => {
     const amt = rec.bucketAllocations[name];
     const isSynth = _synthSet.has(name);
     const synthTag = isSynth
       ? '<span style="margin-left:6px;font-size:10px;font-weight:700;padding:1px 5px;border-radius:6px;background:rgba(77,159,255,0.15);color:var(--blue);border:1px solid rgba(77,159,255,0.35)">+ NEW BUCKET</span>'
       : '';
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px"><span style="color:var(--text2)">' + name + _bucketUrgencyTag(name) + synthTag + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '</span></div>';
+    const disp = isSynth ? { name: '✈️ ' + name, subtitle: null } : _resolveDisplayName(name);
+    const subtitleHtml = disp.subtitle
+      ? '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + disp.subtitle + '</div>'
+      : '';
+    return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;font-size:14px"><div style="flex:1"><span style="color:var(--text2)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div><span style="font-family:var(--mono);color:var(--green);font-weight:600;white-space:nowrap;padding-left:8px">' + fmt(amt) + '</span></div>';
   }).join('');
 
   let body = '';
@@ -11266,7 +11297,13 @@ function _attachLivePreview(opts) {
     const num = rounded.toLocaleString();
     return isCurrency ? '$' + num : num;
   };
-  const update = () => {
+  // Track in-flight animations per row so a new update cancels stale anims
+  // (prevents overlapping ease-out tweens fighting each other when chips
+  // are clicked rapidly — John 2026-05-14 "still glitchy with custom amount").
+  const animTokens = new WeakMap();
+  let pendingTimer = null;
+  const _doUpdate = () => {
+    pendingTimer = null;
     try {
       const result = opts.recompute() || {};
       const newRows = result.rows || [];
@@ -11289,7 +11326,7 @@ function _attachLivePreview(opts) {
         && existingRows.length === newRows.length
         && lastRows.every((r, i) => (r.kind || '') === (newRows[i].kind || ''));
       if (!sameStructure) { fullRender(); return; }
-      // Per-row surgical update.
+      // Per-row surgical update with anim-cancellation token.
       newRows.forEach((r, i) => {
         const rowEl = existingRows[i];
         if (!rowEl) return;
@@ -11302,15 +11339,24 @@ function _attachLivePreview(opts) {
         const newValue = r.value || '';
         const oldValue = valueEl.textContent;
         if (oldValue !== newValue) {
+          // Invalidate any prior animation on this element by bumping token.
+          const token = (animTokens.get(valueEl) || 0) + 1;
+          animTokens.set(valueEl, token);
           const oldNum = numericFromValue(oldValue);
           const newNum = numericFromValue(newValue);
           if (oldNum != null && newNum != null && Math.abs(oldNum - newNum) > 0.5) {
+            // Use a token-gated format to ensure stale frames don't write
+            // over the value after a newer update has already finished.
             _animateCounter({
               el: valueEl,
               from: oldNum,
               to: newNum,
-              durationMs: 220,
-              format: (v) => formatPreserving(newValue, v),
+              durationMs: 180,
+              bump: false,
+              format: (v) => {
+                if (animTokens.get(valueEl) !== token) return valueEl.textContent;
+                return formatPreserving(newValue, v);
+              },
             });
           } else {
             valueEl.textContent = newValue;
@@ -11325,6 +11371,12 @@ function _attachLivePreview(opts) {
     } catch (e) {
       console.warn('[livePreview] recompute failed:', e);
     }
+  };
+  // Trailing-edge debounce: rapid chip+custom-input event bursts collapse
+  // into one update so overlapping animations don't fight.
+  const update = () => {
+    if (pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(_doUpdate, 40);
   };
   (opts.inputIds || []).forEach(id => {
     const inp = document.getElementById(id);
@@ -18652,7 +18704,14 @@ const BRAIN = {
     // ─── AUTO-ALLOCATE (PURE) ─────────────────
     recommendAllocation() {
       const snap = this.getSnapshot();
-      const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+      // Bundle 29 demon-time: filter provision buckets (Rego / Insurance /
+      // Service / Provision) — these are sinking funds for annual costs,
+      // not personal savings goals. They're tracked separately as Annual
+      // Provisions and already subtracted from surplus. Recommending more
+      // allocation into them double-counts. Same filter as renderPaydaySavings.
+      const _isProvision = (name) => /rego|insurance|service|provision/i.test(name || '');
+      const allBuckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+      const buckets = allBuckets.filter(b => !_isProvision(b.name));
       const totalBucketTarget = buckets.reduce((s, b) => s + (+b.goal || 0), 0);
       // Bundle 29 demon-time: use canonical snap.derived.surplus so this
       // matches what the Savings sub-screen displays as the pool. Previously
@@ -18745,16 +18804,47 @@ const BRAIN = {
       // applyRecommendation auto-creates the matching bucket on save.
       const trips = _allTripsForWeight || [];
       const bucketNamesLower = new Set(buckets.map(b => (b.name || '').toLowerCase()));
+      // Bundle 29 demon-time: tighter trip-bucket match. Pre-fix substring
+      // match missed "China holiday" trip <-> "China" bucket when neither
+      // string contained the other (different tokens). Now check:
+      //   1. canonical intent linkage (BRAIN.plan.intent.byTrip)
+      //   2. exact bucketHint match
+      //   3. substring either-direction (legacy path)
+      //   4. word-token overlap (≥1 word ≥3 chars shared)
+      const _tokenize = (s) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
+      const _bucketTokens = buckets.map(b => ({ name: b.name, tokens: new Set(_tokenize(b.name)) }));
+      const _isTripLinkedToBucket = (trip) => {
+        // 1) canonical intent linkage
+        try {
+          if (this.intent && this.intent.byTrip) {
+            const intents = this.intent.byTrip(trip.id) || [];
+            const linked = intents.find(i => i && i.bucketName && bucketNamesLower.has(i.bucketName.toLowerCase()));
+            if (linked) return true;
+          }
+        } catch (_) {}
+        // 2) explicit bucketHint
+        const hintLower = (trip.bucketHint || '').toLowerCase();
+        if (hintLower && bucketNamesLower.has(hintLower)) return true;
+        // 3) substring either-direction
+        const nameLower = (trip.name || '').toLowerCase();
+        for (const bN of bucketNamesLower) {
+          if (bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0) return true;
+        }
+        // 4) word-token overlap
+        const tripTokens = new Set(_tokenize(trip.name));
+        for (const b of _bucketTokens) {
+          for (const t of tripTokens) {
+            if (b.tokens.has(t)) return true;
+          }
+        }
+        return false;
+      };
       const synthTrips = trips
         .filter(t => t && t.startDate && t.name)
         .filter(t => {
           const startMs = new Date(t.startDate + 'T00:00:00').getTime();
           if (startMs - nowMs < -7 * 86400000) return false; // already past
-          const nameLower = t.name.toLowerCase();
-          const hintLower = (t.bucketHint || '').toLowerCase();
-          const linked = (hintLower && bucketNamesLower.has(hintLower)) ||
-                         Array.from(bucketNamesLower).some(bN => bN.indexOf(nameLower) >= 0 || nameLower.indexOf(bN) >= 0);
-          return !linked; // include only the ones that don't already map
+          return !_isTripLinkedToBucket(t);
         })
         .map(t => ({ name: t.name, target: +t.budget || 0, weight: _tripUrgencyWeight(t.startDate, nowMs), _synthetic: true }));
 
