@@ -13746,11 +13746,11 @@ function showToast(msg) {
     // which surface is open when they fire.
     // Bundle 29 F-23/E-05 + F-03 fix: dropped white-space:nowrap (was
     // clipping long lock-confirmation strings) AND moved toast position
-    // bottom:180px → bottom:24px so it sits below typical content rows
-    // instead of overlapping the REMAINDER card / Daily Living tile.
+    // bottom:180px → bottom:100px so it sits ABOVE the bottom nav (which
+    // is 84px tall + safe-area padding) but BELOW the main content.
     // max-width keeps it inside viewport, white-space:normal wraps long
     // strings, text-align:center balances multi-line.
-    el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;max-width:calc(100vw - 48px);white-space:normal;text-align:center;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
+    el.style.cssText = 'position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--r-sm);padding:11px 20px;font-size:14px;font-weight:600;color:var(--text);z-index:800;max-width:calc(100vw - 48px);white-space:normal;text-align:center;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,0.4);pointer-events:none;transition:opacity .2s';
     document.body.appendChild(el);
   }
   el.textContent = msg;
