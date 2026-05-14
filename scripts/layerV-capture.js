@@ -1417,7 +1417,200 @@ async function step(name, fn) {
   });
   await shoot(page, 90, 'edit-goal-property-deposit', 'Edit goal modal for Property Deposit — name · target · monthly · description fields');
 
-  } // end if (!skipDeep) — Section 10 + 11 canvas-deep
+  // ─── SECTION 12 — Scenario walkthroughs ──────────────────────────────────
+  // Bundle 29 demon-time: John 2026-05-14 asked for scenario-based coverage
+  // — simulate filling the Payday Plan with real data ($12k net + $1,341
+  // bonus) + walk every screen + capture like a video so post-hoc UX
+  // analysis can spot "this doesn't make sense" gaps without him having
+  // to phone-verify each one.
+  console.log('\n=== SECTION 12 — Scenario walkthroughs ===');
+
+  // SCENARIO A — Happy-path: $12k net + $1,341 bonus expected, allocate to
+  // Darwin, auto-allocate the rest, lock the plan, verify locked banner.
+  await step('Scenario A — reset to canvas root', () => resetToCanvasRoot());
+  await shoot(page, 91, 'scenario-A-canvas-root-fresh', 'Scenario A start — canvas root before any inputs');
+
+  await step('Scenario A — open Pay + Bonus modal', async () => {
+    await page.evaluate(() => { if (typeof openEditPaydayBonus === 'function') openEditPaydayBonus(); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 92, 'scenario-A-bonus-modal-fresh', 'Scenario A — Pay+Bonus modal opened, default state');
+
+  await step('Scenario A — fill bonus $1,341 expected', async () => {
+    await page.evaluate(() => {
+      const tog = document.getElementById('bonus-include');
+      if (tog && !tog.checked) { tog.checked = true; tog.dispatchEvent(new Event('change', { bubbles: true })); }
+      const custom = document.getElementById('quickpick-custom-btn');
+      if (custom) custom.click();
+    });
+    await page.waitForTimeout(180);
+    await page.evaluate(() => {
+      const inp = document.getElementById('quickpick-custom-input');
+      if (inp) { inp.value = '1341'; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await page.waitForTimeout(350);
+  });
+  await shoot(page, 93, 'scenario-A-bonus-1341-custom-filled', 'Scenario A — bonus $1,341 typed in Custom · status=expected · Live-Preview shows $13,341 money in');
+
+  await step('Scenario A — save bonus, return to canvas', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(550);
+  });
+  await shoot(page, 94, 'scenario-A-canvas-after-bonus', 'Scenario A — canvas root reflects new total. Money coming in updated, bonus inline');
+
+  await step('Scenario A — open Daily Living', async () => {
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-living'); });
+    await page.waitForTimeout(420);
+  });
+  await shoot(page, 95, 'scenario-A-daily-living-card', 'Scenario A — Daily Living card with slider · ceiling · status pill · recommended marker');
+
+  await step('Scenario A — open Savings sub', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-savings');
+    });
+    await page.waitForTimeout(420);
+  });
+  await shoot(page, 96, 'scenario-A-savings-sub-fresh', 'Scenario A — Savings sub: Pool to allocate, Goals list (Darwin/China/Freedom Buffer)');
+
+  await step('Scenario A — allocate $500 to Darwin trip', async () => {
+    await page.evaluate(() => { if (typeof openEditPaydayTripAlloc === 'function') openEditPaydayTripAlloc('darwin-2026'); });
+    await page.waitForTimeout(420);
+    await page.evaluate(() => {
+      const chips = document.querySelectorAll('#quickpick-grid .quickpick[data-quickpick]');
+      const target = Array.from(chips).find(c => c.textContent && c.textContent.indexOf('500') >= 0);
+      if (target) target.click();
+    });
+    await page.waitForTimeout(220);
+  });
+  await shoot(page, 97, 'scenario-A-darwin-alloc-500-picked', 'Scenario A — Darwin trip alloc, $500 chip active, Live-Preview rolling');
+
+  await step('Scenario A — save Darwin allocation', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 98, 'scenario-A-savings-sub-after-darwin', 'Scenario A — savings sub after Darwin $500 — header "$500 allocated" + Pool reduced');
+
+  await step('Scenario A — back to canvas root', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+    });
+    await page.waitForTimeout(280);
+  });
+  await shoot(page, 99, 'scenario-A-canvas-after-darwin', 'Scenario A — canvas root after Darwin $500 — REMAINDER + bar reflect');
+
+  await step('Scenario A — auto-allocate the rest', async () => {
+    await page.evaluate(() => { if (typeof openPaydayAutoAllocate === 'function') openPaydayAutoAllocate(); });
+    await page.waitForTimeout(550);
+  });
+  await shoot(page, 100, 'scenario-A-auto-allocate-with-darwin-set', 'Scenario A — Auto-allocate shows reasoning per row · Darwin already $500 · suggestions for remaining');
+
+  await step('Scenario A — apply auto-allocate', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(550);
+  });
+  await shoot(page, 101, 'scenario-A-canvas-after-auto-applied', 'Scenario A — canvas root post-auto-apply');
+
+  await step('Scenario A — open lock-plan modal', async () => {
+    await page.evaluate(() => { if (typeof openPaydayLockPlan === 'function') openPaydayLockPlan(); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 102, 'scenario-A-lock-confirm-modal', 'Scenario A — Lock confirmation modal');
+
+  await step('Scenario A — confirm lock', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(550);
+  });
+  await shoot(page, 103, 'scenario-A-canvas-locked', 'Scenario A — canvas POST-LOCK with full-width amber locked banner + Re-plan CTA');
+
+  // SCENARIO B — Frustrating: buffer pushes daily-living to IMPOSSIBLE state.
+  await step('Scenario B — reset', () => resetToCanvasRoot());
+  await shoot(page, 104, 'scenario-B-canvas-fresh', 'Scenario B start — clean canvas');
+
+  await step('Scenario B — open Daily Living + Buffer modal', async () => {
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-living'); });
+    await page.waitForTimeout(420);
+    await page.evaluate(() => { if (typeof openEditPaydayBufferFloor === 'function') openEditPaydayBufferFloor(); });
+    await page.waitForTimeout(420);
+  });
+  await shoot(page, 105, 'scenario-B-buffer-modal-fresh', 'Scenario B — Buffer modal opened, current value shown');
+
+  await step('Scenario B — set buffer to $1000 (large)', async () => {
+    await page.evaluate(() => {
+      const chips = document.querySelectorAll('#quickpick-grid .quickpick[data-quickpick]');
+      const target = Array.from(chips).find(c => c.textContent && c.textContent.indexOf('1,000') >= 0);
+      if (target) target.click();
+    });
+    await page.waitForTimeout(420);
+  });
+  await shoot(page, 106, 'scenario-B-buffer-1000-preview-impossible', 'Scenario B — Buffer $1000 picked, Live-Preview shows max affordable drops, hint warning visible');
+
+  await step('Scenario B — save buffer', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 107, 'scenario-B-daily-living-impossible', 'Scenario B — Daily Living card with red ceiling "Math is broken" · slider thumb red pulsing · status IMPOSSIBLE');
+
+  // SCENARIO C — Bonus confirmed → balance landed flow.
+  await step('Scenario C — reset', () => resetToCanvasRoot());
+  await page.evaluate(() => {
+    // Reset paydayReceived flag so the lock-confirmed flow can fire fresh.
+    if (typeof S !== 'undefined' && S.paydayReceived !== undefined) S.paydayReceived = false;
+    if (typeof save === 'function') save();
+  });
+  await shoot(page, 108, 'scenario-C-canvas-fresh', 'Scenario C start — paydayReceived reset to false');
+
+  await step('Scenario C — open bonus + set confirmed', async () => {
+    await page.evaluate(() => { if (typeof openEditPaydayBonus === 'function') openEditPaydayBonus(); });
+    await page.waitForTimeout(420);
+    await page.evaluate(() => {
+      const tog = document.getElementById('bonus-include');
+      if (tog && !tog.checked) { tog.checked = true; tog.dispatchEvent(new Event('change', { bubbles: true })); }
+      const sel = document.getElementById('bonus-status');
+      if (sel) { sel.value = 'confirmed'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+      const chips = document.querySelectorAll('#quickpick-grid .quickpick[data-quickpick]');
+      if (chips[2]) chips[2].click();
+    });
+    await page.waitForTimeout(350);
+  });
+  await shoot(page, 109, 'scenario-C-bonus-confirmed-status', 'Scenario C — bonus toggled ON · status=Confirmed (already landed) · $1000 chip active');
+
+  await step('Scenario C — save bonus, return to canvas', async () => {
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(550);
+  });
+  await shoot(page, 110, 'scenario-C-canvas-after-confirmed-bonus', 'Scenario C — canvas after confirmed bonus saved · NOT yet locked');
+
+  await step('Scenario C — lock the plan', async () => {
+    await page.evaluate(() => { if (typeof openPaydayLockPlan === 'function') openPaydayLockPlan(); });
+    await page.waitForTimeout(450);
+    await page.evaluate(() => {
+      const saveBtn = document.querySelector('#edit-modal button[onclick*="attemptSave"]');
+      if (saveBtn) saveBtn.click();
+    });
+    await page.waitForTimeout(700);
+  });
+  await shoot(page, 111, 'scenario-C-canvas-locked-paydayLanded', 'Scenario C — canvas POST-LOCK · paydayReceived=true fired from bonus.confirmed · "💰 payday recorded as landed" in toast');
+
+  } // end if (!skipDeep) — Section 10 + 11 + 12 canvas-deep
 
   // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));

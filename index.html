@@ -205,11 +205,11 @@ body.edit-modal-open{overflow:hidden}
 .living-card .lc-slider-impossible .living-floor-slider::-webkit-slider-thumb{background:var(--red);box-shadow:0 0 0 4px rgba(231,76,60,0.25);animation:alive-pulse-neg 1.4s ease-in-out infinite}
 .living-card .lc-slider-wrap{padding:6px 0 26px}
 .living-card .lc-slider-track{position:relative}
-.living-card .lc-slider-marker{position:absolute;top:18px;transform:translateX(-50%);pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1;white-space:nowrap}
+.living-card .lc-slider-marker{position:absolute;transform:translateX(-50%);pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1;white-space:nowrap}
 .living-card .lc-slider-marker::before{content:'';display:block;width:2px;height:10px;margin:0 auto 2px;border-radius:1px;background:currentColor;opacity:.55}
 .living-card .lc-slider-marker span{display:inline-block;padding:2px 5px;border-radius:6px;background:var(--bg);border:1px solid currentColor;font-weight:700}
-.living-card .lc-marker-rec{color:#3b82f6}
-.living-card .lc-marker-max{color:var(--red)}
+.living-card .lc-marker-rec{color:#3b82f6;top:18px}
+.living-card .lc-marker-max{color:var(--red);top:42px}
 .living-card .lc-slider-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:6px}
 .living-card .lc-slider-labels .lc-current{color:var(--green);font-weight:700;font-size:13px}
 .living-floor-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--bg3);border-radius:3px;outline:none;margin:0;padding:0}
@@ -9737,7 +9737,15 @@ function renderPaydayPlanRoot() {
         : 0;
       const progress = (typeof BRAIN !== 'undefined' && BRAIN.allocation && BRAIN.allocation.getLockedProgress)
         ? BRAIN.allocation.getLockedProgress() : null;
-      if (progress && progress.bills && progress.bills.total > 0) {
+      // Bundle 29 demon-time: grace period — drift banner suppressed within
+      // 30 minutes of lock. Scenario A walkthrough caught this: user locks
+      // a fresh plan at end-of-cycle and immediately sees "100% off pace"
+      // because nothing's been ticked yet (the cycle hadn't ENDED before
+      // lock, but the calendar boundary triggers the math). Drift is only
+      // meaningful AFTER the user has had time to tick + transfer.
+      const msSinceLock = Date.now() - +snap.lockedAt;
+      const inGracePeriod = msSinceLock < 30 * 60 * 1000;
+      if (!inGracePeriod && progress && progress.bills && progress.bills.total > 0) {
         const paidPct = progress.bills.paid / progress.bills.total;
         const sensitivity = +snap.driftSensitivity || 0.15;
         if (elapsedPct > 0.3 && paidPct < elapsedPct - sensitivity) {
@@ -10761,9 +10769,11 @@ function openPaydayAutoAllocate() {
     if (reason) subtitleParts.push('<div style="font-size:11px;color:var(--text2);margin-top:2px;line-height:1.4">↳ ' + reason + '</div>');
     if (disp.subtitle) subtitleParts.push('<div style="font-size:10px;color:var(--text3);margin-top:1px">' + disp.subtitle + '</div>');
     const subtitleHtml = subtitleParts.join('');
-    // Bundle 29 demon-time: when locked, show current → proposed with delta
-    const valueCell = (isLockedReroll && currentAmt > 0)
-      ? '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-family:var(--mono);color:var(--text3);font-size:11px;text-decoration:line-through">' + fmt(currentAmt) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + (delta !== 0 ? '<span style="font-size:10px;color:' + (delta > 0 ? 'var(--green)' : 'var(--red)') + ';margin-left:4px">' + (delta > 0 ? '+' : '−') + '$' + Math.abs(Math.round(delta)) + '</span>' : '') + '</span></div>'
+    // Bundle 29 demon-time: show current → proposed with delta whenever
+    // there's a pre-existing allocation, locked or not. Otherwise
+    // auto-apply silently overwrites and user doesn't see what changed.
+    const valueCell = (currentAmt > 0 && delta !== 0)
+      ? '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px"><span style="font-family:var(--mono);color:var(--text3);font-size:11px;text-decoration:line-through">' + fmt(currentAmt) + '</span><span style="font-family:var(--mono);color:var(--green);font-weight:600">' + fmt(amt) + '<span style="font-size:10px;color:' + (delta > 0 ? 'var(--green)' : 'var(--red)') + ';margin-left:4px">' + (delta > 0 ? '+' : '−') + '$' + Math.abs(Math.round(delta)) + '</span></span></div>'
       : '<span style="font-family:var(--mono);color:var(--green);font-weight:600;white-space:nowrap;padding-left:8px">' + fmt(amt) + '</span>';
     return '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;font-size:14px;border-bottom:1px solid rgba(255,255,255,0.04)"><div style="flex:1;min-width:0"><span style="color:var(--text)">' + disp.name + _bucketUrgencyTag(name) + synthTag + '</span>' + subtitleHtml + '</div>' + valueCell + '</div>';
   }).join('');
