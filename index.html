@@ -12025,7 +12025,12 @@ function _paydayRow(opts) {
         ? '<button type="button" class="pd-row-action ticked" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="Unmark ' + opts.name + '">✓ ' + actionLabel.replace(/^Mark as /, '').replace(/^Mark /, '') + ' — tap to undo</button>'
         : '<button type="button" class="pd-row-action" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="' + actionLabel + ' ' + opts.name + '">' + actionLabel + '</button>')
     : '';
-  return '<button class="pd-row-card' + (ticked ? ' is-ticked' : '') + '" onclick="' + (opts.onTap || '') + '" aria-label="' + opts.name + ': ' + (opts.sub || opts.value) + '">' +
+  // r73 fix: outer element MUST be <div role=button> not <button>.
+  // HTML5 forbids nested <button>, so the inner .pd-row-action was being
+  // reparented OUTSIDE the card by the browser (visible as ugly white
+  // pills between rows in dark mode). div role=button keeps semantics
+  // while allowing the inner action button to render in-place.
+  return '<div class="pd-row-card' + (ticked ? ' is-ticked' : '') + '" role="button" tabindex="0" onclick="' + (opts.onTap || '') + '" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click();}" aria-label="' + opts.name + ': ' + (opts.sub || opts.value) + '">' +
     '<div class="pd-row-main">' +
       avatarHtml +
       '<div class="pd-row-text">' +
@@ -12038,7 +12043,7 @@ function _paydayRow(opts) {
     '</div>' +
     progressHtml +
     markActionHtml +
-  '</button>';
+  '</div>';
 }
 
 function _paydayShellHeader(snap, kind) {
