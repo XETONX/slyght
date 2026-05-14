@@ -874,6 +874,206 @@ async function step(name, fn) {
   });
   await shoot(page, 52, 'modal-add-trip', 'new trip — empty form');
 
+  // ─── SECTION 10 — Canvas sub-screens + canvas modals (Bundle 29 Phase 0) ─
+  // Pre-Bundle-29 Layer V never navigated INTO the Payday Plan canvas. Section
+  // 3 only captured the PLAN-tab tile-state (capture #20 plan-payday-plan).
+  // Closes the audit cross-cut §F coverage gap John 2026-05-14 upgraded to
+  // "the crux." Sub-screens via openPaydayCategory; modals via the canonical
+  // openEdit*/explain*/openPaydayAutoAllocate handlers. Each capture pairs
+  // with the post-Bundle-28-round-72 fixes (Mum-bubble dropped + bar legend +
+  // payday-landed pill + R1 intent-driven goal subtitle).
+  console.log('\n=== SECTION 10 — Canvas deep coverage ===');
+
+  // Helper: hard-reset to canvas root open state. Closes any open modal +
+  // sub-screen, navigates to PLAN, opens canvas. Used between every capture
+  // so we don't leak state across surfaces.
+  //
+  // CRITICAL: Section 9 capture #49 uses force-display on #edit-modal with
+  // inline style:flex which doesn't clear via classList.remove('show'). We
+  // explicitly remove the inline display style on EVERY known modal here
+  // so Section 10's first capture isn't tainted by the leftover.
+  const resetToCanvasRoot = async () => {
+    await page.evaluate(() => {
+      // Call canonical close fns first so internal bookkeeping (scroll
+      // restore, focus return) runs cleanly.
+      try { if (typeof PLAN_MODAL !== 'undefined' && PLAN_MODAL.close) PLAN_MODAL.close(); } catch (_) {}
+      try { if (typeof closeModal === 'function') closeModal('edit-modal-overlay', true); } catch (_) {}
+      try { if (typeof closeModal === 'function') closeModal('custom-modal-overlay', true); } catch (_) {}
+      try {
+        if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.close) EDIT_MODAL.close();
+      } catch (_) {}
+      // Then sweep every overlay element we know about — classList only.
+      // Setting inline display:none would BREAK subsequent modal opens
+      // (EDIT_MODAL.openCustom uses .show class via CSS; inline display:none
+      // would win on specificity). Canonical close fns above already set
+      // display:none correctly for PLAN_MODAL / EDIT_MODAL.
+      const overlaySelectors = [
+        '.modal-overlay', '.edit-modal', '.recon-overlay',
+        '#edit-modal', '#plan-modal-overlay', '#quick-log-modal',
+        '#h-bal-edit', '#recon-modal', '#debt-modal', '#nw-modal',
+        '#txn-edit-modal', '#add-debt-modal', '#bucket-modal',
+        '#add-bucket-modal', '#cat-modal', '#mark-paid-modal',
+        '#mi13-details-modal', '#bnpl-modal',
+        '#custom-modal-overlay', '#edit-modal-overlay',
+      ];
+      overlaySelectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(m => {
+          m.classList.remove('show', 'open', 'active');
+        });
+      });
+      // ONE targeted inline-style clear: Section 9 capture #49 force-sets
+      // `style.display='flex'` on #edit-modal which doesn't clear via class
+      // removal. PLAN_MODAL.close handles #plan-modal-overlay separately.
+      const _editModal = document.getElementById('edit-modal');
+      if (_editModal) _editModal.style.removeProperty('display');
+      // Sub-screens
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      // Tracer
+      const tr = document.getElementById('tracer-overlay');
+      if (tr) tr.style.display = 'none';
+      // Make sure the canvas itself isn't already active (clear stale state)
+      const canvas = document.getElementById('pg-payday-plan');
+      if (canvas) canvas.classList.remove('payday-active', 'has-active-subscreen');
+      // Go to PLAN tab so openPaydayPlan can fire from the expected context
+      if (typeof goPage === 'function') goPage('pg-plan');
+    });
+    await page.waitForTimeout(450);
+    await page.evaluate(() => {
+      if (typeof openPaydayPlan === 'function') openPaydayPlan();
+    });
+    await page.waitForTimeout(800); // canvas slide-in + render + (potential 400ms tutorial overlay defer)
+    // Dismiss tutorial overlay if it fired (first-canvas-open one-time)
+    await page.evaluate(() => {
+      try { localStorage.setItem('slyght_payday_canvas_seen', '1'); } catch (_) {}
+      document.querySelectorAll('.edit-modal.show, .edit-modal[style*="flex"]').forEach(m => {
+        const isTutorial = m.textContent && m.textContent.indexOf('Welcome to Payday Plan') >= 0;
+        if (isTutorial) {
+          m.classList.remove('show');
+          m.style.display = 'none';
+        }
+      });
+    });
+    await page.waitForTimeout(200);
+  };
+
+  // 53 — Canvas root (post-r72 visual state: no Mum-bubble · coloured-dot
+  // legend · "Pay landed today?" pill OR "✓ Paid" badge per S.paydayReceived)
+  await step('canvas root capture', () => resetToCanvasRoot());
+  await shoot(page, 53, 'canvas-root', 'post-r72: no Mum-bubble · coloured-dot legend · payday-landed pill');
+
+  // 54 — Canvas Bills sub-screen
+  await step('open canvas-bills sub', async () => {
+    await page.evaluate(() => { if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-bills'); });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 54, 'canvas-sub-bills', 'r47 UNPAID-visible + PAID-collapsed details split');
+
+  // 55 — Canvas Debts sub-screen
+  await step('open canvas-debts sub', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-debts');
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 55, 'canvas-sub-debts', 'r47 viaRent + autoDebit tags + r50 fmtAuDate');
+
+  // 56 — Canvas Daily Living sub-screen
+  await step('open canvas-living sub', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-living');
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 56, 'canvas-sub-living', 'Current $/day · Floors · Status badge · About');
+
+  // 57 — Canvas Savings sub-screen (R1 verify — Freedom Buffer + Property Deposit visible by name)
+  await step('open canvas-savings sub', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-savings');
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 57, 'canvas-sub-savings', 'R1: goal-name rendering + Other-savings-goals synthetic-bucket section');
+
+  // 58 — Canvas Upcoming sub-screen
+  await step('open canvas-upcoming sub', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      if (typeof openPaydayCategory === 'function') openPaydayCategory('payday-upcoming');
+    });
+    await page.waitForTimeout(450);
+  });
+  await shoot(page, 58, 'canvas-sub-upcoming', 'Known Upcoming items OR empty-state');
+
+  // Canvas modals — each needs canvas open + sub closed first
+  const openCanvasModal = async (fnCall, label) => {
+    await step('reset + open ' + label, async () => {
+      await resetToCanvasRoot();
+      await page.evaluate((src) => {
+        try { eval(src); } catch (e) { console.error('[layerV] modal-open failed for ' + src + ':', e); }
+      }, fnCall);
+      await page.waitForTimeout(700);
+    });
+  };
+
+  // 59 — Bonus modal (openEditPaydayBonus)
+  await openCanvasModal('openEditPaydayBonus()', 'edit-bonus');
+  await shoot(page, 59, 'canvas-modal-edit-bonus', 'NetPay + bonus toggle + quick-pick + status select');
+
+  // 60 — Edit-bill modal (Rent + Deposit Savings — r49 Paid/Defer toggle)
+  await openCanvasModal('openEditPaydayBill("Rent + Deposit Savings")', 'edit-bill-rent');
+  await shoot(page, 60, 'canvas-modal-edit-bill-rent', 'r49 two-mode Paid/Defer toggle + late-fee preview');
+
+  // 61 — Edit-debt modal (Michael)
+  await openCanvasModal('openEditPaydayDebt("Borrowed from Michael")', 'edit-debt-michael');
+  await shoot(page, 61, 'canvas-modal-edit-debt-michael', 'r49 simplified 0-100% quick-picks');
+
+  // 62 — Edit-savings modal (Rainy Day Fund → should show "Freedom Buffer" title per R1)
+  await openCanvasModal('openEditPaydaySavings("Rainy Day Fund")', 'edit-savings-freedom-buffer');
+  await shoot(page, 62, 'canvas-modal-edit-savings-r1', 'R1 verify: modal title "🛡️ Freedom buffer — this cycle" not bucket name');
+
+  // 63 — KIA Extra modal
+  await openCanvasModal('openEditPaydayKiaExtra()', 'edit-kia-extra');
+  await shoot(page, 63, 'canvas-modal-edit-kia-extra', 'KIA acceleration · snowball/avalanche aware');
+
+  // 64 — Trip allocation modal (Darwin)
+  await openCanvasModal('(function(){ var trips = (typeof PLAN!=="undefined" && PLAN.getTrips) ? PLAN.getTrips() : []; var darwin = trips.find(function(t){return t && /darwin/i.test(t.name||"");}); if (darwin) openEditPaydayTripAlloc(darwin.id);})()', 'edit-trip-alloc-darwin');
+  await shoot(page, 64, 'canvas-modal-edit-trip-alloc-darwin', 'Darwin trip allocation — quick-pick scaled to budget');
+
+  // 65 — Auto-allocate modal (r48 + r49d "Already covered first" + r52 NEW BUCKET tags)
+  await openCanvasModal('openPaydayAutoAllocate()', 'auto-allocate');
+  await shoot(page, 65, 'canvas-modal-auto-allocate', 'r49d covered-first block + r52 NEW BUCKET synthetic tags + urgency-weighted split');
+
+  // 66 — Lock plan modal
+  await openCanvasModal('openPaydayLockPlan()', 'lock-plan');
+  await shoot(page, 66, 'canvas-modal-lock-plan', 'Confirmation + tight-buffer warning OR cant-lock-shortfall info');
+
+  // 67 — explainAnnualProvisions info modal (canvas Essentials nav)
+  await openCanvasModal('explainAnnualProvisions()', 'explain-annual-provisions');
+  await shoot(page, 67, 'canvas-modal-explain-annual-provisions', 'r47 info modal with provision rows + monthly/annual totals');
+
+  // 68 — explainMaxPerDay info modal (r9 rich HTML rebuild)
+  await openCanvasModal('explainMaxPerDay()', 'explain-max-per-day');
+  await shoot(page, 68, 'canvas-modal-explain-max-per-day', 'r9 rich-HTML hero gradient + progress bar + breakdown + timing-aware warning');
+
+  // 69 — PLAN-tab manage-provisions modal (R2 verify — bundle 28 round 72)
+  await step('reset + open manage-provisions', async () => {
+    await page.evaluate(() => {
+      document.querySelectorAll('.modal-overlay.show, .edit-modal.show').forEach(m => m.classList.remove('show'));
+      document.querySelectorAll('.payday-subscreen.payday-active').forEach(s => s.classList.remove('payday-active'));
+      const canvas = document.getElementById('pg-payday-plan');
+      if (canvas) canvas.classList.remove('payday-active');
+      if (typeof goPage === 'function') goPage('pg-plan');
+    });
+    await page.waitForTimeout(450);
+    await page.evaluate(() => { if (typeof openManageProvisions === 'function') openManageProvisions(); });
+    await page.waitForTimeout(500);
+  });
+  await shoot(page, 69, 'plan-tab-modal-manage-provisions', 'R2 verify: nav-row → editable manage modal');
+
   // Persist manifest + ui-code-map
   fs.writeFileSync(path.join(OUT_DIR, 'manifest.json'), JSON.stringify(manifest, null, 2));
   fs.writeFileSync(path.join(OUT_DIR, 'ui-code-map.json'), JSON.stringify(uiCodeMap, null, 2));
