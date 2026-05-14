@@ -189,9 +189,19 @@ body.edit-modal-open{overflow:hidden}
 .living-card .lc-status-row{display:flex;align-items:center;gap:8px;margin:8px 0 14px;font-size:13px}
 .living-card .lc-status-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;letter-spacing:.02em;transition:background .25s,color .25s,border-color .25s}
 .living-card .lc-status-pill[data-status="healthy"]{background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)}
+.living-card .lc-status-pill[data-status="recommended"]{background:rgba(59,130,246,0.12);color:#3b82f6;border:1px solid rgba(59,130,246,0.35)}
 .living-card .lc-status-pill[data-status="tight"]{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber-border)}
 .living-card .lc-status-pill[data-status="critical"]{background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)}
-.living-card .lc-slider-wrap{padding:6px 0 14px}
+.living-card .lc-status-pill[data-status="impossible"]{background:rgba(127,29,29,0.18);color:#fca5a5;border:1px solid #7f1d1d;animation:alive-pulse-neg 1.4s ease-in-out infinite}
+.living-card .lc-ceiling{font-size:13px;color:var(--text2);background:var(--bg3);border-radius:8px;padding:8px 12px;margin:6px 0 12px;display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.living-card .lc-ceiling strong{font-family:var(--mono);color:var(--text);font-weight:700}
+.living-card .lc-slider-wrap{padding:6px 0 26px}
+.living-card .lc-slider-track{position:relative}
+.living-card .lc-slider-marker{position:absolute;top:18px;transform:translateX(-50%);pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1;white-space:nowrap}
+.living-card .lc-slider-marker::before{content:'';display:block;width:2px;height:10px;margin:0 auto 2px;border-radius:1px;background:currentColor;opacity:.55}
+.living-card .lc-slider-marker span{display:inline-block;padding:2px 5px;border-radius:6px;background:var(--bg);border:1px solid currentColor;font-weight:700}
+.living-card .lc-marker-rec{color:#3b82f6}
+.living-card .lc-marker-max{color:var(--red)}
 .living-card .lc-slider-labels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:6px}
 .living-card .lc-slider-labels .lc-current{color:var(--green);font-weight:700;font-size:13px}
 .living-floor-slider{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--bg3);border-radius:3px;outline:none;margin:0;padding:0}
@@ -10944,14 +10954,51 @@ function openPaydayUnlockPlan() {
 function openEditPaydayBufferFloor() {
   const snap = BRAIN.plan.getSnapshot();
   const current = +snap.bufferFloor || 0;
+  const daysInCycle = snap.daysInCycle || 30;
+  // Components needed to recompute maxAffordablePerDay live as buffer changes.
+  // Mirror getSnapshot logic so the preview matches what renders after save.
+  const _committedExBuffer = (snap.bills.total || 0) + (snap.debts.total || 0) + (snap.savings.total || 0) + (snap.knownUpcoming.total || 0);
   let body = '';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">The cushion Auto-allocate keeps aside for surprise bills or overspend. Higher = safer, less to allocate. Set $0 to allocate every dollar.</div>';
   body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
+  // Bundle 29 demon-time: Live-Preview showing how buffer affects daily-living
+  // max + cycle remainder — closes John 2026-05-14 "changing safety buffer
+  // does not reaffect the calculation what I can afford per day" feedback.
+  body += '<div id="buffer-live-preview"></div>';
   EDIT_MODAL.openCustom({
     title: 'Safety buffer',
     hint: 'Reserve kept for surprises.',
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      _wireQuickPickGrid();
+      _attachLivePreview({
+        previewId: 'buffer-live-preview',
+        recompute: () => {
+          const picked = _readQuickPickValue();
+          const newBuffer = picked == null ? current : picked;
+          const bufferDelta = newBuffer - current;
+          // guardian-allow-block-start: tdz-safe-engine-access — Live-Preview recompute inside openEditPaydayBufferFloor runs only when user opens the modal + interacts; PLAN is fully initialised by then. typeof guard is defensive null-check, not a TDZ guard (permanent — see EDIT_MODAL.openCustom user-event call path)
+          let _provs = 0;
+          try { _provs = (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+          // guardian-allow-block-end: tdz-safe-engine-access
+          const newMaxAfford = daysInCycle > 0
+            ? Math.max(0, (snap.totalToPlan - _committedExBuffer - _provs - newBuffer) / daysInCycle)
+            : 0;
+          const newRemainder = snap.totalToPlan - _committedExBuffer - _provs - snap.dailyLiving.plannedTotal;
+          const floorVsMax = snap.dailyLiving.floor - newMaxAfford;
+          const rows = [
+            { label: 'Safety buffer', value: '$' + Math.round(newBuffer).toLocaleString() + (bufferDelta !== 0 ? ' (' + (bufferDelta > 0 ? '+' : '') + '$' + Math.abs(Math.round(bufferDelta)).toLocaleString() + ')' : ''), kind: bufferDelta > 0 ? 'pos' : bufferDelta < 0 ? 'warn' : '' },
+            { label: 'Max affordable / day', value: '$' + Math.round(newMaxAfford).toLocaleString(), kind: floorVsMax > 0 ? 'neg' : floorVsMax > -5 ? 'warn' : 'pos' },
+            { label: 'Your current floor', value: '$' + snap.dailyLiving.floor + '/day', kind: floorVsMax > 0 ? 'neg' : '' },
+            { label: 'Cycle remainder', value: '$' + Math.round(newRemainder).toLocaleString(), kind: newRemainder >= newBuffer ? 'pos' : newRemainder >= 0 ? 'warn' : 'neg' },
+          ];
+          const hint = floorVsMax > 0
+            ? '⚠ Floor exceeds max — drop the buffer or lower the floor before saving.'
+            : 'Higher buffer = lower max affordable per day.';
+          return { rows, hint };
+        },
+      });
+    },
     save: () => {
       const amt = _readQuickPickValue();
       if (amt === null) return { ok: false, reason: 'Pick an amount' };
@@ -10993,10 +11040,19 @@ function openEditPaydayLivingFloor() {
           const newEssentials = (snap.bills.total || 0) + (snap.debts.total || 0) + newDailyTotal + (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions ? +PLAN.getTotalProvisions() : 0);
           // guardian-allow-block-end: tdz-safe-engine-access
           const newRemainder = (snap.totalToPlan || 0) - newEssentials;
-          const status = newFloor < (current * 0.6) ? '⚠️ Critical' : newFloor < current ? '👀 Tight' : '✅ Healthy';
+          // Bundle 29 demon-time: use same 5-state status as the slider card
+          // so the preview matches what user sees after save (no surprise).
+          const maxAfford = +snap.dailyLiving.maxAffordablePerDay || 0;
+          let _recentAvg = null;
+          try { if (BRAIN.summary && BRAIN.summary.total) _recentAvg = BRAIN.summary.total('last30days') / 30; } catch (_) {}
+          const _recRaw = _recentAvg != null ? _recentAvg + 10 : maxAfford * 0.7;
+          const _recClamped = Math.max(20, Math.min(_recRaw, Math.max(20, maxAfford * 0.9)));
+          const _rec = Math.round(_recClamped / 5) * 5;
+          const s = _computeLivingStatus(newFloor, { maxAffordablePerDay: maxAfford, recentAvgPerDay: _recentAvg, recommendedFloor: _rec });
           const rows = [
             { label: 'New daily total', value: '$' + Math.round(newDailyTotal).toLocaleString() + ' (' + (dailyDelta >= 0 ? '+' : '') + '$' + Math.abs(Math.round(dailyDelta)).toLocaleString() + ')', kind: dailyDelta > 0 ? 'neg' : dailyDelta < 0 ? 'pos' : '' },
-            { label: 'Status would be', value: status, kind: status.indexOf('Critical') >= 0 ? 'neg' : status.indexOf('Tight') >= 0 ? 'warn' : 'pos' },
+            { label: 'Status would be', value: s.emoji + ' ' + s.text, kind: s.tone },
+            { label: 'Max affordable / day', value: '$' + Math.round(maxAfford).toLocaleString(), kind: '' },
             { label: 'Cycle remainder', value: '$' + Math.round(newRemainder).toLocaleString(), kind: newRemainder >= snap.bufferFloor ? 'pos' : newRemainder >= 0 ? 'warn' : 'neg' },
           ];
           return { rows, hint: 'Saving locks $' + newFloor + '/day for daily-living over ' + days + ' days.' };
@@ -11561,13 +11617,20 @@ function renderPaydaySavings() {
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   let html = '';
   html += '<div class="settings-section-hint" style="font-size:15px;color:var(--text);font-weight:600;padding:8px 0 0">' + _paydayShellHeader(snap, 'savings') + '</div>';
-  // Pool summary — clearer language per John feedback
+  // Bundle 29 demon-time: pool now shows allocatableToSavings (surplus minus
+  // buffer) so this number matches what auto-allocate uses. Buffer carve-out
+  // surfaced as a sub-line so John knows where the gap comes from.
+  const allocatable = +snap.derived.allocatableToSavings || 0;
   const freeTotal = snap.derived.freeTotal;
   const allocated = snap.savings.total;
-  const unallocated = Math.max(0, freeTotal);
+  const bufferReserved = +snap.bufferFloor || 0;
   html += '<div class="settings-group-title">Pool to allocate</div>';
   html += '<div class="settings-group-card" style="padding:14px 16px">';
-  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + fmtC2(unallocated) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">left to split across goals</span></div>';
+  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + fmtC2(allocatable) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">left to split across goals</span></div>';
+  if (bufferReserved > 0) {
+    const surplusBeforeBuffer = Math.max(0, freeTotal);
+    html += '<div style="font-size:12px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$' + Math.round(surplusBeforeBuffer).toLocaleString() + ' surplus − $' + Math.round(bufferReserved).toLocaleString() + ' safety buffer = $' + Math.round(allocatable).toLocaleString() + '</div>';
+  }
   if (allocated > 0) {
     html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Already allocated this cycle: <strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocated) + '</strong></div>';
   } else {
@@ -11789,14 +11852,43 @@ function renderPaydayUpcoming() {
   body.innerHTML = html;
 }
 
+// Bundle 29 demon-time: 5-state Daily Living status with maxAffordablePerDay
+// as the real ceiling. Buffer + savings + provisions now factor in (closes
+// John 2026-05-14 phone-verify item 1: "changing safety buffer does not
+// reaffect the calculation what I can afford per day").
+//   IMPOSSIBLE   — floor > maxAffordable (math literally fails this cycle)
+//   CRITICAL     — floor within 5% of maxAffordable (no buffer for surprises)
+//   TIGHT        — recent_avg > floor × 1.3 (you historically overspend)
+//   RECOMMENDED  — floor within $5 of recommendedFloor (sweet spot mark)
+//   HEALTHY      — anything else (default safe)
+// Shared helper so the renderer + slider live-update + Live-Preview modal all
+// produce the SAME label/colour for the same inputs.
+function _computeLivingStatus(floor, ctx) {
+  const maxAfford = +ctx.maxAffordablePerDay || 0;
+  const recent = ctx.recentAvgPerDay;
+  const recommended = +ctx.recommendedFloor || 0;
+  if (maxAfford > 0 && floor > maxAfford) {
+    return { key: 'impossible', emoji: '🚫', text: 'Impossible', tone: 'neg' };
+  }
+  if (maxAfford > 0 && floor > maxAfford * 0.95) {
+    return { key: 'critical', emoji: '⚠️', text: 'Critical', tone: 'neg' };
+  }
+  if (recent != null && recent > floor * 1.3) {
+    return { key: 'tight', emoji: '👀', text: 'Tight', tone: 'warn' };
+  }
+  if (recommended > 0 && Math.abs(floor - recommended) <= 5) {
+    return { key: 'recommended', emoji: '🎯', text: 'Recommended', tone: 'pos' };
+  }
+  return { key: 'healthy', emoji: '✅', text: 'Healthy', tone: 'pos' };
+}
+
 function renderPaydayLiving() {
   const body = document.getElementById('payday-living-body');
   if (!body) return;
   const snap = BRAIN.plan.getSnapshot();
   const floor = snap.dailyLiving.floor;
-  const perDay = snap.dailyLiving.perDay;
   const daysInCycle = snap.daysInCycle;
-  const plannedTotal = snap.dailyLiving.plannedTotal;
+  const maxAffordablePerDay = +snap.dailyLiving.maxAffordablePerDay || 0;
   const buffer = +snap.bufferFloor || 0;
   const fmtC2 = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
   let recentAvgPerDay = null;
@@ -11806,21 +11898,24 @@ function renderPaydayLiving() {
       recentAvgPerDay = last30Spend / 30;
     }
   } catch (_) {}
-  // Bundle 29 Mockup 1 — single unified Daily Living card with floor SLIDER.
-  // Replaces the 4-card stack (Current/Floors/Context/About) with one
-  // hero-card: live formula + slider + status pill + recent-avg comparison
-  // + inline buffer-floor edit + collapsible help. Slider drives BRAIN.plan
-  // .setDailyLivingFloor on `change` (release), with `input` event updating
-  // the on-screen labels live during drag.
-  // Status definition (clarified per audit §3.6 + §3.7 finding):
-  //   - planned (perDay) < floor → CRITICAL  (math doesn't reach minimum)
-  //   - recent_avg > floor by 30%+ → TIGHT  (you're spending a lot more than min)
-  //   - else → HEALTHY
-  const isCritical = perDay < floor;
-  const isTight = !isCritical && recentAvgPerDay !== null && recentAvgPerDay > floor * 1.3;
-  const statusKey = isCritical ? 'critical' : isTight ? 'tight' : 'healthy';
-  const statusEmoji = isCritical ? '⚠️' : isTight ? '👀' : '✅';
-  const statusText = isCritical ? 'Critical' : isTight ? 'Tight' : 'Healthy';
+  // recommendedFloor: the "sweet spot" we suggest. Sits at recent_avg + $10
+  // headroom if data available, else at 70% of maxAffordable, clamped to
+  // [20, maxAffordable * 0.9]. Rounded to nearest $5 to match slider step.
+  const _rec_raw = recentAvgPerDay != null
+    ? recentAvgPerDay + 10
+    : maxAffordablePerDay * 0.7;
+  const _rec_clamped = Math.max(20, Math.min(_rec_raw, Math.max(20, maxAffordablePerDay * 0.9)));
+  const recommendedFloor = Math.round(_rec_clamped / 5) * 5;
+  const ctx = { maxAffordablePerDay, recentAvgPerDay, recommendedFloor };
+  const status = _computeLivingStatus(floor, ctx);
+  // Slider range — pin top at min(200, ceil(maxAfford)) so user can't pick
+  // a literally-impossible floor by accident. Floor of 20 stays.
+  const sliderMax = Math.max(40, Math.min(200, Math.ceil(maxAffordablePerDay) || 200));
+  // Position calc for recommended-marker on slider (percentage offset).
+  const recMarkerPct = Math.max(0, Math.min(100, ((recommendedFloor - 20) / (sliderMax - 20)) * 100));
+  const maxMarkerPct = maxAffordablePerDay > 0 && maxAffordablePerDay < sliderMax
+    ? Math.max(0, Math.min(100, ((maxAffordablePerDay - 20) / (sliderMax - 20)) * 100))
+    : null;
   let html = '';
   html += '<div class="living-card">';
   html += '  <h3>📆 Daily Living</h3>';
@@ -11835,17 +11930,28 @@ function renderPaydayLiving() {
   // Status row
   html += '  <div class="lc-status-row">'
        +  '    <span style="color:var(--text3)">Status:</span>'
-       +  '    <span class="lc-status-pill" id="living-status-pill" data-status="' + statusKey + '">' + statusEmoji + ' ' + statusText + '</span>'
+       +  '    <span class="lc-status-pill" id="living-status-pill" data-status="' + status.key + '">' + status.emoji + ' ' + status.text + '</span>'
        +  '    <span style="color:var(--text3);margin-left:auto;font-size:11px">drag to change</span>'
        +  '  </div>';
-  // Slider
+  // Max affordable line — surfaces the ceiling so John SEES what's left for daily
+  html += '  <div class="lc-ceiling">'
+       +  '    💵 Math says you can afford up to <strong id="living-max-afford">$' + Math.round(maxAffordablePerDay) + '/day</strong>'
+       +  '    <span style="color:var(--text3);font-size:11px">after bills · debts · savings · upcoming · buffer</span>'
+       +  '  </div>';
+  // Slider with recommended marker overlay
   html += '  <div class="lc-slider-wrap">'
        +  '    <div class="lc-slider-labels">'
        +  '      <span>$20</span>'
        +  '      <span class="lc-current" id="living-current-label">$' + Math.round(floor) + '/day</span>'
-       +  '      <span>$200</span>'
+       +  '      <span>$' + sliderMax + '</span>'
        +  '    </div>'
-       +  '    <input type="range" min="20" max="200" step="5" value="' + Math.round(floor) + '" id="living-floor-slider" class="living-floor-slider" aria-label="Daily living floor in dollars">'
+       +  '    <div class="lc-slider-track">'
+       +  '      <input type="range" min="20" max="' + sliderMax + '" step="5" value="' + Math.round(Math.min(floor, sliderMax)) + '" id="living-floor-slider" class="living-floor-slider" aria-label="Daily living floor in dollars">'
+       +  '      <div class="lc-slider-marker lc-marker-rec" id="living-marker-rec" style="left:' + recMarkerPct.toFixed(1) + '%" title="Recommended: $' + recommendedFloor + '/day"><span>🎯 $' + recommendedFloor + '</span></div>'
+       + (maxMarkerPct != null
+          ? ('      <div class="lc-slider-marker lc-marker-max" id="living-marker-max" style="left:' + maxMarkerPct.toFixed(1) + '%" title="Max affordable: $' + Math.round(maxAffordablePerDay) + '/day"><span>🚫 max</span></div>')
+          : '')
+       +  '    </div>'
        +  '  </div>';
   // Recent average context line
   if (recentAvgPerDay !== null) {
@@ -11857,24 +11963,25 @@ function renderPaydayLiving() {
         : '<strong>roughly matching your floor</strong>';
     html += '  <div class="lc-recent">📊 Last 30 days you actually spent <strong>$' + Math.round(recentAvgPerDay) + '/day</strong> — ' + verdict + '.</div>';
   }
-  // Buffer floor inline edit
+  // Buffer floor inline edit — wired to LIVE-recompute affordability on save
   html += '  <div class="lc-buffer-row">'
        +  '    <span>🛡️ Safety buffer for surprises</span>'
        +  '    <button onclick="openEditPaydayBufferFloor()">$' + buffer + ' ›</button>'
        +  '  </div>';
   // Collapsible "How is this computed?"
   html += '  <details>'
-       +  '    <summary>How is the cycle remainder computed?</summary>'
+       +  '    <summary>How is "max affordable" computed?</summary>'
        +  '    <div class="lc-help">'
-       +  '      Daily living is what you spend on day-to-day stuff that <em>isn\'t</em> a known upcoming item — groceries, fuel, coffee, transport.<br><br>'
-       +  '      Cycle remainder = <code>(To plan − Bills − Debts − Provisions − Daily living × days)</code><br><br>'
-       +  '      To grow your daily floor, free up money in any of those committed categories.'
+       +  '      <strong>Max affordable per day</strong> = the money left over after all the things you\'ve committed to, divided by how many days are in the cycle.<br><br>'
+       +  '      Formula: <code>(To plan − Bills − Debts − Savings − Upcoming − Provisions − Safety buffer) ÷ ' + daysInCycle + ' days</code><br><br>'
+       +  '      Editing your <strong>safety buffer</strong> changes the ceiling — bigger buffer = lower max. Allocating less to savings or paying down debts faster also shifts it.<br><br>'
+       +  '      <strong>Recommended</strong> = $10 above your last-30-day average spend, or 70% of max if no history.'
        +  '    </div>'
        +  '  </details>';
   html += '</div>';
   body.innerHTML = html;
   // Wire the slider to live-update labels during drag, and write to BRAIN
-  // on release (change event). Status pill recomputes live too.
+  // on release (change event). Status pill + max-afford line recompute live.
   try {
     const slider = document.getElementById('living-floor-slider');
     const perdayEl = document.getElementById('living-perday');
@@ -11888,13 +11995,9 @@ function renderPaydayLiving() {
         if (currentLabelEl) currentLabelEl.textContent = '$' + v + '/day';
         if (cycleTotalEl) cycleTotalEl.textContent = fmtC2(v * daysInCycle);
         if (statusPillEl) {
-          const liveCritical = perDay < v; // perDay (math result) < new floor
-          const liveTight = !liveCritical && recentAvgPerDay !== null && recentAvgPerDay > v * 1.3;
-          const newKey = liveCritical ? 'critical' : liveTight ? 'tight' : 'healthy';
-          const newEmoji = liveCritical ? '⚠️' : liveTight ? '👀' : '✅';
-          const newText = liveCritical ? 'Critical' : liveTight ? 'Tight' : 'Healthy';
-          statusPillEl.dataset.status = newKey;
-          statusPillEl.textContent = newEmoji + ' ' + newText;
+          const s = _computeLivingStatus(v, ctx);
+          statusPillEl.dataset.status = s.key;
+          statusPillEl.textContent = s.emoji + ' ' + s.text;
         }
       };
       slider.addEventListener('input', updateLive);
@@ -18150,6 +18253,21 @@ const BRAIN = {
       const billsPaidThisCycle = billsList.filter(b => b.paid).length;
       const perDay = daysInCycle > 0 ? livingTotal / daysInCycle : 0;
       const availableNow = Math.max(0, freeTotal);
+      // Bundle 29 demon-time: maxAffordablePerDay — the real ceiling on
+      // daily-living spend after EVERY commitment (bills, debts, savings,
+      // upcoming, provisions, buffer) is removed from totalToPlan. If
+      // floor > maxAffordable the math literally breaks (IMPOSSIBLE state).
+      // bufferFloor + provisions both come off the top before the daily
+      // calc — that's the bit John flagged ("changing safety buffer does
+      // not reaffect the calculation what I can afford per day").
+      let _provsForMax = 0;
+      try { _provsForMax = (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+      const bufferForMax = +p.bufferFloor || 0;
+      const _committed = billsTotal + debtsTotal + savingsTotal + upcomingTotal + _provsForMax + bufferForMax;
+      const maxAffordablePerDayRaw = daysInCycle > 0
+        ? (totalToPlan - _committed) / daysInCycle
+        : 0;
+      const maxAffordablePerDay = Math.max(0, maxAffordablePerDayRaw);
       return {
         cycleId: p.cycleId,
         cycleStartDate: p.cycleStartDate,
@@ -18162,11 +18280,23 @@ const BRAIN = {
         debts: { total: parseFloat(debtsTotal.toFixed(2)), items: debtsList.length },
         savings: { total: parseFloat(savingsTotal.toFixed(2)), items: allBuckets.length },
         knownUpcoming: { total: parseFloat(upcomingTotal.toFixed(2)), items: (p.knownUpcoming || []).length, list: p.knownUpcoming || [] },
-        dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)) },
+        dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)), maxAffordablePerDay: parseFloat(maxAffordablePerDay.toFixed(2)) },
         derived: {
           claimedTotal: parseFloat(claimedTotal.toFixed(2)),
           freeTotal: parseFloat(freeTotal.toFixed(2)),
           availableNow: parseFloat(availableNow.toFixed(2)),
+          // Bundle 29 demon-time: canonical "savings budget" pool. Single
+          // source of truth so the Savings sub-screen, the Auto-allocate
+          // engine, and the AI prompt all reason from the same number.
+          //   surplus           = totalToPlan − bills − debts − upcoming − living − provisions − buffer
+          //                       (what's available to assign to savings goals, before any allocation)
+          //   allocatableToSavings = max(0, surplus − savings.total)
+          //                       (what's still un-allocated after this cycle's existing splits)
+          // Previously: canvas freeTotal omitted provisions+buffer, and
+          // recommendAllocation used a 1.1× living padding — three different
+          // formulas, three different displayed numbers. Now they reconcile.
+          surplus: parseFloat(Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax).toFixed(2)),
+          allocatableToSavings: parseFloat(Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax - savingsTotal).toFixed(2)),
           currentBalance: parseFloat(currentBalance.toFixed(2)),
           projectedEndBalance: parseFloat(projectedEndBalance.toFixed(2)),
         },
@@ -18524,18 +18654,16 @@ const BRAIN = {
       const snap = this.getSnapshot();
       const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
       const totalBucketTarget = buckets.reduce((s, b) => s + (+b.goal || 0), 0);
-      // Bundle 28 round 48: include annual provisions in hardClaims so
-      // allocatable matches the Canvas's Remainder figure (round 47).
-      // Pre-r48 auto-allocate overstated allocatable by ~$298/mo because
-      // provisions (Teachers Health + KIA insurance/rego/service) weren't
-      // subtracted before splitting across savings buckets.
-      let _provs = 0;
-      try { _provs = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
-      const hardClaims = snap.bills.total + snap.debts.total + snap.knownUpcoming.total + _provs;
-      const livingReserve = snap.dailyLiving.plannedTotal * 1.1; // 10% padding
-      const allocatable = snap.totalToPlan - hardClaims - livingReserve - snap.bufferFloor;
-      if (allocatable < 0) {
-        return { ok: false, reason: 'shortfall', deficit: parseFloat((-allocatable).toFixed(2)), snap };
+      // Bundle 29 demon-time: use canonical snap.derived.surplus so this
+      // matches what the Savings sub-screen displays as the pool. Previously
+      // recommendAllocation had its own formula (with a 1.1× living padding +
+      // provisions inline) that diverged from the canvas Pool figure — John
+      // 2026-05-14 "one screen says I can allocate this much, the other says
+      // I can't". Now both surfaces reason from snap.derived.surplus.
+      const allocatable = +snap.derived.surplus || 0;
+      if (allocatable <= 0) {
+        const deficit = +snap.totalToPlan - +snap.bills.total - +snap.debts.total - +snap.knownUpcoming.total - +snap.dailyLiving.plannedTotal - +snap.bufferFloor;
+        return { ok: false, reason: 'shortfall', deficit: parseFloat(Math.abs(Math.min(0, deficit)).toFixed(2)), snap };
       }
       // Bundle 28 round 48: bucket prioritization by urgency.
       // Bundle 28 round 51: also fall back to name-substring matching
