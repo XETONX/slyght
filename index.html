@@ -19536,21 +19536,65 @@ const BRAIN = {
           S.bal = parseFloat((S.bal - amt).toFixed(2));
           txnTs = downstream.ts;
         } else if (category === 'savings') {
-          const bucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(itemId) : null;
-          if (!bucket) return { ok: false, reason: 'bucket-not-found' };
-          const ov = overrides['savings:' + bucket.name];
-          const planSavings = (S.activePlan && S.activePlan.savings) || {};
-          const amt = ov ? ov.thisCycleAmount : (+planSavings[bucket.name] || 0);
-          if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
-          downstream = BRAIN.savings.addToBucket(bucket.name, amt, source);
-          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
-          // Record the balance deduction txn
-          const recRes = BRAIN.transaction.record(
-            { amt, note: 'Savings: ' + bucket.name, cat: 'Savings', income: false, _balAffected: true },
-            source
-          );
-          S.bal = parseFloat((S.bal - amt).toFixed(2));
-          txnTs = recRes && recRes.ts;
+          // r80 (John 2026-05-15 — "ive technically allocated $800 to darwin"):
+          // savings category receives TWO shapes of itemId:
+          //   1. plain bucket name (e.g. "Rainy Day Fund") → existing path
+          //   2. trip-prefixed id (e.g. "trip-darwin-2026") from the canvas
+          //      Upcoming Trips section. Trips may or may not have a linked
+          //      bucket (PLAN.getTrips[].bucketHint). When unlinked (Darwin),
+          //      ticking still needs to record the txn + drop balance +
+          //      mark the trip's saved field; no bucket write required.
+          // Previously this returned 'bucket-not-found' for trip-prefixed
+          // ids, so Mark-as-allocated did NOTHING for trips — silent fail.
+          if (itemId && itemId.indexOf('trip-') === 0) {
+            const tripId = itemId.slice('trip-'.length);
+            const ov = overrides['savings:' + itemId];
+            const amt = ov ? +ov.thisCycleAmount : 0;
+            if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
+            // Resolve the trip + its linked bucket (if any)
+            let trip = null, linkedBucket = null;
+            try {
+              const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+              trip = trips.find(t => t && t.id === tripId);
+            } catch (_) {}
+            if (trip && trip.bucketHint) {
+              try { linkedBucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(trip.bucketHint) : null; } catch (_) {}
+            }
+            // If linked bucket exists, route the savings through it
+            if (linkedBucket) {
+              downstream = BRAIN.savings.addToBucket(linkedBucket.name, amt, source);
+              if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+            }
+            // Always record the txn so the bank balance + Recent Spending reflect it
+            const recRes = BRAIN.transaction.record(
+              { amt, note: 'Trip allocation: ' + (trip ? trip.name : tripId), cat: 'Savings', income: false, _balAffected: true },
+              source
+            );
+            S.bal = parseFloat((S.bal - amt).toFixed(2));
+            // Update the trip's saved field (Bundle 28 schema uses PLAN.updateTrip)
+            try {
+              if (trip && typeof PLAN !== 'undefined' && PLAN.updateTrip) {
+                PLAN.updateTrip(tripId, { saved: (+trip.saved || 0) + amt }, source);
+              }
+            } catch (_) {}
+            txnTs = recRes && recRes.ts;
+          } else {
+            // Original path: itemId IS a bucket name
+            const bucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(itemId) : null;
+            if (!bucket) return { ok: false, reason: 'bucket-not-found' };
+            const ov = overrides['savings:' + bucket.name];
+            const planSavings = (S.activePlan && S.activePlan.savings) || {};
+            const amt = ov ? ov.thisCycleAmount : (+planSavings[bucket.name] || 0);
+            if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
+            downstream = BRAIN.savings.addToBucket(bucket.name, amt, source);
+            if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+            const recRes = BRAIN.transaction.record(
+              { amt, note: 'Savings: ' + bucket.name, cat: 'Savings', income: false, _balAffected: true },
+              source
+            );
+            S.bal = parseFloat((S.bal - amt).toFixed(2));
+            txnTs = recRes && recRes.ts;
+          }
         } else if (category === 'kia-extra') {
           const ov = overrides['kia-extra:' + itemId];
           const amt = ov ? ov.thisCycleAmount : 0;
