@@ -858,16 +858,16 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
       </div>
       <div id="dash-survival-banner"></div>
       <div id="dash-alerts"></div>
-      <div onclick="explainMaxPerDay()" title="Tap to see the math" style="background:var(--bg2);border-radius:12px;padding:14px 16px;margin:8px 0;cursor:pointer">
-        <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">MAX PER DAY <span style="font-size:10px;opacity:.5">· tap for math</span></div>
-        <div style="font-size:28px;font-weight:800;color:var(--green)" id="max-day-display">$0</div>
-        <div style="font-size:13px;font-weight:600;margin-top:4px" id="max-day-context"></div>
-        <!-- Bundle 28 round 34: pace-display is tappable → opens the same
-             Week Projection math explainer the Bills tab uses. John flagged
-             on rounds 31-33 phone-verify: "PASS but need to understand
-             what this means - tappable or info tag etc". Now it IS tappable.
-             Subtle hint via dotted underline + cursor:pointer. -->
-        <div style="font-size:13px;color:var(--text3);margin-top:4px;cursor:pointer;text-decoration:underline dotted var(--text3);text-underline-offset:3px" id="pace-display" onclick="explainWeekProjection()" role="button" aria-label="Tap to see the math behind pace"></div>
+      <!-- r76 (John 2026-05-14 ask: "feel like ive paid money for it, not an
+           Excel sheet"): lift MAX PER DAY card to the pd-remainder-card
+           premium gradient hero. Same data (max-day-display, max-day-context,
+           pace-display IDs preserved), now with green/amber/red gradient
+           tint set dynamically by renderMaxPerDayState based on safety. -->
+      <div onclick="explainMaxPerDay()" id="max-day-card" class="pd-remainder-card" role="button" aria-label="Max per day — tap for math" style="cursor:pointer;margin:8px 0 12px">
+        <div class="pd-rc-label">Max per day <span style="opacity:.6;font-weight:600">· tap for math</span></div>
+        <div class="pd-rc-amt" id="max-day-display">$0</div>
+        <div id="max-day-context" style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5;font-weight:500;position:relative"></div>
+        <div id="pace-display" onclick="event.stopPropagation();explainWeekProjection()" role="button" aria-label="Tap to see the math behind pace" style="font-size:11px;color:var(--text3);margin-top:6px;cursor:pointer;text-decoration:underline dotted var(--text3);text-underline-offset:3px;position:relative"></div>
       </div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:14px;margin:8px 0"></div>
 
@@ -3136,31 +3136,80 @@ function renderSurvivalBanner(safe) {
   const days = _m.daysToPayday;
   const dailyMax = _m.safeToSpendToday;
   const buffer = (typeof safe === 'number' && safe < 200) ? ' — ' + fmt(safe) + ' buffer after bills' : '';
+  // r76 (John 2026-05-14 ask: "feel like ive paid money for it"): lift
+  // survival banners to a bubble layout with emoji-avatar circle on the
+  // left, title + sub stacked, optional tappable CTA underline. Same
+  // copy + tap behaviour, but the visual now matches PLAN-mode pd-row-card
+  // language so the dashboard reads as one design system.
+  function _survivalBubble(opts) {
+    // tone: 'bad' | 'warn' | 'info' — drives bg / border / avatar color
+    const toneMap = {
+      bad:  { bg: 'rgba(255,68,85,0.10)',  border: 'var(--red-border)',   avatar: 'rgba(255,68,85,0.18)',   text: '#ff8899' },
+      warn: { bg: 'rgba(245,166,35,0.10)', border: 'var(--amber-border)', avatar: 'rgba(245,166,35,0.18)', text: '#f5c06a' },
+      info: { bg: 'rgba(0,232,122,0.08)',  border: 'var(--green-border)', avatar: 'rgba(0,232,122,0.16)',  text: 'var(--text2)' },
+    };
+    const t = toneMap[opts.tone] || toneMap.warn;
+    const ctaHtml = opts.cta
+      ? '<div style="font-size:12px;color:' + t.text + ';margin-top:6px;text-decoration:underline;text-decoration-color:rgba(255,255,255,0.3);text-underline-offset:3px">' + opts.cta + ' →</div>'
+      : '';
+    const subHtml = opts.sub
+      ? '<div style="font-size:13px;color:' + t.text + ';opacity:.85;line-height:1.45;margin-top:2px">' + opts.sub + '</div>'
+      : '';
+    const tapAttrs = opts.onClick
+      ? ' onclick="' + opts.onClick + '" role="button" tabindex="0" style="cursor:pointer;'
+      : ' style="';
+    return '<div' + tapAttrs +
+      'background:' + t.bg + ';border:1px solid ' + t.border + ';border-radius:14px;padding:12px 14px;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px">' +
+      '<div style="width:36px;height:36px;border-radius:50%;background:' + t.avatar + ';display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">' + opts.icon + '</div>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:14px;font-weight:700;color:' + t.text + ';line-height:1.35">' + opts.title + '</div>' +
+        subHtml + ctaHtml +
+      '</div>' +
+    '</div>';
+  }
   if (mode === 'critical') {
-    // r65: make CRITICAL banner tappable → bills tab. Closes the dead-text gap where the
-    // banner declared "every dollar counts" but didn't tell John what to look at next.
-    el.innerHTML = '<div class="alert bad" style="margin-bottom:8px;cursor:pointer" onclick="goPage(\'pg-cal\')" role="button" aria-label="View upcoming bills">🚨 <strong>CRITICAL — ' + fmtC(bal) + ' left</strong><br>Payday in ' + days + ' days<br>Maximum: ' + fmtC(dailyMax) + '/day to survive<br><span style="text-decoration:underline;font-size:13px">Tap to see what\'s eating your balance →</span></div>';
+    el.innerHTML = _survivalBubble({
+      tone: 'bad',
+      icon: '🚨',
+      title: 'Critical — ' + fmtC(bal) + ' left',
+      sub: 'Payday in ' + days + (days === 1 ? ' day' : ' days') + ' · ' + fmtC(dailyMax) + '/day to survive',
+      cta: 'Tap to see what\'s eating your balance',
+      onClick: "goPage('pg-cal')",
+    });
   } else if (mode === 'survival') {
-    // Bundle 7: when dailyMax = $0 the "$0.00/day max" + "Cut weekend
-    // spending" copy is meaningless — there's nothing to cut. Surface
-    // actionable "Tight before payday — $X needed" instead, computed
-    // from committed (bills + debts before payday) minus bal.
     if (dailyMax < 1) {
       const _billsDue = getBillsDue().reduce((s,b) => s + (b.amt || 0), 0);
       const _debtsDue = getActiveDebtsDueBeforePayday();
       const _needed = Math.max(0, (_billsDue + _debtsDue) - bal);
-      el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Tight before payday' +
-        (_needed > 0 ? ' — ' + fmtC(_needed) + ' needed' : '') +
-        '</strong><br>Skip non-essentials.</div>';
+      el.innerHTML = _survivalBubble({
+        tone: 'bad',
+        icon: '⚠️',
+        title: 'Tight before payday' + (_needed > 0 ? ' — ' + fmtC(_needed) + ' needed' : ''),
+        sub: 'Skip non-essentials.',
+      });
     } else {
-      el.innerHTML = '<div class="alert bad" style="margin-bottom:8px">⚠️ <strong>Survival mode — ' + fmtC(dailyMax) + '/day max</strong><br>Cut weekend spending. No discretionary.</div>';
+      el.innerHTML = _survivalBubble({
+        tone: 'bad',
+        icon: '⚠️',
+        title: 'Survival mode — ' + fmtC(dailyMax) + '/day max',
+        sub: 'Cut weekend spending. No discretionary.',
+      });
     }
   } else if (mode === 'tight') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px"><strong>Tight This Week — ' + fmtC(dailyMax) + '/day Max' + buffer + '</strong></div>';
+    el.innerHTML = _survivalBubble({
+      tone: 'warn',
+      icon: '⏳',
+      title: 'Tight this week — ' + fmtC(dailyMax) + '/day max',
+      sub: buffer ? buffer.replace(/^\s*—\s*/, '') : '',
+    });
   } else if (mode === 'cautious') {
-    el.innerHTML = '<div class="alert warn" style="margin-bottom:8px;font-size:13px">Cautious Mode' + buffer + '</div>';
+    el.innerHTML = _survivalBubble({
+      tone: 'warn',
+      icon: '👀',
+      title: 'Cautious mode',
+      sub: buffer ? buffer.replace(/^\s*—\s*/, '') : '',
+    });
   } else {
-    // 'normal' — no banner; everything is fine.
     el.innerHTML = '';
   }
   // r74 (C-03 fix): post-lock awareness. When the user has locked their
@@ -6106,6 +6155,15 @@ function renderAll() {
     const _ddb = _m.safeToSpendToday;
     _maxDayDisp.textContent = '$' + _ddb.toFixed(2);
     _maxDayDisp.style.color = _ddb <= 0 ? 'var(--red)' : _ddb < 30 ? 'var(--amber)' : 'var(--green)';
+    // r76: swap pd-remainder-card state class so the gradient tints
+    // green/amber/red to match the amount's severity. is-neg = red,
+    // is-amber = amber, no extra class = default green.
+    const _card = $('max-day-card');
+    if (_card) {
+      _card.classList.remove('is-neg', 'is-amber');
+      if (_ddb <= 0) _card.classList.add('is-neg');
+      else if (_ddb < 30) _card.classList.add('is-amber');
+    }
     if (_maxDayCtx) {
       // Mission E: when survival banner is declaring a non-normal mode,
       // ctxText would echo the same severity language ("Tight/Cautious —
@@ -18202,22 +18260,31 @@ function renderSpendingPivot() {
   if (data.length === 0) {
     html += '<div style="color:var(--text3);text-align:center;padding:20px">No spending in this period</div>';
   } else {
+    // r76 (John 2026-05-14 ask: "feel like ive paid money for it"): lift
+    // category cards to pd-row-card bubble style — avatar circle, mono
+    // amount, thicker category-colored progress bar. Same expand/collapse
+    // interaction; no data shape changes.
+    const _catColor = {
+      'Food / Coffee': '#fb923c', 'Transport': '#60a5fa', 'Transport / Fuel': '#60a5fa',
+      'Bills': 'var(--blue)', 'Streaming': '#a78bfa', 'Subscription': '#a78bfa',
+      'Entertainment': '#f472b6', 'Loan': 'var(--red)', 'Debt repayment': 'var(--red)',
+      'Insurance': '#22d3ee', 'Shopping': '#fbbf24', 'Fixed': 'var(--blue)',
+      'Other': 'var(--text3)', 'BNPL': '#f97316',
+    };
     data.forEach(row => {
       const isExpanded = expanded === row.cat;
-      html += '<div style="margin-bottom:8px;background:var(--bg3);border-radius:10px;overflow:hidden">';
-      html += '<div onclick="pivotToggle(\''+row.cat.replace(/'/g,"\\'")+'\')" style="padding:12px;cursor:pointer;display:flex;align-items:center;gap:10px;min-height:48px">';
-      html += '<span style="font-size:18px">'+(icons[row.cat]||'💳')+'</span>';
-      html += '<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><span style="color:var(--text);font-size:14px;font-weight:600">'+row.cat+'</span><span style="color:var(--text);font-size:15px;font-weight:700">$'+row.total.toFixed(2)+'</span></div>';
-      html += '<div style="background:var(--bg2);border-radius:4px;height:4px;margin-bottom:4px"><div style="background:var(--green);width:'+Math.min(100,row.pct)+'%;height:100%;border-radius:4px"></div></div>';
-      // Bundle 28 round 28: skip the /day label for the "Today" filter
-      // ($X/day for 1 day = $X, tautologically the same number as
-      // row.total — visual noise). Keep for 7-day / 30-day / all-time
-      // periods where the rate is meaningful context.
+      const _color = _catColor[row.cat] || 'var(--green)';
+      html += '<div style="margin-bottom:10px;background:var(--bg2);border-radius:14px;box-shadow:0 0 0 1px var(--border);overflow:hidden;transition:box-shadow .15s">';
+      html += '<div onclick="pivotToggle(\''+row.cat.replace(/'/g,"\\'")+'\')" style="padding:14px 14px 12px;cursor:pointer;display:flex;align-items:center;gap:12px;min-height:48px">';
+      html += '<div style="width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid var(--border)">'+(icons[row.cat]||'💳')+'</div>';
+      html += '<div style="flex:1;min-width:0">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:8px"><span style="color:var(--text);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+row.cat+'</span><span style="color:var(--text);font-size:16px;font-weight:700;font-family:var(--mono);flex-shrink:0">$'+row.total.toFixed(2)+'</span></div>';
+      html += '<div style="background:var(--bg3);border-radius:3px;height:6px;margin-bottom:6px;overflow:hidden"><div style="background:'+_color+';width:'+Math.min(100,row.pct)+'%;height:100%;border-radius:3px;transition:width .35s cubic-bezier(.2,.7,.2,1)"></div></div>';
       const _rateLabel = (period === 'today')
-        ? '' /* per-day rate redundant for a 1-day window */
-        : '<span style="color:var(--text3);font-size:12px">$'+row.daily+'/day</span>';
-      html += '<div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:12px">'+row.count+' transaction'+(row.count===1?'':'s')+' · '+row.pct+'%</span>'+_rateLabel+'</div></div>';
-      html += '<span style="color:var(--text3);font-size:15px">'+(isExpanded?'▲':'▼')+'</span></div>';
+        ? ''
+        : '<span style="color:var(--text3);font-size:11px;font-family:var(--mono)">$'+row.daily+'/day</span>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="color:var(--text3);font-size:11px">'+row.count+' txn'+(row.count===1?'':'s')+' · '+row.pct+'%</span>'+_rateLabel+'</div></div>';
+      html += '<span style="color:var(--text3);font-size:14px;flex-shrink:0">'+(isExpanded?'▲':'▼')+'</span></div>';
       if (isExpanded) {
         html += '<div style="border-top:1px solid var(--border);padding:8px 12px">';
         row.txns.slice(0,10).forEach((t,idx) => {
