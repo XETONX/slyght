@@ -10222,6 +10222,89 @@ function _updateBillDeferPreview(normal) {
     '<div style="display:flex;justify-content:space-between;padding-top:4px;border-top:1px solid var(--border)"><span style="font-weight:600">Total next cycle obligation</span><strong style="font-family:var(--mono);color:var(--text);font-size:14px">$' + total.toFixed(2) + '</strong></div>';
 }
 
+// ─── Post-lock status modal ────────────────────────────────────────────
+// Bundle 29 demon-time: John 2026-05-14 ask — "after the plan is locked it
+// changes to a different UI that shows itself as like here now tap this
+// account you said you were allocating into e.g Darwin trip you decided
+// $800 out of $900 and then i tap into it and say paid or reallocated and
+// then provide a reason and its removed". This is the minimal landing:
+// status + untick + show details. Reallocate-with-reason flow deferred.
+function openPaydayPostLockStatus(category, itemId) {
+  const ticks = (S.activePlan && S.activePlan.ticks && S.activePlan.ticks[category]) || {};
+  const isTicked = !!ticks[itemId];
+  const ovs = (S.activePlan && S.activePlan.overrides) || {};
+  const ov = ovs[category + ':' + itemId];
+  const amt = ov ? ov.thisCycleAmount : 0;
+  // Resolve display name
+  let displayName = itemId;
+  let displayEmoji = '💰';
+  if (category === 'savings') {
+    if (itemId.indexOf('trip-') === 0) {
+      const tripId = itemId.slice('trip-'.length);
+      try {
+        const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+        const trip = trips.find(t => t.id === tripId);
+        if (trip) { displayName = trip.name; displayEmoji = trip.emoji || '✈️'; }
+      } catch (_) {}
+    } else {
+      displayName = itemId;
+      try {
+        if (BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
+          const intent = (BRAIN.plan.intent.byBucket(itemId) || []).find(i => i.kind === 'goal');
+          const goalDef = intent ? (S.goalDefs || []).find(g => g.id === intent.id) : null;
+          if (goalDef) { displayName = goalDef.name; displayEmoji = goalDef.emoji || '🎯'; }
+        }
+      } catch (_) {}
+    }
+  }
+  const fmtC = (n) => '$' + Math.round(n).toLocaleString();
+  let body = '';
+  body += '<div style="background:var(--bg3);border-radius:10px;padding:14px;margin-bottom:14px">';
+  body += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Allocated this cycle</div>';
+  body += '<div style="font-family:var(--mono);font-size:24px;font-weight:800;color:var(--text)">' + fmtC(amt) + '</div>';
+  body += '</div>';
+  if (isTicked) {
+    body += '<div style="background:rgba(34,197,94,0.10);border:1px solid var(--green-border);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--green);line-height:1.55">';
+    body += '<strong>✓ Marked transferred</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">You\'ve ticked this — the in-app savings flow has run. Have you actually moved the money in your bank?</div>';
+    body += '</div>';
+  } else {
+    body += '<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.30);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--amber);line-height:1.55">';
+    body += '<strong>⏳ Not yet transferred</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">Tick this when you\'ve made the real-world transfer.</div>';
+    body += '</div>';
+  }
+  // Untick affordance — only when ticked
+  if (isTicked) {
+    body += '<button onclick="confirmUntickAllocation(\'' + category + '\',\'' + itemId.replace(/'/g, "\\'") + '\')" style="width:100%;min-height:44px;padding:10px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.30);border-radius:10px;color:rgba(231,76,60,0.95);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">↩ Untick — I haven\'t actually transferred yet</button>';
+  }
+  body += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;font-style:italic">Reallocating to a different goal mid-cycle? Re-plan from the canvas (🔓 Re-plan button) to edit allocations cleanly.</div>';
+  if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openCustom) {
+    EDIT_MODAL.openCustom({
+      title: displayEmoji + ' ' + displayName,
+      hint: 'Status of this cycle\'s allocation.',
+      bodyHtml: body,
+      saveLabel: 'Close',
+      save: () => ({ ok: true }),
+    });
+  }
+}
+
+// Untick handler — fires BRAIN.plan.untickItem which reverses the canonical
+// downstream transaction + reopens the allocation for transfer.
+function confirmUntickAllocation(category, itemId) {
+  if (!confirm('Untick this allocation? The in-app savings deposit will be reversed and the row goes back to "not yet transferred" state.')) return;
+  if (typeof BRAIN === 'undefined' || !BRAIN.plan || !BRAIN.plan.untickItem) return;
+  const r = BRAIN.plan.untickItem(category, itemId, BRAIN.SOURCES.PLAN_UNTICK);
+  if (!r.ok) {
+    if (typeof showToast === 'function') showToast('Couldn\'t untick: ' + (r.reason || 'error'));
+    return;
+  }
+  try { if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.close) EDIT_MODAL.close(); } catch (_) {}
+  if (typeof renderPaydaySavings === 'function') renderPaydaySavings();
+  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  if (typeof _haptic === 'function') _haptic('warning');
+  if (typeof showToast === 'function') showToast('↩ Unticked — transfer reversed');
+}
+
 // ─── Debt editor ────────────────────────────────────────────────────────
 function openEditPaydayDebt(debtId) {
   // Loose equality: debt.id may be a number (8) while debtId arrives as a
@@ -10260,6 +10343,17 @@ function openEditPaydaySavings(bucketName) {
   const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
   const bucket = buckets.find(b => b && b.name === bucketName);
   if (!bucket) return;
+  // Bundle 29 demon-time: post-lock + already-ticked rows route to the
+  // status modal instead of the edit modal — the allocation is committed,
+  // user wants to confirm transfer / untick / view details, not re-edit.
+  try {
+    const _snap = BRAIN.plan.getSnapshot();
+    const _ticked = !!(S.activePlan && S.activePlan.ticks && S.activePlan.ticks.savings && S.activePlan.ticks.savings[bucketName]);
+    if (_snap.locked && _ticked) {
+      openPaydayPostLockStatus('savings', bucketName);
+      return;
+    }
+  } catch (_) {}
   const planSavings = (S.activePlan && S.activePlan.savings) || {};
   const overrides = (S.activePlan && S.activePlan.overrides) || {};
   const ov = overrides['savings:' + bucketName];
