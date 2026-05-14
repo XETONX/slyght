@@ -9908,12 +9908,25 @@ function renderPaydayPlanRoot() {
   if (bonus.included && bonus.status === 'confirmed' && !S.paydayReceived && !snap.lockedAt) {
     html += '<div style="font-size:11px;color:var(--blue);margin-top:4px;font-style:italic">💡 Lock the plan to record payday landed</div>';
   }
-  // Bundle 29 demon-time: project-label adapts to paydayReceived state.
-  // When the user has marked payday landed, "now → X left when next pay
-  // hits" implies money is coming that ISN'T coming. Switch the trailing
-  // copy to "left to cover this cycle".
-  const _projTrailLabel = S.paydayReceived ? 'left to cover this cycle' : 'left when next pay hits';
-  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + (snap.derived.projectedEndBalance >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(snap.derived.projectedEndBalance) + '</span> ' + _projTrailLabel + '</div>';
+  // Bundle 29 F-16/E-04 fix: ONE canonical projection framing across all
+  // states (paydayReceived × sign × locked). Opus E-04 caught the
+  // three-state instability. Now: "projected by {next-payday-date}" ALWAYS.
+  // Green when ≥ 0, red when < 0. No more state-dependent copy variations.
+  // When negative, surface an actionable hint (F-10) right below.
+  const _proj = snap.derived.projectedEndBalance;
+  const _isProjPos = _proj >= 0;
+  const _projCol = _isProjPos ? 'var(--green)' : 'var(--red)';
+  const _projDateLabel = (() => {
+    try {
+      const d = new Date(snap.cycleEndDate + 'T00:00:00');
+      return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    } catch (_) { return 'next payday'; }
+  })();
+  html += '<div style="border-top:1px solid var(--border);margin-top:12px;padding-top:10px;font-size:13px;color:var(--text2)"><span style="font-family:var(--mono)">' + fmt(snap.derived.currentBalance) + '</span> now → <span style="font-family:var(--mono);color:' + _projCol + ';font-weight:700">' + fmt(_proj) + '</span> projected by <strong style="color:var(--text2)">' + _projDateLabel + '</strong></div>';
+  // F-10: actionable hint when projection is negative — link to options
+  if (!_isProjPos) {
+    html += '<div style="margin-top:6px;padding:8px 10px;background:rgba(255,68,85,0.08);border:1px solid var(--red-border);border-radius:8px;font-size:12px;color:var(--red);display:flex;justify-content:space-between;align-items:center"><span>⚠️ Overcommitted by ' + fmt(Math.abs(_proj)) + '</span><button onclick="explainNegativeProjection()" style="background:rgba(255,68,85,0.15);border:1px solid var(--red-border);color:var(--red);font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;cursor:pointer;text-transform:uppercase;letter-spacing:.04em">→ what can I do?</button></div>';
+  }
   html += '</div>';
 
   // Bundle 28 round 47 (John feedback sync): Annual Provisions
@@ -11153,6 +11166,21 @@ function openPaydayAutoAllocate() {
       }
       return { ok: true };
     },
+  });
+}
+
+// Bundle 29 F-10: explainNegativeProjection — shown when projectedEndBalance
+// is negative. Same options enumerated by the can't-lock modal but advisory.
+function explainNegativeProjection() {
+  const snap = BRAIN.plan.getSnapshot();
+  const shortfall = Math.abs(Math.round(snap.derived.projectedEndBalance || 0));
+  if (typeof EDIT_MODAL === 'undefined' || !EDIT_MODAL.openInfo) {
+    alert('Overcommitted by $' + shortfall.toLocaleString() + '. Trim a goal, defer a bill, or lower a floor.');
+    return;
+  }
+  EDIT_MODAL.openInfo({
+    title: 'Overcommitted by $' + shortfall.toLocaleString(),
+    body: 'Your projected balance by the next payday is in the red.\n\nOptions to fix this:\n\n• Trim a savings allocation (Savings sub-screen)\n• Defer a bill to next cycle (Bills sub-screen → Defer mode)\n• Lower your daily-living floor (Daily Living sub-screen)\n• Reduce your safety buffer (Daily Living → Safety buffer)\n• Drop a known-upcoming item (Upcoming sub-screen)\n\nLock will still be blocked until the projection clears zero.',
   });
 }
 
