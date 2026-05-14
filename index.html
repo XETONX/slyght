@@ -9689,18 +9689,23 @@ function renderPaydayPlanRoot() {
   // by then. try/catch keeps the static analyser happy.
   let _provisionsTotal = 0;
   try { _provisionsTotal = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
-  // Mum-readable one-liner summary
-  const _essentialsForSummary = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal + _provisionsTotal;
-  const _remainderForSummary = snap.totalToPlan - _essentialsForSummary;
-  html += '<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.55;color:var(--text2)">'
-    + 'Of <strong style="font-family:var(--mono);color:var(--text)">' + fmt(snap.totalToPlan) + '</strong> coming in, '
-    + '<strong style="color:var(--red)">' + fmt(_essentialsForSummary) + '</strong> is FIXED (bills, debts, daily living) — '
-    + '<strong style="color:' + (_remainderForSummary >= 0 ? 'var(--green)' : 'var(--red)') + '">' + fmt(_remainderForSummary) + '</strong> is yours to allocate.'
-    + '</div>';
+  // Bundle 28 round 72+ (R3): dropped the Mum-readable one-liner summary
+  // bubble (r46) that re-stated "$X coming in, $Y FIXED, $Z yours" — the
+  // same fact is rendered structurally below via the ESSENTIALS section +
+  // 🎯 REMAINDER tile, and John 2026-05-14 flagged the duplication. The
+  // proportion bar legend (now coloured-dot below the bar) closes the
+  // small visual gap the bubble was carrying.
 
-  // Compact proportion bar — visual context, no big claim
+  // Proportion bar + coloured-dot legend (R3 promote: caption became
+  // a real legend by matching colours to bar segments).
   html += propBar;
-  html += '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:18px">Bills · Debts · Savings · Upcoming · Living</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;font-size:11px;color:var(--text2);margin:6px 0 18px;line-height:1.4">'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:var(--blue);display:inline-block"></span>Bills</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:var(--red);display:inline-block"></span>Debts</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:var(--green);display:inline-block"></span>Savings</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:var(--amber);display:inline-block"></span>Upcoming</span>'
+    + '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:8px;height:8px;border-radius:2px;background:var(--text3);display:inline-block"></span>Living</span>'
+    + '</div>';
 
   // ── ESSENTIALS section (bills + debts + living) ──
   // Per John 2026-05-13: "show what the expected monthly costs will be
@@ -22973,43 +22978,67 @@ function provisionFreqText(p) {
 }
 
 function renderAnnualProvisions(provisions) {
-  // Use custom (edited) provisions if present, otherwise the defaults from PLAN.
+  // Bundle 28 round 72+ (R2): converted from full inline list → single
+  // nav-row that opens a manage-modal. Display now lives on canvas
+  // Essentials (r47 explainAnnualProvisions); edit lives in this nav-row
+  // modal. Per John 2026-05-14: the PLAN-tab tile was duplicating
+  // canvas display and adding scroll length on the dashboard.
+  // (Single source of truth: canvas = read; PLAN-tab nav = manage.)
   const list = getCustomProvisions();
   const total = list.reduce((s,p) => s + (p.monthly || 0), 0);
-  const now = new Date();
-
+  const count = list.length;
+  const sublabel = count > 0
+    ? ('$' + Math.round(total).toLocaleString() + '/mo · ' + count + ' item' + (count === 1 ? '' : 's'))
+    : 'None configured';
   return `
   <div style="margin-bottom:16px">
     <div style="font-size:12px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px">Annual Provisions</div>
-    <div style="background:rgba(255,255,255,0.04);border-radius:16px;padding:16px;border:1px solid rgba(255,255,255,0.06)">
-      <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:12px">
-        Put aside $${Math.round(total)}/month and you'll never be blindsided by annual costs again. These costs are real — they just don't feel urgent until they're due.
-      </div>
-      ${list.map(p => {
-        const nextDue = new Date(p.nextDue);
-        const monthsUntil = Math.max(0,
-          (nextDue.getFullYear() - now.getFullYear()) * 12 + nextDue.getMonth() - now.getMonth()
-        );
-        return `
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px">
-          <div style="flex:1;min-width:0">
-            <div style="color:#fff;font-size:14px">${p.name}</div>
-            <div style="color:rgba(255,255,255,0.3);font-size:12px">
-              ${provisionFreqText(p)} · Due ${monthsUntil === 0 ? 'This Month' : 'In ' + monthsUntil + ' Months'}
-            </div>
-          </div>
-          <div style="text-align:right">
-            <div style="color:#FF6B35;font-size:15px;font-weight:700">$${p.monthly}/mo</div>
-          </div>
-          <button onclick="editProvision('${p.name.replace(/'/g, "\\'")}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.5);padding:6px 10px;font-size:12px;cursor:pointer">✏️</button>
-        </div>`;
-      }).join('')}
-      <div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:4px">
-        <span style="color:rgba(255,255,255,0.6);font-size:14px;font-weight:600">Total To Set Aside</span>
-        <span style="color:#FF6B35;font-size:15px;font-weight:800">$${Math.round(total)}/month</span>
-      </div>
-    </div>
+    <button onclick="openManageProvisions()" aria-label="Manage annual provisions" style="display:flex;width:100%;align-items:center;gap:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:14px 16px;cursor:pointer;text-align:left;color:inherit">
+      <span style="font-size:22px;line-height:1">🏦</span>
+      <span style="flex:1;display:flex;flex-direction:column;gap:2px">
+        <span style="color:#fff;font-size:15px;font-weight:600">Manage provisions</span>
+        <span style="color:rgba(255,255,255,0.5);font-size:13px">${sublabel}</span>
+      </span>
+      <span style="font-size:18px;color:rgba(255,255,255,0.4)">›</span>
+    </button>
   </div>`;
+}
+
+// Bundle 28 round 72+ (R2): manage-provisions modal opened from the
+// PLAN-tab nav-row. Mirrors the canvas explainAnnualProvisions list
+// shape but with editable rows + per-item add affordance.
+function openManageProvisions() {
+  const list = getCustomProvisions();
+  const total = list.reduce((s,p) => s + (p.monthly || 0), 0);
+  const now = new Date();
+  const rows = list.map(p => {
+    const nextDue = p.nextDue ? new Date(p.nextDue) : null;
+    const monthsUntil = nextDue ? Math.max(0, (nextDue.getFullYear() - now.getFullYear()) * 12 + nextDue.getMonth() - now.getMonth()) : null;
+    const dueLabel = monthsUntil === null ? '—' : (monthsUntil === 0 ? 'This month' : ('in ' + monthsUntil + ' month' + (monthsUntil === 1 ? '' : 's')));
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);gap:8px">
+        <div style="flex:1;min-width:0">
+          <div style="color:#fff;font-size:14px">${p.name}</div>
+          <div style="color:rgba(255,255,255,0.4);font-size:12px">${typeof provisionFreqText === 'function' ? provisionFreqText(p) : (p.frequency || '')} · Due ${dueLabel}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="color:#FF6B35;font-size:14px;font-weight:700">$${p.monthly}/mo</div>
+        </div>
+        <button onclick="editProvision('${p.name.replace(/'/g, "\\'")}')" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:rgba(255,255,255,0.6);padding:6px 10px;font-size:12px;cursor:pointer">✏️</button>
+      </div>`;
+  }).join('');
+  const body = `
+    <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">
+      Sinking funds for yearly costs (insurance, rego, service). Put aside <strong>$${Math.round(total)}/mo</strong> across these items so they don't blindside you. They're rolled into Canvas → Essentials so your plan accounts for them.
+    </div>
+    ${rows || '<div style="font-size:13px;color:var(--text3);font-style:italic;padding:10px 0">No provisions configured yet.</div>'}
+    <div style="display:flex;justify-content:space-between;align-items:baseline;padding-top:14px;margin-top:6px;border-top:1px solid var(--border)">
+      <span style="color:rgba(255,255,255,0.6);font-size:14px;font-weight:600">Total to set aside</span>
+      <span style="color:#FF6B35;font-size:15px;font-weight:800">$${Math.round(total)}/mo</span>
+    </div>`;
+  if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openInfo) {
+    EDIT_MODAL.openInfo({ title: '🏦 Annual provisions', body });
+  }
 }
 
 function editProvision(name) {
