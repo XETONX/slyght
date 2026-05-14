@@ -52,7 +52,38 @@ In addition to everything in the retro sweep:
 
 ## 7. Findings summary
 
-**Same findings as the retro sweep (F-01..F-14 + 1 OQ).** See `../sweep-2026-05-14-payday-plan-section-12-retro/phase4-proposals.md`.
+**Updated post-Opus-loop:** retro F-01..F-14 + Opus F-15..F-23 + 1 OQ = 22 findings.
+
+### Status table after John's approval batch (commit `c6ea910`)
+
+| ID | Severity | Status |
+|---|---|---|
+| F-01 savings double-count | 🚨 BLOCKING | ✅ SHIPPED (`8d7a12c`) |
+| F-02 math sub-line | 🚨 HIGH | ✅ SHIPPED (`0db1c46`) |
+| F-03 toast persistence | ⚠️ MEDIUM | ⚠️ PARTIALLY SHIPPED via F-23 (wrap fix); 3s window itself is intentional |
+| F-04 slider marker overlap | ⚠️ MEDIUM | ⏳ DEFERRED to next visual pass |
+| F-05 LANDED vs paydayReceived | 🎨 design | ✅ SHIPPED hint (`44a3e5b`) |
+| F-06 Scenario B harness | 💨 smell | ⏳ DEFERRED (Layer V script fix) |
+| F-07 Delete-trip button placement | ⚠️ MEDIUM | ⏳ DEFERRED |
+| F-08 lock ignores provisions | 🚨 HIGH | ✅ SHIPPED (`8d7a12c`) |
+| F-09 streak inflation | 🚨 MEDIUM | ⏳ DEFERRED (needs cycleId-tracked increment) |
+| F-10 negative projection no hint | ⚠️ HIGH | ✅ SUBSUMED by F-16 — Opus design pass needed |
+| F-11 buffer color semantics | ⚠️ LOW | ✅ SHIPPED (`0db1c46`) |
+| F-12 chip overwrites custom | 💨 LOW | ⏳ DEFERRED |
+| F-13 locked plan reads live S | 💨 latent | ⏳ DEFERRED — own bundle |
+| F-14 cycle copy clarity | 🎨 design | ⚠️ PARTIALLY SHIPPED via `pd-section-head` redesign |
+| F-15 free-money labels | ⚠️ MEDIUM | ⚠️ PARTIALLY SHIPPED — canvas REMAINDER relabeled to "Your free money this cycle" |
+| F-16 projection framing | 🎨 design | ⏳ AWAITING Opus design pass on canonical semantics |
+| F-17 bonus EXPECTED after lock | 🎨 design | ✅ SHIPPED subscript (`44a3e5b`) |
+| F-18 auto vs manual contract | 🎨 design | ✅ SHIPPED respect-manual toggle (`44a3e5b`) |
+| F-19 buffer modal current highlight | ⚠️ MEDIUM | ⏳ DEFERRED — small, ships anytime |
+| F-20 daily living spine | 🎨 design | ✅ NO-OP — existing card design already serves the spine; revamp focused on canvas root + sub-screen rows |
+| F-21 input $ prefix | 💨 LOW | ⏳ DEFERRED |
+| F-22 lock-confirm button colour | ⚠️ LOW | ✅ SHIPPED (`0db1c46`) |
+| F-23 toast clip white-space:nowrap | ⚠️ MEDIUM | ✅ SHIPPED (`0db1c46`) |
+| OQ-rollover escape | ❓ Q | ⏳ AWAITING John's decision |
+
+**Plus the visual revamp delivered on top** (not a finding — John's direct ask): bubble-tile Essentials + premium REMAINDER + bubble row cards + chunky action grid. See §8.
 
 ### Dark-mode-specific delta observations
 
@@ -82,7 +113,21 @@ In addition to everything in the retro sweep:
 
 ## 8. Fixes shipped this session
 
-_Identical to retro sweep — will be filled in as commits land per the unified Phase 5 approval._
+John approved ship-now batch (F-01, F-02/E-01, F-08, F-11, F-23/E-05, F-22/E-12) + delegated F-17, F-18, F-20, F-05, F-14, F-15 to CC judgement + asked for the Payday Plan visual revamp on top. All shipped:
+
+| Commit | Fix(es) shipped |
+|---|---|
+| `0db1c46` | **Batch A** — F-02/E-01 (math sub-line 3-term · provisions visible) · F-11 (buffer color neutral) · F-23/E-05 (toast clip — drop white-space:nowrap, max-width + wrap) · F-22/E-12 (lock-confirm button down-styled red + "Lock anyway" label when tight-buffer warning) |
+| `8d7a12c` | **Batch B** — F-01 (savings double-count fixed via Apply-time trip-id override cleanup + dedupedTrips return field) · F-08 (lock-shortfall uses snap.derived.surplus, includes provisions, can't-lock copy enumerates options) |
+| `44a3e5b` | **Batch C quick wins** — F-05 (LANDED hint when bonus.confirmed AND !paydayReceived AND !locked) · F-17 (bonus stays editable post-lock with explicit subscript "uncertainty by nature") · F-18 (respect-manual toggle on auto-allocate, default ON, return envelope adds skipped[]) |
+| `74f9ba1` | **Canvas root visual revamp** — Essentials 2×2 bubble tile grid (with progress bars + status pills) · premium glowing REMAINDER card ("Your free money this cycle" — F-15 partial relabel) · contextual explainer below remainder for neg/amber/green states · 3-button chunky action grid (Auto-allocate / Ask AI / Lock-Unlock) · F-14 partial via pd-section-head treatment |
+| `c6ea910` | **Sub-screen row redesign** — `_paydayRow` rebuilt as bubble card: 42px avatar circle · name/sub stacked · mono value · 30px circle-check tick (transparent → solid-green-fill on tick) · optional bottom progress bar · is-ticked variant has green-tinted card gradient · savings bucket rows now show progressPct = saved/target |
+
+Closed in this loop: **F-01 F-02 F-03(partial via F-23) F-04(deferred) F-05 F-08 F-09(deferred to follow-up) F-11 F-14(partial) F-15(partial) F-17 F-18 F-19(deferred) F-20(deferred — daily living already has its own design) F-21(deferred) F-22 F-23**
+
+Still open / deferred: **F-04** (slider markers — punted to next sweep) · **F-09** (streak inflation — needs cycleId-tracked increment) · **F-10/F-16** (projection trail framing — Opus design pass needed) · **F-13** (lockedSnapshot vs live S — own bundle) · **F-19** (buffer current-value highlight — small, can ship anytime) · **F-21** (input $ prefix — cosmetic).
+
+Verify sweep produced at `docs/reviews/sweep-2026-05-14-payday-plan-revamp-verify/`. Bubble tiles + premium remainder card + bubble rows all confirmed visually in dark mode.
 
 ## 9. Direct asks for Opus
 
