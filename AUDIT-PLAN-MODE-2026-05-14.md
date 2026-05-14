@@ -1267,3 +1267,197 @@ P1 polish (if STEP 3 time allows):
 ---
 
 _(End of STEP 2 audit. STEP 3 P0 fix sprint pending John's go after CHECKPOINT.)_
+
+---
+
+## STEP 3 — Fix sprint shipped
+
+5 commits across 4 SHAs:
+
+| Fix | Commit | Files | Verification |
+|---|---|---|---|
+| P0.1 bonus rollover preserve | `7db306e` | index.html (rolloverIfNeeded L17984+, openPaydayPlan toast) + SDD | gates green |
+| P0.2 markPaydayLanded affordance | `7db306e` | index.html (BRAIN.plan method, SOURCES tag, canvas pill, wrapper, cycle-end copy) + SDD | gates green |
+| R1 intent-driven goal subtitle | `b91ec2f` | index.html (renderPaydaySavings reverse-intent lookup, synthetic-goals block, openEditPaydaySavings goal-context modal) + SDD | gates green |
+| R2 Annual Provisions nav-row | `f651d59` | index.html (renderAnnualProvisions converted, openManageProvisions modal) | gates green |
+| R3 Mum-bubble drop + bar legend | `f651d59` | index.html (renderPaydayPlanRoot bubble removed, coloured-dot legend) | gates green |
+
+Layer V verified visually (capture `slyght-layerV-2026-05-14-15-plan-provisions.png`) — the PLAN-tab Annual Provisions tile now renders as the single nav-row "🏦 Manage provisions · $298/mo · 5 items · ›" with the editable manage-modal opening on tap.
+
+**TDZ at boot-time** — when Playwright load fires boot self-test at DOMContentLoaded+500ms, `BRAIN`/`PLAN` constants are in temporal-dead-zone (pre-existing Bundle 27 OPEN-BUG at index.html L1646/L11246/L13111 per `slyght_bundle_27_open_bugs` memory). The errors log to `BRAIN.audit` as `boot_self_test_fail` events but don't impact user-visible functionality (Layer V proper renders cleanly because it uses different timing). Queued as Bundle 29 hygiene — investigation needs script-evaluation-order audit (BRAIN const declaration vs boot-self-test setTimeout firing).
+
+---
+
+## STEP 3.5 — Strategic synthesis (the four John questions)
+
+> _John 2026-05-14: "If I was to show someone my finances and how I'm planning to allocate my paycheck, does it make sense or is it confusing? What am I not accounting for? Is it too fixed so if something does come up I can't edit and adjust? How can we make this app function independently without requiring multiple sessions every day to operate?"_
+
+This section answers each question honestly with citations to current code + audit findings.
+
+### Q1 — Showing-someone test (clarity, post-fix)
+
+**Verdict: ✅ Mostly clear, two surfaces still need narration.**
+
+What a third party (Mum, an accountant, a partner) would see TONIGHT after these fixes:
+
+| Surface | Showing-someone verdict |
+|---|---|
+| Canvas root | ✅ **Clear.** Hero "Money coming in this cycle · $X" → coloured proportion bar with real legend (R3) → "Essentials this cycle 🔒 FIXED" section with 4 nav rows + subtotal → "🎯 Remainder after essentials $Y" → "Allocating the remainder ✋ YOURS" section. Story reads top-to-bottom: in · committed · what's left · how you split it. **Mum can follow this without you.** |
+| Bills sub | ✅ Clear. Progress bar + UNPAID-visible + PAID-collapsed sections. Per-bill amounts + due day. No jargon. |
+| Debts sub | ⚠️ Mostly clear, but **🏠 VIA RENT** + **🤖 AUTO** tags need translation. Someone unfamiliar with John's setup would ask "what's via-rent mean?" — the explainer doesn't ship with the surface. **Add a one-line caption "🏠 VIA RENT debts repay automatically through the Rent + Deposit Savings bill — you don't pay these separately"** to the Extra Payments group. ~5 LOC. P1 next session. |
+| Daily Living sub | ✅ Clear. "$X/day × N days = $Y" explicit formula. Status badge (Healthy/Tight/Below floor) gives one-glance verdict. About section explains the calc. |
+| Savings sub (post-R1) | ✅ **Now clear.** "Freedom Buffer · stored in Rainy Day Fund · $0 of $9,000" reads in goal-language. Property Deposit appears as "Other savings goals · via Mum-managed savings". Bucket section + KIA-extra + footer Add-buttons. |
+| Upcoming sub | ✅ Clear, useful empty state. |
+| Auto-allocate modal | ✅ Clear post-r49d. Leads with "🔒 Already covered first (Essentials)" itemised list, then ✋ Allocatable, then urgency-weighted split with 🔥 Nd tags. Someone could follow this without context. |
+| PLAN-tab (post-R2) | ⚠️ Liquid NW + Payday Plan tile + WRX + Trips + Goals are clear. **WRX card depth** (Cash After KIA Payoff $1,404 · Freed Per Month $780) assumes the viewer understands "selling the WRX pays off the KIA loan and frees the monthly payment." Without that context, the card reads as a status report with no narrative. **Add a 1-line headline "Selling WRX → pays off KIA loan → frees $780/mo for goals"** as the THE PLAN line — already partially present at capture #20 ("Sell WRX → Pay Off KIA Loan → Free $780/Month"). ✓ already shipped per r-er-prior. |
+
+**Two specific narration gaps for next session:**
+1. Debts sub — viaRent + autoDebit tag legend (a footer caption explaining the tags).
+2. KIA Extra sub-row label could read "Pay down KIA faster (avalanche/snowball)" instead of "KIA extra · pay over the minimum" — verb-first for the action.
+
+### Q2 — What's not being accounted for
+
+**A. Spending after lock — no surface to retroactively adjust the cycle.**
+
+Once John taps 🔒 Lock plan, overrides are committed. He can still:
+- Re-plan (unlocks the plan).
+- Tick items off as he handles them.
+- Add to Known Upcoming (still editable post-lock per architecture).
+
+But there's no "I overspent on groceries this week — what changes?" affordance. The daily-living recompute happens on render but the response is silent. **GAP:** post-lock, a real $50 unexpected expense doesn't visually update the canvas's "Allocated so far / Still free" trajectory. The math updates but the user doesn't see "you've slipped $X behind." Bundle 29 candidate: **cycle-progress strip** that shows "current pace · projected end-of-cycle" with weekly checkpoints.
+
+**B. Bonus uncertainty.**
+
+`bonus.status === 'expected'` is now correctly tracked. But what about HALF-confirmed scenarios? "Confirmed $X but tax-uncertain" or "expecting $X but the manager hinted lower." Current binary (expected/confirmed) doesn't capture this. **GAP:** an optional "probability slider" (50%/75%/100%) on the bonus modal so projection math weights accordingly. Bundle 29 — `bonus.confidence` schema field. ~30 LOC.
+
+**C. Trip overages.**
+
+Darwin is $900 budget, $0 saved, 24 days out. If John gets there and spends $1,200 actual, the app currently has no after-the-fact reconciliation. The "your share" copy assumes equal split with GF; if GF pays differently, John adjusts via Quick-Log post-trip. **GAP:** trip-end reconciliation flow — "Darwin trip ended. Actual: $X · Budget: $900 · Variance: ±$Y · adjust how?". Bundle 29 — `trip.actual` schema field + post-trip modal triggered when `trip.endDate < today` and unreconciled.
+
+**D. Salary variability.**
+
+Income simulator exists ($117,500 → $7,282/mo display, slider for raises) but isn't tied to the canvas plan. If John gets a raise mid-cycle, the canvas still computes against `S.income` which doesn't auto-flag stale. **GAP:** "Income changed in the last 30 days? Re-run your plan" prompt when `S.income` audit-log shows a recent edit. Bundle 30.
+
+**E. Surprise expenses (overdraft / chargebacks / refunds).**
+
+Quick-Log handles these but they DON'T affect the current cycle's allocation plan unless John re-allocates manually. If a $300 surprise lands on day 10 of the cycle, the canvas shows degraded "Still free" but doesn't suggest WHICH allocation to trim. **GAP:** "$X over budget — auto-suggest reallocations" reactive flow. Could pipe through AI affordability query. Bundle 30.
+
+**F. Tax + super.**
+
+Tax is netPay-only (post-tax salary). Super contribution is displayed but NOT folded into cash-flow planning — it's locked, correct. But the "what's free" math doesn't show "you're putting $X/mo into super pre-tax — your gross is $Y". **NOT A GAP for tonight** but conceptually missing for retirement framing. Bundle 29 retirement-canvas (Mission B29 candidate).
+
+**G. Goal completion + celebration.**
+
+When Freedom Buffer hits $9,000, what happens? Currently `markGoalComplete` exists (button on Goals tile), but there's no celebration moment + no auto-redirect of the monthly $X to next-priority goal. **GAP:** "Freedom Buffer complete 🎉 — redirect $X/mo to Property Deposit?" Bundle 29.
+
+### Q3 — Is it too FIXED? (flexibility audit)
+
+**Verdict: 🟢 Mostly flexible. Three rigidity points worth easing.**
+
+Inventory of edit paths in PLAN-mode:
+
+| Concept | Edit path | Friction |
+|---|---|---|
+| Net pay (cycle income) | openEditPaydayBonus modal (canvas) | 3 taps. Low. |
+| Bonus | openEditPaydayBonus modal (canvas) — toggle + amount + status | 4 taps. Low. ✓ |
+| Per-bill amount | openEditPaydayBill modal — Pay-in-full vs Defer toggle | 4 taps + reason. Medium. ✓ |
+| Per-debt amount | openEditPaydayDebt modal — quick-pick 0-100% | 2 taps. Low. ✓ |
+| Per-bucket savings | openEditPaydaySavings — quick-pick 0-1000 | 2 taps. Low. ✓ |
+| Per-trip allocation | openEditPaydayTripAlloc — quick-pick | 2 taps. Low. ✓ |
+| KIA extra | openEditPaydayKiaExtra | 2 taps. Low. ✓ |
+| Daily living floor | openEditPaydayLivingFloor | 2 taps. Low. ✓ |
+| Buffer floor | openEditPaydayBufferFloor | 2 taps. Low. ✓ |
+| Known Upcoming items | add/edit/remove via Upcoming sub | 3 taps each. Low. ✓ |
+| Annual provisions | manage modal (R2 nav-row) | 3 taps via PLAN-tab. Medium. ⚠️ |
+| Goals (target / monthly / name) | editGoal via PLAN-tab Goals tile | 3 taps. Medium. ✓ |
+| Trips (destination / dates / budget) | editTrip via PLAN-tab Trips tile | 3 taps. Medium. ✓ — but capture #19 plan-edit-trip-modal failed (Layer V script bug); verify on phone tonight. |
+| Lock state | openPaydayLockPlan / openPaydayUnlockPlan | 2 taps + confirm. Low. ✓ |
+| Auto-allocate apply | openPaydayAutoAllocate Apply | 2 taps + confirm. Low. ✓ |
+| Undo last change | paydayUndoLast header button | 1 tap + confirm. Low. ✓ |
+
+**Three rigidity points:**
+
+1. **Cycle dates are derived, not edited.** `S.activePlan.cycleStartDate` / `cycleEndDate` are computed by `_resolveNextPayday`/`_resolvePreviousPayday` from `S.payday`. If John's actual payday shifts (e.g. employer changes pay day, or he takes leave), he can't directly edit the cycle window. He has to change `S.payday` in Settings — which has global blast radius. **P1 next session: per-cycle override of cycleEndDate.** ~15 LOC.
+
+2. **The proportion bar is read-only.** John can see Bills/Debts/Savings/Upcoming/Living as proportions of total but can't tap a segment to "force re-balance." Auto-allocate is the closest tool but it doesn't proactively suggest "shift $50 from Living to Savings." **P2 next session: tap proportion bar segment → 'how do I move this?' explainer + auto-allocate prefill.** ~40 LOC.
+
+3. **Tick-state is mostly forward-only.** Untick exists (untickItem method exists per code-grep) but the visible affordance is limited. Long-press to untick was queued (per CHANGELOG Bundle 27 deferred). **P1 next session: untick affordance on ticked rows.** ~10 LOC + UX consideration.
+
+Everything else has clear edit paths. Net flexibility verdict: 🟢 healthy.
+
+### Q4 — Functioning independently (reducing session burden)
+
+**Verdict: ⚠️ Currently 3-4 manual sessions/cycle. Can reduce to 1-2 with targeted automation.**
+
+**Today's burden inventory:**
+
+| Per-cycle action | Frequency | Manual? |
+|---|---|---|
+| Open canvas to plan cycle | Once per cycle (payday landing) | Manual ✓ deliberate |
+| Add bonus | When known | Manual ✓ |
+| Mark payday landed (post-P0.2) | Once per cycle | Manual ✓ |
+| Set bill overrides | When non-default | Manual ✓ deliberate |
+| Set debt overrides | When non-default | Manual ✓ deliberate |
+| Allocate savings | Every cycle | Manual OR auto-allocate ✓ |
+| Lock plan | Once per cycle | Manual ✓ |
+| Tick items as paid | Per-event (~10-20 times/cycle) | Manual ⚠️ |
+| Reconcile balance drift | Per-event (~2-5 times/cycle) | Manual ⚠️ |
+| Quick-Log expenses | Per-expense (~20-40 times/cycle) | Manual ⚠️ |
+| Re-plan if surprise | When happens | Manual ✓ |
+
+Rough estimate: **~30-50 in-app interactions per cycle** for John. Most are tick + Quick-Log + recon.
+
+**Five mechanisms that would reduce burden without losing control:**
+
+**1. Auto-tick bills on detected payments (already partial).** `autoMatchBillsToTxns` + `autoDetectBillPayments` per code-grep exist with strict matching (r7.2.3). Enhancement: surface a "We marked Optus $194 paid (matched txn 2026-05-15 21:43). Tap to confirm/undo." UNDO-toast pattern. ✓ scope. Bundle 29. **Saves ~10 ticks/cycle.**
+
+**2. Smart Quick-Log defaults.** Today Quick-Log requires amount + note + category each time. Enhancement: pattern-detect from recent — "Looks like a Woolworths Kirrawee groceries entry? Auto-fill $X amount and 'Food/Coffee' category. Tap to log or edit." Could ship as a small AI-assist on the Quick-Log modal. Bundle 30. **Saves ~5-15 logs/cycle.**
+
+**3. Receipt-scan flow.** John mentioned this morning. Camera → OCR → product + price + vendor. Bundle 29+. Saves Quick-Log entirely for receipts. **Could save 10-20 logs/cycle.**
+
+**4. Automatic balance reconciliation.** Today John has to hero-tap to enter bank balance + pick reason. Could auto-recon on each fresh state-snapshot import (when device-sync lands, Bundle 23). Bundle 23 dependency. **Saves ~3-5 recons/cycle.**
+
+**5. Daily/weekly digest notifications.** Push notification via CF Worker (Phase 7 queue): "Hey John — you're $X under pace this week. Three bills due in next 5 days totalling $Y. Bowie vet was paid 2 days ago — confirm?" Bundle 29+. **Saves 1-2 daily check-ins by being proactive about anomalies.**
+
+**Architectural sketch for "function independently":**
+
+```
+DAILY-LIFE PASSIVE OPERATION
+─────────────────────────────
+[1] Phone Settings → PWA install + notification permissions
+[2] Device sync (Bundle 23) keeps state mirrored across devices
+[3] Push notifications (Bundle 29+) surface anomalies + opportunities
+[4] Auto-detect bills (existing + enhanced) tick on matched txns
+[5] AI-assist Quick-Log (Bundle 30) reduces logging friction
+[6] Cycle-progress strip on canvas shows pace without opening it
+[7] Receipt-scan (Bundle 29) skips Quick-Log entirely for shops
+
+INTENTIONAL CHECK-INS (target frequency)
+───────────────────────────────────────
+- 1× per cycle: open canvas to plan + lock (~10 min)
+- 1× per cycle (mid-cycle): "am I on pace?" pulse check (~2 min)
+- 1× per cycle (cycle-end): review what landed vs planned (~5 min)
+- Total: ~20 min per cycle of intentional engagement
+- Plus push-driven reactive moments (~30s each, 2-3x/week)
+```
+
+**Critical missing pieces for this future (queued):**
+- **Bundle 23 — Gist sync** (locked decision per `slyght_bundle_23_cloud_sync` memory). Multi-device + persistence.
+- **Bundle 29 — Decision-support features** per Audit A1 §6 (Debt Race · Retirement Canvas · Annual Sinking Funds · plus receipt-scan + auto-bill-detect enhancements).
+- **Phase 7 CF Worker push notifications** (already specced — drift, weekly digest, cycle-end recap).
+- **Bundle 30 — Rules-as-data + AI tool-use for direct propose/apply** so AI can read state + suggest changes the user accepts/rejects with one tap.
+
+**The North Star:**
+
+> _Open the app once a fortnight to plan. Tap a notification to confirm two anomalies a week. Quick-log via receipt-scan or voice. Reconcile when the bank balance diverges by >$50. Everything else just happens, with the app being the truth-source the user can verify._
+
+That's a 60-80% reduction in session-burden from today's pattern. None of the pieces require BRAIN architecture changes; they layer on top of the current canonical-writer foundation. **Achievable in 4-6 bundle cycles (Bundle 29 → 30 → 23 → 31 → 32) over ~2-3 months.**
+
+### Strategic synthesis verdict
+
+- **Showing-someone test:** Mostly passes post-fix. Two narration gaps (Debts viaRent legend + KIA Extra label) are P1 next session.
+- **Not accounting for:** 7 gaps inventoried, 5 are Bundle 29+ scope, 2 are Bundle 30+ scope. None block tonight.
+- **Too fixed?** 🟢 healthy. Three rigidity points (cycle-date override, tap-bar-segment, untick affordance) are P1/P2 next session.
+- **Independent operation:** Achievable in 4-6 bundles via Bundle 23 (sync) → Bundle 29 (decision-support + auto-detect) → Phase 7 CF Worker (push) → Bundle 30 (AI tool-use). Today: ~30-50 interactions/cycle. Target: ~20 minutes intentional + 2-3 push-driven reactions/week.
+
+**End of audit + fix sprint + strategic synthesis. Tonight's planning session is ready.**

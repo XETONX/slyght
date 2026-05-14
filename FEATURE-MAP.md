@@ -264,4 +264,57 @@ Hero balance was REMOVED from Settings Bundle 28 round 2 — dashboard hero is s
 - `bm-freq` options expanded to quarterly / biannual / yearly (round 34)
 - `bm-autodebit` checkbox (Bundle 7-era; consistent with new debt `modal-autodebit`)
 
+## Round 72 additions to the map (2026-05-14 audit + fix sprint)
+
+**New canonical writers:**
+- `BRAIN.plan.markPaydayLanded(ts, source)` (~L17746-pre-bonus) — writes `S.activePlan.actualPaydayTs` + defers to `BRAIN.cycle.markPaydayReceived` for the global flag. Source tag `PAYDAY_MANUAL_LANDED`.
+
+**New SOURCES tag:**
+- `PAYDAY_MANUAL_LANDED` → `'payday-manual-landed'`. Added to both `BRAIN.SOURCES` and `_SOURCE_SET`.
+
+**Canvas root (`renderPaydayPlanRoot`) changes (R3):**
+- DROPPED: Mum-summary bubble at L9646-9665 (r46) — was redundant with ESSENTIALS section + REMAINDER tile.
+- ADDED: coloured-dot legend below proportion bar — Bills (blue) · Debts (red) · Savings (green) · Upcoming (amber) · Living (grey). Replaces the grey-on-grey caption.
+- ADDED: payday-landed pill / paid badge in cycle-label (P0.2). Toggles based on `S.paydayReceived`.
+- COPY FIX: cycle-end-day suffix reads "Cycle ended — next payday begins this cycle" instead of "0 days left."
+- WRAPPER FN: `markPaydayLandedToday()` next to `paydayUndoLast` — confirm + canonical write + re-render.
+
+**Canvas Savings sub (`renderPaydaySavings`) changes (R1):**
+- NEW HELPER (closure): `_intentForBucket(bucketName)` — reverse-lookup via `BRAIN.plan.intent.byBucket` filtered by `kind === 'goal'`.
+- ENRICHED BUCKET ROWS: render goal name (from `S.goalDefs[intent.id].name`) as primary; bucket name moves to "stored in X" subline when names differ. Emoji prefers `goalDef.emoji`.
+- NEW SECTION: "Other savings goals" — renders intents linked to synthetic-bucket tokens (e.g. `__mum-account__`). No per-cycle slider; tap opens `editGoal`.
+- MODAL: `openEditPaydaySavings` title is goal-name-with-emoji when bucket is goal-linked.
+
+**PLAN-tab Annual Provisions (`renderAnnualProvisions`) changes (R2):**
+- REPLACED: inline 5-row list → single nav-row "🏦 Manage provisions · $X/mo · N items ›".
+- NEW: `openManageProvisions()` modal — info-modal pattern (via `EDIT_MODAL.openInfo`) with the editable provision rows + per-row ✏️ button calling existing `editProvision`.
+
+**rolloverIfNeeded changes (P0.1):**
+- ADDED: bonus-carry block at L17984+ — preserves `prevPlan.income.bonus` when `included && status === 'expected' && amount > 0`. Audit event `plan_bonus_carried_to_new_cycle`. Return envelope extended with `bonusCarried` field.
+
+**openPaydayPlan (caller of rolloverIfNeeded) changes:**
+- TOAST: extended to report both deferred-items count AND bonus-carry on rollover ("🔁 New cycle started — N deferred items carried over · $X bonus carried forward").
+
+**Boot self-test additions:**
+- `BRAIN.plan.rolloverIfNeeded callable`
+- `BRAIN.plan.setBonus callable`
+- `BRAIN.plan.markPaydayLanded reachable`
+- `markPaydayLandedToday wrapper reachable`
+- `BRAIN.SOURCES.PAYDAY_MANUAL_LANDED defined`
+
+**SDDs shipped:**
+- `docs/sdd/SDD-2026-05-14-bonus-rollover-preserve.md`
+- `docs/sdd/SDD-2026-05-14-mark-payday-landed.md`
+- `docs/sdd/SDD-2026-05-14-intent-driven-goal-subtitle.md`
+
+**Audit doc shipped:**
+- `AUDIT-PLAN-MODE-2026-05-14.md` (~2,000 lines) — 24 surfaces walked + cross-cutting passes + vision UI + strategic synthesis (4 John questions answered).
+
+**Open follow-ups queued (per audit doc Summary):**
+- Bundle 29: full Tier-3 intent-driven canvas Savings redesign (R1 today is the quick-fix variant)
+- Bundle 29: drop legacy `S.tripDefs` / `S.goalDefs` once readers migrate
+- Bundle 29: cleanup migration for test-pollution intents (Test goal · Kia detail)
+- Bundle 29: TDZ at boot investigation (L1646 family — script-eval-order vs const declarations)
+- P1 next session: Debts sub viaRent/autoDebit caption · KIA Extra label rephrase · per-cycle cycleEndDate override · untick affordance on ticked rows · tap-bar-segment explainer
+
 — end FEATURE-MAP.md —

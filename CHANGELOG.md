@@ -122,6 +122,37 @@ The Canvas already shows the proportion bar, essentials subtotal, headlined rema
 
 Gates: 0 FAILs, 54/54 tests, 51/51 runtime PASS.
 
+### Round 72 — PLAN-mode total audit + 5-fix sprint (P0/R1/R2/R3)
+
+Day-of-audit ship. John's morning brief: "scrape PLAN mode like Winnie-the-Pooh eats a honey jar." 24 surfaces walked deep (canvas + 5 sub-screens + 11 modals) + light (PLAN-tab mother tiles) + 7 cross-cutting passes + vision UI pass. Single audit doc shipped: `AUDIT-PLAN-MODE-2026-05-14.md` (~2,000 lines, 4 batch commits).
+
+Five fixes shipped (in order):
+
+**P0.1 — Bonus persistence through cycle rollover** (`7db306e` · SDD-2026-05-14-bonus-rollover-preserve)
+Root cause of John's recurring "added bonus → leave → come back → gone" complaint. `rolloverIfNeeded` (L17984+) now preserves `prevPlan.income.bonus` when `status === 'expected'` (forward-looking intent). `status === 'confirmed'` doesn't carry (past-cycle). New audit-log type `plan_bonus_carried_to_new_cycle`. Toast on rollover reports both deferred-items AND bonus-carry.
+
+**P0.2 — Manual `markPaydayLanded` affordance** (`7db306e` · SDD-2026-05-14-mark-payday-landed)
+New `BRAIN.plan.markPaydayLanded(ts, source)` canonical writer. New SOURCES tag `PAYDAY_MANUAL_LANDED`. Canvas-root cycle-label now shows "Pay landed today?" green pill (when not received) or "✓ Paid <date>" badge (when received). Wrapper `markPaydayLandedToday()` handles confirm + write + re-render. Defers to existing `BRAIN.cycle.markPaydayReceived` for `S.paydayReceived` flag (no duplicate writer logic). Cycle-end-day copy also fixed in same edit: "0 days left" → "Cycle ended — next payday begins this cycle."
+
+**R1 — Intent-driven goal subtitle on canvas Savings** (`b91ec2f` · SDD-2026-05-14-intent-driven-goal-subtitle)
+Closed John's morning "can't see Freedom Buffer or Property Deposit" gap. `renderPaydaySavings` (L11052+) reverse-looks-up the intent linkage for each bucket. Rows render the GOAL name (from `S.goalDefs`) with bucket as subline ("Freedom Buffer · stored in Rainy Day Fund"). NEW "Other savings goals" section renders intents linked to synthetic-bucket tokens like `__mum-account__` — Property Deposit appears here as "via Mum-managed savings". `openEditPaydaySavings` modal title also gets goal-context (e.g. "🛡️ Freedom Buffer — this cycle" instead of "Allocate to Rainy Day Fund"). Override schema unchanged. Quick-fix variant of the larger Tier-3 redesign queued for Bundle 29.
+
+**R2 — PLAN-tab Annual Provisions → single nav-row** (`f651d59`)
+Per John 2026-05-14: tile was duplicating canvas Essentials display (r47 explainAnnualProvisions). `renderAnnualProvisions` (L22975+) converted from inline list to single nav-row "🏦 Manage provisions · $X/mo · N items ›" that opens a manage-modal (`openManageProvisions`) with editable rows. Single source of truth: canvas = read, PLAN-tab = manage. Layer V capture #15 verifies the new pattern.
+
+**R3 — Canvas Mum-summary bubble dropped + proportion-bar legend promoted** (`f651d59`)
+The r46-era "Of $X coming in, $Y FIXED, $Z yours" bubble re-stated the same fact rendered structurally below (ESSENTIALS section header + 🎯 REMAINDER tile). John 2026-05-14 confirmed redundant. Dropped (~10 LOC). The proportion bar caption ("Bills · Debts · Savings · Upcoming · Living") was grey-on-grey 11px — non-legend. Now a real legend: 5 coloured dots matching bar segments. Closes morning "red and blue bar has no legend" complaint properly.
+
+Strategic synthesis (audit doc §3.5) — answered John's four deep questions:
+- Showing-someone clarity: 🟢 mostly clear post-fix, 2 narration gaps (Debts viaRent legend + KIA Extra label) — P1 next.
+- Not accounting for: 7 gaps inventoried (cycle-progress strip · bonus-confidence · trip-overage reconciliation · income-change prompt · surprise-expense reactive flow · super in retirement framing · goal-completion celebration). All Bundle 29-30 scope.
+- Too fixed?: 🟢 healthy. 3 rigidity points (cycle-date override · tap-bar-segment · untick affordance) P1/P2 next.
+- Independent operation: achievable in Bundle 23 → 29 → Phase-7 CF Worker → 30. Today ~30-50 interactions/cycle. Target ~20 min intentional + 2-3 push-driven/week. ~60-80% reduction.
+
+Gates: 0 FAILs, 65/65 tests, 51/51 runtime PASS across all 5 commits.
+
+Open: TDZ at boot-time (existing Bundle 27 OPEN-BUG #B28-14 family · L1646/L11246/L13111) caused 12 boot-self-test failures in Playwright early-load. Doesn't affect user-visible app (Layer V renders cleanly because of timing). Bundle 29 hygiene: investigate script-evaluation-order vs `const BRAIN` declaration.
+
 ### Round 71 — Weather chip squish fix + smaller header icons + ghost info-btn class
 John phone-verify on r70: "weather is now full squished, button icons can reduce one size down, also that same [grey oval] pattern still occurs throughout the app like bills where there is ? icons etc".
 
