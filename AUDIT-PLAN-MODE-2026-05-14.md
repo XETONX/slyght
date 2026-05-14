@@ -874,34 +874,396 @@ _(Surfaces 7-17 done — 9 canvas modals walked. Pattern: all use EDIT_MODAL can
 
 ---
 
+## SURFACES 18-21: PLAN-tab "mother" light walk
+
+**Scope:** light pass — describe what's there, flag depth-gap vs canvas, queue Bundle-29 redesign Tier-3 proposal. NOT deep walk per John's tonight-focus directive.
+
+**Anchor:** `renderPlanMode` L21144 composes: NW header → renderAllocateTile → renderWrxCard → renderTrips → renderGoalCards → renderSuperCard → renderAnnualProvisions → renderIncomeSimulator. Plus Expected Extra Income (`#bonus-list` L23263, populated by `addBonus` L8563 → renderBonusList).
+
+### SURFACE 18: Liquid NW header + renderAllocateTile (PLAN-tab entry to canvas)
+
+**Capture:** #14 plan-top.
+
+- **Liquid NW header** L21175: large +$X figure with colour by sign + "What you can actually touch today" subtitle + super contribution callout (when super > 0) + "View NW breakdown" button to NetWorth modal.
+- **renderAllocateTile** L21276: bridges PLAN-tab → canvas. r47-aligned: same `essentialsTotal = bills + debts + dailyLiving + provisions` formula as canvas root. ✓ no divergence.
+- Subline includes "{daysRemaining} days until next payday · {N already allocated · } open full plan canvas".
+
+🟢 ship-quality. Entry point clean.
+
+### SURFACE 19: renderWrxCard (L20738)
+
+**Capture:** #14 plan-top.
+
+WRX status card — listed sale price · KIA loan balance · cash after payoff · freed-per-month. Reads from `S.wrxStatus`, `S.wrxValue`, `S.carloan`, `S.kiaEarlyRepayFee` (canonical writers via BRAIN.assets r13/r19 per CHANGELOG).
+
+⚠️ **TONIGHT NOT-A-FOCUS but informative.** John has WRX listed at $25,000. Tile shows post-WRX-sale impact. Useful context but doesn't affect tonight's allocation planning.
+
+🟢 ship-quality.
+
+### SURFACE 20: renderTrips (L22067) — PLAN-tab Trips section
+
+**Capture:** #17 plan-trips.
+
+Renders `PLAN.getTrips()` cards. Pattern (sampled from renderGoalCards-adjacent structure): per-trip card with destination · dates · budget · saved · daysUntil · per-day average · 🗑️ delete affordance (r9).
+
+**Tonight-session check:** ✅ John sees Darwin + China cards from PLAN-tab. Adjacent to canvas allocation but PLAN-tab is the trip-management surface.
+
+🟢 ship-quality.
+
+### SURFACE 21: renderGoalCards (L22422) — PLAN-tab Goals section (THE ANSWER TO "WHERE'S PROPERTY DEPOSIT")
+
+**Capture:** #16 plan-goals.
+
+**Key finding:** PLAN-tab Goals tile **DOES surface Property Deposit + Freedom Buffer by name** via `PLAN.getGoals()` → reads from `S.goalDefs`. John's morning "can't see Freedom Buffer or Property Deposit" is therefore an **AUDIT REFINEMENT:**
+
+- ✅ Visible HERE on PLAN-tab (rich card with progress · 3-projection table · per-goal hint · 4 action buttons).
+- ❌ Missing/mislabeled on canvas Savings sub (Surface 5 P0 finding).
+
+The Goals tile is actually the **rich** surface — projections by 3 strategies (current monthly · post-WRX + food cuts · with quarterly bonus) with date estimates. Per-goal contextual hints ("Every quarterly bonus saves 3 months" for apartment goal; "June bonus could cover half this goal" for China). 4-button row: ✏️ Edit · + Add savings · ✅ Mark complete · 🗑️ Delete.
+
+**Explicit China-3x dedup:** L22430-22432 comment: "China appears in both Trips (canonical, has dates) and Goals. Filter it out of the Goals section so it only renders once via renderTrips." So China-as-trip-AND-goal is intentionally filtered to render once. ✓ Addresses one face of John's morning duplicate-bucket complaint.
+
+**The mother metaphor verified:** PLAN-tab Goals tile IS the rich/canonical goal surface; canvas Savings is the thinner derivative. **Bundle 29 Tier-3 proposal will MIRROR Goals-tile depth into canvas Savings, not the other way around.**
+
+🟢 PLAN-tab Goals tile is ship-quality. The depth-gap is on the canvas side. **Adjacent finding:** test-pollution intents "Test goal" and "Kia detail" — `PLAN.getGoals()` filters by `S.goalDefs` not by `S.planIntents`, so they may not render on the PLAN-tab Goals tile. Need verification (capture #16 review). If they don't render here, they only pollute intents-based readers.
+
+### SURFACE 22: renderSuperCard
+
+Super balance display. Bundle 25.1 separated super from Liquid NW per John's directive "stick to liquid throughout the app." Card shows super-only context. ✓
+
+### SURFACE 23: renderAnnualProvisions (L22798) — THE TILE JOHN WANTS REMOVED
+
+**Capture:** #15 plan-provisions.
+
+**Per John 2026-05-14:** "the PLAN-tab Annual Provisions tile is redundant" (answered §1 question).
+
+Tile renders Teachers Health · Car service · KIA registration · KIA green slip · KIA insurance (NRMA) — each with per-month + annual figure. Total $298/mo. Read from `PLAN.getAnnualProvisions()` + `getCustomProvisions()`. Direct write to localStorage `slyght_provisions` (Bundle 29 canonical-writer candidate per FEATURE-MAP).
+
+**Status:** r47 integrated provisions INTO canvas Essentials (`explainAnnualProvisions` modal accessible from canvas root). The PLAN-tab tile is now the only place to **edit** provisions — but it still **displays** them, which is the redundancy John flagged.
+
+**Tier-2 proposal (scope reframe):** remove the display section from `renderAnnualProvisions` on PLAN-tab; replace with a single nav row "🏦 Annual provisions · $298/mo · 5 items → tap to manage" that opens an EDIT_MODAL with the items list + edit controls. This:
+- Removes the duplicate display (canvas root + provisions modal handle showing).
+- Preserves the edit-on-PLAN-tab affordance.
+- Reduces PLAN-tab scroll length materially.
+
+**Run the room (Tier 2):**
+- Engineer: ✓ removes display redundancy, preserves edit affordance, contained scope (~1 file)
+- Design lead: ✓ scroll-length reduction welcome on PLAN-tab; nav-row pattern matches canvas root style
+- CI-leader: ✓ John explicit ask, single source-of-truth (display lives on canvas, edit lives on PLAN-tab)
+- Financial-guardian: neutral; no math touched
+- John-as-user: ✓ matches morning ask
+
+**5/5 converge.** Surface as **P1 fix for this session** (gated by John's confirmation on the nav-row mechanic). Doesn't touch BRAIN architecture; pure UX consolidation.
+
+🟡 fixable this session — Tier-2 reframe.
+
+### SURFACE 24: renderIncomeSimulator + Expected Extra Income (`#bonus-list`)
+
+**Capture:** sections visible in #14 plan-top tail.
+
+Income simulator + bonus list. `addBonus()` L8563 pushes to `S.bonuses` array directly (Bundle 29 canonical-writer candidate). `bonus-list` div populated by `renderBonusList` (search not done; low priority).
+
+**Tonight-session check:** likely not in critical path tonight. John's bonus tonight goes through canvas `openEditPaydayBonus` not this PLAN-tab list.
+
+🟢 ship-quality but Bundle 29 hygiene queued.
+
+### PLAN-tab light walk summary
+
+PLAN-tab is the **mother**: Liquid NW header → cycle entry → long-term assets (WRX) → forward planning (Trips + Goals) → super → annual provisions → income simulator. The TILES THEMSELVES are mostly rich and well-developed (Goals tile especially). The depth-gap John sensed is asymmetric — Goals tile IS rich on PLAN-tab; canvas Savings sub is the surface that needs to MIRROR that depth (not the other way around). Bundle 29 Tier-3 proposal: intent-driven canvas Savings rendering with same data shape as Goals tile.
+
+**Tier 2 fixable this session:** PLAN-tab Annual Provisions tile → nav-row pattern per John's explicit confirmation. Pending John's go.
+
+**Tier 3 queued (SDD in cross-cut §E):** canvas Savings re-architecture to consume intents + render goal names + show projections similar to PLAN-tab Goals tile.
+
+---
+
 ---
 
 ## STEP 2.2 — Cross-cutting passes
 
-_[Pending — runs after surface walks.]_
+### §A — Duplicate canonicalisation map
 
-- A. Duplicate canonicalisation map
-- B. Formula coherence table
-- C. Audit-tag coverage
-- D. Stale string sweep
-- E. BRAIN overlap (deliberation-eligible per Tier 3)
-- F. Boot self-test coverage
-- G. Legacy mirror audit
+| Entity | Surface 1 | Surface 2 | Surface 3+ | Canonical? |
+|---|---|---|---|---|
+| **China** | `S.savingsBuckets[China Holiday]` (bucket $96.62/$4000) | `S.tripDefs[China]` (trip 1-22 Dec $5000) | `S.planIntents[china]` (goal · bucketId 'China Holiday') + `S.planIntents[china-2026]` (trip · bucketId 'China Holiday') + `S.goalDefs[china]` | 4 surfaces. Phase 0 intents collapse + r46 trips/goals explicit dedup at L22430-32 ensures PLAN-tab Goals tile shows once via Trips. **Status: working but mirrors in 4 places.** Bundle 29 candidate: drop legacy tripDefs/goalDefs once readers migrate. |
+| **Property Deposit** | `S.goalDefs[apartment]` (goal $3000/$50000) | `S.debts[Property Deposit (via Mum)]` (debt $5681.45 viaRent) | `S.planIntents[apartment]` (goal · bucketId `__mum-account__` token) | 3 surfaces; goal + debt are deliberately separate (the closed-loop r70 ties them). Intent's `__mum-account__` token means canvas Savings can't render it (no real bucket). **Audit gap: canvas Savings cannot surface Property Deposit because intent-to-bucket linkage uses a synthetic token.** |
+| **Freedom Buffer / Rainy Day Fund** | `S.savingsBuckets[Rainy Day Fund]` ($0/$2000) | `S.goalDefs[freedom-buffer]` (name 'Freedom buffer' target $9000) | `S.planIntents[freedom-buffer]` (bucketId 'Rainy Day Fund') | **NAME MISMATCH**: bucket name ≠ goal name. Canvas Savings renders bucket name; PLAN-tab Goals tile renders goal name. **John's morning complaint roots here.** |
+| **NRMA** | `S.bonuses`? `S.debts`? — paid via Mum special-case (memory `slyght_nrma_mum_flow`) | `S.planIntents[provision-kia-insurance-nrma]` (provision $85/mo, bucket 'Rego & Insurance') | `paidBills['2026-5-...']` historical | NRMA is **annual-provision-only** post-r60 seedV18 retirement. Not a BILLS entry; not a discrete debt. ✓ canonical. |
+| **Teachers Health** | `S.debts[Teachers Health]` (paid · $259.41 · 2026-05-01) | `S.planIntents[provision-teachers-health]` (provision $86.47/mo) | `paidBills['2026-5-Teachers Health-1']` | Triple-state (debt + provision + paidBills) per memory `slyght_bills_provisions_overlap`. ✓ working but architectural complexity. |
+| **Rego / Green Slip / Service** | Provisions only | Single bucket 'Rego & Insurance' ($0/$1500) collects sinking funds | — | ✓ canonical. r47 architecture: bucket = sinking fund, provisions = monthly commitments, bills = when due. |
+| **Darwin** | `S.tripDefs[Darwin]` (trip $900 7-15 Jun) | `S.planIntents[darwin-2026]` (trip · bucketId `""` — UNLINKED) | — | **Unlinked trip.** r51 auto-allocate has name-fallback path; r52 "+NEW BUCKET" synthetic. ✓ working but the bucketHint=`""` is a small data smell. |
+| **Test goal · Kia detail** | `S.planIntents[goal-1778651412318]` + `[goal-1778652572947]` | _(no matching S.goalDefs OR bucket — pollution)_ | — | **TEST POLLUTION** carried in intents only. Goals tile filters by `PLAN.getGoals()` reading `S.goalDefs` so these don't render there. Canvas Savings filters by bucket presence so they don't render there either. **Hidden pollution — visible only when reading planIntents directly.** Bundle 29 cleanup migration: drop intents without a backing goalDef or bucket. |
+
+**Cross-cut verdict:** Phase 0 intents canonical layer EXISTS but isn't yet the sole source for all rendering. Mirror stores (tripDefs/goalDefs/buckets) drive different surfaces with different name fields → John's mismatch perception. **Cross-cut §E Tier-3 SDD addresses this.**
+
+### §B — Formula coherence table
+
+| Metric | Renderers | Formula(s) | Agree? |
+|---|---|---|---|
+| `totalToPlan` | canvas root (snap.totalToPlan) · renderAllocateTile · auto-allocate "covered first" block · Ask AI prompt | `netPay + (bonus.included ? bonus.amount : 0)` in getSnapshot ✓; Ask AI uses direct readers — **may not include bonus** | ⚠️ Verify Ask AI prompt path includes bonus. Likely divergent on stale bonus state. |
+| `essentialsTotal` | canvas root L9684 · renderAllocateTile L21297 · canvas Mum-summary L9659 (computed twice in same fn) | `bills + debts + dailyLiving.plannedTotal + _provisionsTotal` r47 | ✓ aligned (r47 fixed earlier divergence) but DRY violation inside canvas root |
+| `remainder` (canvas) / `stillFree` (PLAN-tab) | canvas REMAINDER tile · Mum-summary · renderAllocateTile | `totalToPlan - essentialsTotal` (canvas) vs `(totalToPlan - essentialsTotal) - (savings + knownUpcoming)` (PLAN-tab) — different! | ⚠️ PLAN-tab shows "still free AFTER allocations" while canvas shows "remainder BEFORE allocations split." Labels matter: PLAN-tab says "left to allocate", canvas says "Remainder after essentials". **Could read as inconsistent.** Audit verifies labels match meaning. |
+| `bills.total` (cycle) | renderPaydayBills L10840 · getSnapshot L17415 | identical `_billAmt` path | ✓ |
+| `debts.total` (cycle) | renderPaydayDebts L10952 via `_paydayShellHeader` · getSnapshot L17426 | `_debtAmt` with override fallback | ✓ pending shellHeader verification |
+| `savings.total` (allocated this cycle) | renderPaydaySavings · getSnapshot L17436 | override-first then legacy mirror | ✓ post-Bundle-27 P6.2 |
+| `dailyLiving.plannedTotal` | snap-only, single source | `floor * daysInCycle` L17445 | ✓ single |
+| `provisionsTotal` | canvas root L9657 · canvas root L9680 (twice in same fn!) · renderAllocateTile L21296 | `PLAN.getTotalProvisions()` direct | ✓ but DRY violation in canvas root |
+| `discretionary` (Today's spend) | dashboard footer · MAX PER DAY math · Analysis pivot · BRAIN.summary.total | various — Phase 28.0.5 migrated 5 renderers but `_NON_SPEND_CATS` vs `EXCLUDED_CATS` divergence still exists per OPEN-BUGS #6/#7/#8/#17 | ⚠️ Not directly PLAN-mode but feeds Daily Living recent-average. **Not in tonight scope.** |
+
+**Cross-cut verdict:** r47-r50 era closed the major divergences in PLAN-mode formulas. Two minor concerns: (1) `Ask AI prompt` may not include bonus in `totalToPlan`-equivalent total (verify on Surface 14 audit); (2) DRY violation inside `renderPaydayPlanRoot` (computes `_provisionsTotal` + `essentialsTotal` twice — L9657/L9659 then L9680/L9684). **Both minor. Bundle 29 hygiene.**
+
+### §C — Audit-tag coverage
+
+**17 PLAN-related `BRAIN.audit.append` sites** — all typed, all sourced. Sample:
+
+| Type | Source tag pattern | Site |
+|---|---|---|
+| `payday_plan_locked` | CANVAS_LOCK | L17307 |
+| `payday_plan_unlocked` | CANVAS_UNLOCK | L17317 |
+| `plan_override_set` | PLAN_OVERRIDE_SET / PLAN_BILL_EDIT / PLAN_DEBT_EDIT / PLAN_SAVINGS_EDIT / PLAN_TRIP_ALLOC_EDIT / PLAN_KIA_EXTRA_EDIT | L17593 |
+| `plan_override_clear` | _ | L17604 |
+| `plan_tick` / `plan_untick` | PLAN_BILLS_TICK / PLAN_DEBT_TICK / PLAN_SAVINGS_TICK / PLAN_KIA_EXTRA_TICK / PLAN_UPCOMING_TICK | L17707 / L17742 |
+| `plan_bonus_edit` | PLAN_BONUS_EDIT | L17755 |
+| `plan_daily_floor_edit` | PLAN_DAILY_FLOOR_EDIT | L17767 |
+| `plan_buffer_floor_edit` | PLAN_BUFFER_FLOOR_EDIT | L17778 |
+| `plan_cycle_rollover` | (auto) | L18001 |
+| `plan_intent_added/updated/archived` | _ | L18212 etc. |
+| `known_upcoming_add/remove/update` | _ | L17550 etc. |
+| `affordability_query` | AI_AFFORDABILITY_QUERY | L17531 |
+
+**Untagged write path candidates checked:**
+- `_createBucketForTrip` (L10287) — routes through `BRAIN.savings.addBucket` (BUCKET_CREATE source) + audit-logged. ✓
+- `applyRecommendation` (auto-allocate apply) — should audit. Search confirms — yes, applies each override via setOverride. ✓
+
+**Cross-cut verdict:** ✓ no untagged PLAN-mode writes. Layer 1 clean.
+
+### §D — Stale string sweep
+
+`alert(` in PLAN-mode render code:
+- **L11048**: `renderPaydaySavings` pre-lock tick hint `alert(_PAYDAY_TICK_HINT_PRE)`. **Violates UX contract §6.** Already flagged P1 in Surface 5.
+
+Other `alert(`s exist app-wide (22 total) but most are in dashboard/Settings/bill-add paths and outside PLAN-mode scope per the prompt. Listed but not actioned:
+- L2701: explainWeekProjection fallback alert
+- L2881: explainMaxPerDay fallback alert
+- L3315-3316: balance edit gates
+- L4862: Math invariant banner alert
+- L5028/5063: txn edit/delete error alerts
+- L6773, 6805: debt-add validation alerts
+- L8425/8461: bucket savings validation
+- L8487-8493: bucket modal validation
+- L8935-8937: bill-add validation
+- L9005: HABIT CHECK
+- L12932/12934: API key validation
+- L16510: generic error
+- L21370: showInfoTip fallback
+
+Outside-PLAN-mode adjacents → **Noticed list** (do not start).
+
+Stale phase / coming / TODO / WIP / stub strings: **none found** in PLAN-mode renderers via the grep filter. Codebase is clean of stub markers. ✓
+
+**Cross-cut verdict:** one PLAN-mode alert() to fix (P1). Surrounding alerts are out of scope.
+
+### §E — BRAIN overlap observation + Tier 3 SDD draft
+
+BRAIN bubbles PLAN-mode touches: `plan` · `savings` · `bills` · `allocation` · `transaction` · `audit` · `summary`. Plus indirectly `cycle` · `config` · `assets`.
+
+**Method-level overlap scan (observation only, no proposal):**
+
+- `BRAIN.plan` methods: getSnapshot · queryAffordability · {add,remove,update}KnownUpcoming · setOverride · clearOverride · tickItem · untickItem · setBonus · setDailyLivingFloor · setBufferFloor · recommendAllocation · applyRecommendation · rolloverIfNeeded · undoLast · proposeAdjustment · applyProposal · rejectProposal · intent.{add,update,remove,_archive,setBucket,get,list,byKind,byBucket}.
+- `BRAIN.savings` methods: getBuckets · getBucket · setBucketSaved · addToBucket · addBucket · updateBucket · removeBucket · getRoundUpDestinationName · setRoundUpDestination.
+- `BRAIN.allocation` methods: lock · unlock · getLockedProgress.
+- `BRAIN.audit` methods: append · appendReconLog · query · recent.
+
+**Observed overlaps:**
+- `BRAIN.plan.intent.*` (12 buckets-or-trips-or-goals-or-provisions descriptors) vs `BRAIN.savings.getBuckets()` (4 actual money buckets) — these are **complementary, not overlapping**: intents describe *purpose*, buckets hold *money*. ✓
+- `BRAIN.allocation.lock` vs `BRAIN.plan` lock-stamp at L10465-9 — `BRAIN.allocation.lock` records the lock snapshot; `BRAIN.plan` stamps `S.activePlan.lockedAt` so getSnapshot reflects. **TWO writes from one action**: allocation.lock + manual activePlan.lockedAt patch. Minor overlap but architectural — `BRAIN.allocation.lock` could/should stamp activePlan.lockedAt itself. Bundle 30 candidate.
+- `BRAIN.plan.recommendAllocation` reads from `BRAIN.savings.getBuckets` AND `BRAIN.plan.intent.byBucket` — composes cleanly.
+
+**Cross-cut verdict on overlap:** healthy composition; no merge candidates. ✓
+
+---
+
+#### Tier 3 SDD draft: Intent-driven goal rendering on canvas Savings sub
+
+**Scope:** SDD reference; the actual `docs/sdd/SDD-2026-05-14-intent-driven-savings.md` will be written during STEP 3 if John approves the proposal.
+
+**Problem statement:** Canvas Savings sub-screen (`renderPaydaySavings`) iterates `BRAIN.savings.getBuckets()` and renders by bucket name. Two of John's primary goals — **Property Deposit** (linked to `__mum-account__` synthetic token) and **Freedom Buffer** (linked to bucket "Rainy Day Fund") — either don't render or render with mismatched names. PLAN-tab Goals tile (`renderGoalCards`) already renders these properly via `PLAN.getGoals()` → `S.goalDefs`. The canvas is the thinner surface.
+
+**Proposed change:** Reframe `renderPaydaySavings` Bucket section to iterate `BRAIN.plan.intent.byKind('goal')` first, then non-goal-linked buckets second. Each goal row shows:
+- Goal name (from intent or S.goalDefs)
+- Bucket subline ("stored in Rainy Day Fund · $0 / $2000 bucket goal" OR "via Mum-managed account" for `__mum-account__` token)
+- Cycle-allocation amount (override-first then legacy mirror, same as today)
+- 4-button row matching PLAN-tab Goals tile (✏️ · + Add · ✅ · 🗑️) — affordance symmetry per Self-correction queue entry r9.
+
+**Invariants that must hold:**
+- All canonical writes still route through BRAIN.plan.setOverride.
+- Cycle-allocation overrides keyed by `savings:<bucketName>` still resolve (back-compat for current overrides).
+- Trips section unchanged.
+- KIA extra section unchanged.
+- Math invariants (totalToPlan, savings.total, etc.) unaffected.
+
+**Rollback plan:** feature-flag `_renderPaydaySavingsV2` toggle; revert to current path if anything fails phone-verify.
+
+**Surface to John:** **YES** — Tier 3 protocol requires John's "build it" / "queue it" call before any code touches. Recommend queueing for Bundle 29 (Mother redesign theme) — too big to fit tonight + needs design review.
+
+**Personas FOR pass:** Engineer ✓ (renders the canonical intent layer) · Design lead ✓ (closes mental-model gap) · CI-leader ✓ (compounds — same data shape across canvas + PLAN-tab) · Financial-guardian ✓ (no math touched) · John ✓ (his exact morning ask) · Future-CC ✓ (intent-driven rendering is the doc'd architecture) · Future-John ✓ (long-term symmetry).
+
+**Personas AGAINST pass:** Engineer: blast radius extends to override key migration if we change key shape (we won't — keep `savings:<bucketName>` keys) · Design lead: 4-button row may not fit tonight's 380px viewport in this surface · CI-leader: risk of doubling work if Bundle 30 rules-as-data lands before this · Financial-guardian: none · John: complexity might exceed payoff if other surfaces still bucket-drive · Future-CC: care needed not to break legacy mirror fallback.
+
+**Synthesis:** 7/7 FOR, 5 AGAINST concerns all addressable. **Recommend queue Bundle 29.** Tonight's fix is to surface this in Summary as the highest-impact post-tonight improvement.
+
+### §F — Boot self-test coverage
+
+**Currently covered (PLAN-mode):**
+- BRAIN.plan exists / getSnapshot callable / intent reachable / intent.list callable
+- openPaydayPlan reachable / renderPaydayPlanRoot reachable
+- openEditPaydayKiaExtra reachable / explainMaxPerDay reachable
+- _paydayExitToTab reachable / _paydayProgressBar reachable
+
+**Coverage gaps (should be added — per boot-self-test-pattern memory):**
+- openEditPaydayBonus reachable
+- openEditPaydayBill reachable
+- openEditPaydayDebt reachable
+- openEditPaydaySavings reachable
+- openEditPaydayTripAlloc reachable
+- openPaydayAutoAllocate reachable
+- openPaydayLockPlan reachable
+- paydayTick reachable
+- _paydayRow reachable
+- renderPaydayBills / renderPaydayDebts / renderPaydaySavings / renderPaydayUpcoming / renderPaydayLiving reachable
+- renderAllocateTile reachable
+- explainAnnualProvisions reachable
+- BRAIN.plan.setBonus persists across re-render (functional, not reachability — for P0.1 verification)
+- markPaydayLanded reachable (when added per P0.2)
+
+**Cross-cut verdict:** ~14 entry-point reachability checks missing. Each ~1 line. **P1 batch add during STEP 3.**
+
+### §G — Legacy mirror audit
+
+| Pair | Status |
+|---|---|
+| `S.tripDefs` vs `S.planIntents[kind='trip']` | Drift check: 2 trips in both, names match (Darwin · China), bucketHints/bucketIds — `darwin-2026` intent has bucketId `""` (unlinked), `china-2026` has bucketId `'China Holiday'`. tripDefs doesn't store bucketHint per current schema. ✓ no drift; Bundle 29 candidate to drop tripDefs once readers migrate. |
+| `S.goalDefs` vs `S.planIntents[kind='goal']` | Drift check: 3 goalDefs (Property Deposit · Freedom buffer · China holiday) vs 5 goal-kind intents (above 3 + Test goal + Kia detail). **Test goal + Kia detail are intent-only — pollution.** Bundle 29 cleanup: drop intents without backing goalDef. |
+| `S.activePlan.savings` (legacy mirror) vs `S.activePlan.overrides['savings:*']` (canonical) | Post-Bundle 27 P6.2 the override is primary, mirror is fallback. ✓ no drift if undo flow is correct (Bundle 27 carry-over bug B28-13). |
+| `S.activePlan.income.bonus` vs `S.activePlan.bonus` | Stored at `S.activePlan.income.bonus`. The audit doc's earlier "activePlan.bonus undefined" was technically true but trivially so (the field is at `.income.bonus` not `.bonus`). No mirror drift. |
+| `S.bonuses` (PLAN-tab Expected Extra Income) vs `S.activePlan.income.bonus` (canvas) | **TWO different concepts**: `S.bonuses` is a static list of expected extra incomes (Bundle 16 era); `activePlan.income.bonus` is per-cycle bonus state. Not a mirror — different domains. Bundle 29 hygiene: consider whether bonuses array should populate the cycle bonus field. |
+| `S.income` vs `S.activePlan.income.netPay` | Mirror pair. `openEditPaydayBonus` manually syncs at L10270. **Smell**: BRAIN.config.setIncome should propagate to activePlan.income.netPay too. Bundle 29 candidate. |
+| `paidBills["2026-5-Google Microsoft-1"]` | r60+r64 should have renamed to `Google One-1` via seedV26. Current dump still has the old key. **Stale state** — either seedV26 didn't fire against this dump or migration ordering. **Verify on phone tonight or pre-tonight migration check.** |
+
+**Cross-cut verdict:** mirrors are mostly intentional and audit-clean. 4 cleanup candidates queued for Bundle 29 hygiene + 1 stale-key concern needs verify-tonight.
 
 ---
 
 ## STEP 2.3 — Vision UI pass
 
-_[Pending — runs after captures complete.]_
+**Captures referenced:** 14 plan-top · 15 plan-provisions · 16 plan-goals · 17 plan-trips · 18 plan-add-savings-modal · 19 plan-edit-trip-modal (FAILED capture · finding) · 20 plan-payday-plan · 41 modal-add-bucket-over-canvas · 49 modal-max-day-math · 50 modal-add-debt · 51 modal-edit-goal · 52 modal-add-trip.
+
+**Vision findings (each cross-checked against render source):**
+
+| Finding | Source confirms | Verdict |
+|---|---|---|
+| Bar caption at canvas root (L9669) renders 11px grey-on-grey · invisible as legend | `font-size:11px;color:var(--text3);text-align:center` | ⚠️ Confirmed not a legend; Surface 1 P1 already flagged. |
+| Mum-summary bubble + REMAINDER tile + ESSENTIALS section all stack tightly | L9661-9714 | Tier-1 split (3-1-1) — needs John's call. |
+| Capture #19 plan-edit-trip-modal: "no edit-trip button found (after WRX-scope filter)" — script failure | Layer V script `attemptStep` couldn't locate the edit-trip affordance | **Coverage gap — script's trip-edit selector needs update.** OR the affordance moved post-r9. Verify on phone tonight. |
+| PLAN-tab Annual Provisions tile (capture #15) is a long list — 5 items × per-item rows | L22798 | Confirms John's "Annual Provisions section that should be removed realistically" → Tier-2 reframe to single nav-row proposed. |
+| PLAN-tab Goals tile (capture #16) — 3 rich cards (Property Deposit · Freedom buffer · China filtered out — appears via Trips). Buttons row + projection table per card. | L22422-22507 | ✓ ship-quality. The "mother" depth-gap is asymmetric — canvas needs to mirror this depth, not the other way. |
+| Capture #20 plan-payday-plan (237 KB — small file, suggests truncation OR sparse render) | Renders via `openPaydayPlan` → renderPaydayPlanRoot. Per LAYER-V-DEEP-ANALYSIS the script captures the parent slide-over view, not navigated-into sub-screens. | **Layer V coverage gap §F.** Sub-screen captures are missing — not currently navigable from capture script. |
+| Sub-screen captures (Bills sub / Debts sub / Savings sub / Living sub / Upcoming sub / all canvas modals) — NOT in capture set | Confirmed by manifest scan | **Layer V coverage gap.** Bundle 29 candidate: extend script to open canvas + each sub-screen + each modal. |
+
+**Density check from PNGs:**
+- PLAN-tab Goals tile cards (~16 padding, 22px emoji header, 15px name, 12px description, 22px % large) on 412×915 viewport ✓ comfortable.
+- Annual Provisions tile rows: 5 items densely listed, would feel even more redundant on John's phone today.
+- Canvas root proportion bar segments visible BUT colours hard to distinguish on phone-grade displays without legend.
+
+**Vision verdict:** confirmed two surface-level findings (bar legend missing, Annual Provisions redundancy). One coverage gap (sub-screen + modal captures missing from Layer V). One script bug (#19 trip-edit selector). No surprises beyond what the code walks already surfaced.
+
+---
 
 ---
 
 ## STEP 2.4 — Summary
 
-_[Pending — runs at end of STEP 2.]_
+### Counts
 
-- Counts
-- Tonight-session readiness verdict
-- Prioritised fix list (P0 / P1 / P2 / queued)
-- 🔴 list
-- Tier 3 architecture proposals (if any)
+- **Surfaces walked:** 24 (canvas root · 5 sub-screens · 11 canvas modals · 7 PLAN-tab mother tiles · NW header · cycle-entry tile · annual-provisions tile)
+- **Interactive elements traced:** ~60 across canvas (every tap-target / input / toggle / button / nav-row)
+- **Number divergences:** 2 minor (DRY violation in canvas root `_provisionsTotal` computed twice; Ask AI prompt may not include bonus in total — verify)
+- **Generic-vs-specific findings:** 2 P0 (Property Deposit invisible on canvas Savings · Freedom Buffer mislabeled as Rainy Day Fund) + 1 P1 ("Add new savings target" hint reads as non-CTA)
+- **Stale strings:** 1 PLAN-mode alert (`renderPaydaySavings` L11048 pre-lock tick hint) violates UX contract §6
+- **Sticky-state bugs:** 1 P0 root cause (`rolloverIfNeeded` drops `income.bonus` on cycle-end) + 1 P0 missing affordance (no `markPaydayLanded`)
+- **Empty-state issues:** 1 P1 (canvas Savings goals section absent when no buckets, no message)
+- **Legacy-mirror drifts:** 1 stale paidBills key (`Google Microsoft-1` should be `Google One-1`) + 2 intent-pollution entries (Test goal · Kia detail)
+- **Layer V coverage gaps:** sub-screen captures missing (canvas Bills/Debts/Savings/Living/Upcoming + canvas modals not navigated). Plus script bug capture #19 plan-edit-trip-modal.
+- **BRAIN architectural overlap proposals:** 1 Tier-3 SDD candidate (intent-driven canvas Savings rendering) queued for Bundle 29
+- **Tier-2 reframe candidates:** 1 (PLAN-tab Annual Provisions tile → single nav-row) — 5/5 personas converge
+- **Boot self-test coverage gaps:** ~14 PLAN-mode entry-point reachability checks missing
+
+### Tonight-session readiness verdict
+
+**🟡 Audit-ready, P0 fixes needed.** John's tonight session can run end-to-end TODAY ONLY IF the following P0 fixes ship:
+
+1. **P0.1 — Bonus persistence through `rolloverIfNeeded`.** Today is cycle-end (2026-05-14 = cycleEndDate). First canvas open will rollover the cycle and silently drop any pre-rollover bonus. **Fix shape:** in `rolloverIfNeeded` L17978-83, conditionally carry `prevPlan.income.bonus` to `newPlan` when `bonus.status === 'expected'`. Add audit-log `plan_bonus_carried_to_new_cycle` event. Toast: "🔁 New cycle started — your $X bonus carried forward." (~20 LOC, low risk.)
+
+2. **P0.2 — Manual `markPaydayLanded` affordance.** John has been paid in bank but `paydayReceived: false` in app (deliberate). He needs a way to record "payday landed early" when he chooses, so the cycle/freedom math acknowledges the salary in hand. **Fix shape:** add `BRAIN.plan.markPaydayLanded(ts, source)` method + `PAYDAY_MANUAL_LANDED` source tag + UI affordance (button on canvas-header OR in Bonus modal flow). `_resolveNextPayday`/`_resolvePreviousPayday` honor `actualPaydayTs` for current cycle if set. (~50 LOC + boot self-test entry + guardian-runtime check.)
+
+**Both fixes are surgical, audit-clean, low-blast-radius.** Tonight viable WITH the fixes; broken WITHOUT.
+
+P1 polish (if STEP 3 time allows):
+- Bar legend on canvas root proportion bar (~10 LOC).
+- Cycle-end label "0 days left" → "Cycle ended — payday tomorrow" copy fix (~3 LOC).
+- Pre-lock tick `alert()` L11048 → toast (~3 LOC).
+- 14 boot self-test reachability entries (~14 LOC batched).
+- PLAN-tab Annual Provisions tile → single nav-row (Tier-2 reframe — pending John's go).
+
+### Prioritised fix list
+
+**P0 (tonight blockers — must ship in STEP 3):**
+
+1. Bonus persistence through `rolloverIfNeeded` — preserve `income.bonus` when status='expected'.
+2. Manual `markPaydayLanded` affordance — new BRAIN.plan method + UI button.
+
+**P1 (this session if STEP 3 time, else next session):**
+
+3. Proportion bar legend on canvas root.
+4. Cycle-end label "0 days left" copy.
+5. Pre-lock tick alert → toast.
+6. Boot self-test reachability entries (~14 entries).
+7. PLAN-tab Annual Provisions tile → single nav-row (Tier-2 reframe pending John).
+8. "Add new savings target" hint phrasing.
+9. Canvas Savings empty-state for goals section.
+10. openEditPaydaySavings goal-context subtitle.
+
+**P2 (this bundle 28, audit-driven, queued):**
+
+11. DRY: canvas root computes `_provisionsTotal`/`essentialsTotal` twice (L9657 vs L9680).
+12. Ask AI prompt path — verify bonus inclusion in totalToPlan-equivalent.
+13. Trip-alloc bucket auto-creation parity (current: auto-allocate only).
+14. Layer V script: navigate into canvas sub-screens + modals + fix #19 trip-edit selector.
+
+**Queued (Bundle 29+, ACTION + WHEN):**
+
+15. **Tier 3 Bundle 29:** intent-driven canvas Savings rendering — SDD draft in §E above; **ACTION:** finalise SDD `docs/sdd/SDD-2026-05-14-intent-driven-savings.md` after John's go/queue call **WHEN:** Bundle 29 Mother-redesign theme.
+16. **Bundle 29 hygiene:** drop legacy `S.tripDefs` / `S.goalDefs` once intent readers migrate; cleanup migration for test-pollution intents (Test goal · Kia detail).
+17. **Bundle 29:** `BRAIN.config.setIncome` propagate to `S.activePlan.income.netPay` automatically (drop manual sync at L10270).
+18. **Bundle 29:** `BRAIN.allocation.lock` stamp `S.activePlan.lockedAt` itself (drop manual stamp at L10465-9).
+19. **Bundle 29:** `S.bonuses` array vs `S.activePlan.income.bonus` — clarify boundaries / consolidate.
+20. **Bundle 29:** Window-global `_billEditMode` → component state.
+21. **Bundle 29:** stale `paidBills['Google Microsoft-1']` key — verify seedV26 ran or add cleanup.
+22. **Bundle 30:** `BRAIN.allocation.lock` + activePlan.lockedAt single-write atomicity (smaller scope than Tier-3 redesign).
+23. **Bundle 30:** Rules-as-data (per Audit A1 §5.5 + REWRITE-COMPARISON §5).
+
+### 🔴 list (needs John's call)
+
+- **R1 — Bucket-vs-intent mismatch on canvas Savings sub.** Property Deposit invisible · Freedom Buffer mislabeled. Two options: (a) wait for Tier-3 redesign Bundle 29 (clean), or (b) ship a quick-fix this session that adds goal-name subtitle on bucket rows ("Freedom Buffer — stored in Rainy Day Fund · $0/$9,000"). Option (b) is ~15 LOC, low risk, addresses tonight's John-side perception without the full redesign. **Recommend (b) tonight + (a) Bundle 29.** Pending your call.
+
+- **R2 — Tier-2 reframe: PLAN-tab Annual Provisions tile → single nav-row.** 5/5 personas converge but this session vs Bundle 29? Recommend **this session** (small scope, John explicit ask). Pending your go.
+
+- **R3 — Mum-summary bubble vs REMAINDER tile redundancy.** Tier-1 deliberation split 3-1-1. Audit recommends **drop the bubble + promote proportion bar legend + leave REMAINDER tile as anchor.** Design lead dissent: "Mum-readable summary at top" was deliberate r46. Pending your call.
+
+### Tier 3 architecture proposals (queued)
+
+- **SDD-2026-05-14-intent-driven-savings.md** — intent-driven canvas Savings rendering with bucket subline. 7/7 personas FOR + 5 manageable AGAINST. **Queue Bundle 29 Mother-redesign theme.** SDD draft skeleton in §E above; full SDD written if John gives go on R1 option (a).
+
+---
+
+_(End of STEP 2 audit. STEP 3 P0 fix sprint pending John's go after CHECKPOINT.)_
