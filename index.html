@@ -555,8 +555,15 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .import-area:focus{border-color:var(--green)}
 .section-hdr{font-size:13px;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.07em;margin:16px 0 8px}
 .danger-btn{width:100%;padding:13px;background:none;border:1px solid var(--red-border);border-radius:var(--r-sm);font-size:15px;font-weight:600;color:var(--red);cursor:pointer}
-.add-btn{width:100%;padding:11px;background:none;border:1px dashed var(--border2);border-radius:var(--r-sm);font-size:14px;font-weight:500;color:var(--text3);cursor:pointer;margin-top:4px;transition:all .2s}
-@media (hover:hover) { .add-btn:hover{border-color:var(--green);color:var(--green)} }
+/* r76 (John 2026-05-14 ask: "feel like ive paid money for it"): upgrade
+   .add-btn from thin dashed grey to a chunky bubble button — subtle
+   green-dim background, solid green border, larger tap target, slight
+   shadow + scale on press. Matches the PLAN-mode .pd-action-btn voice
+   so the "+ Add Debt" / "+ Log a transaction" affordances feel like
+   primary actions, not afterthoughts. */
+.add-btn{width:100%;padding:13px 14px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:12px;font-size:14px;font-weight:700;color:var(--green);cursor:pointer;margin-top:8px;transition:transform .12s ease-out,background .15s,border-color .15s;letter-spacing:.02em;font-family:inherit;-webkit-tap-highlight-color:transparent}
+.add-btn:hover{background:rgba(0,232,122,0.18);border-color:var(--green)}
+.add-btn:active{transform:scale(0.985)}
 .empty-state{font-size:14px;color:var(--text3);padding:8px 0;font-style:italic}
 .bonus-row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
 .bonus-row .s-input{margin-bottom:0}
