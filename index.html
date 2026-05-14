@@ -10189,6 +10189,8 @@ function openEditPaydaySavings(bucketName) {
   if (monthly > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:4px">Monthly target: <strong style="font-family:var(--mono);color:var(--text2)">$' + Math.round(monthly).toLocaleString() + '</strong></div>';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Allocate this cycle:</div>';
   body += _buildQuickPickGrid(_generateQuickPicks('savings', monthly), current);
+  // Bundle 29 alive: live preview of allocation impact
+  body += '<div id="bucket-live-preview"></div>';
   // Bundle 28 round 9: Manage section at the bottom so user can delete the
   // bucket (+ linked goal/trip intent) from inside the canvas, not just
   // from PLAN dashboard. addresses john's "feature needs to be available
@@ -10200,7 +10202,34 @@ function openEditPaydaySavings(bucketName) {
     title: _modalTitle,
     hint: _modalHint,
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      _wireQuickPickGrid();
+      const snap = BRAIN.plan.getSnapshot();
+      _attachLivePreview({
+        previewId: 'bucket-live-preview',
+        recompute: () => {
+          const picked = _readQuickPickValue();
+          const newAlloc = picked == null ? current : picked;
+          const allocDelta = newAlloc - current;
+          const saved = +bucket.saved || 0;
+          const target = (_goalDef && +_goalDef.target) || +bucket.goal || 0;
+          const newProgress = target > 0 ? Math.min(100, Math.round(((saved + newAlloc) / target) * 100)) : 0;
+          const oldProgress = target > 0 ? Math.round((saved / target) * 100) : 0;
+          const newSavingsTotal = (snap.savings.total || 0) + allocDelta;
+          const newRemainder = (snap.totalToPlan || 0) - ((snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + ((typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0));
+          const newStillFree = newRemainder - newSavingsTotal - (snap.knownUpcoming.total || 0);
+          const goalLabel = (_goalDef && _goalDef.name) || bucketName;
+          const rows = [
+            { label: 'This cycle into ' + goalLabel, value: '$' + Math.round(newAlloc).toLocaleString() + (allocDelta !== 0 ? ' (' + (allocDelta > 0 ? '+' : '') + '$' + Math.abs(Math.round(allocDelta)).toLocaleString() + ')' : ''), kind: allocDelta > 0 ? 'pos' : allocDelta < 0 ? 'warn' : '' },
+          ];
+          if (target > 0) {
+            rows.push({ label: 'Goal progress', value: oldProgress + '% → ' + newProgress + '%', kind: newProgress > oldProgress ? 'pos' : '' });
+          }
+          rows.push({ label: 'Pool still free', value: '$' + Math.round(newStillFree).toLocaleString(), kind: newStillFree >= 0 ? 'pos' : 'neg' });
+          return { rows };
+        },
+      });
+    },
     save: () => {
       const amt = _readQuickPickValue();
       if (amt === null) return { ok: false, reason: 'Pick an amount' };
@@ -10212,6 +10241,7 @@ function openEditPaydaySavings(bucketName) {
       if (!r.ok) return r;
       renderPaydaySavings();
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof _haptic === 'function') _haptic('light');
       if (typeof showToast === 'function') showToast('✓ $' + amt + ' → ' + bucketName);
       return { ok: true };
     },
@@ -10321,6 +10351,8 @@ function openEditPaydayTripAlloc(tripId) {
   if (remaining > 0) body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Need $' + perWeek + '/week to hit it before the trip.</div>';
   else body += '<div style="font-size:13px;color:var(--green);margin-bottom:8px">✅ Funded.</div>';
   body += _buildQuickPickGrid([0, 100, 200, 300, 500, 750, 1000], current);
+  // Bundle 29 alive: live preview of trip-funding impact
+  body += '<div id="trip-live-preview"></div>';
   // Bundle 28 round 9: Delete this trip button so user can manage trips
   // directly from the canvas (mirrors openEditPaydaySavings change).
   body += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">' +
@@ -10330,7 +10362,33 @@ function openEditPaydayTripAlloc(tripId) {
     title: 'Allocate to ' + trip.name,
     hint: 'This cycle\'s contribution toward the trip.',
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      _wireQuickPickGrid();
+      const snap = BRAIN.plan.getSnapshot();
+      _attachLivePreview({
+        previewId: 'trip-live-preview',
+        recompute: () => {
+          const picked = _readQuickPickValue();
+          const newAlloc = picked == null ? current : picked;
+          const allocDelta = newAlloc - current;
+          const newSaved = saved + newAlloc;
+          const newProgress = budget > 0 ? Math.min(100, Math.round(newSaved / budget * 100)) : 0;
+          const oldProgress = budget > 0 ? Math.round(saved / budget * 100) : 0;
+          const stillNeeded = Math.max(0, budget - newSaved);
+          const newSavingsTotal = (snap.savings.total || 0) + allocDelta;
+          const newRemainder = (snap.totalToPlan || 0) - ((snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + ((typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0));
+          const newStillFree = newRemainder - newSavingsTotal - (snap.knownUpcoming.total || 0);
+          const rows = [
+            { label: 'This cycle into ' + trip.name, value: '$' + Math.round(newAlloc).toLocaleString(), kind: newAlloc > 0 ? 'pos' : '' },
+            { label: 'Trip progress', value: oldProgress + '% → ' + newProgress + '%', kind: newProgress > oldProgress ? 'pos' : '' },
+            { label: 'Still need before trip', value: '$' + Math.round(stillNeeded).toLocaleString(), kind: stillNeeded === 0 ? 'pos' : 'warn' },
+            { label: 'Pool still free', value: '$' + Math.round(newStillFree).toLocaleString(), kind: newStillFree >= 0 ? 'pos' : 'neg' },
+          ];
+          const hint = stillNeeded > 0 ? 'Need ~$' + perWeek + '/week to fully fund before departure.' : '';
+          return { rows, hint };
+        },
+      });
+    },
     save: () => {
       const amt = _readQuickPickValue();
       if (amt === null) return { ok: false, reason: 'Pick an amount' };
@@ -10338,6 +10396,7 @@ function openEditPaydayTripAlloc(tripId) {
       if (!r.ok) return r;
       renderPaydaySavings();
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof _haptic === 'function') _haptic('light');
       if (typeof showToast === 'function') showToast('✓ $' + amt + ' → ' + trip.name);
       return { ok: true };
     },
@@ -10408,6 +10467,8 @@ function openEditPaydayBonus() {
   ], bonus.status || 'expected');
   body += '</div>';
   body += '<div style="font-size:12px;color:var(--text3);margin-top:10px;line-height:1.5">Bonuses vary with company performance. Adjust this anytime as your expectation changes.</div>';
+  // Bundle 29 alive: live preview of total income + cycle remainder
+  body += '<div id="bonus-live-preview"></div>';
   EDIT_MODAL.openCustom({
     title: 'Pay & bonus this cycle',
     hint: 'Set your expected income for this cycle.',
@@ -10419,6 +10480,29 @@ function openEditPaydayBonus() {
       const section = document.getElementById('bonus-amount-section');
       const sync = () => { if (section) section.style.opacity = toggle.checked ? '1' : '0.4'; };
       if (toggle) { toggle.addEventListener('change', sync); sync(); }
+      _attachLivePreview({
+        previewId: 'bonus-live-preview',
+        inputIds: ['bonus-netpay', 'bonus-include', 'bonus-status'],
+        recompute: () => {
+          const netPay = +document.getElementById('bonus-netpay')?.value || (inc.netPay || 0);
+          const included = !!document.getElementById('bonus-include')?.checked;
+          const picked = _readQuickPickValue();
+          const bonusAmt = included ? (picked == null ? (bonus.amount || 0) : picked) : 0;
+          const newTotalToPlan = netPay + bonusAmt;
+          const oldTotalToPlan = snap.totalToPlan;
+          const provisions = (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() : 0;
+          const essentials = (snap.bills.total || 0) + (snap.debts.total || 0) + (snap.dailyLiving.plannedTotal || 0) + provisions;
+          const newRemainder = newTotalToPlan - essentials;
+          const delta = newTotalToPlan - oldTotalToPlan;
+          const rows = [
+            { label: 'Net pay', value: '$' + Math.round(netPay).toLocaleString() },
+            { label: included ? 'Bonus' : 'Bonus (off)', value: included ? '$' + Math.round(bonusAmt).toLocaleString() : '$0', kind: included ? 'pos' : '' },
+            { label: 'Money coming in', value: '$' + Math.round(newTotalToPlan).toLocaleString() + (delta !== 0 ? ' (' + (delta > 0 ? '+' : '') + '$' + Math.abs(Math.round(delta)).toLocaleString() + ')' : ''), kind: delta > 0 ? 'pos' : delta < 0 ? 'neg' : 'strong' },
+            { label: 'Cycle remainder', value: '$' + Math.round(newRemainder).toLocaleString(), kind: newRemainder >= snap.bufferFloor ? 'pos' : newRemainder >= 0 ? 'warn' : 'neg' },
+          ];
+          return { rows };
+        },
+      });
     },
     save: () => {
       const netPay = +document.getElementById('bonus-netpay')?.value || 0;
@@ -10435,6 +10519,7 @@ function openEditPaydayBonus() {
       const r = BRAIN.plan.setBonus({ amount: amt || 0, included, status }, BRAIN.SOURCES.PLAN_BONUS_EDIT);
       if (!r.ok) return r;
       renderPaydayPlanRoot();
+      if (typeof _haptic === 'function') _haptic('medium');
       if (typeof showToast === 'function') showToast('✓ Pay + bonus updated');
       return { ok: true };
     },
@@ -10832,11 +10917,35 @@ function openEditPaydayLivingFloor() {
   let body = '';
   body += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Below this triggers a warning. Sets the minimum cushion you want per day for food, fuel, coffee, etc.</div>';
   body += _buildQuickPickGrid(_generateQuickPicks('floor', current), current);
+  // Bundle 29 alive: live preview of impact on cycle math
+  body += '<div id="floor-live-preview"></div>';
   EDIT_MODAL.openCustom({
     title: 'Daily minimum',
     hint: 'How tight is too tight per day?',
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      _wireQuickPickGrid();
+      _attachLivePreview({
+        previewId: 'floor-live-preview',
+        recompute: () => {
+          const picked = _readQuickPickValue();
+          const newFloor = picked == null ? current : picked;
+          const days = snap.daysInCycle || 30;
+          const newDailyTotal = newFloor * days;
+          const oldDailyTotal = current * days;
+          const dailyDelta = newDailyTotal - oldDailyTotal;
+          const newEssentials = (snap.bills.total || 0) + (snap.debts.total || 0) + newDailyTotal + (typeof PLAN !== 'undefined' && PLAN.getTotalProvisions ? +PLAN.getTotalProvisions() : 0);
+          const newRemainder = (snap.totalToPlan || 0) - newEssentials;
+          const status = newFloor < (current * 0.6) ? '⚠️ Critical' : newFloor < current ? '👀 Tight' : '✅ Healthy';
+          const rows = [
+            { label: 'New daily total', value: '$' + Math.round(newDailyTotal).toLocaleString() + ' (' + (dailyDelta >= 0 ? '+' : '') + '$' + Math.abs(Math.round(dailyDelta)).toLocaleString() + ')', kind: dailyDelta > 0 ? 'neg' : dailyDelta < 0 ? 'pos' : '' },
+            { label: 'Status would be', value: status, kind: status.indexOf('Critical') >= 0 ? 'neg' : status.indexOf('Tight') >= 0 ? 'warn' : 'pos' },
+            { label: 'Cycle remainder', value: '$' + Math.round(newRemainder).toLocaleString(), kind: newRemainder >= snap.bufferFloor ? 'pos' : newRemainder >= 0 ? 'warn' : 'neg' },
+          ];
+          return { rows, hint: 'Saving locks $' + newFloor + '/day for daily-living over ' + days + ' days.' };
+        },
+      });
+    },
     save: () => {
       const amt = _readQuickPickValue();
       if (amt === null) return { ok: false, reason: 'Pick an amount' };
@@ -10844,6 +10953,7 @@ function openEditPaydayLivingFloor() {
       if (!r.ok) return r;
       renderPaydayLiving();
       if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof _haptic === 'function') _haptic('light');
       if (typeof showToast === 'function') showToast('✓ Daily floor: $' + amt);
       return { ok: true };
     },
