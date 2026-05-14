@@ -10256,6 +10256,13 @@ function openPaydayPostLockStatus(category, itemId) {
         }
       } catch (_) {}
     }
+  } else if (category === 'upcoming') {
+    const item = ((S.activePlan && S.activePlan.knownUpcoming) || []).find(i => i.id === itemId);
+    if (item) {
+      displayName = item.name || itemId;
+      const catEmojis = { gift: '🎁', essentials: '🧴', subscription: '📺', event: '🎟️', family: '👨‍👩‍👧', health: '❤️', 'one-off': '🧾', other: '📦' };
+      displayEmoji = catEmojis[item.category] || '📦';
+    }
   }
   const fmtC = (n) => '$' + Math.round(n).toLocaleString();
   let body = '';
@@ -10263,18 +10270,31 @@ function openPaydayPostLockStatus(category, itemId) {
   body += '<div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Allocated this cycle</div>';
   body += '<div style="font-family:var(--mono);font-size:24px;font-weight:800;color:var(--text)">' + fmtC(amt) + '</div>';
   body += '</div>';
+  // Category-aware status labels
+  const actionVerb = category === 'upcoming' ? 'bought' : category === 'bill' ? 'paid' : 'transferred';
+  const actionPrompt = category === 'upcoming'
+    ? 'Have you actually bought this item?'
+    : category === 'bill'
+      ? 'Have you confirmed the bill payment?'
+      : 'Have you actually moved the money in your bank?';
+  const actionWait = category === 'upcoming'
+    ? 'Tick this when you\'ve bought it.'
+    : 'Tick this when you\'ve made the real-world ' + (category === 'bill' ? 'payment' : 'transfer') + '.';
   if (isTicked) {
     body += '<div style="background:rgba(34,197,94,0.10);border:1px solid var(--green-border);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--green);line-height:1.55">';
-    body += '<strong>✓ Marked transferred</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">You\'ve ticked this — the in-app savings flow has run. Have you actually moved the money in your bank?</div>';
+    body += '<strong>✓ Marked ' + actionVerb + '</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">' + actionPrompt + '</div>';
     body += '</div>';
   } else {
     body += '<div style="background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.30);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:var(--amber);line-height:1.55">';
-    body += '<strong>⏳ Not yet transferred</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">Tick this when you\'ve made the real-world transfer.</div>';
+    body += '<strong>⏳ Not yet ' + actionVerb + '</strong><div style="color:var(--text2);font-size:12px;margin-top:4px">' + actionWait + '</div>';
     body += '</div>';
   }
   // Untick affordance — only when ticked
   if (isTicked) {
-    body += '<button onclick="confirmUntickAllocation(\'' + category + '\',\'' + itemId.replace(/'/g, "\\'") + '\')" style="width:100%;min-height:44px;padding:10px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.30);border-radius:10px;color:rgba(231,76,60,0.95);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">↩ Untick — I haven\'t actually transferred yet</button>';
+    const untickLabel = category === 'upcoming'
+      ? '↩ Untick — I haven\'t actually bought it'
+      : '↩ Untick — I haven\'t actually ' + actionVerb + ' yet';
+    body += '<button onclick="confirmUntickAllocation(\'' + category + '\',\'' + itemId.replace(/'/g, "\\'") + '\')" style="width:100%;min-height:44px;padding:10px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.30);border-radius:10px;color:rgba(231,76,60,0.95);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px">' + untickLabel + '</button>';
   }
   body += '<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.5;font-style:italic">Reallocating to a different goal mid-cycle? Re-plan from the canvas (🔓 Re-plan button) to edit allocations cleanly.</div>';
   if (typeof EDIT_MODAL !== 'undefined' && EDIT_MODAL.openCustom) {
@@ -10603,6 +10623,19 @@ function openEditPaydayUpcoming(itemId) {
   const list = (S.activePlan && S.activePlan.knownUpcoming) || [];
   const item = itemId ? list.find(i => i.id === itemId) : null;
   const isAdd = !item;
+  // Bundle 29 demon-time: post-lock + ticked upcoming routes to status modal
+  // (same as savings rows). The tick already fired the txn — editing the
+  // amount post-tick is the wrong affordance.
+  try {
+    if (!isAdd && item) {
+      const _snap = BRAIN.plan.getSnapshot();
+      const _ticked = !!(S.activePlan && S.activePlan.ticks && S.activePlan.ticks.upcoming && S.activePlan.ticks.upcoming[itemId]);
+      if (_snap.locked && _ticked) {
+        openPaydayPostLockStatus('upcoming', itemId);
+        return;
+      }
+    }
+  } catch (_) {}
   const current = item ? (+item.amount || 0) : 0;
   const currentCat = item ? (item.category || 'other') : 'other';
   const currentName = item ? item.name : '';
