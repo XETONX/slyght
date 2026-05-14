@@ -13174,15 +13174,35 @@ const EDIT_MODAL = {
     document.body.classList.add('edit-modal-open');
   },
   attemptSave() {
+    // r78 (John 2026-05-15: "shows the dashboard then quickly goes back to
+    // showing the bubble"): the global flash root cause was every save()
+    // callback firing renderPaydayPlanRoot / renderAll DURING the save
+    // step, while the modal was still on top. Canvas re-rendered with new
+    // values; the 72% black backdrop only masks 72% of underlying content,
+    // so the canvas update was 28% visible — perceived as "dashboard
+    // briefly flashes through". The modal then closed and the canvas
+    // settled, but the eye caught the flash mid-transition.
+    //
+    // Fix: hide the modal IMMEDIATELY (visibility:hidden) before invoking
+    // _save(), so any render calls inside save() happen behind an
+    // invisible modal. On save failure, restore visibility so the user
+    // can fix the error. This is the global fix — works for every modal
+    // that calls _save() with embedded render calls, regardless of which
+    // specific renders the callback fires.
+    const root = document.getElementById('edit-modal');
+    const _hideForSave = () => { if (root) root.style.visibility = 'hidden'; };
+    const _restoreForError = () => { if (root) root.style.visibility = ''; };
     // Bundle 27 Phase 4: custom mode — _customBuilder owns the body; save
     // takes no arg (reads from custom DOM directly).
     if (this._isCustom) {
       if (this._save) {
+        _hideForSave();
         const r = this._save();
-        if (r && r.ok === false) { this.showError(r.reason || 'Save failed'); return; }
+        if (r && r.ok === false) { _restoreForError(); this.showError(r.reason || 'Save failed'); return; }
       }
       const afterCb = this._onAfter;
       this.close();
+      if (root) root.style.visibility = '';  // reset for next open
       if (typeof afterCb === 'function') afterCb();
       if (typeof renderAll === 'function') renderAll();
       return;
@@ -13198,11 +13218,13 @@ const EDIT_MODAL = {
       if (!v || v.ok === false) { this.showError((v && v.reason) || 'Invalid value'); return; }
     }
     if (this._save) {
+      _hideForSave();
       const r = this._save(val);
-      if (r && r.ok === false) { this.showError(r.reason || 'Save failed'); return; }
+      if (r && r.ok === false) { _restoreForError(); this.showError(r.reason || 'Save failed'); return; }
     }
     const afterCb = this._onAfter;
     this.close();
+    if (root) root.style.visibility = '';
     if (typeof afterCb === 'function') afterCb();
     if (typeof renderAll === 'function') renderAll();
   },
