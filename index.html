@@ -10975,13 +10975,20 @@ function openPaydayAutoAllocate() {
 // ─── Lock / Unlock flow (Phase 6) ──────────────────────────────────────
 function openPaydayLockPlan() {
   const snap = BRAIN.plan.getSnapshot();
-  const remainder = snap.derived.freeTotal;
+  // Bundle 29 F-08 fix: lock-shortfall check now uses snap.derived.surplus
+  // (which subtracts provisions) instead of snap.derived.freeTotal (which
+  // omits them). Pre-fix, John could lock a plan that was actually short
+  // by ~$298/mo after provisions were honored. The auto-allocate flow
+  // already uses surplus; the lock validator was the one outlier.
+  const remainder = +snap.derived.surplus || 0;
+  const freeTotal = snap.derived.freeTotal;
   const buffer = snap.bufferFloor;
-  // If free < 0, lock disabled
+  // If surplus < 0, lock disabled. Surface the math so user knows what to trim.
   if (remainder < 0) {
+    const _shortfall = Math.abs(Math.round(remainder));
     EDIT_MODAL.openInfo({
       title: 'Can\'t lock yet',
-      body: 'You\'re $' + Math.abs(Math.round(remainder)).toLocaleString() + ' over your plan. Trim a goal allocation or shift a bill before locking.',
+      body: 'You\'re $' + _shortfall.toLocaleString() + ' short after essentials (bills, debts, daily living, annual provisions, safety buffer).\n\nOptions:\n• Trim a savings/upcoming allocation\n• Defer a bill to next cycle\n• Lower your daily-living floor\n• Reduce your safety buffer\n• Drop a known-upcoming item',
     });
     return;
   }
@@ -19434,13 +19441,46 @@ const BRAIN = {
           }
         });
       }
+      // Bundle 29 F-01 fix: when Apply overrides a bucket whose trip ALSO
+      // had a separate `savings:trip-X` override (set via openEditPaydayTripAlloc),
+      // we need to clear the trip-id override to prevent double-count.
+      // Pre-fix: trip-id and bucket-name overrides both persisted →
+      // savingsTotal summed both → freeTotal inflated → lock-modal
+      // "$162 vs $364 floor" warning fired falsely (frame 12 of dark sweep).
+      // Strategy: for each bucket allocation, check if a matching trip exists
+      // (via PLAN.getTrips name match or bucketHint reverse-lookup). If so,
+      // clear that trip's savings:trip-<id> override.
+      let _tripsForCleanup = [];
+      try { _tripsForCleanup = (PLAN && PLAN.getTrips) ? (PLAN.getTrips() || []) : []; } catch (_) {}
+      const _stripStaleTripOverrides = (bucketName) => {
+        const bN = (bucketName || '').toLowerCase();
+        // Find trip whose name word-matches the bucket, OR whose bucketHint matches.
+        const trip = _tripsForCleanup.find(t => {
+          if (!t || !t.id) return false;
+          if ((t.bucketHint || '').toLowerCase() === bN) return true;
+          const tN = (t.name || '').toLowerCase();
+          if (!tN) return false;
+          return tN === bN || bN.indexOf(tN) >= 0 || tN.indexOf(bN) >= 0;
+        });
+        if (trip && S.activePlan && S.activePlan.overrides && S.activePlan.overrides['savings:trip-' + trip.id]) {
+          this.clearOverride('savings', 'trip-' + trip.id, source);
+          BRAIN.audit.append({ type: 'auto_apply_strip_trip_dup', tripId: trip.id, bucket: bucketName, source, ts: Date.now() });
+          return { stripped: true, tripId: trip.id };
+        }
+        return { stripped: false };
+      };
       const applied = [];
+      const dedupedTrips = [];
       Object.keys(rec.bucketAllocations).forEach(name => {
         const r = this.setOverride('savings', name, rec.bucketAllocations[name], { reason: 'auto-allocated' }, source);
-        if (r.ok) applied.push({ name, amt: rec.bucketAllocations[name], _newBucket: syntheticNames.has(name) });
+        if (r.ok) {
+          applied.push({ name, amt: rec.bucketAllocations[name], _newBucket: syntheticNames.has(name) });
+          const dedup = _stripStaleTripOverrides(name);
+          if (dedup.stripped) dedupedTrips.push({ bucket: name, tripId: dedup.tripId });
+        }
       });
-      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, created, source, ts: Date.now() });
-      return { ok: true, applied, created };
+      BRAIN.audit.append({ type: 'canvas_auto_apply', applied, created, dedupedTrips, source, ts: Date.now() });
+      return { ok: true, applied, created, dedupedTrips };
     },
     // ─── CYCLE ROLLOVER (Bundle 27 Phase 6.1) ─────────────────────────
     // Fires when current date is past the active plan's cycleEndDate.
