@@ -209,6 +209,24 @@ body.edit-modal-open{overflow:hidden}
 .pd-cycle-head{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:10px;font-size:12px;color:var(--text3);text-align:center;line-height:1.4}
 .pd-cycle-head .pd-cycle-range{font-weight:700;color:var(--text2);font-family:var(--mono)}
 .pd-cycle-head .pd-cycle-state{color:var(--text3)}
+/* Bundle 29 sub-screen ROW CARDS — _paydayRow bubble redesign. Each row
+   is a card with avatar circle + name/sub + value + tick + progress. */
+.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden}
+.pd-row-card:hover{border-color:var(--border2)}
+.pd-row-card:active{transform:scale(0.992)}
+.pd-row-card.is-ticked{background:linear-gradient(135deg,rgba(0,232,122,0.05),transparent 40%);border-color:var(--green-border)}
+.pd-row-card .pd-row-avatar{grid-row:1 / span 2;width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;border:1px solid var(--border)}
+.pd-row-card .pd-row-text{grid-column:2;display:flex;flex-direction:column;gap:2px;min-width:0}
+.pd-row-card .pd-row-name{font-size:14px;font-weight:600;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-row-card .pd-row-sub{font-size:11px;color:var(--text3);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pd-row-card .pd-row-end{grid-column:3;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pd-row-card .pd-row-value{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap}
+.pd-row-card .pd-row-tick{width:30px;height:30px;border-radius:50%;border:2px solid var(--border2);background:transparent;color:transparent;font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-family:inherit;padding:0}
+.pd-row-card .pd-row-tick:hover{border-color:var(--text2)}
+.pd-row-card .pd-row-tick.ticked{background:var(--green);border-color:var(--green);color:#000}
+.pd-row-card .pd-row-progress{grid-column:1 / -1;grid-row:3;margin-top:6px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;width:100%}
+.pd-row-card .pd-row-progress span{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .35s cubic-bezier(.2,.7,.2,1)}
+.pd-row-card.is-ticked .pd-row-progress span{background:var(--green)}
 .payday-prop-seg{height:100%;transition:width .35s cubic-bezier(0.4,0,0.2,1)}
 .payday-hero{background:var(--bg2);border-radius:14px;padding:18px 16px;margin-bottom:14px}
 /* Bundle 29 alive-upgrade — micro-animation foundation. Pulse a tile when its
@@ -11850,19 +11868,44 @@ function _paydayProgressBar(opts) {
 }
 
 function _paydayRow(opts) {
-  // opts: { ticked, icon, name, sub, value, valueWarn, onTap, onTickTap }
-  const tickGlyph = opts.ticked ? '☑' : '☐';
-  const tickCol = opts.ticked ? 'var(--green)' : 'var(--text3)';
+  // Bundle 29 demon-time bubble redesign: rows became cards. Each row is
+  // a self-contained tappable card with avatar (emoji circle) · name +
+  // sub-context · value + warning · tick affordance (now a circle-check)
+  // · optional progress bar.
+  //
+  // opts:
+  //   ticked      — boolean, post-lock tick state
+  //   icon        — emoji shown in the avatar circle (left)
+  //   name        — primary text
+  //   sub         — secondary text (single line, can include " · " separators)
+  //   value       — right-side amount string
+  //   valueWarn   — show amber ⚠️ next to value
+  //   progressPct — 0..100 to render a thin progress bar at the bottom of the card
+  //   onTap       — main row tap (string of inline JS)
+  //   onTickTap   — separate tap handler for the tick affordance
+  const ticked = !!opts.ticked;
+  const tickIcon = ticked ? '✓' : '';
+  const tickCls = ticked ? 'pd-row-tick ticked' : 'pd-row-tick';
   const valueCol = opts.valueWarn ? 'var(--amber)' : 'var(--text)';
   const warnGlyph = opts.valueWarn ? ' <span style="color:var(--amber)">⚠️</span>' : '';
-  return '<button class="settings-edit-row" onclick="' + (opts.onTap || '') + '" style="padding:12px 14px">' +
-    '<span onclick="event.stopPropagation();' + (opts.onTickTap || '') + '" style="font-size:20px;color:' + tickCol + ';margin-right:12px;min-width:24px;cursor:pointer">' + tickGlyph + '</span>' +
-    '<span class="row-multi">' +
-      '<span style="font-size:15px;color:var(--text)">' + (opts.icon ? (opts.icon + ' ') : '') + opts.name + '</span>' +
-      (opts.sub ? ('<span class="row-sub">' + opts.sub + '</span>') : '') +
-    '</span>' +
-    '<span class="row-value" style="color:' + valueCol + '">' + opts.value + warnGlyph + '</span>' +
-    '<span class="row-chevron">›</span>' +
+  const progressHtml = (opts.progressPct != null && opts.progressPct >= 0)
+    ? '<div class="pd-row-progress"><span style="width:' + Math.max(0, Math.min(100, opts.progressPct)).toFixed(0) + '%"></span></div>'
+    : '';
+  const avatarHtml = '<div class="pd-row-avatar">' + (opts.icon || '💰') + '</div>';
+  const tickHtml = (opts.onTickTap)
+    ? '<button type="button" class="' + tickCls + '" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="' + (ticked ? 'Unmark' : 'Mark') + ' ' + opts.name + '">' + tickIcon + '</button>'
+    : '';
+  return '<button class="pd-row-card' + (ticked ? ' is-ticked' : '') + '" onclick="' + (opts.onTap || '') + '" aria-label="' + opts.name + ': ' + (opts.sub || opts.value) + '">' +
+    avatarHtml +
+    '<div class="pd-row-text">' +
+      '<div class="pd-row-name">' + opts.name + '</div>' +
+      (opts.sub ? ('<div class="pd-row-sub">' + opts.sub + '</div>') : '') +
+    '</div>' +
+    '<div class="pd-row-end">' +
+      '<div class="pd-row-value" style="color:' + valueCol + '">' + opts.value + warnGlyph + '</div>' +
+      tickHtml +
+    '</div>' +
+    progressHtml +
   '</button>';
 }
 
@@ -12234,12 +12277,16 @@ function renderPaydaySavings() {
       }
       const bucketEmoji = (goalDef && goalDef.emoji)
         || (/china/i.test(b.name) ? '🌏' : /rainy/i.test(b.name) ? '🌧️' : /freedom/i.test(b.name) ? '🛡️' : /property|deposit|mum/i.test(b.name) ? '🏠' : /gift/i.test(b.name) ? '🎁' : '💰');
+      // Bundle 29 visual revamp: surface goal progress as a thin bar
+      // at the bottom of the row card. progressPct = saved / target × 100.
+      const _bucketPct = displayTarget > 0 ? Math.round((saved / displayTarget) * 100) : null;
       html += _paydayRow({
         ticked: !!ticks[b.name],
         icon: bucketEmoji,
         name: displayName,
         sub: subParts.join(' · '),
         value: fmtC2(amt),
+        progressPct: _bucketPct,
         onTap: "openEditPaydaySavings('" + b.name.replace(/'/g, "\\'") + "')",
         onTickTap: "paydayTick('savings', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)",
       });
