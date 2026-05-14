@@ -25,6 +25,12 @@ const useLocal = args.includes('--local');
 // runs both (npm run layerV:all). See package.json scripts.
 const skipDeep = args.includes('--skip-deep');
 const deepOnly = args.includes('--deep-only');
+// Bundle 29 demon-time: MOCK-SWEEP-PROMPTS v2 — when --sweep-package <slug>
+// is passed, ALSO emit a sweep-compliant package at
+// docs/reviews/sweep-<DATE>-<slug>/ with input/ subfolder (sequence-prefixed
+// PNG copies), METADATA.md stub, and the four phase markdown placeholders.
+// Captures still write to captures/ as usual; package is an additional output.
+const sweepSlug = getArg('sweep-package', null);
 const todayISO = new Date().toISOString().slice(0, 10);
 
 const FIXTURE_PATH = path.resolve(__dirname, '..', 'state-snapshot.json');
@@ -1617,6 +1623,111 @@ async function step(name, fn) {
   fs.writeFileSync(path.join(OUT_DIR, 'ui-code-map.json'), JSON.stringify(uiCodeMap, null, 2));
   console.log(`\nManifest:    ${path.join(OUT_DIR, 'manifest.json')}`);
   console.log(`UI-code map: ${path.join(OUT_DIR, 'ui-code-map.json')}`);
+
+  // Bundle 29 demon-time: optional sweep-package emit per MOCK-SWEEP-PROMPTS v2.
+  // Filter to Section 12 scenario captures (or whichever idx range the user
+  // ran), copy with sequence-prefixed names to docs/reviews/sweep-<date>-<slug>/.
+  if (sweepSlug) {
+    const sweepDir = path.resolve(__dirname, '..', 'docs', 'reviews', `sweep-${DATE_TAG}-${sweepSlug}`);
+    const inputDir = path.join(sweepDir, 'input');
+    if (!fs.existsSync(inputDir)) fs.mkdirSync(inputDir, { recursive: true });
+    // Default scope: Section 12 captures (idx 91-111). Override via --sweep-from / --sweep-to if needed.
+    const sweepFrom = +getArg('sweep-from', 91) || 91;
+    const sweepTo = +getArg('sweep-to', 111) || 111;
+    let copied = 0;
+    manifest.filter(m => m.idx >= sweepFrom && m.idx <= sweepTo && m.status === 'ok').forEach(m => {
+      const nn = String(m.idx - sweepFrom + 1).padStart(2, '0');
+      const newName = `${nn}-${m.slug}.png`;
+      const src = path.join(OUT_DIR, m.file);
+      const dst = path.join(inputDir, newName);
+      try { fs.copyFileSync(src, dst); copied++; } catch (_) {}
+    });
+    // Copy state-snapshot.json if present
+    if (fs.existsSync(FIXTURE_PATH)) {
+      try { fs.copyFileSync(FIXTURE_PATH, path.join(inputDir, 'state-snapshot.json')); } catch (_) {}
+    }
+    // Emit METADATA.md stub — John fills in §1 origin / §9 direct asks during real sweep
+    const metaPath = path.join(sweepDir, 'METADATA.md');
+    if (!fs.existsSync(metaPath)) {
+      const gitSha = (() => {
+        try { return require('child_process').execSync('git rev-parse HEAD', { cwd: path.resolve(__dirname, '..') }).toString().trim(); }
+        catch (_) { return 'unknown'; }
+      })();
+      const stub = [
+        `# Sweep METADATA — ${DATE_TAG} — ${sweepSlug}`,
+        '',
+        '## 1. Origin',
+        '',
+        '**John\'s original instruction:**',
+        '> [paste verbatim what John typed when triggering this sweep]',
+        '',
+        `**File CC swept:** ${inputDir}`,
+        `**Sweep run at:** ${new Date().toISOString()}`,
+        `**Commit at sweep time:** ${gitSha}`,
+        `**Branch:** main`,
+        '',
+        '## 2. Scenario',
+        '',
+        '**One-line description:** [e.g. "Walk Payday Plan happy path with $1,341 bonus"]',
+        '',
+        '**User flow walked:** [filled in via Phase 1]',
+        '',
+        '**Value of interest:** [the number / state field being tracked]',
+        '',
+        '**Pre-hypothesis:** [what CC predicted before running]',
+        '',
+        '## 3. Frame catalogue',
+        '',
+        '| Frame | Filename | State (what should be true) | Action just taken |',
+        '|---|---|---|---|',
+        ...manifest
+          .filter(m => m.idx >= sweepFrom && m.idx <= sweepTo && m.status === 'ok')
+          .map((m, i) => `| ${String(i + 1).padStart(2, '0')} | ${String(i + 1).padStart(2, '0')}-${m.slug}.png | (fill in) | ${m.note || '(fill in)'} |`),
+        '',
+        '## 4. Fixture state',
+        '',
+        '**state-snapshot.json provided?** ' + (fs.existsSync(FIXTURE_PATH) ? 'Yes — see input/state-snapshot.json' : 'No'),
+        '',
+        '## 5. What CC CAN verify from this sweep',
+        '',
+        '- Visual states across the frames',
+        '- Whether value-of-interest renders correctly per frame',
+        '',
+        '## 6. What CC CANNOT verify from this sweep',
+        '',
+        '- Canonical writer firing (would need audit log)',
+        '- Animation/timing behaviour (PNGs are stills)',
+        '- Race conditions',
+        '- Anything not rendered on screen',
+        '',
+        '## 7. Findings summary',
+        '',
+        '_Filled in after Phase 4._',
+        '',
+        '## 8. Fixes shipped this session',
+        '',
+        '_Filled in as commits land._',
+        '',
+        '## 9. Direct asks for Opus',
+        '',
+        '[Anything John specifically wants Opus to vision-review beyond default.]',
+        '',
+        '## 10. Open questions still parked',
+        '',
+        '_Filled in from Phase 2._',
+        '',
+      ].join('\n');
+      fs.writeFileSync(metaPath, stub);
+    }
+    // Emit empty phase placeholders so the package skeleton is complete
+    ['phase1-inventory.md', 'phase2-why-chains.md', 'phase3-reeval.md', 'phase4-proposals.md', 'handoff-to-opus.md'].forEach(name => {
+      const p = path.join(sweepDir, name);
+      if (!fs.existsSync(p)) fs.writeFileSync(p, `# ${name.replace('.md', '')}\n\n_To be filled in per MOCK-SWEEP-PROMPTS v2._\n`);
+    });
+    console.log(`\nSweep package: ${sweepDir}`);
+    console.log(`  ${copied} frame(s) copied to input/`);
+    console.log(`  METADATA.md + phase placeholders emitted`);
+  }
 
   await browser.close();
   console.log('Done.');
