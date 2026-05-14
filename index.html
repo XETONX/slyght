@@ -140,7 +140,10 @@ body.edit-modal-open{overflow:hidden}
 #pg-payday-plan{position:fixed;inset:0;background:var(--bg);z-index:510;transform:translateX(100%);transition:transform 0.35s cubic-bezier(0.4,0,0.2,1);overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 #pg-payday-plan.payday-active{transform:translateX(0)}
 #pg-payday-plan.has-active-subscreen{overflow:hidden}
-.payday-subscreen{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);transform:translateX(100%);transition:transform 250ms ease-out;z-index:20;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;visibility:hidden}
+.payday-subscreen{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--bg);transform:translateX(100%);transition:transform 250ms ease-out;z-index:20;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;visibility:hidden;scrollbar-width:none;-ms-overflow-style:none}
+.payday-subscreen::-webkit-scrollbar{display:none}
+.subscreen-body{scrollbar-width:none;-ms-overflow-style:none}
+.subscreen-body::-webkit-scrollbar{display:none}
 .payday-subscreen.payday-active{transform:translateX(0);visibility:visible}
 .payday-nav-row{display:flex;align-items:center;padding:16px;background:var(--bg2);border:none;color:var(--text);min-height:56px;text-align:left;cursor:pointer;width:100%}
 .payday-nav-row .row-icon{font-size:22px;margin-right:14px;width:28px;text-align:center;flex-shrink:0}
@@ -218,23 +221,37 @@ body.edit-modal-open{overflow:hidden}
 .pd-row-group{margin-bottom:10px}
 /* Bundle 29 sub-screen ROW CARDS — _paydayRow bubble redesign. Each row
    is a card with avatar circle + name/sub + value + tick + progress. */
-.pd-row-card{display:grid;grid-template-columns:48px 1fr auto;grid-template-rows:auto auto;gap:2px 12px;align-items:center;width:100%;padding:12px 14px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,border-color .15s,background .15s;position:relative;overflow:hidden;outline:none;-webkit-tap-highlight-color:transparent;appearance:none;-webkit-appearance:none}
+/* Bundle 29 demon-time fix: switched from display:grid to flex column +
+   inner flex row. Chromium has known rendering quirks with display:grid
+   on <button> elements at high DPR — specifically the implicit-row at
+   grid-row:3 was creating a phantom 1-2px column on the left edge of
+   the card extending past the bottom border (the "vertical strip"
+   artifact John saw). Flex layout has no such quirk. */
+.pd-row-card{display:flex;flex-direction:column;width:100%;padding:12px 14px;background:var(--bg2);border:0;border-radius:14px;color:inherit;cursor:pointer;text-align:left;margin-bottom:8px;font-family:inherit;transition:transform .12s ease-out,box-shadow .15s,background .15s;position:relative;overflow:hidden;outline:none;-webkit-tap-highlight-color:transparent;appearance:none;-webkit-appearance:none;box-shadow:0 0 0 1px var(--border)}
+.pd-row-card:hover{box-shadow:0 0 0 1px var(--border2)}
+.pd-row-card:focus-visible{box-shadow:0 0 0 2px var(--green)}
+.pd-row-card.is-ticked{box-shadow:0 0 0 1px var(--green-border)}
 .pd-row-card::-moz-focus-inner{border:0;padding:0}
 .pd-row-card:focus{outline:none}
-.pd-row-card:hover{border-color:var(--border2)}
 .pd-row-card:active{transform:scale(0.992)}
-.pd-row-card:focus-visible{border-color:var(--green);box-shadow:0 0 0 2px var(--green-dim)}
-.pd-row-card.is-ticked{background:linear-gradient(135deg,rgba(0,232,122,0.05),transparent 40%);border-color:var(--green-border)}
-.pd-row-card .pd-row-avatar{grid-row:1 / span 2;width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;border:1px solid var(--border)}
-.pd-row-card .pd-row-text{grid-column:2;display:flex;flex-direction:column;gap:2px;min-width:0}
+.pd-row-card.is-ticked{background:linear-gradient(135deg,rgba(0,232,122,0.05),transparent 40%)}
+.pd-row-card .pd-row-main{display:flex;align-items:center;gap:12px;width:100%}
+.pd-row-card .pd-row-avatar{width:42px;height:42px;border-radius:50%;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px;line-height:1;flex-shrink:0;border:1px solid var(--border)}
+.pd-row-card .pd-row-text{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
 .pd-row-card .pd-row-name{font-size:14px;font-weight:600;color:var(--text);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pd-row-card .pd-row-sub{font-size:11px;color:var(--text3);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pd-row-card .pd-row-end{grid-column:3;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pd-row-card .pd-row-end{display:flex;align-items:center;gap:8px;flex-shrink:0}
 .pd-row-card .pd-row-value{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);text-align:right;white-space:nowrap}
-.pd-row-card .pd-row-tick{width:30px;height:30px;border-radius:50%;border:2px solid var(--border2);background:transparent;color:transparent;font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;font-family:inherit;padding:0}
-.pd-row-card .pd-row-tick:hover{border-color:var(--text2)}
-.pd-row-card .pd-row-tick.ticked{background:var(--green);border-color:var(--green);color:#000}
-.pd-row-card .pd-row-progress{grid-column:1 / -1;grid-row:3;margin-top:6px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;width:100%}
+/* Bundle 29 (John 2026-05-14 ask): prominent mark-action button per row.
+   Pre-lock: hidden. Post-lock: full-width button at bottom of card with
+   explicit verb ("Mark as paid" / "Mark as allocated" / "Mark as bought").
+   Ticked state shows confirmation text + lighter background, still tappable
+   to undo. */
+.pd-row-card .pd-row-action{display:block;width:100%;margin-top:10px;padding:10px 14px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:10px;color:var(--green);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;text-align:center;font-family:inherit;transition:background .15s,transform .12s}
+.pd-row-card .pd-row-action:hover{background:rgba(0,232,122,0.18)}
+.pd-row-card .pd-row-action:active{transform:scale(0.98)}
+.pd-row-card .pd-row-action.ticked{background:rgba(0,232,122,0.06);color:var(--text2);font-weight:600;text-transform:none;letter-spacing:0;font-size:12px;border-color:rgba(0,232,122,0.15)}
+.pd-row-card .pd-row-progress{margin-top:8px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;width:100%}
 .pd-row-card .pd-row-progress span{display:block;height:100%;background:var(--green);border-radius:2px;transition:width .35s cubic-bezier(.2,.7,.2,1)}
 .pd-row-card.is-ticked .pd-row-progress span{background:var(--green)}
 .payday-prop-seg{height:100%;transition:width .35s cubic-bezier(0.4,0,0.2,1)}
@@ -9887,7 +9904,14 @@ function renderPaydayPlanRoot() {
   // + streak badge + unlock CTA. Unmissable.
   if (!!snap.lockedAt) {
     const lockedDate = new Date(snap.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-    const _streak = +(snap.streak || 0);
+    // Bundle 29 (John 2026-05-14 ask): streak sanity cap. The streak counter
+    // showed "10 cycle streak" when the app hadn't actually been used for
+    // 10 cycles — fixture state inherited from prior test runs inflated it.
+    // Cap at the actual count of locked cycles in S.planHistory + the
+    // current locked plan. Floor at 1.
+    const _historyLocked = ((S.planHistory || []).filter(p => p && p.lockedAt)).length;
+    const _streakRaw = +(snap.streak || 0);
+    const _streak = Math.max(1, Math.min(_streakRaw, _historyLocked + 1));
     const streakBit = _streak > 1 ? ' · 🔥 ' + _streak + ' cycle streak' : '';
     html += '<div style="background:linear-gradient(135deg,rgba(245,158,11,0.16),rgba(245,158,11,0.06));border:1px solid rgba(245,158,11,0.4);border-radius:12px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px">';
     html += '<span style="font-size:22px;flex-shrink:0">🔒</span>';
@@ -11965,46 +11989,55 @@ function _paydayProgressBar(opts) {
 
 function _paydayRow(opts) {
   // Bundle 29 demon-time bubble redesign: rows became cards. Each row is
-  // a self-contained tappable card with avatar (emoji circle) · name +
-  // sub-context · value + warning · tick affordance (now a circle-check)
-  // · optional progress bar.
+  // a self-contained tappable card with avatar · name + sub · value
+  // · optional progress bar · OPTIONAL post-lock action button (Mark as
+  // paid / allocated etc).
   //
   // opts:
-  //   ticked      — boolean, post-lock tick state
-  //   icon        — emoji shown in the avatar circle (left)
-  //   name        — primary text
-  //   sub         — secondary text (single line, can include " · " separators)
-  //   value       — right-side amount string
-  //   valueWarn   — show amber ⚠️ next to value
-  //   progressPct — 0..100 to render a thin progress bar at the bottom of the card
-  //   onTap       — main row tap (string of inline JS)
-  //   onTickTap   — separate tap handler for the tick affordance
+  //   ticked         — boolean, post-lock tick state
+  //   locked         — boolean, true when S.activePlan.lockedAt is set
+  //   icon           — emoji in avatar circle
+  //   name           — primary text
+  //   sub            — secondary text
+  //   value          — right-side amount string
+  //   valueWarn      — show amber ⚠️ next to value
+  //   progressPct    — 0..100 to render thin progress bar at bottom
+  //   onTap          — main row tap (string of inline JS)
+  //   onTickTap      — handler for the prominent mark-action button (post-lock)
+  //   markActionLabel— Bundle 29 (John 2026-05-14 ask): label for the
+  //                    full-width post-lock action button. E.g. "Mark as
+  //                    paid" / "Mark as allocated" / "Mark as bought".
+  //                    Required when caller wants the prominent button.
   const ticked = !!opts.ticked;
-  const tickIcon = ticked ? '✓' : '';
-  const tickCls = ticked ? 'pd-row-tick ticked' : 'pd-row-tick';
+  const locked = !!opts.locked;
   const valueCol = opts.valueWarn ? 'var(--amber)' : 'var(--text)';
   const warnGlyph = opts.valueWarn ? ' <span style="color:var(--amber)">⚠️</span>' : '';
-  // Only render progress when meaningfully non-zero. progressPct=0 creates
-  // a 3px empty container that shows as a thin grey strip — looks like
-  // a layout artifact in dark mode. Skip render under 1%.
   const progressHtml = (opts.progressPct != null && opts.progressPct >= 1)
     ? '<div class="pd-row-progress"><span style="width:' + Math.max(1, Math.min(100, opts.progressPct)).toFixed(0) + '%"></span></div>'
     : '';
   const avatarHtml = '<div class="pd-row-avatar">' + (opts.icon || '💰') + '</div>';
-  const tickHtml = (opts.onTickTap)
-    ? '<button type="button" class="' + tickCls + '" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="' + (ticked ? 'Unmark' : 'Mark') + ' ' + opts.name + '">' + tickIcon + '</button>'
+  // Mark-action button — full-width prominent button at the bottom of the
+  // card when the plan is locked. Replaces the tiny circle-check tick John
+  // said was hard to find. Pre-lock: no button (rows are edit-only).
+  const actionLabel = opts.markActionLabel || 'Mark done';
+  const markActionHtml = (locked && opts.onTickTap)
+    ? (ticked
+        ? '<button type="button" class="pd-row-action ticked" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="Unmark ' + opts.name + '">✓ ' + actionLabel.replace(/^Mark as /, '').replace(/^Mark /, '') + ' — tap to undo</button>'
+        : '<button type="button" class="pd-row-action" onclick="event.stopPropagation();' + opts.onTickTap + '" aria-label="' + actionLabel + ' ' + opts.name + '">' + actionLabel + '</button>')
     : '';
   return '<button class="pd-row-card' + (ticked ? ' is-ticked' : '') + '" onclick="' + (opts.onTap || '') + '" aria-label="' + opts.name + ': ' + (opts.sub || opts.value) + '">' +
-    avatarHtml +
-    '<div class="pd-row-text">' +
-      '<div class="pd-row-name">' + opts.name + '</div>' +
-      (opts.sub ? ('<div class="pd-row-sub">' + opts.sub + '</div>') : '') +
-    '</div>' +
-    '<div class="pd-row-end">' +
-      '<div class="pd-row-value" style="color:' + valueCol + '">' + opts.value + warnGlyph + '</div>' +
-      tickHtml +
+    '<div class="pd-row-main">' +
+      avatarHtml +
+      '<div class="pd-row-text">' +
+        '<div class="pd-row-name">' + opts.name + '</div>' +
+        (opts.sub ? ('<div class="pd-row-sub">' + opts.sub + '</div>') : '') +
+      '</div>' +
+      '<div class="pd-row-end">' +
+        '<div class="pd-row-value" style="color:' + valueCol + '">' + opts.value + warnGlyph + '</div>' +
+      '</div>' +
     '</div>' +
     progressHtml +
+    markActionHtml +
   '</button>';
 }
 
@@ -12109,12 +12142,15 @@ function renderPaydayBills() {
     const amt = ov ? ov.thisCycleAmount : (+b.amt || 0);
     return _paydayRow({
       ticked: isBillTicked(b),
+      locked: !!snap.lockedAt,
+      icon: '🏠',
       name: b.name,
       sub: _fmtCycleDay(b.day),
       value: fmtC2(amt),
       valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
       onTap: "openEditPaydayBill('" + b.name.replace(/'/g, "\\'") + "')",
       onTickTap: "paydayTick('bill', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_BILLS_TICK)",
+      markActionLabel: 'Mark as paid',
     });
   };
   const _renderBillSection = (title, list) => {
@@ -12187,12 +12223,15 @@ function renderPaydayDebts() {
       if (d.viaRent && d.monthlyPayment) subParts.push('$' + d.monthlyPayment + '/mo via salary');
       html += _paydayRow({
         ticked: !!ticks[d.id || d.name],
+        locked: !!snap.lockedAt,
+        icon: '💳',
         name: d.name,
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         valueWarn: !!ov && ov.thisCycleAmount !== ov.normalAmount,
         onTap: "openEditPaydayDebt('" + (d.id || d.name).toString().replace(/'/g, "\\'") + "')",
-        onTickTap: "paydayTick('debt', '" + (d.id || d.name).toString().replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_DEBT_TICK)",
+        onTickTap: d.viaRent ? '' : "paydayTick('debt', '" + (d.id || d.name).toString().replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_DEBT_TICK)",
+        markActionLabel: d.viaRent ? '' : 'Mark as paid',
       });
     });
     html += '</div>';
@@ -12322,12 +12361,14 @@ function renderPaydaySavings() {
       const subParts = ['$' + Math.round(saved).toLocaleString() + ' of $' + Math.round(budget).toLocaleString() + ' (' + pct + '%)', 'in ' + daysUntil + ' days'];
       html += _paydayRow({
         ticked: !!ticks['trip-' + t.id],
+        locked: !!snap.lockedAt,
         icon: t.emoji || '✈️',
         name: t.name,
         sub: subParts.join(' · '),
         value: fmtC2(amt),
         onTap: "openEditPaydayTripAlloc('" + t.id + "')",
         onTickTap: snap.locked ? "paydayTick('savings', 'trip-" + t.id + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)" : "showToast('" + _PAYDAY_TICK_HINT_PRE + "')",
+        markActionLabel: 'Mark as allocated',
       });
     });
     html += '</div>';
@@ -12379,6 +12420,7 @@ function renderPaydaySavings() {
       const _bucketPct = displayTarget > 0 ? Math.round((saved / displayTarget) * 100) : null;
       html += _paydayRow({
         ticked: !!ticks[b.name],
+        locked: !!snap.lockedAt,
         icon: bucketEmoji,
         name: displayName,
         sub: subParts.join(' · '),
@@ -12386,6 +12428,7 @@ function renderPaydaySavings() {
         progressPct: _bucketPct,
         onTap: "openEditPaydaySavings('" + b.name.replace(/'/g, "\\'") + "')",
         onTickTap: "paydayTick('savings', '" + b.name.replace(/'/g, "\\'") + "', BRAIN.SOURCES.PLAN_SAVINGS_TICK)",
+        markActionLabel: 'Mark as allocated',
       });
     });
     html += '</div>';
@@ -12450,11 +12493,13 @@ function renderPaydaySavings() {
     const amt = ov ? ov.thisCycleAmount : 0;
     html += _paydayRow({
       ticked: !!(((S.activePlan && S.activePlan.ticks && S.activePlan.ticks['kia-extra']) || {})['KIA']),
+      locked: !!snap.lockedAt,
       icon: '🚗',
       name: 'KIA extra',
       sub: 'pay over the minimum · ' + (S.debtStrategy === 'snowball' ? 'snowball strategy' : 'avalanche strategy'),
       value: fmtC2(amt),
       onTap: "openEditPaydayKiaExtra()",
+      markActionLabel: 'Mark as paid',
       onTickTap: "paydayTick('kia-extra', 'KIA', BRAIN.SOURCES.PLAN_KIA_EXTRA_TICK)",
     });
     html += '</div>';
@@ -12494,12 +12539,14 @@ function renderPaydayUpcoming() {
       const subLabel = (carried ? 'Carried from last cycle · ' : '') + dateLabel + (item.notes ? ' · ' + item.notes : '');
       html += _paydayRow({
         ticked: !!ticks[item.id],
+        locked: !!snap.lockedAt,
         icon,
         name: item.name,
         sub: subLabel,
         value: fmtC2(item.amount || 0),
         onTap: "openEditPaydayUpcoming('" + item.id + "')",
         onTickTap: "paydayTick('upcoming', '" + item.id + "', BRAIN.SOURCES.PLAN_UPCOMING_TICK)",
+        markActionLabel: 'Mark as bought',
       });
     });
     html += '</div>';
