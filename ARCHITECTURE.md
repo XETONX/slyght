@@ -1,6 +1,6 @@
 # SLYGHT — Architecture Overview
 
-> Living document. Last revamp: 2026-05-13 post-Bundle-28 (canonical-writer queue closed — 13 BRAIN bubbles, every direct `S.X = …` mutation routes through a typed writer with audit emission).
+> Living document. Last revamp: 2026-05-14 post-Bundle-28-close (72 rounds shipped 2026-05-13 → 2026-05-14 · 13 BRAIN bubbles · 75+ SOURCES tags · 26 seed migrations · PLAN-mode total audit + Mother-redesign roadmap queued for Bundle 29).
 > See `docs/adr/ADR-001-canonical-writer-pattern.md` for the architectural decision record.
 > Maintainer: keep in sync as bubbles shift / canonical writers move.
 > John uses this as a software-consultant mental model of his own app.
@@ -408,13 +408,33 @@ SHIPPED (Bundle 22 v3 — Settings IA refactor, 2026-05-12):
   ✓ Phase 4c — universal modal scroll-lock via :has() (every modal in the app focus-locks now)
   ✓ Phase 5  — system back-button intercept + legacy escape hatch removed
 
-NEXT:
-  ↓ Bundle 22.x — Quick Log frequency / recurring / bill-flag / type cleanup (John ask)
-  ↓ Bundle 16.5 — BRAIN.assets extraction (Mum / super / vehicle / CC)
-  ↓ Bundle 18 / 18.5 — PLAN bubble + provisions sinking fund
-  ↓ Bundle 20  — archive tiering
+SHIPPED (Bundle 28 — PLAN-mode deep dive + intent layer, 2026-05-13 → 2026-05-14, 72 rounds):
+  ✓ Phase 0     — BRAIN.plan.intent canonical entity (seedV25)
+  ✓ Phase 0.1   — Hygiene quick wins (B28-1/2/3/12/15)
+  ✓ Phase 0.2   — z-index sandwich fix (modal/recon/toast)
+  ✓ Phase 0.5   — Cross-tile metric canonicalisation (analysis pivot, dashboard pace)
+  ✓ Phase 0.6   — Ask AI auto-fill with structured plan context
+  ✓ Phase 2     — PLAN-mode tile reorder (cycle-first time axis)
+  ✓ Rounds 5-20 — Canonical-writer queue cleanout: BRAIN.transaction.update/removeByTsWithBalance (round 10), txn sign-fix (r11), idempotent delete (r12), BRAIN.assets WRX (r13), BRAIN.chat (r14), BRAIN.config.setApiKey (r15), NOTIFY audit hooks (r16), BRAIN.cycle (r17), BRAIN.audit.appendReconLog (r18), KIA fee writer (r19), BRAIN.audit.query (r20)
+  ✓ Rounds 22-71— Iterative phone-verify polish (Trips/Bills/Debts/Savings/Auto-allocate UX iterations)
+  ✓ Round 72    — Total PLAN-mode audit (24 surfaces) + 5-fix sprint (P0.1 bonus rollover preserve + P0.2 markPaydayLanded + R1 intent-driven goal subtitle + R2 Annual Provisions nav-row + R3 Mum-bubble drop + bar legend) + strategic synthesis (4 John questions answered)
+
+13 BRAIN bubbles operational. 75+ SOURCES tags. 26 seed migrations. 16 MathInvariants. 51 runtime + 65 tests + 4 guardian-static gates all green at close.
+
+NEXT — Bundle 29 (see `MISSION-BUNDLE-29-MOTHER-REDESIGN.md`):
+  ↓ Phase 0     — Layer V coverage extension (canvas sub-screens + modals navigated · the crux per John 2026-05-14)
+  ↓ Phase 1     — Tier-3 intent-driven canvas Savings full redesign (Mother redesign)
+  ↓ Phase 2     — Strategic synthesis gaps (cycle-progress strip · bonus-confidence · trip-overage reconciliation · etc)
+  ↓ Phase 3     — Decision-support per Audit A1 §6 (Debt Race · Retirement Canvas · Annual Sinking Funds)
+  ↓ Phase 4     — Auto-detect + Quick-Log enhancements + receipt-scan
+  ↓ Phase 5     — Narration + rigidity gaps (viaRent legend · KIA Extra label · untick · cycleEndDate override · bar-segment explainer · 14 boot self-test entries)
+  ↓ Phase 6     — Hygiene (legacy mirrors drop · test-pollution cleanup · TDZ-at-boot investigation · stale paidBills key)
+
+LATER:
   ↓ Bundle 23  — cloud sync via GitHub Gist
-  ↓ Bundle 24+ — renderAll refactor (lets legacy Settings markup come fully out)
+  ↓ Bundle 30  — rules-as-data + AI tool-use for direct propose/apply
+  ↓ Bundle 22.x — Quick Log frequency / recurring / bill-flag / type cleanup (John ask)
+  ↓ Bundle 16.5 — BRAIN.assets extraction (Mum / super / vehicle / CC remaining)
 ```
 
 ## 14. How to read this doc

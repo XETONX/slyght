@@ -10,9 +10,49 @@
 
 ---
 
-## Bundle 28 — IN PROGRESS (started 2026-05-13 13:33 AEST)
+## Bundle 28 — SHIPPED (started 2026-05-13 13:33 · closed 2026-05-14 lunch · rounds 0-72)
 
 **Theme:** PLAN-mode deep dive + canonical-writer migration of the intent layer.
+
+### Close-out summary (2026-05-14 lunch)
+
+72 rounds shipped over 26 hours. Started as MISSION-BUNDLE-28-PLAN-MODE-DEEP-DIVE.md scoping doc on 2026-05-13; closed 2026-05-14 after the day-of-audit total-PLAN-mode sweep + 5-fix sprint (P0.1 bonus rollover preserve · P0.2 markPaydayLanded · R1 intent-driven goal subtitle · R2 Annual Provisions nav-row · R3 Mum-bubble drop + bar legend) + strategic synthesis answering John's four deep questions.
+
+**Headline shipped capabilities:**
+- `BRAIN.plan.intent.*` canonical entity layer (Phase 0)
+- 13 BRAIN bubbles operational (audit · config · allocation · plan · assets · chat · cycle · savings · summary · dashboard · transaction · bills · debts) + meta (SOURCES, _SOURCE_SET)
+- 75+ SOURCES tags
+- 26 seed migrations (seedV0 through seedV26)
+- 16 MathInvariants
+- 51 runtime guardian checks · 65 unit tests · 4 guardian-static gates (Core / Logic / UI / All)
+- Universal modal scroll-lock via `:has()` (Bundle 22 v3 architecture)
+- Android back-button intercept (Bundle 22 v3 Phase 5)
+- Boot self-test (10+ checks per page load · logs to `console.error` + `BRAIN.audit` as `boot_self_test_fail`)
+- Layer V visual-regression harness (52 capture surfaces · `--local` + deployed mode)
+- Layer I AI-agent walker (mission-i)
+- PLAN-mode total audit doc `slyght/AUDIT-PLAN-MODE-2026-05-14.md` (~2,000 lines · 24 surfaces · 7 cross-cutting passes · vision UI · strategic synthesis)
+- 3 SDDs (`docs/sdd/SDD-2026-05-14-*.md`) for round-72 P0/R1 fixes
+- Round-72 strategic synthesis: showing-someone test · 7 not-accounting-for gaps · 3 too-fixed rigidity points · 60-80% session-burden-reduction architecture sketch via Bundle 23 → 29 → CF Worker → 30
+
+**Gates at close:** 0 FAIL · 44 WARN (pre-existing future-proofing, not shipped bugs) · 51/51 runtime · 65/65 tests · 4/4 guardian-static gates.
+
+**Archived per Audit A1 §5 STOP doctrine:**
+- `MISSION-BUNDLE-28-PLAN-MODE-DEEP-DIVE.md` → `docs/archive/MISSION-BUNDLE-28-PLAN-MODE-DEEP-DIVE-shipped-2026-05-14.md`
+- `CLAUDE-CODE-SHIP-PROMPT-28.md` → `docs/archive/CLAUDE-CODE-SHIP-PROMPT-28-shipped-2026-05-14.md`
+
+**Carried into Bundle 29** (see `MISSION-BUNDLE-29-*.md`):
+- TDZ-at-boot investigation (L1646/L11246/L13111 family · Bundle 27 OPEN-BUG carry-over)
+- Layer V sub-screen + modal coverage extension (audit cross-cut §F · upgraded to Phase 0 of Bundle 29 per John 2026-05-14 — "this is the crux")
+- Tier-3 intent-driven canvas Savings full redesign (R1 today is the quick-fix variant · SDD draft in audit §E)
+- 7 strategic-synthesis "not accounting for" gaps
+- 3 rigidity points (P1/P2)
+- Decision-support features per Audit A1 §6 (Debt Race · Retirement Canvas · Annual Sinking Funds)
+- Legacy mirror drops · test-pollution intent cleanup · `S.bonuses` vs `activePlan.income.bonus` consolidation · `_billEditMode` global → component state · stale `paidBills['Google Microsoft-1']` key
+- Narration gaps (Debts viaRent legend · KIA Extra verb-first label)
+- 14 boot self-test reachability entry batch-add
+- Layer V `#19 plan-edit-trip-modal` selector bug
+
+
 
 ### Audit A1 + cleanup foundation
 Six-lens structural audit per Opus's MISSION-AUDIT-A1 spec, folder triage, scoping, and reference pilot.
