@@ -11139,10 +11139,22 @@ function openEditPaydayBonus() {
       const section = document.getElementById('bonus-amount-section');
       const sync = () => {
         if (!section) return;
-        // Bundle 29 demon-time: hide the section when bonus is off (was
-        // opacity 0.4 which still allowed focus + tap-thru creating
-        // confusing tab order). display:none disables interaction cleanly.
-        section.style.display = toggle.checked ? 'block' : 'none';
+        // r79 (John 2026-05-15 — flash on every bonus toggle flip):
+        // toggling display:none ↔ block resized the modal card by ~200px,
+        // which re-centered it in the viewport. On phone that reflow caused
+        // a brief paint where the canvas behind became visible THROUGH the
+        // backdrop for one frame. Switching to visibility/opacity keeps
+        // the layout stable — the section reserves its space whether ON or
+        // OFF, so the card never resizes when the toggle flips.
+        if (toggle.checked) {
+          section.style.visibility = 'visible';
+          section.style.opacity = '1';
+          section.style.pointerEvents = '';
+        } else {
+          section.style.visibility = 'hidden';
+          section.style.opacity = '0';
+          section.style.pointerEvents = 'none';
+        }
       };
       if (toggle) { toggle.addEventListener('change', sync); sync(); }
       _attachLivePreview({
