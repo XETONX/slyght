@@ -241,6 +241,10 @@ body.edit-modal-open{overflow:hidden}
 .payday-dropdown-select option{background:var(--bg2);color:var(--text);padding:8px}
 .payday-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;margin:6px 0}
 .payday-toggle-label{flex:1;font-size:14px;color:var(--text2)}
+.upcoming-type-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.upcoming-type-chip{min-height:44px;padding:8px 10px;border:1px solid var(--border2);border-radius:10px;background:var(--bg);color:var(--text2);font-size:14px;font-family:inherit;cursor:pointer;text-align:left;transition:border-color .15s,background .15s,color .15s}
+.upcoming-type-chip:hover{border-color:var(--text3)}
+.upcoming-type-chip.active{border-color:var(--green);background:var(--green-dim);color:var(--green);font-weight:700}
 .screen::-webkit-scrollbar{display:none}
 /* ONBOARD */
 .ob-wrap{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;justify-content:center;padding:40px 28px}
@@ -10481,9 +10485,16 @@ function openEditPaydayUpcoming(itemId) {
   const currentCat = item ? (item.category || 'other') : 'other';
   const currentName = item ? item.name : '';
   const currentDate = item ? (item.date || '') : '';
+  // Bundle 29 demon-time: visual type-picker chips replace the bare dropdown.
+  // John 2026-05-14 ask: "if i add to upcoming is there a screen/modal to
+  // identify what type it is?" — yes, now first-class with emoji + label.
+  const typeChips = _UPCOMING_CATEGORY_OPTIONS.map(opt => {
+    const active = opt.value === currentCat ? ' active' : '';
+    return '<button type="button" class="upcoming-type-chip' + active + '" data-cat="' + opt.value + '">' + opt.label + '</button>';
+  }).join('');
   let body = '';
   body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="upcoming-name">Name</label><input type="text" class="payday-dropdown-select" id="upcoming-name" placeholder="e.g. Mum\'s day gift" value="' + currentName.replace(/"/g, '&quot;') + '" autocomplete="off"></div>';
-  body += _buildDropdown('Category', 'upcoming-category', _UPCOMING_CATEGORY_OPTIONS, currentCat);
+  body += '<div style="margin:14px 0 6px"><div class="payday-dropdown-label" style="margin-bottom:8px">What type?</div><div class="upcoming-type-grid">' + typeChips + '</div><input type="hidden" id="upcoming-category" value="' + currentCat + '"></div>';
   body += '<div class="payday-dropdown"><label class="payday-dropdown-label" for="upcoming-date">When?</label><input type="date" class="payday-dropdown-select" id="upcoming-date" value="' + currentDate + '"></div>';
   body += '<div style="font-size:13px;color:var(--text3);margin-top:8px;margin-bottom:8px">Amount:</div>';
   body += _buildQuickPickGrid(_generateQuickPicks('upcoming', 0), current);
@@ -10491,7 +10502,18 @@ function openEditPaydayUpcoming(itemId) {
     title: isAdd ? 'Add upcoming item' : ('Edit ' + currentName),
     hint: isAdd ? 'Something you know you\'ll need to buy this cycle.' : 'Adjust this upcoming item.',
     bodyHtml: body,
-    onReady: _wireQuickPickGrid,
+    onReady: () => {
+      _wireQuickPickGrid();
+      // Wire type-picker chips
+      const hidden = document.getElementById('upcoming-category');
+      document.querySelectorAll('.upcoming-type-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          document.querySelectorAll('.upcoming-type-chip').forEach(x => x.classList.remove('active'));
+          chip.classList.add('active');
+          if (hidden) hidden.value = chip.dataset.cat;
+        });
+      });
+    },
     saveLabel: isAdd ? 'Add' : 'Save',
     save: () => {
       const name = (document.getElementById('upcoming-name')?.value || '').trim();
