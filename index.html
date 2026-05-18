@@ -13138,34 +13138,49 @@ function _emptyActivePlan() {
 }
 
 // BUNDLE-30-RECON-IMPORT START — temporary one-shot for 2026-05-19 bank
-// reconciliation. The Settings → Data & Backup → "🚨 Emergency import" button
-// calls this. Remove this entire function after John confirms import landed.
-// Token-gated KV fetch from slyght-worker; replaces S+BILLS (preserves
-// apiKey/chatHistory/PIN); seeds slyght_bills_reset_month so paidBills
-// survives the next monthly-reset check; backs up current state.
+// reconciliation. v3-diagnostic: replaces silent status-line writes with
+// blocking alert() popups so John sees explicit per-step feedback that
+// can't be clipped by the navbar (v1/v2 of this had inline status that
+// John couldn't see). Each alert includes the version marker so we can
+// tell if the service worker is serving stale handler code (if alerts
+// don't show, SW is stale; if they show "v3-diagnostic", code is fresh).
+//
+// Pairs with the boot-check below (window.load handler) that fires AFTER
+// reload and verifies the reconciled state survived the boot lifecycle.
+// Catches the case where boot logic overwrites our localStorage write.
 function _emergencyImportFromWorker() {
+  var VER = 'v3-diagnostic';
   var msgEl = document.getElementById('recon-import-msg');
   var setMsg = function(text, color) {
     if (msgEl) { msgEl.textContent = text; msgEl.style.color = color || 'var(--text)'; }
   };
-  if (!confirm('Replace ALL local state with the reconciled snapshot from worker?\n\n' +
-               'Expected: hero balance becomes $1,113.61, txns become 212, ADHOC re-sized to $4,544.63.\n\n' +
-               'Current state will be backed up to slyght_v5_PRE_RECON_BACKUP_2026-05-19 (can rollback via console).')) {
+  if (!confirm('🔍 RECON IMPORT ' + VER + '\n\n' +
+               'Replace ALL local state with the reconciled snapshot from worker?\n\n' +
+               'Expected: hero balance becomes $1,113.61, txns become 212.\n\n' +
+               'You will see 4 popups during the process. Read each one carefully and tell Claude what they say.')) {
     setMsg('Cancelled.', 'var(--text2)');
     return;
   }
-  setMsg('⏳ Fetching reconciled state from worker…', 'var(--text)');
-  var URL = 'https://slyght-worker.johndounas.workers.dev/recon-payload?token=427169922a24fe022647e3463834e2f77c20cc160033c955';
-  fetch(URL)
+  alert('🔍 ' + VER + '\n\nStep 1/4: Fetching reconciled state from worker…\n\nTap OK to start fetch.');
+  setMsg('⏳ Fetching…', 'var(--text)');
+  var URL_RECON = 'https://slyght-worker.johndounas.workers.dev/recon-payload?token=427169922a24fe022647e3463834e2f77c20cc160033c955';
+  fetch(URL_RECON)
     .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' from worker');
       return r.json();
     })
     .then(function(data) {
       if (!data.S || !data.BILLS) throw new Error('Invalid payload: missing S or BILLS');
-      // Preserve sensitive fields the export strips out.
+      var payloadBal = (data.S.bal != null) ? data.S.bal.toFixed(2) : 'MISSING';
+      var payloadTxns = (data.S.txns || []).length;
+      alert('Step 2/4 ✓ ' + VER + '\n\nFetch OK.\nPayload balance: $' + payloadBal + ' (expected $1113.61)\nPayload txns: ' + payloadTxns + ' (expected 212)');
+
+      var oldRaw = localStorage.getItem('slyght_v5') || '';
+      var oldLen = oldRaw.length;
+      var oldBal = null;
+      try { oldBal = JSON.parse(oldRaw).S.bal; } catch (_) {}
       var existing = null;
-      try { existing = JSON.parse(localStorage.getItem('slyght_v5') || '{}'); } catch (_) {}
+      try { existing = JSON.parse(oldRaw || '{}'); } catch (_) {}
       var newS = data.S;
       if (existing && existing.S) {
         if (existing.S.apiKey)      newS.apiKey      = existing.S.apiKey;
@@ -13173,21 +13188,84 @@ function _emergencyImportFromWorker() {
         if (existing.S.pin)         newS.pin         = existing.S.pin;
         if (existing.S.pinHash)     newS.pinHash     = existing.S.pinHash;
       }
-      // Backup current state for emergency rollback.
-      var backup = localStorage.getItem('slyght_v5');
-      if (backup) localStorage.setItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19', backup);
-      // Write reconciled state.
+      alert('Step 3/4 ' + VER + '\n\nCurrent slyght_v5: ' + oldLen + ' bytes (bal $' + oldBal + ')\nAbout to backup and write new state.\nTap OK to write.');
+
+      if (oldLen > 0) localStorage.setItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19', oldRaw);
       localStorage.setItem('slyght_v5', JSON.stringify({S: newS, BILLS: data.BILLS}));
-      // Seed bills-reset-month so paidBills isn't wiped on next load.
       var t = new Date();
       localStorage.setItem('slyght_bills_reset_month', t.getFullYear() + '-' + (t.getMonth() + 1));
-      setMsg('✓ Imported. Balance should be $' + newS.bal.toFixed(2) + ' (212 txns). Reloading in 2s…', 'var(--green)');
-      setTimeout(function() { location.reload(); }, 2000);
+
+      // Flag for post-boot verifier. 60s validity window.
+      localStorage.setItem('_recon_expecting', JSON.stringify({bal: 1113.61, txns: 212, ts: Date.now()}));
+
+      // Verify the write took.
+      var newRaw = localStorage.getItem('slyght_v5') || '';
+      var newLen = newRaw.length;
+      var verifyBal = null, verifyTxns = null;
+      try {
+        var p = JSON.parse(newRaw);
+        verifyBal = p.S.bal;
+        verifyTxns = (p.S.txns || []).length;
+      } catch (_) {}
+      alert('Step 4/4 ✓ ' + VER + '\n\nWrite complete + read-back verified.\n' +
+            'New slyght_v5: ' + newLen + ' bytes (expected ~278885)\n' +
+            'Read-back bal: $' + verifyBal + ' (expected 1113.61)\n' +
+            'Read-back txns: ' + verifyTxns + ' (expected 212)\n\n' +
+            'Reloading in 5 seconds. After reload you will see ANOTHER popup confirming whether reconciliation survived boot. Screenshot now if you want to record these numbers.');
+      setMsg('✓ Wrote ' + newLen + ' bytes. Reloading in 5s…', 'var(--green)');
+      setTimeout(function() { location.reload(); }, 5000);
     })
     .catch(function(e) {
+      alert('✗ ' + VER + ' Import failed at: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted yet).');
       setMsg('✗ Import failed: ' + (e.message || e), 'var(--red)');
     });
 }
+
+// BUNDLE-30-RECON-IMPORT BOOT CHECK — fires after reload to verify the
+// reconciled state survived the boot lifecycle (monthly-reset, boot
+// self-test, MODEL.refresh, etc could potentially overwrite). Reads the
+// _recon_expecting flag set by _emergencyImportFromWorker; alerts whether
+// the post-boot state matches the expected reconciled snapshot.
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    var flag = null;
+    try { flag = JSON.parse(localStorage.getItem('_recon_expecting') || 'null'); } catch (_) {}
+    if (!flag) return;
+    // Only check if flag is recent (< 60s) — stale flags from earlier runs are ignored.
+    if (Date.now() - flag.ts > 60000) {
+      localStorage.removeItem('_recon_expecting');
+      return;
+    }
+    // Read what actually landed in localStorage post-boot.
+    var raw = localStorage.getItem('slyght_v5') || '';
+    var lsBal = null, lsTxns = null;
+    try {
+      var p = JSON.parse(raw);
+      lsBal = p && p.S && p.S.bal;
+      lsTxns = p && p.S && p.S.txns && p.S.txns.length;
+    } catch (_) {}
+    // Also read in-memory S/BRAIN if available.
+    var memBal = (typeof BRAIN !== 'undefined' && BRAIN.balance && typeof BRAIN.balance.get === 'function')
+      ? BRAIN.balance.get() : 'BRAIN-unavailable';
+    var balMatch = (Math.abs((lsBal || 0) - flag.bal) < 0.01);
+    var txnMatch = (lsTxns === flag.txns);
+    if (balMatch && txnMatch) {
+      alert('✓ POST-RELOAD VERIFIED v3-diagnostic\n\n' +
+            'Reconciliation persisted through boot.\n' +
+            'localStorage bal: $' + lsBal + '\n' +
+            'localStorage txns: ' + lsTxns + '\n' +
+            'In-memory BRAIN.balance: $' + memBal + '\n\n' +
+            'Hero should show $' + flag.bal + '. If it doesn\'t, surface to Claude.');
+    } else {
+      alert('⚠️ POST-RELOAD MISMATCH v3-diagnostic\n\n' +
+            'Expected:  bal=$' + flag.bal + ' txns=' + flag.txns + '\n' +
+            'localStorage: bal=$' + lsBal + ' txns=' + lsTxns + ' (len ' + raw.length + ')\n' +
+            'In-memory BRAIN.balance: $' + memBal + '\n\n' +
+            'Something overwrote the reconciled state during boot. SCREENSHOT this alert and send to Claude.');
+    }
+    localStorage.removeItem('_recon_expecting');
+  }, 1500);
+});
 // BUNDLE-30-RECON-IMPORT END
 
 function doImportFromSub() {
