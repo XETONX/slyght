@@ -566,23 +566,6 @@
 **Notes:** Symmetric to the debt mark-paid flow. STRICT reversal on inner failure via canonical writer. Phase 2 candidate: migrate `BRAIN.bills.markPaid` to consume `recordWithAllocation`.
 **Last touched:** Bundle 30 Phase 1.B (2026-05-18)
 
-### Site: Bucket quick-add
-**Path:** `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW`
-**Type:** action
-**Lives in:** `index.html:8936-8951` (quickAddToBucket function)
-**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.savings.addToBucket` + `BRAIN.transaction.record` + `BRAIN.balance.applyTxnDelta`)
-**Smoke coverage:** none directly (planned: Bundle 30 Phase 2 — full envelope with `destination:{type:'bucket'}`)
-**Reads from:** `S.savingsBuckets[i]`, `S.bal` (insufficient-balance pre-check)
-**Writes to:** `S.savingsBuckets[i].saved` (via `BRAIN.savings.addToBucket`), `S.txns` (via `BRAIN.transaction.record`), `S.bal` (via `BRAIN.balance.applyTxnDelta`)
-**Triggers:** `BRAIN.savings.addToBucket`, `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta(-amt, BUCKET_QUICK_ADD)`
-**Related features:**
-- writer-used: `BRAIN → SAVINGS → ADD_TO_BUCKET`
-- writer-used: `BRAIN → TRANSACTION → RECORD`
-- writer-used: `BRAIN → BALANCE → APPLY_TXN_DELTA`
-- planned-merge: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (Phase 2 — bucket destination)
-**Notes:** Closest candidate for Phase 2's `destination:{type:'bucket', id}` flow. Currently three separate writer calls; Phase 2 will collapse to one envelope call. INV-28 (free-money refusal) will also gate this site once the envelope arrives.
-**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
-
 ### Site: Quick Log Income branch
 **Path:** `UI → GLOBAL → QUICK_LOG_MODAL → INCOME_BRANCH`
 **Type:** action
@@ -706,21 +689,20 @@
 
 > Entries here are NOT current behaviour — they're discoveries made during phone-verify or smoke that warrant later-bundle work. Each has a severity + Bundle assignment + discovery context.
 
-### Finding: Bucket row tap goes only to edit/add, not detail view
-**Path:** `UI → DASHBOARD → SAVINGS_GOALS_TILE → BUCKET_ROW → [tap action]`
-**Type:** action (current behaviour)
-**Lives in:** TBD — discovered during Phase 1.B verification, exact handler not located yet (Bundle 31 work)
-**Inside BRAIN?** no (UI affordance)
-**Smoke coverage:** none — discovered manually
-**Reads from:** bucket object
-**Writes to:** opens edit/add modal only
-**Triggers:** opens bucket edit modal
+### Finding: No read-only bucket detail surface (cents-level credit tracing)
+**Path:** `UI → PLAN → PAYDAY_PLAN_CANVAS → SAVINGS_SUBSCREEN → BUCKET_ROW_CARD → [read-only detail — DOES NOT EXIST]`
+**Type:** action (missing affordance)
+**Lives in:** N/A — finding is about an absent surface. Existing tap on bucket row routes to `openEditPaydaySavings` (override edit modal at `index.html:11005`), not a read-only detail view.
+**Inside BRAIN?** no (UI gap)
+**Smoke coverage:** N/A
+**Reads from:** N/A
+**Writes to:** N/A
+**Triggers:** N/A
 **Related features:**
-- sibling: `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW` (Phase 1.B migration site #7)
-- parent: `UI → DASHBOARD`
-- upstream-cause: round-up credits + manual cents-level additions invisible in summary view
-**Notes:** **DISCOVERED during Phase 1.B verification 2026-05-18.** Tapping a savings bucket (e.g. China Holiday) enters edit/add flow only. No read-only detail view. Balance display truncates to whole dollars, so cents-level credits (round-ups, fractional contributions) are invisible without arithmetic across the audit log. **Severity:** MEDIUM (UX discoverability + cent-precision tracing gap; not a math bug — Phase 1.B smoke confirmed bucket credits land correctly via canonical writer). **Desired behaviour:** tap → bucket detail view with current balance (cents), recent credits (round-ups + manual adds), contributing transactions (via `linkedTo` where applicable per INV-30 work), goal context (target/progress/ETA). Edit/add become secondary affordances within detail view.
-**Last touched:** Bundle 30 Phase 1.B verification (discovery only — no code)
+- existing-edit-path: `UI → PLAN → PAYDAY_PLAN_CANVAS → SAVINGS_SUBSCREEN → BUCKET_ROW_CARD → ROW_TAP → EDIT_OVERRIDE_MODAL`
+- upstream-cause: round-up credits + manual cents-level additions visible only in audit log + activity feed
+**Notes:** **REVISED 2026-05-18 (Bundle 30.5 cleanup).** Original finding referenced a non-existent dashboard `UI → DASHBOARD → SAVINGS_GOALS_TILE → BUCKET_ROW` path — that path was speculation, not real. After code-read: the only bucket interaction surface is the Payday Plan canvas Savings sub-screen which tap-opens an EDIT modal (override allocation), not a read-only detail view. Cents-level bucket credits (round-ups, fractional contributions) are queryable via Activity Log filter by source `roundup` but not surfaced in a dedicated bucket-level detail view. **Severity:** LOW-MEDIUM (UX discoverability gap; not a math bug — bucket credits land correctly per Phase 2.C smoke). **Desired Bundle 31+ work:** add a dedicated read-only bucket detail surface — current balance (cents), recent credits filtered to this bucket, contributing transactions (via `linkedTo` per INV-30), goal progress/ETA. Likely lives at PLAN tab → Goals card → tap → detail view (separate from canvas allocation flow).
+**Last touched:** Bundle 30.5 cleanup 2026-05-18 (revised path + scope)
 **Bundle assignment:** Bundle 31+ (UX layer, not financial-math)
 
 ---
@@ -783,21 +765,6 @@
 - child-path: upcoming branch → `recordWithAllocation({cat:txnCat})`
 **Notes:** Phase 2.C migrated all 5 non-bill branches from the pre-Phase-2 pattern (`BRAIN.transaction.record` + direct `S.bal -=` + optional `BRAIN.savings.addToBucket`) to a single `recordWithAllocation` call per branch. All ticks pass `_skipFreeMoneyGate:true` because the lock-time commitment already established the allocation's INV-28 acceptance — tick-time is execution, not new commitment. Bill branch uses `BRAIN.bills.markPaid` which itself was migrated to envelope in Phase 2.E.
 **Last touched:** Bundle 30 Phase 2.C (2026-05-18)
-
-### Site: Bucket quick-add (Phase 2.A envelope upgrade)
-**Path:** `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW`
-**Type:** action
-**Lives in:** `index.html:8936-8956` (quickAddToBucket function)
-**Inside BRAIN?** no (UI handler)
-**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` Phase 2.A test (bucket destination + INV-12)
-**Reads from:** `S.savingsBuckets[i]`, `S.bal` (insufficient-balance pre-check)
-**Writes to:** `S.savingsBuckets[i].saved`, `S.txns`, `S.bal` (all via single `recordWithAllocation` envelope)
-**Triggers:** `BRAIN.transaction.recordWithAllocation({destination:{type:'bucket', id}})` — single envelope call replaces 3 separate writer calls from Phase 1.B
-**Related features:**
-- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
-- gate-applies: INV-28 (this is ad-hoc allocation, NOT `_skipFreeMoneyGate`) — refuses if amt > free_money_remaining
-**Notes:** Phase 2.A consolidation. Pre-Phase-2 used 3 separate writer calls (addToBucket + record + applyTxnDelta). Now single envelope call. INV-28 fires here because this is ad-hoc allocation, unlike payday-plan ticks. UI displays "Not enough free money — $X available, asked $Y" toast on refusal.
-**Last touched:** Bundle 30 Phase 2.A (2026-05-18)
 
 ### Guardian rule: no-direct-applyTxnDelta (Phase 2.D)
 **Path:** `GUARDIAN → STATIC → NO_DIRECT_APPLY_TXN_DELTA`

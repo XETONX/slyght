@@ -1904,30 +1904,13 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
   </div>
 </div>
 
-<!-- BUCKET DETAIL MODAL -->
-<div class="modal-overlay" id="bucket-modal" onclick="handleOverlayClick(event,'bucket-modal')">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-title" id="bkt-modal-title">Savings Bucket</div>
-    <div class="modal-sub" id="bkt-modal-sub"></div>
-    <div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:16px"><div id="bkt-modal-bar" style="height:6px;border-radius:3px;background:var(--blue);transition:width .4s"></div></div>
-    <div class="modal-field"><label>Bucket name</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bkt-name"></div>
-    <div class="modal-field"><label>Goal amount ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-goal" inputmode="decimal"></div>
-    <div class="modal-field"><label>Current saved ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-saved" inputmode="decimal"></div>
-    <div class="modal-field"><label>Account</label>
-      <select class="modal-input" id="bkt-account">
-        <option>ING</option><option>Westpac</option><option>CommBank</option><option>NAB</option><option>ANZ</option><option>Other</option>
-      </select>
-    </div>
-    <div class="modal-field"><label>Notes</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" id="bkt-notes" placeholder="e.g. transfer every fortnight"></div>
-    <div class="modal-field"><label>Add funds ($)</label><input class="modal-input" autocomplete="off" data-lpignore="true" data-form-type="other" type="number" id="bkt-add-funds" placeholder="0.00" inputmode="decimal"></div>
-    <div class="modal-actions">
-      <button class="modal-btn modal-btn-save" onclick="saveBucketModal()">Save Changes</button>
-      <button class="modal-btn modal-btn-paid" onclick="addFundsBucketModal()" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)">Add Funds</button>
-      <button class="modal-btn modal-btn-delete" onclick="deleteBucket()" style="background:var(--red-dim);color:var(--red);border:1px solid var(--red-border)">Delete Bucket</button>
-      <button class="modal-btn modal-btn-cancel" onclick="closeModal('bucket-modal')">Cancel</button>
-    </div>
-  </div>
-</div>
+<!-- Bundle 30.5 cleanup — #bucket-modal HTML removed. Was the legacy
+     bucket-detail edit modal (opened via openBucketModal, saved via
+     saveBucketModal, etc.) — all those functions had no live callers
+     after Bundle 28 deleted renderSavingsBuckets + renderChinaHolidayTracker
+     from the dashboard render chain. Bucket editing now lives in the
+     Payday Plan canvas Savings sub-screen via EDIT_MODAL.openCustom
+     (openEditPaydaySavings handler at L11005). -->
 
 <!-- QUICK LOG MODAL -->
 <div class="modal-overlay" id="quick-log-modal" onclick="handleOverlayClick(event,'quick-log-modal')">
@@ -8903,175 +8886,27 @@ function renderCalWeekSummary() {
   c.innerHTML = html;
 }
 
-function renderChinaHolidayTracker(b, i) {
-  const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
-  const goal = new Date('2026-12-01'); const now2 = new Date();
-  const daysToGoal = Math.max(1, Math.ceil((goal-now2)/864e5));
-  const monthsToGoal = daysToGoal/30;
-  const needed = Math.max(0, b.goal - (b.saved||0));
-  const monthlyNeeded = needed > 0 ? Math.ceil(needed/monthsToGoal) : 0;
-  const weeklyNeeded = needed > 0 ? Math.ceil(needed/(daysToGoal/7)) : 0;
-  const roundups = (S.txns||[]).filter(t=>t.cat==='Savings'&&(t.note||'').toLowerCase().includes('round')).reduce((s,t)=>s+t.amt,0);
-  const pctBar = Math.min(100,pct);
-  let html = '<div style="background:var(--blue-dim);border:1px solid rgba(77,159,255,0.25);border-radius:var(--r-sm);padding:14px;margin-bottom:12px">';
-  html += '<div style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:10px">✈️ CHINA HOLIDAY</div>';
-  html += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span style="color:var(--text)"><strong>'+fmtC(b.saved)+'</strong> saved of <strong>'+fmtC(b.goal)+'</strong> goal</span><span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--blue)">'+pct+'%</span></div>';
-  html += '<div style="height:8px;background:var(--bg4);border-radius:4px;overflow:hidden;margin-bottom:10px"><div style="width:'+pctBar+'%;height:8px;background:var(--blue);border-radius:4px;transition:width .6s"></div></div>';
-  const rate = getGenuineSurplus();
-  if (needed <= 0) {
-    html += '<div style="font-size:13px;color:var(--green);font-weight:700;margin-bottom:8px">✅ Goal reached — ' + b.name + ' funded!</div>';
-  } else if (monthlyNeeded > 0) {
-    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:8px"><span style="color:var(--text3)">Need: </span><strong>'+fmtC(monthlyNeeded)+'/month</strong> or <strong>'+fmtC(weeklyNeeded)+'/week</strong> to hit Dec 2026</div>';
-    html += '<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Days to Dec 2026: <strong style="color:var(--text)">'+daysToGoal+'</strong></div>';
-    if (rate > 0) {
-      const months2 = Math.ceil(needed/rate);
-      html += '<div style="font-size:13px;color:'+( months2<=monthsToGoal?'var(--green)':'var(--amber)')+';margin-bottom:8px">At current surplus: arrive <strong>'+(months2<=monthsToGoal?'Dec 2026 ✓':'in ~'+months2+' months')+'</strong></div>';
-    } else {
-      html += '<div style="font-size:13px;color:var(--amber);margin-bottom:8px">At current rate: never (no surplus detected)</div>';
-    }
-  }
-  if (roundups>0) html += '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">Round-ups this cycle: <strong>'+fmtC(roundups)+'</strong> — at this rate: '+fmtC(roundups*12)+'/year</div>';
-  html += '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">💡 Set a '+fmtC(monthlyNeeded||50)+'/month transfer to hit goal on time</div>';
-  html += '<div style="display:flex;gap:8px">';
-  [10,50,100].forEach(amt => {
-    html += '<button onclick="quickAddToBucket('+i+','+amt+')" style="flex:1;padding:10px;background:var(--blue-dim);border:1px solid rgba(77,159,255,0.3);border-radius:var(--r-sm);color:var(--blue);font-size:14px;font-weight:700;cursor:pointer">+'+fmtC(amt)+'</button>';
-  });
-  html += '</div></div>';
-  return html;
-}
+// ─── Bundle 30.5 cleanup — dead bucket-modal flow removed ─────────────────
+// Removed in this commit: renderChinaHolidayTracker, quickAddToBucket,
+// openBucketModal, saveBucketModal, addFundsBucketModal, deleteBucket,
+// addToBucket(i), activeBucketIdx, and the #bucket-modal HTML block.
+// All were dead since Bundle 28 deleted renderSavingsBuckets from the
+// dashboard render chain — no live caller anywhere in the render tree.
+// Phase 2.A's migration of quickAddToBucket to recordWithAllocation was a
+// migration of dead code; the envelope migration itself is preserved at
+// BRAIN.transaction.recordWithAllocation for any future ad-hoc add UI.
+//
+// What bucket interactions DO live in the app:
+//   • Payday Plan canvas → Savings sub-screen → tap row →
+//     openEditPaydaySavings → EDIT_MODAL.openCustom (override edit)
+//   • Same canvas → "Mark as allocated" post-lock →
+//     paydayTick → BRAIN.plan.tickItem → recordWithAllocation (Phase 2.C)
+//   • openAddBucketModal (below) — creates a NEW bucket via #add-bucket-modal
+//   • Round-ups (Quick Log + Chat) auto-credit configured destination
+//
+// BRAIN.SOURCES.BUCKET_QUICK_ADD tag retained — smoke spec exercises it
+// directly; future re-introduction of ad-hoc add UI would reuse it.
 
-function quickAddToBucket(i, amt) {
-  if (S.bal < amt) { showUndoToast('Not enough balance'); return; }
-  // Bundle 8: route bucket write through BRAIN.savings.
-  const bucket = S.savingsBuckets[i];
-  if (!bucket) return;
-  // Bundle 30 Phase 2.A — composed writer with bucket destination
-  // collapses the 3 pre-Phase-2 calls (addToBucket + record + S.bal)
-  // into one atomic envelope call. INV-28 fires here (ad-hoc allocation,
-  // not pre-committed): if the user tries to quick-add beyond
-  // free_money_remaining, the writer refuses with insufficient-free-money.
-  const _qaRes = BRAIN.transaction.recordWithAllocation(
-    { amt, note: bucket.name + ' — quick add', cat: 'Savings',
-      direction: 'outflow',
-      destination: { type: 'bucket', id: bucket.name } },
-    BRAIN.SOURCES.BUCKET_QUICK_ADD
-  );
-  if (!_qaRes.ok) {
-    if (_qaRes.reason === 'insufficient-free-money') {
-      showUndoToast('Not enough free money — $' + _qaRes.available + ' available, asked $' + _qaRes.requested);
-    } else {
-      showUndoToast('Could not add to bucket — ' + _qaRes.reason);
-    }
-    return;
-  }
-  onStateChange('bucket-add');
-  showUndoToast(fmtC(amt)+' added to '+bucket.name);
-}
-
-// renderSavingsBuckets + its companion renderChinaHolidayTracker deleted
-// Bundle 28 \u2014 function rendered to #savings-buckets-content which doesn't
-// exist in the Bundle 22 v3 Settings IA (DOM grep confirmed zero matches).
-// 35 LOC of dead render code. Buckets are surfaced inside the Payday Plan
-// canvas Savings sub-screen and via openBucketModal (still wired). When a
-// proper buckets-management page lands in PLAN mode (future bundle), re-
-// derive the layout from the canvas Savings sub-screen pattern.
-
-let activeBucketIdx = -1;
-
-function openBucketModal(i) {
-  activeBucketIdx = i;
-  const b = S.savingsBuckets[i];
-  const pct = b.goal > 0 ? Math.min(100, Math.round((b.saved/b.goal)*100)) : 0;
-  const barCol = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--blue)';
-  const _bmt = $('bkt-modal-title'); if (_bmt) _bmt.textContent = b.name;
-  const _bms = $('bkt-modal-sub'); if (_bms) _bms.textContent = fmtC(b.saved) + ' saved of ' + fmtC(b.goal) + ' goal \u2014 ' + pct + '% complete';
-  const _bmbar = $('bkt-modal-bar'); if (_bmbar) { _bmbar.style.width = pct + '%'; _bmbar.style.background = barCol; }
-  const _bkn = $('bkt-name'); if (_bkn) _bkn.value = b.name;
-  const _bkg = $('bkt-goal'); if (_bkg) _bkg.value = b.goal;
-  const _bksv = $('bkt-saved'); if (_bksv) _bksv.value = b.saved;
-  const _bkac = $('bkt-account'); if (_bkac) _bkac.value = b.account || 'ING';
-  const _bkno = $('bkt-notes'); if (_bkno) _bkno.value = b.notes || '';
-  const _bkaf = $('bkt-add-funds'); if (_bkaf) _bkaf.value = '';
-  const _buckm = $('bucket-modal'); if (_buckm) _buckm.classList.add('open');
-  if (typeof UX !== 'undefined') UX.trackModalOpen('bucket-modal');
-}
-
-function saveBucketModal() {
-  // Bundle 28 forward-architecture: route bucket field writes through
-  // BRAIN.savings.updateBucket (canonical writer, audit-logged). Saved-
-  // amount changes still flow through setBucketSaved (separate concern).
-  // Pre-Bundle-28 this directly mutated b.name/goal/account/notes, leaving
-  // BRAIN + audit log + AI agent blind to the change.
-  if (activeBucketIdx < 0) return;
-  const b = S.savingsBuckets[activeBucketIdx];
-  if (!b) return;
-  const _bkn2 = $('bkt-name');
-  const _bkg2 = $('bkt-goal');
-  const _bkac2 = $('bkt-account');
-  const _bkno2 = $('bkt-notes');
-  const _bksv2 = $('bkt-saved');
-  const patch = {};
-  if (_bkn2) { const n = _bkn2.value.trim(); if (n) patch.name = n; }
-  if (_bkg2) { const g = parseFloat(_bkg2.value); if (!isNaN(g) && g > 0) patch.goal = g; }
-  if (_bkac2) { const a = _bkac2.value; if (a) patch.account = a; }
-  if (_bkno2) { patch.notes = _bkno2.value.trim(); }
-  const originalName = b.name;
-  if (Object.keys(patch).length > 0) {
-    const r = BRAIN.savings.updateBucket(originalName, patch, BRAIN.SOURCES.BUCKET_UPDATE);
-    if (!r.ok) { showToast('Couldn\'t save bucket: ' + (r.reason || 'unknown')); return; }
-  }
-  // Saved amount uses dedicated canonical writer (different concern — value
-  // mutation vs metadata mutation). Uses updated name if rename happened.
-  if (_bksv2) BRAIN.savings.setBucketSaved(b.name, parseFloat(_bksv2.value) || 0, BRAIN.SOURCES.MANUAL);
-  closeModal('bucket-modal', true); renderAll();
-}
-
-function addFundsBucketModal() {
-  if (activeBucketIdx < 0) return;
-  const _bkaf2 = $('bkt-add-funds'); if (!_bkaf2) return;
-  const v = parseFloat(_bkaf2.value);
-  if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
-  // Bundle 8: route through BRAIN.savings.
-  const _b = S.savingsBuckets[activeBucketIdx];
-  if (_b) BRAIN.savings.addToBucket(_b.name, v, BRAIN.SOURCES.MANUAL);
-  closeModal('bucket-modal', true); renderAll();
-}
-
-function deleteBucket() {
-  if (activeBucketIdx < 0) return;
-  const b = S.savingsBuckets[activeBucketIdx];
-  if (!b) return;
-  if (!confirm('Delete "' + b.name + '"? This will restore ' + fmtC(b.saved) + ' to your spendable balance.')) return;
-  saveUndoState();
-  const bucketName = b.name;
-  // Bundle 28 forward-architecture: BRAIN.savings.removeBucket is the
-  // canonical deletion path (audit log captures removed bucket so undo can
-  // restore via addBucket if needed).
-  const r = BRAIN.savings.removeBucket(bucketName, BRAIN.SOURCES.BUCKET_DELETE);
-  if (!r.ok) { showToast('Couldn\'t delete: ' + (r.reason || 'unknown')); return; }
-  // Bundle 28 round 8: cascade-remove linked PLAN.intents entries so
-  // orphaned intents don't keep referencing the deleted bucket. AI agent
-  // + audit log capture each removal. If user later wants the intent
-  // back, they can re-create the bucket + add a goal again.
-  if (BRAIN.plan && BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
-    const linked = BRAIN.plan.intent.byBucket(bucketName);
-    linked.forEach(intent => {
-      BRAIN.plan.intent.remove(intent.id, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
-    });
-  }
-  closeModal('bucket-modal', true); renderAll();
-  showUndoToast('Bucket deleted');
-}
-
-function addToBucket(i) {
-  const input = $('bk-add-'+i);
-  const v = parseFloat(input.value);
-  if (isNaN(v) || v <= 0) { alert('Enter an amount to add.'); return; }
-  if (!S.savingsBuckets[i]) return;
-  // Bundle 8: route through BRAIN.savings.
-  BRAIN.savings.addToBucket(S.savingsBuckets[i].name, v, BRAIN.SOURCES.PLAN_ADD);
-  onStateChange('bucket-add');
-}
 
 function openAddBucketModal() {
   const _nbn = $('nb-name'); if (_nbn) _nbn.value = '';
