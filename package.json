@@ -11,6 +11,8 @@
     "visual": "playwright test",
     "visual:update": "playwright test --update-snapshots",
     "visual:report": "playwright show-report",
+    "smoke": "playwright test --config=playwright.smoke.config.js",
+    "smoke:report": "playwright show-report",
     "layerV": "node scripts/layerV-capture.js --local --skip-deep",
     "layerV:deep": "node scripts/layerV-capture.js --local --deep-only",
     "layerV:all": "node scripts/layerV-capture.js --local",

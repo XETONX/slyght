@@ -29,6 +29,486 @@
 
 ---
 
+## Feature Schema v2 (Bundle 30+)
+
+> **New entry format adopted Bundle 30.** Each feature gets one structured entry. Path notation uses `→` with `ALL_CAPS` nodes. Top-level is `BRAIN` whenever possible; features outside BRAIN use a different root (`UI`, `AUDITOR`, `RECONCILER`, etc.) AND document rationale.
+>
+> **Schema fields (in order):**
+>
+> - `**Path:**` — full architectural path from root to leaf (e.g. `BRAIN → BALANCE → APPLY_TXN_DELTA`)
+> - `**Type:**` — one of: `action` · `screen` · `section` · `element` · `writer` · `reader` · `helper` · `bubble`
+> - `**Lives in:**` — `index.html:LXXXX-LXXXX` line range (or other file)
+> - `**Inside BRAIN?**` — `yes (BRAIN.X.Y)` or `no (rationale why)`
+> - `**Smoke coverage:**` — path to spec + assertion count, OR `none (planned: Bundle NN)`
+> - `**Reads from:**` — state fields / external sources consulted
+> - `**Writes to:**` — state fields / external sinks mutated (via canonical writer name)
+> - `**Triggers:**` — downstream writers / side effects fired
+> - `**Related features:**` — `peer` / `parent` / `child` / `sibling` cross-refs (other Path notation)
+> - `**Notes:**` — context CC discovered during work, gotchas, history
+> - `**Last touched:**` — Bundle + Phase + Date
+>
+> **Diagram-ready.** Each entry's `Path` defines its position in a tree. `Related features` are cross-tree edges. `Inside BRAIN?` + `Smoke coverage` enable color coding when the parser-renderer ships (Bundle 32+).
+
+## Migration status
+
+| Section | v2 backfilled? | Notes |
+|---|---|---|
+| Diagnostic surfaces | ✅ yes — Bundle 30 1.A.6 | All 1.A through 1.A.8 features below |
+| Transaction paths | 🟡 partial — Bundle 30 Phase 1.B in progress | Backfilled as the 9 write-sites migrate |
+| Payday Plan canvas + sub-screens | ⏳ planned Bundle 30 Phase 4 | INV-29 lock-narrowing work will backfill |
+| Dashboard | ⏳ planned Bundle 30 (incremental) | Hero balance touched in Phase 1.B; recent-spending in Phase 2 |
+| AI chat | ⏳ planned Bundle 30 Phase 3 | FR-03 tool split |
+| Bills tab + Bills surfaces | ⏳ planned Bundle 31 | |
+| Analysis tab | ⏳ planned Bundle 31 | |
+| Settings (excl. Diagnostics) | ⏳ planned Bundle 31-32 | Large surface, low risk |
+| Onboarding / first-run | ⏳ planned Bundle 32+ | Lowest priority |
+
+**Legacy entries below this section use the v1 schema (tables).** They remain authoritative until migrated. Per backfill priority, every Bundle 30 phase converts the surfaces it touches.
+
+---
+
+## Features (v2 schema) — Diagnostic surfaces (Bundle 30 1.A — 1.A.8)
+
+### BRAIN.balance (bubble)
+**Path:** `BRAIN → BALANCE`
+**Type:** bubble
+**Lives in:** `index.html:19024-19166`
+**Inside BRAIN?** yes (`BRAIN.balance`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (alias contract, 1 assertion)
+**Reads from:** `S.bal`
+**Writes to:** `S.bal` (single canonical writer for transaction-driven changes)
+**Triggers:** `BRAIN.audit.append`, `BRAIN.transaction.recordCorrection` (via reconcileTo), `save()`
+**Related features:**
+- child: `BRAIN → BALANCE → GET`
+- child: `BRAIN → BALANCE → APPLY_TXN_DELTA`
+- child: `BRAIN → BALANCE → RECONCILE_TO`
+- child: `BRAIN → BALANCE → APPLY_DELTA`
+- child: `BRAIN → BALANCE → CONFIRM_NEGATIVE_OVERRIDE`
+- child: `BRAIN → BALANCE → _INIT_PRE_BUNDLE_30_SNAPSHOT`
+- sibling: `BRAIN → TRANSACTION` (will compose this bubble in Phase 1.B `recordWithAllocation`)
+**Notes:** Per SDD-bundle-30 §2 Phase 1+2 — bubble is the single writer; Phase 3-4 migrates readers; Phase 5+ makes derived per INV-05. Bundle 30 1.A scaffolding only — no behavioural change to existing writers yet.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance.get
+**Path:** `BRAIN → BALANCE → GET`
+**Type:** reader
+**Lives in:** `index.html:19036-19038`
+**Inside BRAIN?** yes (`BRAIN.balance.get`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (alias contract: `BRAIN.balance.get() === getLiveBal() === S.bal`)
+**Reads from:** `S.bal`
+**Writes to:** — (pure reader)
+**Triggers:** —
+**Related features:**
+- peer: `UI → GLOBAL → GET_LIVE_BAL` (thin alias, will deprecate post-Phase 3 reader migration)
+- parent: `BRAIN → BALANCE`
+**Notes:** Identical semantics to direct `S.bal` access in Phase 1+2; becomes computational replay in Phase 4 per INV-05.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance.applyTxnDelta
+**Path:** `BRAIN → BALANCE → APPLY_TXN_DELTA`
+**Type:** writer
+**Lives in:** `index.html:19042-19062`
+**Inside BRAIN?** yes (`BRAIN.balance.applyTxnDelta`)
+**Smoke coverage:** none (planned: Bundle 30 Phase 1.B smoke when first write-site migrates)
+**Reads from:** `BRAIN._SOURCE_SET`, `S.bal`
+**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`)
+**Triggers:** `save()`, AUDITOR.record (via BUNDLE-30-AUDITOR-SHIM in Phase 1.B)
+**Related features:**
+- sibling: `BRAIN → TRANSACTION → RECORD` (Phase 1.B will compose this)
+- peer: `BRAIN → BALANCE → RECONCILE_TO` (different write-class — corrections vs txn-driven)
+**Notes:** Signed delta semantics (+inflow, −outflow). Validates source against `_SOURCE_SET`. Returns `{ok, old, new, delta, reason?}` envelope. Phase 1.B migrates 9 direct-S.bal write sites to route through this.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance.reconcileTo
+**Path:** `BRAIN → BALANCE → RECONCILE_TO`
+**Type:** writer
+**Lives in:** `index.html:19068-19092`
+**Inside BRAIN?** yes (`BRAIN.balance.reconcileTo`)
+**Smoke coverage:** none (planned: Bundle 30 Phase 3 smoke — AI tool wires through this)
+**Reads from:** `BRAIN._SOURCE_SET`, `S.bal`
+**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`)
+**Triggers:** `BRAIN.transaction.recordCorrection` (logs corrective txn), `save()`, AUDITOR.record (via BUNDLE-30-AUDITOR-SHIM in Phase 3)
+**Related features:**
+- peer: `BRAIN → BALANCE → APPLY_DELTA` (delta variant of this)
+- consumer: `UI → AI → SET_BALANCE_TARGET` (Phase 3 wires to this)
+- legacy peer: `UI → GLOBAL → APPLY_BALANCE_CORRECTION` (predates this; Phase 3 may deprecate)
+**Notes:** Reconciliation write — sets `S.bal` to explicit new value AND records corrective txn so ledger reflects the gap. Used by hero balance edit + AI `set_balance_target` tool.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance.applyDelta
+**Path:** `BRAIN → BALANCE → APPLY_DELTA`
+**Type:** writer
+**Lives in:** `index.html:19098-19106`
+**Inside BRAIN?** yes (`BRAIN.balance.applyDelta`)
+**Smoke coverage:** none (planned: Bundle 30 Phase 3 smoke — AI tool wires through this)
+**Reads from:** `S.bal`
+**Writes to:** `S.bal` (via `reconcileTo` internally)
+**Triggers:** `BRAIN.balance.reconcileTo` (cascades through it)
+**Related features:**
+- peer: `BRAIN → BALANCE → RECONCILE_TO` (target variant of this)
+- consumer: `UI → AI → APPLY_BALANCE_DELTA` (Phase 3 wires to this)
+**Notes:** Routes signed delta through reconcileTo so a correction txn lands in the ledger. Used by AI `apply_balance_delta` tool.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance.confirmNegativeOverride
+**Path:** `BRAIN → BALANCE → CONFIRM_NEGATIVE_OVERRIDE`
+**Type:** action
+**Lives in:** `index.html:19115-19131`
+**Inside BRAIN?** yes (`BRAIN.balance.confirmNegativeOverride`)
+**Smoke coverage:** none (planned: Bundle 30 Phase 4.A smoke — INV-27 confirm flow)
+**Reads from:** —
+**Writes to:** `BRAIN.balance._negativeOverrideArmed` flag, `S._auditLog`
+**Triggers:** `BRAIN.audit.append`
+**Related features:**
+- consumer: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (Phase 2 will consume flag in INV-27 gate)
+- peer: `BRAIN → BALANCE → _CONSUME_NEGATIVE_OVERRIDE` (private — clears flag)
+**Notes:** One-shot override flag for INV-27 negative-balance refusal. UI flow: writer returns `'negative-warning-required'` → UI opens confirm modal → user confirms → calls this method → writer re-fires → flag consumed.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### BRAIN.balance._initPreBundle30Snapshot
+**Path:** `BRAIN → BALANCE → _INIT_PRE_BUNDLE_30_SNAPSHOT`
+**Type:** action
+**Lives in:** `index.html:19139-19166`
+**Inside BRAIN?** yes (`BRAIN.balance._initPreBundle30Snapshot`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (snapshot exists + tagged, 2 assertions)
+**Reads from:** `SNAPSHOTS.load()`
+**Writes to:** `SNAPSHOTS` ring (via `SNAPSHOTS.take`), `S._auditLog`
+**Triggers:** `SNAPSHOTS.take('pre-bundle-30')`, `SNAPSHOTS.save` (to tag), `renderSnapshots`, `BRAIN.audit.append`
+**Related features:**
+- consumer: `UI → BOOT → DOMCONTENTLOADED_HANDLER` (fires this at +500ms)
+- peer: `AUDITOR → ...` (separate audit log, parallel to BRAIN.audit)
+**Notes:** Bundle 30 pre-flight insurance. Idempotency-guarded by `s.reason === 'pre-bundle-30'`. Pins snapshot via `tagged: true` so eviction can never sweep it. Post-fix verifies on every boot. Fix-forward from 1.A: original used `s.label` (no such field) + ignored second arg to SNAPSHOTS.take.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.5 fix-forward (2026-05-18)
+
+### BRAIN.selfTest (bubble)
+**Path:** `BRAIN → SELF_TEST`
+**Type:** bubble
+**Lives in:** `index.html:19189-19282`
+**Inside BRAIN?** yes (`BRAIN.selfTest`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (waitForFunction asserts `_lastRun` populates, 1 assertion)
+**Reads from:** `BRAIN.*` (every bubble), `S.planIntents`, DOM elements via `document.getElementById`
+**Writes to:** `BRAIN.selfTest._lastRun`, `S._auditLog` (on failure)
+**Triggers:** `BRAIN.audit.append` on failure
+**Related features:**
+- parent: `BRAIN`
+- consumer: `UI → BOOT → DOMCONTENTLOADED_HANDLER` (runs at +500ms)
+- consumer: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD` (re-runs on demand)
+- peer: `MATH_INVARIANTS` (separate registry — cross-cutting math invariants vs structural-bubble checks)
+**Notes:** Bundle 30 1.A.6 — promoted from inline tests array in DOMContentLoaded handler. 43 lazy thunks (24 original + 15 from Phase 1 + 4 self-reference). `run()` returns `{ts, results, failures}` and stores on `_lastRun`.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 (2026-05-18)
+
+### BRAIN.devInspect (bubble)
+**Path:** `BRAIN → DEV_INSPECT`
+**Type:** bubble
+**Lives in:** `index.html:19292-19337`
+**Inside BRAIN?** yes (`BRAIN.devInspect`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (output renders within 100ms, 1 assertion)
+**Reads from:** `BRAIN.balance.get()`, `getLiveBal()`, `S.bal`, `SNAPSHOTS.load()`, `S._auditLog`, `BRAIN.SOURCES`, `BRAIN._SOURCE_SET`
+**Writes to:** —
+**Triggers:** Whatever each registered check invokes (extensible)
+**Related features:**
+- parent: `BRAIN`
+- consumer: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD`
+- extension: future Bundle 30 phases append checks to `BRAIN.devInspect.checks`
+**Notes:** Bundle 30 1.A.8 — runtime introspection for mobile-native verification. 8 initial checks: balance reads, alias matches, snapshot exists, audit entry count, BRAIN bubble inventory, SOURCES sync. Built to be appended-to from later phases.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.8 (2026-05-18)
+
+### UI: Math Health card
+**Path:** `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD`
+**Type:** screen
+**Lives in:** HTML at `index.html:1557-1564` (sub-diagnostics) + `index.html:1202-1209` (legacy settings); render at `index.html:6483-6557`
+**Inside BRAIN?** no (UI rendering layer — backed by `MATH_INVARIANTS` registry, candidate to wrap in `BRAIN.diagnostics` bubble Bundle 31+)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (expand-button toggle, 3 assertions)
+**Reads from:** `MathInvariants.invariants[]`, `MathInvariants.check()`, `S._invariantViolationCounts`
+**Writes to:** `#math-health-content.innerHTML` (mirrored to `#sub-math-health-content` via renderAll mirror loop)
+**Triggers:** —
+**Related features:**
+- child: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+- peer: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD` (sibling structural-checks card)
+- backing-registry: `MATH_INVARIANTS` (16 named cross-cutting math invariants)
+**Notes:** Pre-Bundle-30 showed only violation count. 1.A.6 added detailed-checks expansion. Mirror system at L6437 syncs legacy + sub-screen targets.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 (2026-05-18)
+
+### UI: Math Health "View detailed checks" expand
+**Path:** `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+**Type:** action
+**Lives in:** `index.html:6529-6545` (button + pane HTML generation)
+**Inside BRAIN?** no (UI; uses helper `_toggleDetailPane`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (tap → visible <100ms, tap → hidden <100ms, 2 assertions)
+**Reads from:** `MathInvariants.invariants[]`, current violations set
+**Writes to:** `.detail-pane` next-sibling `style.display`
+**Triggers:** `_toggleDetailPane(this)`
+**Related features:**
+- helper: `UI → GLOBAL → _TOGGLE_DETAIL_PANE`
+- peer: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → VIEW_DETAILED_CHECKS_EXPAND` (same pattern)
+**Notes:** Fix-forward 2026-05-18 — original used `getElementById('<fixed-id>')` which collided across legacy+sub mirror copies. Now uses relative-DOM lookup via `this.nextElementSibling` with class `.detail-pane`. See `_toggleDetailPane` for full history.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 fix-forward (2026-05-18)
+
+### UI: Boot Self-Test card
+**Path:** `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD`
+**Type:** screen
+**Lives in:** HTML at `index.html:1582-1587` (sub-diagnostics only — no legacy mirror); render at `index.html:6562-6605`
+**Inside BRAIN?** no (UI rendering layer — backed by `BRAIN.selfTest` bubble)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (expand-button toggle, 3 assertions)
+**Reads from:** `BRAIN.selfTest.run()` (or `_lastRun`)
+**Writes to:** `#sub-boot-test-content.innerHTML`
+**Triggers:** `BRAIN.selfTest.run()` on demand
+**Related features:**
+- child: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+- child: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → RE_RUN_BUTTON`
+- backing-bubble: `BRAIN → SELF_TEST`
+- peer: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD` (cross-cutting math vs structural)
+**Notes:** New in Bundle 30 1.A.6. No legacy mirror — renders directly to sub-screen target. 43 checks displayed.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 (2026-05-18)
+
+### UI: Boot Self-Test "View detailed checks" expand
+**Path:** `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+**Type:** action
+**Lives in:** `index.html:6592-6604`
+**Inside BRAIN?** no (UI; uses helper `_toggleDetailPane`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (tap → visible <100ms, tap → hidden <100ms, 2 assertions)
+**Reads from:** `BRAIN.selfTest._lastRun.results[]`
+**Writes to:** `.detail-pane` next-sibling `style.display`
+**Triggers:** `_toggleDetailPane(this)`
+**Related features:**
+- helper: `UI → GLOBAL → _TOGGLE_DETAIL_PANE`
+- peer: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+**Notes:** Uses same `_toggleDetailPane` helper as Math Health. Boot Self-Test isn't mirrored (no legacy copy) but uses the same robust pattern for consistency.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 fix-forward (2026-05-18)
+
+### UI: Activity Log card (merged view + filter)
+**Path:** `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD`
+**Type:** screen
+**Lives in:** HTML at `index.html:1607-1620` (sub-diagnostics, with filter row) + `index.html:1233-1237` (legacy); render at `index.html:15860-15953`
+**Inside BRAIN?** no (UI rendering — reads from AUDITOR + BRAIN.audit, both backing logs)
+**Smoke coverage:** none (planned: Bundle 30 1.A.7 follow-up — filter behaviour)
+**Reads from:** `AUDITOR.log`, `S._auditLog`, `BRAIN.SOURCES`, `_auditFilter` module state
+**Writes to:** `#audit-log-content.innerHTML`, `#sub-audit-log-content.innerHTML` (direct writes to both, no mirror dependency)
+**Triggers:** —
+**Related features:**
+- child: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → TEXT_FILTER`
+- child: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → SOURCE_TAG_FILTER`
+- backing-log: `AUDITOR → LOG` (action-history forensic log, separate from BRAIN.audit)
+- backing-log: `BRAIN → AUDIT → LOG` (`S._auditLog`, canonical-write event log with source tags)
+**Notes:** Bundle 30 1.A.7 merged both logs into a unified view. AUDITOR entries marked with `AUDITOR` badge; BRAIN entries show source-tag (green badge). Both logs filtered together by text + optional source-tag dropdown.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.7 (2026-05-18)
+
+### UI: Activity Log text filter
+**Path:** `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → TEXT_FILTER`
+**Type:** element
+**Lives in:** `index.html:1609-1611` (HTML input); handler at `index.html:6662-6669`
+**Inside BRAIN?** no (UI input)
+**Smoke coverage:** none (planned: Bundle 30 1.A.7 follow-up)
+**Reads from:** input `value`
+**Writes to:** `_auditFilter.text` module state
+**Triggers:** `setAuditFilter('text', value)` → `renderAuditLog()`
+**Related features:**
+- helper: `UI → GLOBAL → SET_AUDIT_FILTER`
+- peer: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → SOURCE_TAG_FILTER`
+**Notes:** Substring match against action / notes / source / kind fields (case-insensitive). Re-renders on every keystroke (oninput).
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.7 (2026-05-18)
+
+### UI: Activity Log source-tag dropdown filter
+**Path:** `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → SOURCE_TAG_FILTER`
+**Type:** element
+**Lives in:** `index.html:1612-1614` (HTML select); options populated at `index.html:15871-15878`
+**Inside BRAIN?** no (UI input)
+**Smoke coverage:** none (planned: Bundle 30 1.A.7 follow-up)
+**Reads from:** `BRAIN.SOURCES` (for dropdown options), selected `value`
+**Writes to:** `_auditFilter.source` module state
+**Triggers:** `setAuditFilter('source', value)` → `renderAuditLog()`
+**Related features:**
+- helper: `UI → GLOBAL → SET_AUDIT_FILTER`
+- peer: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → TEXT_FILTER`
+- data-source: `BRAIN → SOURCES` (frozen tag vocabulary)
+**Notes:** Auto-populated from BRAIN.SOURCES on first render (idempotent). Only filters BRAIN.audit entries (AUDITOR entries have no source field, are excluded when source filter is active).
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.7 (2026-05-18)
+
+### UI: Dev Inspect card
+**Path:** `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD`
+**Type:** screen
+**Lives in:** HTML at `index.html:1590-1604` (sub-diagnostics only); render at `index.html:6608-6635`
+**Inside BRAIN?** no (UI rendering — backed by `BRAIN.devInspect` bubble)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (tap-check renders output <100ms, 2 assertions)
+**Reads from:** `BRAIN.devInspect.checks[]`
+**Writes to:** `#sub-dev-inspect-buttons.innerHTML`, `#sub-dev-inspect-output.textContent`
+**Triggers:** `runDevInspectCheck(name)` on button tap
+**Related features:**
+- child: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → CHECK_BUTTON_<N>` (one per registered check)
+- child: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → RUN_ALL_BUTTON`
+- child: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → CLEAR_BUTTON`
+- backing-bubble: `BRAIN → DEV_INSPECT`
+**Notes:** New in Bundle 30 1.A.8. Mobile-native verification surface — replaces the need for desktop dev tools console access. 8 initial checks; extensible to future Bundle 30 phases.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.8 (2026-05-18)
+
+### UI: Dev Inspect single-check buttons (extensible registry)
+**Path:** `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → CHECK_BUTTON_<N>`
+**Type:** action
+**Lives in:** rendered at `index.html:6620-6629` (one button per `BRAIN.devInspect.checks` entry)
+**Inside BRAIN?** no (UI; backed by `BRAIN.devInspect.checks` registry)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (first button tap writes output, 2 assertions)
+**Reads from:** check name from button data
+**Writes to:** `#sub-dev-inspect-output.textContent`
+**Triggers:** `runDevInspectCheck(name)` → `BRAIN.devInspect.run(name)`
+**Related features:**
+- backing-registry: `BRAIN → DEV_INSPECT → CHECKS`
+- helper: `UI → GLOBAL → RUN_DEV_INSPECT_CHECK`
+**Notes:** Each check is `{name, run}` in `BRAIN.devInspect.checks`. UI renders one button per entry. Future Bundle 30 phases push their own checks here.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.8 (2026-05-18)
+
+### UI: Dev Inspect "Run all" button
+**Path:** `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → RUN_ALL_BUTTON`
+**Type:** action
+**Lives in:** `index.html:1600` (HTML); handler at `index.html:9968-9982`
+**Inside BRAIN?** no (UI; calls into BRAIN.devInspect)
+**Smoke coverage:** none (planned: Bundle 30 1.A.8 follow-up)
+**Reads from:** `BRAIN.devInspect.runAll()` results
+**Writes to:** `#sub-dev-inspect-output.textContent`
+**Triggers:** `BRAIN.devInspect.runAll`
+**Related features:**
+- backing-method: `BRAIN → DEV_INSPECT → RUN_ALL`
+- peer: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → CHECK_BUTTON_<N>` (single-run version)
+**Notes:** Renders all 8 (or however many extended in later phases) check results in the output area, one per line.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.8 (2026-05-18)
+
+### Settings → Data & Backup: Pre-bundle-30 snapshot
+**Path:** `UI → SETTINGS → DATA_AND_BACKUP → SNAPSHOTS → PRE_BUNDLE_30_ENTRY`
+**Type:** element
+**Lives in:** auto-taken at boot via `BRAIN.balance._initPreBundle30Snapshot`; rendered in snapshot list at `index.html:16188-16224`
+**Inside BRAIN?** yes (initiated by `BRAIN.balance._initPreBundle30Snapshot`)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (snapshot exists + tagged, 2 assertions)
+**Reads from:** `SNAPSHOTS.load()` (looks for `s.reason === 'pre-bundle-30'`)
+**Writes to:** `SNAPSHOTS` ring (one entry, pinned via `tagged: true`)
+**Triggers:** —
+**Related features:**
+- creator: `BRAIN → BALANCE → _INIT_PRE_BUNDLE_30_SNAPSHOT`
+- displayed-in: `UI → SETTINGS → DATA_AND_BACKUP → SNAPSHOTS → LIST`
+**Notes:** Belt-and-suspenders insurance for Bundle 30 migration. Pinned forever so eviction cannot sweep. External JSON export (per Q2) is the second insurance layer.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.5 fix-forward (2026-05-18)
+
+### Helper: _toggleDetailPane
+**Path:** `UI → GLOBAL → _TOGGLE_DETAIL_PANE`
+**Type:** helper
+**Lives in:** `index.html:6672-6683`
+**Inside BRAIN?** no (UI helper — module-level function; consolidation candidate for Bundle 31+ `BRAIN.uiHelpers` bubble)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (toggle pattern via expand buttons, 4 assertions)
+**Reads from:** `btn.nextElementSibling`
+**Writes to:** `pane.style.display`
+**Triggers:** —
+**Related features:**
+- consumer: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+- consumer: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+**Notes:** Fix-forward 2026-05-18 — replaces inline `getElementById('<fixed-id>')` pattern that broke under the renderAll mirror system (duplicate IDs across `#math-health-content` and `#sub-math-health-content`). Uses `this.nextElementSibling` for scope-correct toggling. Pane must be the next sibling AND tagged with class `.detail-pane`.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 fix-forward (2026-05-18)
+
+### Helper: setAuditFilter / _auditFilter
+**Path:** `UI → GLOBAL → SET_AUDIT_FILTER`
+**Type:** helper
+**Lives in:** `index.html:6654-6669`
+**Inside BRAIN?** no (UI module state — consolidation candidate for Bundle 31+ `BRAIN.uiState` bubble)
+**Smoke coverage:** none (planned: Bundle 30 1.A.7 follow-up)
+**Reads from:** filter input values
+**Writes to:** `_auditFilter` module-level state object
+**Triggers:** `renderAuditLog()`
+**Related features:**
+- consumer: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → TEXT_FILTER`
+- consumer: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD → SOURCE_TAG_FILTER`
+**Notes:** Module-level filter state. Setter validates key against known properties. Calls renderAuditLog on every change (debouncing TBD if perf becomes an issue).
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.7 (2026-05-18)
+
+### Helper: getLiveBal (alias)
+**Path:** `UI → GLOBAL → GET_LIVE_BAL`
+**Type:** helper
+**Lives in:** `index.html:3333-3341`
+**Inside BRAIN?** no (legacy alias — Phase 3+ migrates readers to `BRAIN.balance.get()` directly, then this helper can be removed Bundle 32+)
+**Smoke coverage:** `tests/smoke/diagnostics.smoke.js` (alias contract, 1 assertion)
+**Reads from:** `BRAIN.balance.get()` (with defensive fallback to `S.bal`)
+**Writes to:** —
+**Triggers:** —
+**Related features:**
+- backing-bubble: `BRAIN → BALANCE → GET`
+- consumers: ~97 read sites across `index.html` (migration in Phase 3)
+**Notes:** Bundle 30 1.A converted from `function getLiveBal() { return S.bal; }` to thin alias for `BRAIN.balance.get()`. Defensive fallback handles boot ordering edge cases. ~97 callers; Phase 3 migrates them over multiple bundles.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+
+### Inventory: AUDITOR (separate balance-change observer)
+**Path:** `AUDITOR`
+**Type:** bubble (legacy, not part of BRAIN)
+**Lives in:** `index.html:15786-15852`
+**Inside BRAIN?** no (predates BRAIN — separate audit log + anomaly detection; **Bundle 31 candidate ADR: "Migrate AUDITOR into BRAIN.audit as a tiered observer layer"**)
+**Smoke coverage:** none (Bundle 31+)
+**Reads from:** `S.bal`, `getGenuineSurplus()`, `S.debts`, etc.
+**Writes to:** `AUDITOR.log[]`, `localStorage['slyght_audit_log']`
+**Triggers:** Anomaly badge on UI, console warnings
+**Related features:**
+- peer: `BRAIN → AUDIT` (parallel log with different shape)
+- displayed-in: `UI → SETTINGS → DIAGNOSTICS → ACTIVITY_LOG_CARD` (merged with BRAIN.audit in Bundle 30 1.A.7)
+- shim: `BUNDLE-30-AUDITOR-SHIM` (Phase 1.B) — `BRAIN.balance` writers also call `AUDITOR.record` so anomaly detection survives the migration
+**Notes:** 17 call sites across the codebase. Anomaly detection uses balance-before/balance-after/expected-change semantics. The BUNDLE-30-AUDITOR-SHIM marker enables grep-driven removal when the Bundle 31 ADR lands. Until then: dual-log.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.7 (merge into Activity Log view, no semantic changes)
+
+### Inventory: MathInvariants registry
+**Path:** `MATH_INVARIANTS`
+**Type:** bubble (legacy, not part of BRAIN)
+**Lives in:** `index.html:4593-...` (registry definition; ~16 entries currently)
+**Inside BRAIN?** no (predates BRAIN — **Bundle 31 candidate ADR: "Migrate MathInvariants into BRAIN.invariants and bridge with FINANCIAL-INVARIANTS.md namespace"**)
+**Smoke coverage:** none for the registry itself; one consumer (Math Health card) has smoke coverage for the expand interaction
+**Reads from:** `S.*` (cross-cutting state checks)
+**Writes to:** `S._invariantViolationCounts` (session counts)
+**Triggers:** Tier-based banner/card surfacing
+**Related features:**
+- displayed-in: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD`
+- peer: `BRAIN → SELF_TEST` (separate registry — structural-bubble checks vs cross-cutting math)
+- spec-source: `FINANCIAL-INVARIANTS.md` (Bundle 31+ bridge)
+**Notes:** Three tiers — critical/fail/warn. Runs at end of every renderAll (≤5ms budget). 16 invariants currently. Naming convention (`state-shape-balance`, `paidbills-key-not-future`, etc.) is registry-internal, NOT mapped to INV-NN from FINANCIAL-INVARIANTS.md (the spec) — Bundle 31+ bridge.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 (Math Health card expanded to show all entries)
+
+### Inventory: SNAPSHOTS module
+**Path:** `SNAPSHOTS`
+**Type:** bubble (legacy, not part of BRAIN)
+**Lives in:** `index.html:15992-16188`
+**Inside BRAIN?** no (predates BRAIN — **Bundle 32+ candidate ADR: "Migrate SNAPSHOTS into BRAIN.snapshots"** — low priority)
+**Smoke coverage:** none directly (smoke verifies one snapshot's existence + tagging via SNAPSHOTS.load)
+**Reads from:** `localStorage['slyght_snapshots']`
+**Writes to:** `localStorage['slyght_snapshots']`
+**Triggers:** —
+**Related features:**
+- consumer: `BRAIN → BALANCE → _INIT_PRE_BUNDLE_30_SNAPSHOT`
+- displayed-in: `UI → SETTINGS → DATA_AND_BACKUP → SNAPSHOTS`
+- creator-of: `UI → SETTINGS → DATA_AND_BACKUP → SNAPSHOTS → PRE_BUNDLE_30_ENTRY`
+**Notes:** Tiered eviction (24h/7d/30d/weekly+). Tagged snapshots pinned forever. 250 hard cap. `take(reason)` returns the new snapshot object. Bundle 21 fixed the slice-direction bug. Bundle 30 1.A.5 fixed the idempotency-by-wrong-field bug for the pre-bundle-30 entry path.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.5 (consumer fix-forward; module itself unchanged)
+
+---
+
+## Features (v2 schema) — Smoke infrastructure (Bundle 30 1.A.6)
+
+### Smoke spec: diagnostics
+**Path:** `TESTS → SMOKE → DIAGNOSTICS`
+**Type:** element (test artifact)
+**Lives in:** `tests/smoke/diagnostics.smoke.js`
+**Inside BRAIN?** no (test infrastructure)
+**Smoke coverage:** N/A (this IS the smoke)
+**Reads from:** `state-snapshot.json` fixture, deployed/local app via Playwright
+**Writes to:** — (read-only verification)
+**Triggers:** Playwright assertions
+**Related features:**
+- verifies: `UI → SETTINGS → DIAGNOSTICS → MATH_HEALTH_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+- verifies: `UI → SETTINGS → DIAGNOSTICS → BOOT_SELF_TEST_CARD → VIEW_DETAILED_CHECKS_EXPAND`
+- verifies: `UI → SETTINGS → DIAGNOSTICS → DEV_INSPECT_CARD → CHECK_BUTTON_<N>`
+- verifies: `UI → SETTINGS → DATA_AND_BACKUP → SNAPSHOTS → PRE_BUNDLE_30_ENTRY`
+- verifies: `UI → GLOBAL → GET_LIVE_BAL` (alias contract)
+- config: `playwright.smoke.config.js`
+- run-via: `npm run smoke`
+**Notes:** 5 assertions across 5 tests. Local default; deployed via `$env:SMOKE_BASE_URL` (PowerShell) or `SMOKE_BASE_URL` env var (Unix). Per CC manual §3 Deploy-check amendment, this is the mandatory pre-phone-verify check for any commit adding interactive surfaces.
+**Last touched:** Bundle 30 Phase 1 Commit 1.A.6 fix-forward (2026-05-18)
+
+---
+
+**End of v2-schema diagnostic-surface backfill. Legacy v1 tables continue below.**
+
+---
+
 ## CURRENT — Dashboard tab (`#pg-dash`)
 
 | Surface | Render fn | DOM target | Reads | Writes via | Cross-references |

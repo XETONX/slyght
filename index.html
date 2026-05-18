@@ -6533,10 +6533,14 @@ function renderMathHealth() {
   // MathInvariants entry by name + tier + pass/fail so John can see the
   // full set, not just the failing summary. Per CC manual §3 amendment:
   // diagnostic surfaces show the underlying data, not just the count.
+  //
+  // Fix-forward 2026-05-18 — pane uses class `detail-pane` (not id) +
+  // onclick uses `_toggleDetailPane(this)` relative-DOM lookup, so the
+  // legacy/sub-screen mirror doesn't cause duplicate-id breakage. See
+  // _toggleDetailPane definition for full history.
   const violationNames = new Set(violations.map(v => v.name));
-  const detailId = 'math-health-details';
-  html += '<button onclick="(function(){var d=document.getElementById(\'' + detailId + '\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\';})()" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">View detailed checks (' + MathInvariants.invariants.length + ')</button>';
-  html += '<div id="' + detailId + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
+  html += '<button onclick="_toggleDetailPane(this)" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer;min-height:44px">View detailed checks (' + MathInvariants.invariants.length + ')</button>';
+  html += '<div class="detail-pane" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
   html += '<div style="color:var(--text3);margin-bottom:6px;line-height:1.5">' + MathInvariants.invariants.length + ' invariants from MathInvariants registry — cross-cutting math checks (state-shape, money-flow). Separate from BRAIN.selfTest (structural-bubble checks) and from FINANCIAL-INVARIANTS.md (the spec; Bundle 31+ will bridge these namespaces).</div>';
   MathInvariants.invariants.forEach(inv => {
     const failed = violationNames.has(inv.name);
@@ -6584,9 +6588,14 @@ function renderBootSelfTest() {
   } else {
     html += '<div style="color:var(--red);font-weight:700">🚨 ' + failures + ' of ' + total + ' failing</div>';
   }
-  const detailId = 'boot-test-details';
-  html += '<button onclick="(function(){var d=document.getElementById(\'' + detailId + '\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\';})()" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">View detailed checks (' + total + ')</button>';
-  html += '<div id="' + detailId + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
+  // Fix-forward 2026-05-18 — pane uses class `detail-pane` + onclick uses
+  // _toggleDetailPane(this) for relative-DOM lookup. Same pattern as
+  // Math Health expansion. Boot Self-Test card is not mirrored (renders
+  // only to #sub-boot-test-content), so the duplicate-id bug doesn't
+  // strictly apply here, but we use the same robust pattern for
+  // consistency + to survive any future mirror addition.
+  html += '<button onclick="_toggleDetailPane(this)" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer;min-height:44px">View detailed checks (' + total + ')</button>';
+  html += '<div class="detail-pane" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
   html += '<div style="color:var(--text3);margin-bottom:6px;line-height:1.5">Structural-bubble checks — BRAIN bubble availability, callable functions, DOM element presence, SOURCES tag registration. Separate from MathInvariants (cross-cutting math) and FINANCIAL-INVARIANTS.md (the spec). Bundle 31+ will bridge.</div>';
   res.results.forEach(r => {
     const color = r.ok ? 'var(--green)' : 'var(--red)';
@@ -6648,6 +6657,29 @@ function setAuditFilter(key, value) {
   if (!Object.prototype.hasOwnProperty.call(_auditFilter, key)) return;
   _auditFilter[key] = (value || '').toString();
   try { renderAuditLog(); } catch (_) {}
+}
+
+// ─── Bundle 30 1.A.6 fix-forward — detail-pane toggle helper ──────────────
+// Phone-verify caught a bug: inline onclick used `getElementById('<fixed-id>')`
+// to toggle the expansion pane. The Math Health card is rendered to
+// #math-health-content AND mirrored to #sub-math-health-content via the
+// renderAll mirror loop, producing TWO DOM nodes with the same `id`. The
+// click handler then toggled the legacy (hidden) copy, leaving the visible
+// sub-screen copy untouched. The "screen lock/unlock fixes it" symptom was
+// renderAll firing on visibilitychange, mirror copying the post-click
+// legacy state to sub.
+//
+// Fix: relative DOM traversal. Each expand button's pane is its next
+// sibling tagged with class `detail-pane`. `this.nextElementSibling` is
+// scoped to whichever copy the user actually tapped — works correctly
+// whether or not the card is mirrored. Replaces inline IIFE getElementById
+// pattern in renderMathHealth + renderBootSelfTest.
+function _toggleDetailPane(btn) {
+  if (!btn) return;
+  const pane = btn.nextElementSibling;
+  if (!pane || !pane.classList || !pane.classList.contains('detail-pane')) return;
+  const cur = pane.style.display;
+  pane.style.display = (cur === 'none' || cur === '') ? 'block' : 'none';
 }
 
 function renderEmergencyFundStatus() {
