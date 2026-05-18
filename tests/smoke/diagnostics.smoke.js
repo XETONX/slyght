@@ -51,7 +51,11 @@ test.describe('Bundle 30 1.A.6 — Diagnostics expand buttons (regression guard)
       try { localStorage.setItem('slyght_bills_reset_month', args.monthKey); } catch (_) {}
     }, { seed: buildSlyghtV5(fixture), monthKey: '2026-5' });
 
-    await page.goto('/');
+    // page.goto('/') resolves against baseURL host root (drops /slyght/ +
+    // query string). When SMOKE_BASE_URL is set (deployed mode), use it as
+    // the full URL. Local mode keeps the relative '/' against
+    // http://localhost:4567 baseURL.
+    await page.goto(process.env.SMOKE_BASE_URL || '/');
     await page.addStyleTag({ content: SETTLE_CSS });
     // Wait for boot self-test setTimeout to fire (DOMContentLoaded + 500ms),
     // which is when BRAIN.selfTest._lastRun gets populated.
