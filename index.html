@@ -7312,16 +7312,13 @@ function markDebtPaid() {
   // + audit emission + _clearedTxnTs back-ref for reversible undo via
   // BRAIN.debts.unmark. STRICT abort if record fails \u2014 restore S.bal.
   //
-  // Bundle 30 Phase 1.B (FR-01) \u2014 balance mutation now goes through the
-  // canonical writer instead of direct `S.bal -= d.amt`. BRAIN.debts.markPaid
-  // still owns the txn append (composes with BRAIN.transaction.record
-  // internally); migrating markPaid itself to the recordWithAllocation
-  // envelope is a Phase 2 candidate so the txn + balance + audit land
-  // atomically inside one writer.
-  BRAIN.balance.applyTxnDelta(-d.amt, BRAIN.SOURCES.CLEAR_DEBT, null);
+  // Bundle 30 Phase 2.E \u2014 BRAIN.debts.markPaid now uses the
+  // recordWithAllocation envelope internally; the txn + balance + audit
+  // land atomically inside one writer. Phase 1.B's separate
+  // BRAIN.balance.applyTxnDelta calls were dropped \u2014 markPaid handles
+  // the balance side via its envelope composition.
   const r = BRAIN.debts.markPaid(d.id, BRAIN.SOURCES.CLEAR_DEBT);
   if (!r.ok) {
-    BRAIN.balance.applyTxnDelta(+d.amt, BRAIN.SOURCES.CLEAR_DEBT, null);
     showToast('\u26a0\ufe0f Could not clear ' + d.name + ' \u2014 ' + r.reason);
     return;
   }
@@ -7878,13 +7875,12 @@ function markBillPaidMonth() {
     // deduction so we don't leave the user under-balanced with no
     // bill flagged paid.
     //
-    // Bundle 30 Phase 1.B (FR-01) \u2014 balance mutation through canonical
-    // writer. markPaid still owns txn append; Phase 2 may migrate
-    // markPaid itself to the recordWithAllocation envelope.
-    BRAIN.balance.applyTxnDelta(-b.amt, BRAIN.SOURCES.MARK_BILL_PAID, null);
+    // Bundle 30 Phase 2.E \u2014 BRAIN.bills.markPaid now uses the
+    // recordWithAllocation envelope internally; the txn + balance + audit
+    // land atomically. Phase 1.B's separate BRAIN.balance.applyTxnDelta
+    // calls were dropped here in this revision.
     const r = BRAIN.bills.markPaid(b, BRAIN.SOURCES.MARK_BILL_PAID);
     if (!r.ok) {
-      BRAIN.balance.applyTxnDelta(+b.amt, BRAIN.SOURCES.MARK_BILL_PAID, null);
       showToast('\u26a0\ufe0f Could not mark ' + b.name + ' paid \u2014 ' + r.reason);
       return;
     }
@@ -8949,17 +8945,25 @@ function quickAddToBucket(i, amt) {
   // Bundle 8: route bucket write through BRAIN.savings.
   const bucket = S.savingsBuckets[i];
   if (!bucket) return;
-  BRAIN.savings.addToBucket(bucket.name, amt, BRAIN.SOURCES.MANUAL);
-  // Bundle 11: route txn push through BRAIN.transaction with the
-  // dedicated bucket-quick-add source tag.
-  // Bundle 30 Phase 1.B (FR-01) — balance mutation through canonical
-  // writer. Full recordWithAllocation envelope with bucket destination
-  // arrives in Phase 2 (will eliminate the separate addToBucket call).
-  const _qaRes = BRAIN.transaction.record(
-    { amt, note: bucket.name+' — quick add', cat:'Savings', income:false, _balAffected: true },
+  // Bundle 30 Phase 2.A — composed writer with bucket destination
+  // collapses the 3 pre-Phase-2 calls (addToBucket + record + S.bal)
+  // into one atomic envelope call. INV-28 fires here (ad-hoc allocation,
+  // not pre-committed): if the user tries to quick-add beyond
+  // free_money_remaining, the writer refuses with insufficient-free-money.
+  const _qaRes = BRAIN.transaction.recordWithAllocation(
+    { amt, note: bucket.name + ' — quick add', cat: 'Savings',
+      direction: 'outflow',
+      destination: { type: 'bucket', id: bucket.name } },
     BRAIN.SOURCES.BUCKET_QUICK_ADD
   );
-  BRAIN.balance.applyTxnDelta(-amt, BRAIN.SOURCES.BUCKET_QUICK_ADD, _qaRes.ok ? _qaRes.ts : null);
+  if (!_qaRes.ok) {
+    if (_qaRes.reason === 'insufficient-free-money') {
+      showUndoToast('Not enough free money — $' + _qaRes.available + ' available, asked $' + _qaRes.requested);
+    } else {
+      showUndoToast('Could not add to bucket — ' + _qaRes.reason);
+    }
+    return;
+  }
   onStateChange('bucket-add');
   showUndoToast(fmtC(amt)+' added to '+bucket.name);
 }
@@ -9628,6 +9632,7 @@ function quickLogTxn() {
       { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
       BRAIN.SOURCES.ROUNDUP
     );
+    // guardian-allow: no-direct-applyTxnDelta — round-up sibling kept as separate txn pending Phase 4 INV-31 fold-to-parent (removable when round-up folding lands in Phase 4)
     BRAIN.balance.applyTxnDelta(-roundUp, BRAIN.SOURCES.ROUNDUP, _ruRes.ok ? _ruRes.ts : null);
     // Bundle 8: route round-up bucket write through BRAIN.savings.
     // Bundle 22 v3 Phase 0: bucket lookup uses S.roundUpDestination instead of
@@ -14808,6 +14813,7 @@ function executeChatAction(action) {
             { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
             BRAIN.SOURCES.ROUNDUP
           );
+          // guardian-allow: no-direct-applyTxnDelta — chat round-up sibling kept as separate txn pending Phase 4 INV-31 fold-to-parent (removable when round-up folding lands in Phase 4)
           BRAIN.balance.applyTxnDelta(-roundUp, BRAIN.SOURCES.ROUNDUP, _ruRes.ok ? _ruRes.ts : null);
           // Bundle 8: route through BRAIN.savings.
           // Bundle 22 v3 Phase 0: bucket lookup via canonical helper.
@@ -20189,16 +20195,20 @@ const BRAIN = {
           const ov = overrides['debt:' + (debt.id || debt.name)];
           const amt = ov ? ov.thisCycleAmount : (+debt.amt || 0);
           if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
-          downstream = BRAIN.transaction.record(
-            { amt, note: 'Debt payment: ' + debt.name, cat: 'Debt repayment', income: false, _balAffected: true },
+          // Bundle 30 Phase 2.C — composed writer. _skipFreeMoneyGate
+          // because the tick records execution of a pre-committed
+          // (lock-time) allocation; INV-28 acceptance was at lock-time,
+          // not tick-time.
+          downstream = BRAIN.transaction.recordWithAllocation(
+            { amt, note: 'Debt payment: ' + debt.name, cat: 'Debt repayment',
+              direction: 'outflow', _skipFreeMoneyGate: true },
             source
           );
-          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
-          // Update remaining balance
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed:' + downstream.reason };
+          // Update remaining debt balance
           debt.amt = Math.max(0, (+debt.amt || 0) - amt);
           if (debt.amt <= 0.01) debt.paid = true;
-          S.bal = parseFloat((S.bal - amt).toFixed(2));
-          txnTs = downstream.ts;
+          txnTs = downstream.txnTs;
         } else if (category === 'savings') {
           // r80 (John 2026-05-15 — "ive technically allocated $800 to darwin"):
           // savings category receives TWO shapes of itemId:
@@ -20224,24 +20234,30 @@ const BRAIN = {
             if (trip && trip.bucketHint) {
               try { linkedBucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(trip.bucketHint) : null; } catch (_) {}
             }
-            // If linked bucket exists, route the savings through it
+            // Bundle 30 Phase 2.C — composed writer (with bucket
+            // destination when linked; no destination when trip is
+            // bucketless — txn-only). _skipFreeMoneyGate per Phase 2.C
+            // tick-execution semantics.
+            const tripEnvelope = {
+              amt,
+              note: 'Trip allocation: ' + (trip ? trip.name : tripId),
+              cat: 'Savings',
+              direction: 'outflow',
+              _skipFreeMoneyGate: true,
+            };
             if (linkedBucket) {
-              downstream = BRAIN.savings.addToBucket(linkedBucket.name, amt, source);
-              if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
+              tripEnvelope.destination = { type: 'bucket', id: linkedBucket.name };
             }
-            // Always record the txn so the bank balance + Recent Spending reflect it
-            const recRes = BRAIN.transaction.record(
-              { amt, note: 'Trip allocation: ' + (trip ? trip.name : tripId), cat: 'Savings', income: false, _balAffected: true },
-              source
-            );
-            S.bal = parseFloat((S.bal - amt).toFixed(2));
+            const recRes = BRAIN.transaction.recordWithAllocation(tripEnvelope, source);
+            if (!recRes.ok) return { ok: false, reason: 'downstream-failed:' + recRes.reason };
+            downstream = recRes;
             // Update the trip's saved field (Bundle 28 schema uses PLAN.updateTrip)
             try {
               if (trip && typeof PLAN !== 'undefined' && PLAN.updateTrip) {
                 PLAN.updateTrip(tripId, { saved: (+trip.saved || 0) + amt }, source);
               }
             } catch (_) {}
-            txnTs = recRes && recRes.ts;
+            txnTs = recRes.txnTs;
           } else {
             // Original path: itemId IS a bucket name
             const bucket = (BRAIN.savings && BRAIN.savings.getBucket) ? BRAIN.savings.getBucket(itemId) : null;
@@ -20250,42 +20266,49 @@ const BRAIN = {
             const planSavings = (S.activePlan && S.activePlan.savings) || {};
             const amt = ov ? ov.thisCycleAmount : (+planSavings[bucket.name] || 0);
             if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
-            downstream = BRAIN.savings.addToBucket(bucket.name, amt, source);
-            if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
-            const recRes = BRAIN.transaction.record(
-              { amt, note: 'Savings: ' + bucket.name, cat: 'Savings', income: false, _balAffected: true },
+            // Bundle 30 Phase 2.C — composed writer with bucket destination
+            // collapses 3 pre-Phase-2 calls (addToBucket + record + S.bal)
+            // into one atomic envelope. Eliminates Phase 1.B remainder.
+            const recRes = BRAIN.transaction.recordWithAllocation(
+              { amt, note: 'Savings: ' + bucket.name, cat: 'Savings',
+                direction: 'outflow',
+                destination: { type: 'bucket', id: bucket.name },
+                _skipFreeMoneyGate: true },
               source
             );
-            S.bal = parseFloat((S.bal - amt).toFixed(2));
-            txnTs = recRes && recRes.ts;
+            if (!recRes.ok) return { ok: false, reason: 'downstream-failed:' + recRes.reason };
+            downstream = recRes;
+            txnTs = recRes.txnTs;
           }
         } else if (category === 'kia-extra') {
           const ov = overrides['kia-extra:' + itemId];
           const amt = ov ? ov.thisCycleAmount : 0;
           if (amt <= 0) return { ok: false, reason: 'invalid-amount' };
-          downstream = BRAIN.transaction.record(
-            { amt, note: 'KIA extra payment', cat: 'Loan', income: false, _balAffected: true },
+          // Bundle 30 Phase 2.C — composed writer.
+          downstream = BRAIN.transaction.recordWithAllocation(
+            { amt, note: 'KIA extra payment', cat: 'Loan',
+              direction: 'outflow', _skipFreeMoneyGate: true },
             source
           );
-          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
-          S.bal = parseFloat((S.bal - amt).toFixed(2));
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed:' + downstream.reason };
           S.carloan = Math.max(0, (+S.carloan || 0) - amt);
-          txnTs = downstream.ts;
+          txnTs = downstream.txnTs;
         } else if (category === 'upcoming') {
           const item = (S.activePlan && S.activePlan.knownUpcoming || []).find(i => i.id === itemId);
           if (!item) return { ok: false, reason: 'item-not-found' };
           const catMap = { gift: 'Other', essentials: 'Other', subscription: 'Subscriptions', event: 'Entertainment', family: 'Other', health: 'Health', 'one-off': 'Other', other: 'Other' };
           const txnCat = catMap[item.category] || 'Other';
-          downstream = BRAIN.transaction.record(
-            { amt: +item.amount || 0, note: item.name, cat: txnCat, income: false, _balAffected: true },
+          // Bundle 30 Phase 2.C — composed writer.
+          downstream = BRAIN.transaction.recordWithAllocation(
+            { amt: +item.amount || 0, note: item.name, cat: txnCat,
+              direction: 'outflow', _skipFreeMoneyGate: true },
             source
           );
-          if (!downstream.ok) return { ok: false, reason: 'downstream-failed' };
-          S.bal = parseFloat((S.bal - (+item.amount || 0)).toFixed(2));
+          if (!downstream.ok) return { ok: false, reason: 'downstream-failed:' + downstream.reason };
           item.status = 'bought';
           item.boughtAt = Date.now();
-          item.txnTs = downstream.ts;
-          txnTs = downstream.ts;
+          item.txnTs = downstream.txnTs;
+          txnTs = downstream.txnTs;
         } else {
           return { ok: false, reason: 'invalid-category' };
         }
@@ -22323,24 +22346,36 @@ const BRAIN = {
       try { save(); } catch (_) {}
       return { ok: true, txn: finalTxn, ts };
     },
-    // Bundle 30 Phase 1.B — composed writer: txn append + S.bal mutation
-    // in one atomic call. Eliminates the parallel-paths anti-pattern that
-    // caused FR-01 (cash hero didn't decrement on transaction record
-    // because callers had to mutate S.bal separately and some forgot to).
+    // Bundle 30 composed writer: txn append + S.bal mutation + optional
+    // bucket credit in one atomic call. Eliminates the parallel-paths
+    // anti-pattern that caused FR-01 (cash hero didn't decrement on
+    // transaction record because callers had to mutate S.bal separately
+    // and some forgot to).
     //
     // envelope shape:
-    //   { amt:positive number, note, cat, direction:'inflow'|'outflow',
-    //     income?:bool (legacy alias for direction), _txnType, flagged,
-    //     ...other txn fields }
+    //   { amt: positive number,
+    //     note, cat,
+    //     direction: 'inflow' | 'outflow',
+    //     income?: bool (legacy alias for direction),
+    //     destination?: { type: 'bucket', id: string }  // Phase 2.A
+    //     _isRoundup?: bool,                             // exempt from INV-28
+    //     _skipFreeMoneyGate?: bool,                     // payday-plan ticks (pre-committed)
+    //     _txnType, flagged, ...other txn fields
+    //   }
     //
-    // Phase 1.B scope: cash side only. Bucket destination, FX-fee child,
-    // round-up folding, INV-27 negative gate, INV-28 free-money gate all
-    // arrive in Phases 2/4 per SDD-bundle-30 §3 + §10.
+    // Phase 1.B: cash side only.
+    // Phase 2.A: bucket destination + credit (this revision).
+    // Phase 2.B: INV-28 free-money gate (this revision; opt-out via
+    //   _skipFreeMoneyGate or _isRoundup per Q-2.3 inheritance rule).
+    // Phase 4 (later): FX-fee child + round-up folding + INV-27 gate.
     //
     // Return envelope:
-    //   { ok, txnTs, txn, balanceOld, balanceNew, delta, reason? }
-    // STRICT: if balance update fails after txn append, removes the txn
-    // (rollback) and returns rolledBack:true so caller knows to refresh UI.
+    //   { ok, txnTs, txn, balanceOld, balanceNew, delta,
+    //     bucketCredit?: { bucket, amt }, reason?, rolledBack?,
+    //     requested?, available? }  // last two on INV-28 refusal
+    // STRICT rollback semantics:
+    //   record OK + balance FAIL  → remove txn, return rolledBack
+    //   record + balance OK + bucket FAIL → reverse balance + remove txn
     recordWithAllocation(envelope, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) {
         return { ok: false, reason: 'unknown-source:' + source };
@@ -22358,28 +22393,106 @@ const BRAIN = {
         direction = envelope.income ? 'inflow' : 'outflow';
       }
       const delta = direction === 'inflow' ? amt : -amt;
-      // Strip envelope-only field; persist with legacy `income` boolean
+
+      // ─── Phase 2.A — bucket destination validation ────────────────
+      const destination = envelope.destination;
+      const hasBucketDest = !!(destination && destination.type === 'bucket' &&
+        typeof destination.id === 'string' && destination.id.length > 0);
+      let bucket = null;
+      if (hasBucketDest) {
+        try {
+          bucket = (BRAIN.savings && BRAIN.savings.getBucket)
+            ? BRAIN.savings.getBucket(destination.id) : null;
+        } catch (_) {}
+        if (!bucket) {
+          return { ok: false, reason: 'bucket-not-found:' + destination.id };
+        }
+      }
+
+      // ─── Phase 2.B — INV-28 free-money gate ───────────────────────
+      // INV-28: allocation transactions cannot exceed available free money.
+      // INV-31 amendment (Q-2.3): round-ups inherit parent acceptance —
+      // never gated independently. Payday-plan ticks pass
+      // _skipFreeMoneyGate because the lock-time commitment already
+      // established the allocation's acceptance. Both opt-outs respected.
+      const isAllocation = hasBucketDest && direction === 'outflow' &&
+        (envelope.cat === 'Savings' || envelope.cat === 'Transfer');
+      const isRoundUp = !!envelope._isRoundup;
+      const skipGate = !!envelope._skipFreeMoneyGate || isRoundUp;
+      if (isAllocation && !skipGate) {
+        try {
+          const snap = (BRAIN.plan && BRAIN.plan.getSnapshot) ? BRAIN.plan.getSnapshot() : null;
+          const available = (snap && snap.derived && typeof snap.derived.availableNow === 'number')
+            ? snap.derived.availableNow : null;
+          if (typeof available === 'number' && amt > available + 0.01) {
+            BRAIN.audit.append({
+              type: 'inv28_refusal',
+              cat: envelope.cat, dest: destination.id,
+              requested: amt, available: parseFloat(available.toFixed(2)),
+              source, ts: Date.now(),
+            });
+            return {
+              ok: false,
+              reason: 'insufficient-free-money',
+              requested: amt,
+              available: parseFloat(available.toFixed(2)),
+            };
+          }
+        } catch (_) {
+          // If snapshot unavailable (boot edge case), proceed without gate
+          // rather than block all writes. The boot self-test would catch
+          // a structural BRAIN.plan.getSnapshot regression separately.
+        }
+      }
+
+      // Strip envelope-only fields; persist legacy `income` boolean
       // so existing renderers / filters / undo-flows continue to work.
       const txnFields = { ...envelope, _balAffected: true };
       delete txnFields.direction;
+      delete txnFields.destination;
+      delete txnFields._skipFreeMoneyGate;
       if (!('income' in txnFields)) txnFields.income = (direction === 'inflow');
+
       // Append txn via existing canonical writer.
       const recRes = this.record(txnFields, source);
       if (!recRes.ok) {
         return { ok: false, reason: 'record-failed:' + recRes.reason };
       }
-      // Apply balance delta via canonical balance writer. Phase 1.B core
-      // value: ONE place mutates S.bal for transaction-driven changes.
+      // Apply balance delta via canonical balance writer.
       const balRes = BRAIN.balance.applyTxnDelta(delta, source, recRes.ts);
       if (!balRes.ok) {
-        // STRICT rollback: txn appended but balance didn't update.
-        // applyTxnDelta only fails on invalid-source/invalid-delta, both
-        // already validated above, so this should never fire — but the
-        // CC manual §7 "writers return envelopes, callers MUST check ok"
-        // contract requires us to handle it.
         try { this.removeByTs(recRes.ts); } catch (_) {}
         return { ok: false, reason: 'balance-failed:' + balRes.reason, rolledBack: true };
       }
+
+      // ─── Phase 2.A — bucket credit (after balance succeeds) ───────
+      let bucketCredit = null;
+      if (hasBucketDest && bucket) {
+        let bcRes = null;
+        try {
+          bcRes = BRAIN.savings.addToBucket(bucket.name, amt, source);
+        } catch (e) {
+          // Rollback chain: reverse balance + remove txn
+          try { BRAIN.balance.applyTxnDelta(-delta, source, recRes.ts); } catch (_) {}
+          try { this.removeByTs(recRes.ts); } catch (_) {}
+          return {
+            ok: false,
+            reason: 'bucket-credit-exception:' + (e && e.message),
+            rolledBack: true,
+          };
+        }
+        if (!bcRes || !bcRes.ok) {
+          try { BRAIN.balance.applyTxnDelta(-delta, source, recRes.ts); } catch (_) {}
+          try { this.removeByTs(recRes.ts); } catch (_) {}
+          return {
+            ok: false,
+            reason: 'bucket-credit-failed:' + (bcRes && bcRes.reason),
+            rolledBack: true,
+          };
+        }
+        bucketCredit = { bucket: bucket.name, amt };
+      }
+
       return {
         ok: true,
         txnTs: recRes.ts,
@@ -22387,6 +22500,7 @@ const BRAIN = {
         balanceOld: balRes.old,
         balanceNew: balRes.new,
         delta,
+        bucketCredit,
       };
     },
     // Find a single txn by ts (back-ref lookup). Returns undefined if
@@ -22740,14 +22854,20 @@ const BRAIN = {
         const txnSource = (source === BRAIN.SOURCES.PAY_BILL_NOW)
           ? BRAIN.SOURCES.PAY_BILL_NOW
           : BRAIN.SOURCES.MARK_BILL_PAID;
-        const rec = BRAIN.transaction.record(
-          { amt: billAmt, note: bill.name + ' — paid', cat: bill.tag || 'Bills', income: false, _balAffected: true },
+        // Bundle 30 Phase 2.E — composed writer. Public API unchanged
+        // (callers still call BRAIN.bills.markPaid(b, source)); internals
+        // now atomically record txn + decrement balance via envelope.
+        // Eliminates the need for callers to apply S.bal separately
+        // (Phase 1.B sites at markDebtPaid + withMarkPaidGate dropped
+        // their BRAIN.balance.applyTxnDelta calls in this revision).
+        const rec = BRAIN.transaction.recordWithAllocation(
+          { amt: billAmt, note: bill.name + ' — paid', cat: bill.tag || 'Bills', direction: 'outflow' },
           txnSource
         );
         if (!rec.ok) {
           return { ok: false, reason: 'inner-' + rec.reason };
         }
-        txnTs = rec.ts;
+        txnTs = rec.txnTs;
       }
       return this._setPaidEntry(key, { autoDebit, txnTs, source });
     },
@@ -23154,22 +23274,26 @@ const BRAIN = {
       const debt = (S.debts || []).find(d => d.id === id);
       if (!debt) return { ok: false, reason: 'debt-not-found', id };
       if (debt.paid) return { ok: false, reason: 'already-paid', id };
-      // Bundle 15: clearance txn via BRAIN.transaction.record.
-      const rec = BRAIN.transaction.record(
-        { amt: debt.amt, note: debt.name + ' cleared', cat: 'Debt repayment', income: false, _balAffected: true },
+      // Bundle 30 Phase 2.E — composed writer. Public API unchanged;
+      // internals atomically record txn + decrement balance. Eliminates
+      // the need for callers to apply S.bal separately (Phase 1.B sites
+      // at markDebtPaid dropped their BRAIN.balance.applyTxnDelta calls
+      // in this revision).
+      const rec = BRAIN.transaction.recordWithAllocation(
+        { amt: debt.amt, note: debt.name + ' cleared', cat: 'Debt repayment', direction: 'outflow' },
         source === BRAIN.SOURCES.WRX_ALLOCATE ? BRAIN.SOURCES.WRX_ALLOCATE : BRAIN.SOURCES.CLEAR_DEBT
       );
       if (!rec.ok) {
         return { ok: false, reason: 'inner-' + rec.reason };
       }
       debt.paid = true;
-      debt._clearedTxnTs = rec.ts;
+      debt._clearedTxnTs = rec.txnTs;
       BRAIN.audit.append({
         type: 'debt_mark_paid', id, name: debt.name, amt: debt.amt,
-        txnTs: rec.ts, source, ts: Date.now()
+        txnTs: rec.txnTs, source, ts: Date.now()
       });
       try { save(); } catch (_) {}
-      return { ok: true, debt, txnTs: rec.ts };
+      return { ok: true, debt, txnTs: rec.txnTs };
     },
 
     // ─── Canonical writer: unmark (DESTROY-lenient composition) ─────────

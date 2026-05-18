@@ -180,6 +180,191 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.txnCountUnchanged).toBe(true);
   });
 
+  // ─── Phase 2.A — bucket destination ──────────────────────────────
+  test('Phase 2.A: bucket destination credits bucket atomically (INV-02 + INV-12)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      // Pick a bucket from fixture that exists
+      const buckets = (BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+      if (!buckets.length) return { ok: false, reason: 'no-buckets-in-fixture' };
+      const targetBucket = buckets[0];
+      const balBefore = S.bal;
+      const bucketBefore = +targetBucket.saved || 0;
+      // Use _skipFreeMoneyGate so the test isn't dependent on fixture's free_money
+      const r = BRAIN.transaction.recordWithAllocation(
+        { amt: 25, note: 'Smoke test allocation', cat: 'Savings',
+          direction: 'outflow',
+          destination: { type: 'bucket', id: targetBucket.name },
+          _skipFreeMoneyGate: true },
+        BRAIN.SOURCES.BUCKET_QUICK_ADD
+      );
+      // Re-read bucket after credit
+      const bucketAfter = (BRAIN.savings.getBucket(targetBucket.name) || {}).saved || 0;
+      return {
+        envelope: r,
+        balDelta: parseFloat((S.bal - balBefore).toFixed(2)),
+        bucketDelta: parseFloat((bucketAfter - bucketBefore).toFixed(2)),
+        bucketName: targetBucket.name,
+      };
+    });
+    expect(result.envelope.ok).toBe(true);
+    expect(result.envelope.bucketCredit).toBeTruthy();
+    expect(result.envelope.bucketCredit.amt).toBe(25);
+    expect(result.envelope.bucketCredit.bucket).toBe(result.bucketName);
+    expect(result.balDelta).toBe(-25);   // INV-02 cash side
+    expect(result.bucketDelta).toBe(25); // INV-12 bucket side
+  });
+
+  test('Phase 2.A: invalid bucket destination returns bucket-not-found, no side effects', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const balBefore = S.bal;
+      const txnCountBefore = (S.txns || []).length;
+      const r = BRAIN.transaction.recordWithAllocation(
+        { amt: 100, cat: 'Savings', direction: 'outflow',
+          destination: { type: 'bucket', id: 'NONEXISTENT-BUCKET-' + Date.now() },
+          _skipFreeMoneyGate: true },
+        BRAIN.SOURCES.BUCKET_QUICK_ADD
+      );
+      return {
+        envelope: r,
+        balUnchanged: S.bal === balBefore,
+        txnCountUnchanged: (S.txns || []).length === txnCountBefore,
+      };
+    });
+    expect(result.envelope.ok).toBe(false);
+    expect(result.envelope.reason).toMatch(/^bucket-not-found/);
+    expect(result.balUnchanged).toBe(true);
+    expect(result.txnCountUnchanged).toBe(true);
+  });
+
+  // ─── Phase 2.B — INV-28 free-money gate ──────────────────────────
+  test('Phase 2.B: INV-28 refuses allocation exceeding free_money_remaining', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const available = (snap && snap.derived && typeof snap.derived.availableNow === 'number')
+        ? snap.derived.availableNow : null;
+      if (typeof available !== 'number') return { ok: false, reason: 'no-snapshot' };
+      const buckets = BRAIN.savings.getBuckets();
+      if (!buckets.length) return { ok: false, reason: 'no-buckets' };
+      const balBefore = S.bal;
+      const bucketBefore = +buckets[0].saved || 0;
+      const auditBefore = (S._auditLog || []).length;
+      // Ask for $1000 above available — must refuse
+      const askAmount = parseFloat((available + 1000).toFixed(2));
+      const r = BRAIN.transaction.recordWithAllocation(
+        { amt: askAmount, cat: 'Savings', note: 'INV-28 probe',
+          direction: 'outflow',
+          destination: { type: 'bucket', id: buckets[0].name } },
+          // No _skipFreeMoneyGate — gate must fire
+        BRAIN.SOURCES.BUCKET_QUICK_ADD
+      );
+      // Audit should have an inv28_refusal entry
+      const newAudit = (S._auditLog || []).slice(auditBefore);
+      const refusalEntry = newAudit.find(e => e && e.type === 'inv28_refusal');
+      return {
+        envelope: r,
+        available,
+        askAmount,
+        balUnchanged: S.bal === balBefore,
+        bucketUnchanged: (+BRAIN.savings.getBucket(buckets[0].name).saved || 0) === bucketBefore,
+        refusalAuditEntry: refusalEntry,
+      };
+    });
+    expect(result.envelope.ok).toBe(false);
+    expect(result.envelope.reason).toBe('insufficient-free-money');
+    expect(result.envelope.requested).toBe(result.askAmount);
+    expect(result.envelope.available).toBeCloseTo(result.available, 1);
+    expect(result.balUnchanged).toBe(true);
+    expect(result.bucketUnchanged).toBe(true);
+    expect(result.refusalAuditEntry).toBeTruthy();
+    expect(result.refusalAuditEntry.requested).toBe(result.askAmount);
+  });
+
+  // ─── Q-2.3 — round-ups exempt from INV-28 (inheritance) ──────────
+  test('Q-2.3: _isRoundup envelope exempt from INV-28 even when free_money insufficient', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const available = (snap && snap.derived && typeof snap.derived.availableNow === 'number')
+        ? snap.derived.availableNow : 0;
+      const buckets = BRAIN.savings.getBuckets();
+      if (!buckets.length) return { ok: false, reason: 'no-buckets' };
+      const bucketBefore = +buckets[0].saved || 0;
+      // Round-up amount sized to exceed available IF gated
+      const roundUpAmt = Math.max(available + 5, 0.50);
+      const r = BRAIN.transaction.recordWithAllocation(
+        { amt: roundUpAmt, cat: 'Savings', note: 'Round-up probe',
+          direction: 'outflow',
+          destination: { type: 'bucket', id: buckets[0].name },
+          _isRoundup: true },  // exemption flag per Q-2.3
+        BRAIN.SOURCES.ROUNDUP
+      );
+      return {
+        envelope: r,
+        bucketAfter: +BRAIN.savings.getBucket(buckets[0].name).saved || 0,
+        bucketBefore,
+        available,
+      };
+    });
+    // Even though roundUpAmt > available, the round-up succeeds because
+    // INV-28 applies to top-level allocations only (Q-2.3 inheritance rule).
+    expect(result.envelope.ok).toBe(true);
+    expect(result.envelope.reason).toBeUndefined();
+    expect(result.bucketAfter).toBeGreaterThan(result.bucketBefore);
+  });
+
+  test('Q-2.2: _skipFreeMoneyGate envelope exempt from INV-28 (payday-tick semantics)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const available = (snap && snap.derived && typeof snap.derived.availableNow === 'number')
+        ? snap.derived.availableNow : 0;
+      const buckets = BRAIN.savings.getBuckets();
+      if (!buckets.length) return { ok: false, reason: 'no-buckets' };
+      const askAmount = Math.max(available + 200, 100);
+      const r = BRAIN.transaction.recordWithAllocation(
+        { amt: askAmount, cat: 'Savings', note: 'Tick probe',
+          direction: 'outflow',
+          destination: { type: 'bucket', id: buckets[0].name },
+          _skipFreeMoneyGate: true },  // payday-plan tick exemption
+        BRAIN.SOURCES.PLAN_SAVINGS_TICK
+      );
+      return {
+        envelope: r,
+        askAmount,
+        available,
+      };
+    });
+    // Even though askAmount > available, the tick succeeds because
+    // _skipFreeMoneyGate is set (lock-time committed allocation).
+    expect(result.envelope.ok).toBe(true);
+    expect(result.envelope.reason).toBeUndefined();
+  });
+
+  // ─── Phase 2.E — markPaid envelope (internal refactor) ───────────
+  test('Phase 2.E: BRAIN.bills.markPaid composes balance via envelope (public API unchanged)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      // Find an unpaid bill from the fixture
+      const bills = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+      const unpaid = bills.find(b => !b.paid);
+      if (!unpaid) return { ok: false, reason: 'no-unpaid-bill-in-fixture' };
+      const balBefore = S.bal;
+      // Public API call — same as pre-Phase-2.E caller invocation
+      const r = BRAIN.bills.markPaid(unpaid, BRAIN.SOURCES.PAY_BILL_NOW);
+      return {
+        markPaidResult: r,
+        balBefore, balAfter: S.bal,
+        balDelta: parseFloat((S.bal - balBefore).toFixed(2)),
+        billAmt: unpaid.amt,
+      };
+    });
+    expect(result.markPaidResult.ok).toBe(true);
+    // markPaid returns {ok, key, entry} (via _setPaidEntry) — public API
+    // unchanged from pre-Phase-2.E. The envelope-internal composition
+    // handles the balance side; callers no longer need their own
+    // BRAIN.balance.applyTxnDelta call.
+    expect(result.markPaidResult.entry).toBeTruthy();
+    expect(result.markPaidResult.entry.paid).toBe(true);
+    expect(result.balDelta).toBe(-result.billAmt);
+  });
+
   test('quickLogTxn expense end-to-end produces coherent state', async ({ page }) => {
     // Drive the full UI path: open Quick Log modal, set amount, log.
     const result = await page.evaluate(() => {

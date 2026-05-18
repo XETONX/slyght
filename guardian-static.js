@@ -78,6 +78,34 @@ const TXNS_PUSH_WRITER_FNS = new Set([
   'record', 'load',
 ]);
 
+// Bundle 30 Phase 2.D — allow-set for the no-direct-applyTxnDelta rule.
+// BRAIN.balance.applyTxnDelta is the LOW-LEVEL balance writer. Public API
+// is BRAIN.transaction.recordWithAllocation (composes txn + balance + bucket
+// in one atomic call). Direct callers of applyTxnDelta are an architectural
+// boundary violation EXCEPT for:
+//   - composer internals (recordWithAllocation itself + sibling writers
+//     inside BRAIN.balance / BRAIN.transaction)
+//   - reversal/restore paths where the txn already exists OR is being
+//     removed (BRAIN.bills.unmark, BRAIN.debts.unmark internal restores —
+//     no new txn to compose, just balance restoration)
+//   - documented transitional exceptions carrying // guardian-allow:
+//     no-direct-applyTxnDelta — <rationale> (removable when <bundle>)
+//
+// EXCEPTION-LIST-SIZE DISCIPLINE (per John 2026-05-18, Q-2.2):
+// The exception list is a debt metric. Each bundle should aim to SHRINK,
+// not grow. Adding a new caller requires:
+//   1. Rationale for why it can't compose through recordWithAllocation
+//   2. Removal-target bundle (when will this become unnecessary?)
+// If neither holds, the call site needs to migrate, not be excepted.
+// Phase 1.B baseline: 8 entries on the list. Phase 2.D shrinks to 2
+// (the two round-up siblings, Phase 4 INV-31 fold targets).
+const APPLYTXN_DELTA_ALLOWED_FNS = new Set([
+  // BRAIN.balance internals (it owns S.bal)
+  'applyTxnDelta', 'reconcileTo', 'applyDelta',
+  // BRAIN.transaction composer
+  'recordWithAllocation',
+]);
+
 // Bundle 15: allow-set for the no-direct-debts-mutation rule.
 // BRAIN.debts owns S.debts mutation. Exempt contexts:
 //   - BRAIN.debts internal methods (add, markPaid, unmark, update,
@@ -566,6 +594,47 @@ const RULES = [
             line: fileLine(node.loc.start.line),
             col: node.loc.start.column,
             evidence: `S.txns.push inside ${fn || '<top-level>'} — route through BRAIN.transaction.record`,
+          });
+        },
+      });
+      return violations;
+    },
+  },
+
+  // ─── 2b-bis. no-direct-applyTxnDelta (Bundle 30 Phase 2.D barrier) ─────────
+  // BRAIN.balance.applyTxnDelta is the low-level balance writer. Direct
+  // callers from outside the composer chain are an architectural boundary
+  // violation because they recreate the FR-01 class of bug (parallel paths:
+  // txn appended but balance forgotten, or vice versa). The public API is
+  // BRAIN.transaction.recordWithAllocation which atomically composes both
+  // sides + optional bucket credit + INV-28 gate.
+  //
+  // See APPLYTXN_DELTA_ALLOWED_FNS above for full discipline context.
+  //
+  // Exception sites annotated with // guardian-allow: no-direct-applyTxnDelta
+  // — <rationale> (removable when <bundle>). The exception-list-size metric
+  // tracks how much transitional debt remains; bundles should shrink it.
+  {
+    name: 'no-direct-applyTxnDelta',
+    severity: 'fail',
+    anchor: 'arch-barrier-bundle-30',
+    check() {
+      const violations = [];
+      walk.simple(ast, {
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'MemberExpression') return;
+          const callee = node.callee;
+          if (!callee.property || callee.property.name !== 'applyTxnDelta') return;
+          const obj = callee.object;
+          if (!obj || obj.type !== 'MemberExpression') return;
+          if (!obj.property || obj.property.name !== 'balance') return;
+          if (!obj.object || obj.object.name !== 'BRAIN') return;
+          const fn = enclosingFn(node.range[0]);
+          if (APPLYTXN_DELTA_ALLOWED_FNS.has(fn)) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: `BRAIN.balance.applyTxnDelta direct call inside ${fn || '<top-level>'} — route through BRAIN.transaction.recordWithAllocation OR add // guardian-allow: no-direct-applyTxnDelta — <rationale> (removable when <bundle>)`,
           });
         },
       });

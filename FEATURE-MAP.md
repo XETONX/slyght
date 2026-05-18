@@ -515,24 +515,24 @@
 ### BRAIN.transaction.recordWithAllocation
 **Path:** `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
 **Type:** writer
-**Lives in:** `index.html:22288-22349` (approx — between record and findByTs in BRAIN.transaction bubble)
+**Lives in:** `index.html:22383-22515` (approx — between record and findByTs in BRAIN.transaction bubble; extended in Phase 2.A + 2.B)
 **Inside BRAIN?** yes (`BRAIN.transaction.recordWithAllocation`)
-**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (envelope shape + INV-01 outflow + INV-04 inflow + rollback + AUDITOR shim = 5 assertions)
-**Reads from:** `BRAIN._SOURCE_SET`, envelope arg
-**Writes to:** `S.txns` (via `BRAIN.transaction.record`), `S.bal` (via `BRAIN.balance.applyTxnDelta`), `S._auditLog` (two entries: `txn_record` + `balance_apply_delta`)
-**Triggers:** `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta`, `BRAIN.transaction.removeByTs` (rollback path only)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` — 11 assertions: envelope shape, INV-01 outflow, INV-04 inflow, AUDITOR shim, rollback on invalid source, quickLogTxn end-to-end (Phase 1.B) + bucket destination atomic credit (INV-02 + INV-12), invalid-bucket rollback-free, INV-28 refusal + audit, Q-2.3 round-up exempt, Q-2.2 `_skipFreeMoneyGate` exempt, markPaid envelope composition (Phase 2)
+**Reads from:** `BRAIN._SOURCE_SET`, envelope arg, `BRAIN.savings.getBucket` (when destination present), `BRAIN.plan.getSnapshot` (when INV-28 gate fires)
+**Writes to:** `S.txns` (via `BRAIN.transaction.record`), `S.bal` (via `BRAIN.balance.applyTxnDelta`), `S.savingsBuckets[].saved` (via `BRAIN.savings.addToBucket` when destination present), `S._auditLog` (entries: `txn_record` + `balance_apply_delta` + optional `inv28_refusal` on gate)
+**Triggers:** `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta`, `BRAIN.savings.addToBucket` (destination present), `BRAIN.plan.getSnapshot` (INV-28 gate), `BRAIN.transaction.removeByTs` (rollback path), `BRAIN.balance.applyTxnDelta(-delta)` (rollback path)
 **Related features:**
 - composes: `BRAIN → TRANSACTION → RECORD` (txn append side)
 - composes: `BRAIN → BALANCE → APPLY_TXN_DELTA` (S.bal mutation side)
-- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → INCOME_BRANCH` (Bundle 30 1.B migrated)
-- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → FROM_PERSON_BRANCH` (Bundle 30 1.B migrated)
-- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH` (Bundle 30 1.B migrated)
-- consumer: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH` (Bundle 30 1.B migrated)
-- planned-extension: bucket destination + INV-28 free-money gate (Phase 2)
+- composes: `BRAIN → SAVINGS → ADD_TO_BUCKET` (bucket credit side, Phase 2.A)
+- gate: `BRAIN → PLAN → GET_SNAPSHOT` (INV-28 free-money source, Phase 2.B)
+- consumer: 9 sites from Phase 1.B (Quick Log Income/From-person/Expense, Chat log_txn, markDebtPaid, payBill, bucket quick-add, round-up siblings)
+- consumer: 5 payday-plan tick paths via `BRAIN.plan.tickItem` (Phase 2.C — debt, savings-trip, savings-bucket, kia-extra, upcoming)
+- consumer: `BRAIN.bills.markPaid` + `BRAIN.debts.markPaid` (Phase 2.E — internal refactor; public API unchanged)
 - planned-extension: INV-27 negative-balance gate (Phase 4)
 - planned-extension: FX-fee child txn + round-up folding per INV-30/31 (Phase 4)
-**Notes:** The Phase 1.B central writer. Eliminates the parallel-paths anti-pattern (CC manual §13) that caused FR-01: pre-1.B callers had to mutate `S.bal` AND call `record()` separately; if they forgot or drifted, cash diverged from the txn ledger. Now atomic via composition. STRICT rollback: if `applyTxnDelta` fails after `record()` succeeds, the txn is removed and the envelope returns `rolledBack: true`. Direction explicit via `direction:'inflow'|'outflow'` (legacy `income:bool` still accepted for callers mid-migration).
-**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+**Notes:** **Phase 1.B → Phase 2 evolution.** Phase 1.B established cash-side composition (txn append + S.bal mutation atomic). Phase 2.A added optional `destination:{type:'bucket', id}` → atomic bucket credit. Phase 2.B added INV-28 free-money gate (opt-out via `_skipFreeMoneyGate` for payday-plan ticks where lock-time already gated, or via `_isRoundup` for round-up children per Q-2.3 inheritance rule). STRICT rollback chain: record OK + balance FAIL → remove txn; record + balance OK + bucket FAIL → reverse balance + remove txn. Phase 2.E migrated `BRAIN.bills.markPaid` + `BRAIN.debts.markPaid` to compose through this envelope internally (their public APIs stable). All Phase 1.B caller sites that previously needed separate `BRAIN.balance.applyTxnDelta` calls dropped them in Phase 2.E.
+**Last touched:** Bundle 30 Phase 2.A + 2.B + 2.C + 2.E (2026-05-18)
 
 ### Site: Mark debt paid (modal flow)
 **Path:** `UI → DASHBOARD → DEBT_MODAL → MARK_PAID_BUTTON → MARK_DEBT_PAID_FLOW`
@@ -700,7 +700,125 @@
 
 ---
 
-**End of v2-schema diagnostic-surface + transaction-path backfill. Legacy v1 tables continue below.**
+---
+
+## Features (v2 schema) — Findings logged during verification (Bundle 31+ candidates)
+
+> Entries here are NOT current behaviour — they're discoveries made during phone-verify or smoke that warrant later-bundle work. Each has a severity + Bundle assignment + discovery context.
+
+### Finding: Bucket row tap goes only to edit/add, not detail view
+**Path:** `UI → DASHBOARD → SAVINGS_GOALS_TILE → BUCKET_ROW → [tap action]`
+**Type:** action (current behaviour)
+**Lives in:** TBD — discovered during Phase 1.B verification, exact handler not located yet (Bundle 31 work)
+**Inside BRAIN?** no (UI affordance)
+**Smoke coverage:** none — discovered manually
+**Reads from:** bucket object
+**Writes to:** opens edit/add modal only
+**Triggers:** opens bucket edit modal
+**Related features:**
+- sibling: `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW` (Phase 1.B migration site #7)
+- parent: `UI → DASHBOARD`
+- upstream-cause: round-up credits + manual cents-level additions invisible in summary view
+**Notes:** **DISCOVERED during Phase 1.B verification 2026-05-18.** Tapping a savings bucket (e.g. China Holiday) enters edit/add flow only. No read-only detail view. Balance display truncates to whole dollars, so cents-level credits (round-ups, fractional contributions) are invisible without arithmetic across the audit log. **Severity:** MEDIUM (UX discoverability + cent-precision tracing gap; not a math bug — Phase 1.B smoke confirmed bucket credits land correctly via canonical writer). **Desired behaviour:** tap → bucket detail view with current balance (cents), recent credits (round-ups + manual adds), contributing transactions (via `linkedTo` where applicable per INV-30 work), goal context (target/progress/ETA). Edit/add become secondary affordances within detail view.
+**Last touched:** Bundle 30 Phase 1.B verification (discovery only — no code)
+**Bundle assignment:** Bundle 31+ (UX layer, not financial-math)
+
+---
+
+---
+
+## Features (v2 schema) — Phase 2 additions (2026-05-18)
+
+### BRAIN.bills.markPaid (envelope composition — Phase 2.E)
+**Path:** `BRAIN → BILLS → MARK_PAID`
+**Type:** writer
+**Lives in:** `index.html:22827-22870` (approx — pre + opts.txnTs branches; the no-txnTs branch is the migrated path)
+**Inside BRAIN?** yes (`BRAIN.bills.markPaid`)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (Phase 2.E test — public API unchanged, balance composed via envelope, 3 assertions)
+**Reads from:** bill object, `BRAIN.transaction.findByTs` (linked-txn branch only)
+**Writes to:** `S.txns` (via `recordWithAllocation`), `S.bal` (via `recordWithAllocation`), `S.paidBills[key]` (via `_setPaidEntry`)
+**Triggers:** `BRAIN.transaction.recordWithAllocation` (Phase 2.E new — was `BRAIN.transaction.record` + caller's separate applyTxnDelta), `_setPaidEntry`, optional `_propagateDepositLoop`
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- consumer: `UI → DASHBOARD → BILLS → BILL_MODAL → PAY_BILL_NOW_FLOW` (Phase 2.E dropped the caller's separate `applyTxnDelta` call)
+- consumer: `BRAIN → PLAN → TICK_ITEM → BILL_BRANCH`
+- peer: `BRAIN → DEBTS → MARK_PAID` (same envelope migration in Phase 2.E)
+**Notes:** Phase 2.E internal refactor only. Public API stable: callers still call `BRAIN.bills.markPaid(bill, source, options)` unchanged. The internal txn append (no-txnTs branch) now uses `recordWithAllocation` envelope so balance + txn land atomically. Eliminated 2 of the 8 Phase 1.B exception-list entries.
+**Last touched:** Bundle 30 Phase 2.E (2026-05-18)
+
+### BRAIN.debts.markPaid (envelope composition — Phase 2.E)
+**Path:** `BRAIN → DEBTS → MARK_PAID`
+**Type:** writer
+**Lives in:** `index.html:23258-23282` (approx)
+**Inside BRAIN?** yes (`BRAIN.debts.markPaid`)
+**Smoke coverage:** indirect — markPaid composition is the same pattern as bills.markPaid (Phase 2.E test covers the envelope contract; debts.markPaid behaves identically)
+**Reads from:** `S.debts` (find by id)
+**Writes to:** `S.txns` (via `recordWithAllocation`), `S.bal` (via `recordWithAllocation`), `S.debts[i].paid`, `S.debts[i]._clearedTxnTs`, `S._auditLog` (`debt_mark_paid`)
+**Triggers:** `BRAIN.transaction.recordWithAllocation` (Phase 2.E new), `BRAIN.audit.append`
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- consumer: `UI → DASHBOARD → DEBT_MODAL → MARK_PAID_BUTTON → MARK_DEBT_PAID_FLOW` (Phase 2.E dropped the caller's separate `applyTxnDelta` call)
+- consumer: WRX allocate flow (uses `WRX_ALLOCATE` source variant)
+- peer: `BRAIN → BILLS → MARK_PAID`
+**Notes:** Phase 2.E twin of bills.markPaid migration. Same atomic-composition benefit. Eliminated 2 more exception-list entries (4 total from the Phase 2.E migration).
+**Last touched:** Bundle 30 Phase 2.E (2026-05-18)
+
+### BRAIN.plan.tickItem (5 tick paths migrated — Phase 2.C)
+**Path:** `BRAIN → PLAN → TICK_ITEM`
+**Type:** writer (composite — branches by category)
+**Lives in:** `index.html:20163-20310` (approx)
+**Inside BRAIN?** yes (`BRAIN.plan.tickItem`)
+**Smoke coverage:** none directly (the 5 tick paths execute pre-committed plan allocations; smoke verifies the underlying writer they all now use)
+**Reads from:** `S.activePlan.overrides`, `S.activePlan.ticks`, `S.debts`, `BRAIN.bills.getThisCycle`, `BRAIN.savings.getBuckets`, `PLAN.getTrips`
+**Writes to:** `S.activePlan.ticks[category][itemId]`, `S.txns`, `S.bal`, `S.debts[i].amt/paid`, `S.savingsBuckets[].saved` (via composed writer), `S.carloan`, `S.activePlan.knownUpcoming[i].status`, `S._auditLog` (`plan_tick`)
+**Triggers:** `BRAIN.transaction.recordWithAllocation` (each non-bill branch), `BRAIN.bills.markPaid` (bill branch), `PLAN.updateTrip` (trip savings), `BRAIN.audit.append`
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (with `_skipFreeMoneyGate:true` per Phase 2.C tick-execution semantics)
+- writer-used: `BRAIN → BILLS → MARK_PAID` (bill branch only)
+- child-path: bill branch → `BRAIN → BILLS → MARK_PAID`
+- child-path: debt branch → `recordWithAllocation({cat:'Debt repayment'})`
+- child-path: savings-trip branch → `recordWithAllocation({cat:'Savings', destination?})`
+- child-path: savings-bucket branch → `recordWithAllocation({cat:'Savings', destination:{type:'bucket', id}})`
+- child-path: kia-extra branch → `recordWithAllocation({cat:'Loan'})`
+- child-path: upcoming branch → `recordWithAllocation({cat:txnCat})`
+**Notes:** Phase 2.C migrated all 5 non-bill branches from the pre-Phase-2 pattern (`BRAIN.transaction.record` + direct `S.bal -=` + optional `BRAIN.savings.addToBucket`) to a single `recordWithAllocation` call per branch. All ticks pass `_skipFreeMoneyGate:true` because the lock-time commitment already established the allocation's INV-28 acceptance — tick-time is execution, not new commitment. Bill branch uses `BRAIN.bills.markPaid` which itself was migrated to envelope in Phase 2.E.
+**Last touched:** Bundle 30 Phase 2.C (2026-05-18)
+
+### Site: Bucket quick-add (Phase 2.A envelope upgrade)
+**Path:** `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW`
+**Type:** action
+**Lives in:** `index.html:8936-8956` (quickAddToBucket function)
+**Inside BRAIN?** no (UI handler)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` Phase 2.A test (bucket destination + INV-12)
+**Reads from:** `S.savingsBuckets[i]`, `S.bal` (insufficient-balance pre-check)
+**Writes to:** `S.savingsBuckets[i].saved`, `S.txns`, `S.bal` (all via single `recordWithAllocation` envelope)
+**Triggers:** `BRAIN.transaction.recordWithAllocation({destination:{type:'bucket', id}})` — single envelope call replaces 3 separate writer calls from Phase 1.B
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- gate-applies: INV-28 (this is ad-hoc allocation, NOT `_skipFreeMoneyGate`) — refuses if amt > free_money_remaining
+**Notes:** Phase 2.A consolidation. Pre-Phase-2 used 3 separate writer calls (addToBucket + record + applyTxnDelta). Now single envelope call. INV-28 fires here because this is ad-hoc allocation, unlike payday-plan ticks. UI displays "Not enough free money — $X available, asked $Y" toast on refusal.
+**Last touched:** Bundle 30 Phase 2.A (2026-05-18)
+
+### Guardian rule: no-direct-applyTxnDelta (Phase 2.D)
+**Path:** `GUARDIAN → STATIC → NO_DIRECT_APPLY_TXN_DELTA`
+**Type:** element (architectural barrier rule)
+**Lives in:** `guardian-static.js:610-640` (approx — rule definition) + `guardian-static.js:80-110` (`APPLYTXN_DELTA_ALLOWED_FNS` set + discipline comment header)
+**Inside BRAIN?** no (Guardian Layer 1 static analysis)
+**Smoke coverage:** N/A (Guardian rule; verified by `npm run guardian-static` exit 0 + manual planted-violation test)
+**Reads from:** AST of `index.html` (AcornJS-walked)
+**Writes to:** violation report
+**Triggers:** —
+**Related features:**
+- gates-rule-for: `BRAIN → BALANCE → APPLY_TXN_DELTA`
+- allow-list: `APPLYTXN_DELTA_ALLOWED_FNS = { applyTxnDelta, reconcileTo, applyDelta, recordWithAllocation }` (composer internals only)
+- exception-list (transitional): 2 round-up sites (Phase 4 INV-31 fold-target) carrying `// guardian-allow: no-direct-applyTxnDelta — round-up sibling kept as separate txn pending Phase 4 INV-31 fold (removable when round-up folding lands in Phase 4)`
+- discipline-metric: exception-list-size (Phase 1.B baseline 8 → Phase 2.D shrunk to 2)
+**Notes:** Per Q-2.2 contract decision. The rule enforces that `BRAIN.balance.applyTxnDelta` is a low-level writer NOT to be called directly from outside the composer chain (`BRAIN.balance.*` internals + `BRAIN.transaction.recordWithAllocation`). New callers must either go through `recordWithAllocation` OR carry a guardian-allow comment with rationale + removal-target bundle. **Exception-list-size discipline:** each bundle should shrink, not grow the list. Phase 1.B left 8 entries (5 markPaid-adjacent + 1 bucket-quickAdd + 2 round-ups); Phase 2 shrunk to 2 (the round-ups; markPaid envelope + bucket-quickAdd envelope eliminated 6 in this bundle).
+**Last touched:** Bundle 30 Phase 2.D (2026-05-18)
+
+---
+
+**End of v2-schema diagnostic-surface + transaction-path + findings + Phase 2 backfill. Legacy v1 tables continue below.**
 
 ---
 
