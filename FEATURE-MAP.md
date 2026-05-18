@@ -107,33 +107,36 @@
 ### BRAIN.balance.applyTxnDelta
 **Path:** `BRAIN → BALANCE → APPLY_TXN_DELTA`
 **Type:** writer
-**Lives in:** `index.html:19042-19062`
+**Lives in:** `index.html:19042-19070` (extended by Bundle 30 1.B with BUNDLE-30-AUDITOR-SHIM block)
 **Inside BRAIN?** yes (`BRAIN.balance.applyTxnDelta`)
-**Smoke coverage:** none (planned: Bundle 30 Phase 1.B smoke when first write-site migrates)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (INV-01 + INV-04 + AUDITOR shim = 3 assertions directly; many more transitively via `recordWithAllocation`)
 **Reads from:** `BRAIN._SOURCE_SET`, `S.bal`
-**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`)
-**Triggers:** `save()`, AUDITOR.record (via BUNDLE-30-AUDITOR-SHIM in Phase 1.B)
+**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`), `AUDITOR.log` (via BUNDLE-30-AUDITOR-SHIM)
+**Triggers:** `save()`, `AUDITOR.record('TXN_DELTA_<SOURCE>', ...)` (BUNDLE-30-AUDITOR-SHIM)
 **Related features:**
-- sibling: `BRAIN → TRANSACTION → RECORD` (Phase 1.B will compose this)
+- composer: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (Bundle 30 1.B — 4 sites now compose through this)
+- direct-consumer: 5 Phase 1.B sites (round-up siblings, pay bill, mark debt paid, bucket quick-add) — call this directly without going through recordWithAllocation
 - peer: `BRAIN → BALANCE → RECONCILE_TO` (different write-class — corrections vs txn-driven)
-**Notes:** Signed delta semantics (+inflow, −outflow). Validates source against `_SOURCE_SET`. Returns `{ok, old, new, delta, reason?}` envelope. Phase 1.B migrates 9 direct-S.bal write sites to route through this.
-**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+- shim-target: `AUDITOR` (Bundle 31 migration ADR candidate; shim removal target)
+**Notes:** Signed delta semantics (+inflow, −outflow). Validates source against `_SOURCE_SET`. Returns `{ok, old, new, delta, reason?}` envelope. **BUNDLE-30-AUDITOR-SHIM:** dual-logs to AUDITOR.log via `AUDITOR.record('TXN_DELTA_' + source.toUpperCase().replace(/-/g, '_'), old, new, delta, ref)`. Removal trigger: Bundle 31 ADR for AUDITOR migration into BRAIN.audit-tiered. Grep `BUNDLE-30-AUDITOR-SHIM` to find both call sites (this method + reconcileTo) for mechanical removal.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18 — AUDITOR shim added)
 
 ### BRAIN.balance.reconcileTo
 **Path:** `BRAIN → BALANCE → RECONCILE_TO`
 **Type:** writer
-**Lives in:** `index.html:19068-19092`
+**Lives in:** `index.html:19068-19105` (extended by Bundle 30 1.B with BUNDLE-30-AUDITOR-SHIM block)
 **Inside BRAIN?** yes (`BRAIN.balance.reconcileTo`)
-**Smoke coverage:** none (planned: Bundle 30 Phase 3 smoke — AI tool wires through this)
+**Smoke coverage:** none directly (planned: Bundle 30 Phase 3 smoke — AI tool wires through this)
 **Reads from:** `BRAIN._SOURCE_SET`, `S.bal`
-**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`)
-**Triggers:** `BRAIN.transaction.recordCorrection` (logs corrective txn), `save()`, AUDITOR.record (via BUNDLE-30-AUDITOR-SHIM in Phase 3)
+**Writes to:** `S.bal`, `S._auditLog` (via `BRAIN.audit.append`), `AUDITOR.log` (via BUNDLE-30-AUDITOR-SHIM)
+**Triggers:** `BRAIN.transaction.recordCorrection` (logs corrective txn), `save()`, `AUDITOR.record('BALANCE_CORRECTION_UP'|'BALANCE_CORRECTION_DOWN', ...)` (BUNDLE-30-AUDITOR-SHIM)
 **Related features:**
 - peer: `BRAIN → BALANCE → APPLY_DELTA` (delta variant of this)
 - consumer: `UI → AI → SET_BALANCE_TARGET` (Phase 3 wires to this)
 - legacy peer: `UI → GLOBAL → APPLY_BALANCE_CORRECTION` (predates this; Phase 3 may deprecate)
-**Notes:** Reconciliation write — sets `S.bal` to explicit new value AND records corrective txn so ledger reflects the gap. Used by hero balance edit + AI `set_balance_target` tool.
-**Last touched:** Bundle 30 Phase 1 Commit 1.A (2026-05-18)
+- shim-target: `AUDITOR` (Bundle 31 migration ADR candidate; shim removal target)
+**Notes:** Reconciliation write — sets `S.bal` to explicit new value AND records corrective txn so ledger reflects the gap. Used by hero balance edit + AI `set_balance_target` tool. **BUNDLE-30-AUDITOR-SHIM:** dual-logs to AUDITOR with action `BALANCE_CORRECTION_UP` or `_DOWN` (matches pre-Bundle-30 applyBalanceCorrection convention so AUDITOR anomaly-detection cards keep firing on this path). Removal trigger same as applyTxnDelta.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18 — AUDITOR shim added)
 
 ### BRAIN.balance.applyDelta
 **Path:** `BRAIN → BALANCE → APPLY_DELTA`
@@ -505,7 +508,199 @@
 
 ---
 
-**End of v2-schema diagnostic-surface backfill. Legacy v1 tables continue below.**
+---
+
+## Features (v2 schema) — Transaction paths (Bundle 30 Phase 1.B)
+
+### BRAIN.transaction.recordWithAllocation
+**Path:** `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+**Type:** writer
+**Lives in:** `index.html:22288-22349` (approx — between record and findByTs in BRAIN.transaction bubble)
+**Inside BRAIN?** yes (`BRAIN.transaction.recordWithAllocation`)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (envelope shape + INV-01 outflow + INV-04 inflow + rollback + AUDITOR shim = 5 assertions)
+**Reads from:** `BRAIN._SOURCE_SET`, envelope arg
+**Writes to:** `S.txns` (via `BRAIN.transaction.record`), `S.bal` (via `BRAIN.balance.applyTxnDelta`), `S._auditLog` (two entries: `txn_record` + `balance_apply_delta`)
+**Triggers:** `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta`, `BRAIN.transaction.removeByTs` (rollback path only)
+**Related features:**
+- composes: `BRAIN → TRANSACTION → RECORD` (txn append side)
+- composes: `BRAIN → BALANCE → APPLY_TXN_DELTA` (S.bal mutation side)
+- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → INCOME_BRANCH` (Bundle 30 1.B migrated)
+- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → FROM_PERSON_BRANCH` (Bundle 30 1.B migrated)
+- consumer: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH` (Bundle 30 1.B migrated)
+- consumer: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH` (Bundle 30 1.B migrated)
+- planned-extension: bucket destination + INV-28 free-money gate (Phase 2)
+- planned-extension: INV-27 negative-balance gate (Phase 4)
+- planned-extension: FX-fee child txn + round-up folding per INV-30/31 (Phase 4)
+**Notes:** The Phase 1.B central writer. Eliminates the parallel-paths anti-pattern (CC manual §13) that caused FR-01: pre-1.B callers had to mutate `S.bal` AND call `record()` separately; if they forgot or drifted, cash diverged from the txn ledger. Now atomic via composition. STRICT rollback: if `applyTxnDelta` fails after `record()` succeeds, the txn is removed and the envelope returns `rolledBack: true`. Direction explicit via `direction:'inflow'|'outflow'` (legacy `income:bool` still accepted for callers mid-migration).
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Mark debt paid (modal flow)
+**Path:** `UI → DASHBOARD → DEBT_MODAL → MARK_PAID_BUTTON → MARK_DEBT_PAID_FLOW`
+**Type:** action
+**Lives in:** `index.html:7314-7321` (markDebtPaid function balance + writer composition)
+**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.balance.applyTxnDelta` + `BRAIN.debts.markPaid`)
+**Smoke coverage:** none directly (planned: Bundle 30 Phase 2 — markPaid envelope migration)
+**Reads from:** `S.debts[activeDebtIdx]`
+**Writes to:** `S.bal` (via `BRAIN.balance.applyTxnDelta`), `S.debts[i].paid` + `S.txns` (via `BRAIN.debts.markPaid` composition)
+**Triggers:** `BRAIN.balance.applyTxnDelta(-d.amt, CLEAR_DEBT)`, `BRAIN.debts.markPaid`, conditional `BRAIN.bills.markPaid` (Afterpay auto-link)
+**Related features:**
+- writer-used: `BRAIN → BALANCE → APPLY_TXN_DELTA`
+- writer-used: `BRAIN → DEBTS → MARK_PAID`
+- peer: `UI → DASHBOARD → BILLS → BILL_MODAL → PAY_BILL_NOW_FLOW` (same balance+composition pattern)
+**Notes:** Pre-Bundle-30 used direct `S.bal -= d.amt` and `S.bal += d.amt` on failure. Bundle 30 1.B routes both through `BRAIN.balance.applyTxnDelta` (the failure path is now `applyTxnDelta(+d.amt, ...)` for symmetric reversal via canonical writer). Phase 2 candidate: migrate `BRAIN.debts.markPaid` itself to consume the `recordWithAllocation` envelope so the entire flow is one atomic writer call.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Pay bill (withMarkPaidGate flow)
+**Path:** `UI → DASHBOARD → BILLS → BILL_MODAL → PAY_BILL_NOW_FLOW`
+**Type:** action
+**Lives in:** `index.html:7873-7884` (inside withMarkPaidGate callback)
+**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.balance.applyTxnDelta` + `BRAIN.bills.markPaid`)
+**Smoke coverage:** none directly (planned: Bundle 30 Phase 2 — markPaid envelope migration)
+**Reads from:** bill object `b`
+**Writes to:** `S.bal` (via `BRAIN.balance.applyTxnDelta`), `S.paidBills[key]` + `S.txns` (via `BRAIN.bills.markPaid` composition)
+**Triggers:** `BRAIN.balance.applyTxnDelta(-b.amt, MARK_BILL_PAID)`, `BRAIN.bills.markPaid`
+**Related features:**
+- writer-used: `BRAIN → BALANCE → APPLY_TXN_DELTA`
+- writer-used: `BRAIN → BILLS → MARK_PAID`
+- peer: `UI → DASHBOARD → DEBT_MODAL → MARK_PAID_BUTTON → MARK_DEBT_PAID_FLOW` (same pattern)
+**Notes:** Symmetric to the debt mark-paid flow. STRICT reversal on inner failure via canonical writer. Phase 2 candidate: migrate `BRAIN.bills.markPaid` to consume `recordWithAllocation`.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Bucket quick-add
+**Path:** `UI → DASHBOARD → BUCKETS_TILE → QUICK_ADD_BUTTON → QUICK_ADD_TO_BUCKET_FLOW`
+**Type:** action
+**Lives in:** `index.html:8936-8951` (quickAddToBucket function)
+**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.savings.addToBucket` + `BRAIN.transaction.record` + `BRAIN.balance.applyTxnDelta`)
+**Smoke coverage:** none directly (planned: Bundle 30 Phase 2 — full envelope with `destination:{type:'bucket'}`)
+**Reads from:** `S.savingsBuckets[i]`, `S.bal` (insufficient-balance pre-check)
+**Writes to:** `S.savingsBuckets[i].saved` (via `BRAIN.savings.addToBucket`), `S.txns` (via `BRAIN.transaction.record`), `S.bal` (via `BRAIN.balance.applyTxnDelta`)
+**Triggers:** `BRAIN.savings.addToBucket`, `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta(-amt, BUCKET_QUICK_ADD)`
+**Related features:**
+- writer-used: `BRAIN → SAVINGS → ADD_TO_BUCKET`
+- writer-used: `BRAIN → TRANSACTION → RECORD`
+- writer-used: `BRAIN → BALANCE → APPLY_TXN_DELTA`
+- planned-merge: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (Phase 2 — bucket destination)
+**Notes:** Closest candidate for Phase 2's `destination:{type:'bucket', id}` flow. Currently three separate writer calls; Phase 2 will collapse to one envelope call. INV-28 (free-money refusal) will also gate this site once the envelope arrives.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Quick Log Income branch
+**Path:** `UI → GLOBAL → QUICK_LOG_MODAL → INCOME_BRANCH`
+**Type:** action
+**Lives in:** `index.html:9530-9548` (income branch of quickLogTxn)
+**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.transaction.recordWithAllocation`)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (INV-04 inflow assertion via recordWithAllocation; full quickLogTxn integration test for expense branch — income branch is the inverse, same pattern)
+**Reads from:** UI form fields, `cat`, `amt`, `note`
+**Writes to:** `S.txns`, `S.bal` (both via `BRAIN.transaction.recordWithAllocation` composed writer)
+**Triggers:** `BRAIN.transaction.recordWithAllocation({direction:'inflow', cat:'Income'}, LOG_INCOME)`, conditional `checkForBonusInterception`
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- peer: `UI → GLOBAL → QUICK_LOG_MODAL → FROM_PERSON_BRANCH` (inflow variant for from-person)
+- peer: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH` (outflow counterpart)
+- peer: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH` (same writer, AI-driven)
+**Notes:** Pre-Bundle-30 was `S.bal += amt` followed by separate `BRAIN.transaction.record()`. Bundle 30 1.B migrated to single composed call. Eliminates one of the four primary FR-01 risk surfaces.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Quick Log From-person branch
+**Path:** `UI → GLOBAL → QUICK_LOG_MODAL → FROM_PERSON_BRANCH`
+**Type:** action
+**Lives in:** `index.html:9554-9579`
+**Inside BRAIN?** no (UI handler)
+**Smoke coverage:** none directly (inflow pattern same as Income branch — covered by `tests/smoke/transaction-paths.smoke.js` INV-04 inflow)
+**Reads from:** UI form fields
+**Writes to:** `S.txns`, `S.bal` (via `recordWithAllocation`); conditional `mumDebt.amt` mutation
+**Triggers:** `BRAIN.transaction.recordWithAllocation({direction:'inflow'}, LOG_FROM_PERSON)`, `findMumDebt`, `BRAIN.bills.clearPendingPay`
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- peer: `UI → GLOBAL → QUICK_LOG_MODAL → INCOME_BRANCH`
+**Notes:** Slight wrinkle: still has a native `confirm()` for mumDebt linkage prompt — not addressed in Phase 1.B (UX issue, separate). Bundle 30 cleanup candidate: move confirm to EDIT_MODAL.openConfirm.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Quick Log Expense branch
+**Path:** `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH`
+**Type:** action
+**Lives in:** `index.html:9591-9609` (expense branch of quickLogTxn)
+**Inside BRAIN?** no (UI handler)
+**Smoke coverage:** `tests/smoke/transaction-paths.smoke.js` (INV-01 outflow + quickLogTxn end-to-end, 4 assertions)
+**Reads from:** UI form fields
+**Writes to:** `S.txns`, `S.bal` (via `recordWithAllocation`)
+**Triggers:** `BRAIN.transaction.recordWithAllocation({direction:'outflow'}, LOG_EXPENSE)`, conditional habit-flag alert + round-up sibling (see below)
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- child: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH → ROUNDUP_SIBLING`
+- peer: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH` (AI-driven version)
+**Notes:** Most-trafficked path in the app. Pre-Bundle-30 also had a `_expenseTs = _expRes.ts` back-ref consumer; Bundle 30 1.B updated to `_expRes.txnTs` (the new envelope's ts field name).
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Quick Log Expense round-up sibling
+**Path:** `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH → ROUNDUP_SIBLING`
+**Type:** action
+**Lives in:** `index.html:9618-9633` (round-up block after expense record)
+**Inside BRAIN?** no (UI handler; mutates state via `BRAIN.transaction.record` + `BRAIN.balance.applyTxnDelta` + `BRAIN.savings.addToBucket`)
+**Smoke coverage:** none directly (planned: Bundle 30 Phase 4 — INV-31 synchronous round-up smoke)
+**Reads from:** `roundUp` (computed from parent amt), `S.roundUpsEnabled`, `S.roundUpDestination`
+**Writes to:** `S.txns` (round-up txn), `S.bal` (via canonical writer), `S.savingsBuckets[dest].saved`
+**Triggers:** `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta(-roundUp, ROUNDUP)`, `BRAIN.savings.addToBucket`
+**Related features:**
+- parent: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH`
+- peer: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH → ROUNDUP_SIBLING` (AI variant)
+- planned-merge: fold into parent `recordWithAllocation` per INV-31 (Phase 4 — round-up must fire synchronously, ≤100ms after parent)
+**Notes:** Bundle 30 1.B routed the `S.bal -= roundUp` direct mutation through `BRAIN.balance.applyTxnDelta`, but kept the round-up as a SEPARATE txn (not folded). Folding requires INV-31 (round-up timing) work in Phase 4 — until then we accept the temporal separation but get canonical-writer benefit.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Chat log_txn (AI-driven expense)
+**Path:** `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH`
+**Type:** action
+**Lives in:** `index.html:14762-14776` (chat action handler's log_txn case)
+**Inside BRAIN?** no (UI / chat handler)
+**Smoke coverage:** none directly (covered indirectly via INV-01 outflow assertion — same writer)
+**Reads from:** `action.amt`, `action.note`, `action.cat`
+**Writes to:** `S.txns`, `S.bal` (via `recordWithAllocation`)
+**Triggers:** `BRAIN.transaction.recordWithAllocation({direction:'outflow'}, CHAT)`, conditional round-up sibling
+**Related features:**
+- writer-used: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION`
+- child: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH → ROUNDUP_SIBLING`
+- peer: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH` (user-driven counterpart)
+- consumer-of: AI `[ACTION:{...}]` structured output from chat reply
+**Notes:** This is the AI version of the expense branch. Pre-Bundle-30 was the most clear-cut double-mutation site: AI returns ACTION, code called `record()` THEN mutated S.bal separately. AI couldn't see whether either step actually fired (no envelope inspection in chat path). Bundle 30 1.B eliminates the double-mutation risk; future Phase 3 work adds confirmation flow for AI-initiated balance changes.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Site: Chat round-up sibling
+**Path:** `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH → ROUNDUP_SIBLING`
+**Type:** action
+**Lives in:** `index.html:14784-14801` (chat-driven round-up block)
+**Inside BRAIN?** no
+**Smoke coverage:** none directly (planned Phase 4)
+**Reads from:** computed `roundUp`, `S.roundUpsEnabled`, `S.roundUpDestination`
+**Writes to:** `S.txns`, `S.bal` (via canonical writer), bucket
+**Triggers:** `BRAIN.transaction.record`, `BRAIN.balance.applyTxnDelta(-roundUp, ROUNDUP)`, `BRAIN.savings.addToBucket(..., CHAT)`
+**Related features:**
+- parent: `UI → CHAT → EXECUTE_CHAT_ACTION → LOG_TXN_BRANCH`
+- peer: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH → ROUNDUP_SIBLING`
+- planned-merge: fold per INV-31 (Phase 4)
+**Notes:** Twin of the Quick Log round-up site. Bucket update uses `BRAIN.SOURCES.CHAT` (not `ROUNDUP`) so audit log distinguishes AI-driven round-ups — preserved from pre-Bundle-30.
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+### Smoke spec: transaction-paths
+**Path:** `TESTS → SMOKE → TRANSACTION_PATHS`
+**Type:** element (test artifact)
+**Lives in:** `tests/smoke/transaction-paths.smoke.js`
+**Inside BRAIN?** no (test infrastructure)
+**Smoke coverage:** N/A (this IS the smoke)
+**Reads from:** `state-snapshot.json` fixture, deployed/local app via Playwright
+**Writes to:** —
+**Triggers:** Playwright assertions
+**Related features:**
+- verifies: `BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION` (5 assertions)
+- verifies: `UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH` (end-to-end integration)
+- verifies: `AUDITOR` shim (BUNDLE-30-AUDITOR-SHIM call landing in AUDITOR.log)
+- co-spec: `tests/smoke/diagnostics.smoke.js` (Phase 1.A surfaces)
+- run-via: `npm run smoke`
+**Notes:** 6 tests / ~11 assertions. Covers envelope shape probe, INV-01 outflow, INV-04 inflow, AUDITOR shim dual-log, rollback on invalid source, quickLogTxn end-to-end. Should grow as Phase 2-4 work lands (each new envelope feature gets its own assertion here).
+**Last touched:** Bundle 30 Phase 1.B (2026-05-18)
+
+---
+
+**End of v2-schema diagnostic-surface + transaction-path backfill. Legacy v1 tables continue below.**
 
 ---
 

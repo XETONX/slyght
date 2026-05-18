@@ -7311,10 +7311,17 @@ function markDebtPaid() {
   // composition with BRAIN.transaction.record handles the clearance txn
   // + audit emission + _clearedTxnTs back-ref for reversible undo via
   // BRAIN.debts.unmark. STRICT abort if record fails \u2014 restore S.bal.
-  S.bal -= d.amt;
+  //
+  // Bundle 30 Phase 1.B (FR-01) \u2014 balance mutation now goes through the
+  // canonical writer instead of direct `S.bal -= d.amt`. BRAIN.debts.markPaid
+  // still owns the txn append (composes with BRAIN.transaction.record
+  // internally); migrating markPaid itself to the recordWithAllocation
+  // envelope is a Phase 2 candidate so the txn + balance + audit land
+  // atomically inside one writer.
+  BRAIN.balance.applyTxnDelta(-d.amt, BRAIN.SOURCES.CLEAR_DEBT, null);
   const r = BRAIN.debts.markPaid(d.id, BRAIN.SOURCES.CLEAR_DEBT);
   if (!r.ok) {
-    S.bal += d.amt;
+    BRAIN.balance.applyTxnDelta(+d.amt, BRAIN.SOURCES.CLEAR_DEBT, null);
     showToast('\u26a0\ufe0f Could not clear ' + d.name + ' \u2014 ' + r.reason);
     return;
   }
@@ -7870,10 +7877,14 @@ function markBillPaidMonth() {
     // on inner failure; if record() fails we reverse the balance
     // deduction so we don't leave the user under-balanced with no
     // bill flagged paid.
-    S.bal -= b.amt;
+    //
+    // Bundle 30 Phase 1.B (FR-01) \u2014 balance mutation through canonical
+    // writer. markPaid still owns txn append; Phase 2 may migrate
+    // markPaid itself to the recordWithAllocation envelope.
+    BRAIN.balance.applyTxnDelta(-b.amt, BRAIN.SOURCES.MARK_BILL_PAID, null);
     const r = BRAIN.bills.markPaid(b, BRAIN.SOURCES.MARK_BILL_PAID);
     if (!r.ok) {
-      S.bal += b.amt;
+      BRAIN.balance.applyTxnDelta(+b.amt, BRAIN.SOURCES.MARK_BILL_PAID, null);
       showToast('\u26a0\ufe0f Could not mark ' + b.name + ' paid \u2014 ' + r.reason);
       return;
     }
@@ -8939,13 +8950,16 @@ function quickAddToBucket(i, amt) {
   const bucket = S.savingsBuckets[i];
   if (!bucket) return;
   BRAIN.savings.addToBucket(bucket.name, amt, BRAIN.SOURCES.MANUAL);
-  S.bal -= amt;
   // Bundle 11: route txn push through BRAIN.transaction with the
   // dedicated bucket-quick-add source tag.
-  BRAIN.transaction.record(
-    { amt, note: bucket.name+' — quick add', cat:'Savings', income:false },
+  // Bundle 30 Phase 1.B (FR-01) — balance mutation through canonical
+  // writer. Full recordWithAllocation envelope with bucket destination
+  // arrives in Phase 2 (will eliminate the separate addToBucket call).
+  const _qaRes = BRAIN.transaction.record(
+    { amt, note: bucket.name+' — quick add', cat:'Savings', income:false, _balAffected: true },
     BRAIN.SOURCES.BUCKET_QUICK_ADD
   );
+  BRAIN.balance.applyTxnDelta(-amt, BRAIN.SOURCES.BUCKET_QUICK_ADD, _qaRes.ok ? _qaRes.ts : null);
   onStateChange('bucket-add');
   showUndoToast(fmtC(amt)+' added to '+bucket.name);
 }
@@ -9529,11 +9543,12 @@ function quickLogTxn() {
   if (navigator.vibrate) navigator.vibrate(50); // UX7: haptic feedback on log
   // Income: add to balance
   if (cat === 'Income' || cat === 'Income / Refund \u2191') {
-    S.bal += amt;
-    // Bundle 11: route through BRAIN.transaction.record (validates source,
-    // logs to BRAIN.audit, returns ts for any back-ref needs).
-    const _incomeRes = BRAIN.transaction.record(
-      { amt, note: note||'Income', cat: 'Income', income: true, _balAffected: true },
+    // Bundle 30 Phase 1.B (FR-01) \u2014 composed writer eliminates the
+    // direct `S.bal += amt` + separate record() pair. Pre-1.B the
+    // pattern split balance mutation from txn append, allowing callers
+    // (esp. AI-driven log_txn) to drift out of sync.
+    const _incomeRes = BRAIN.transaction.recordWithAllocation(
+      { amt, note: note||'Income', cat: 'Income', direction: 'inflow' },
       BRAIN.SOURCES.LOG_INCOME
     );
     const incomeTxn = _incomeRes.ok ? _incomeRes.txn : null;
@@ -9553,10 +9568,9 @@ function quickLogTxn() {
 
   // From-person: adds to balance, prompts to log against Owed to Mum if significant
   if (txnType === 'from-person') {
-    S.bal = parseFloat((S.bal + amt).toFixed(2));
-    // Bundle 11: route through BRAIN.transaction.
-    BRAIN.transaction.record(
-      { amt, note: note||'From person', cat: cat||'Other', _balAffected: true, _txnType: 'from-person' },
+    // Bundle 30 Phase 1.B (FR-01) — composed writer (inflow direction).
+    BRAIN.transaction.recordWithAllocation(
+      { amt, note: note||'From person', cat: cat||'Other', direction: 'inflow', _txnType: 'from-person' },
       BRAIN.SOURCES.LOG_FROM_PERSON
     );
     if (amt >= 100) {
@@ -9576,18 +9590,19 @@ function quickLogTxn() {
   }
 
   // Expense / Transfer / One-off: deduct from balance immediately
-  S.bal -= amt;
   const flag = getHabitFlag(note, amt);
-  // Bundle 11: route through BRAIN.transaction. Capture the ts so the
-  // bill-pay stash consume below can use it as the canonical back-ref
-  // (pre-Bundle-11 the consume read "lastTxn" which broke when round-up
-  // pushed AFTER the expense — _txnTs pointed to the round-up, not the
-  // bill payment, and undo reversed the wrong txn).
-  const _expRes = BRAIN.transaction.record(
-    { amt, note: note||'Spend', cat: cat||'Other', flagged: !!flag, _balAffected: true, _txnType: txnType, income: false },
+  // Bundle 30 Phase 1.B (FR-01) — composed writer eliminates the
+  // pre-1.B `S.bal -= amt` + separate record() pattern. The same back-ref
+  // ts guarantee still holds: recordWithAllocation returns txnTs so the
+  // bill-pay stash consume below uses the correct canonical id even
+  // when a round-up is recorded after.
+  const _expRes = BRAIN.transaction.recordWithAllocation(
+    { amt, note: note||'Spend', cat: cat||'Other', flagged: !!flag, _txnType: txnType, direction: 'outflow' },
     BRAIN.SOURCES.LOG_EXPENSE
   );
-  const _expenseTs = _expRes.ok ? _expRes.ts : null;
+  // Bundle 30 Phase 1.B — recordWithAllocation returns txnTs (not ts);
+  // pre-1.B record() returned ts. Use the new field for back-ref.
+  const _expenseTs = _expRes.ok ? _expRes.txnTs : null;
   if (flag) {
     const bal = fmtC(getLiveBal());
     const debt = fmt(S.debts.filter(d => !d.paid).reduce((s,d) => s+d.amt, 0));
@@ -9603,12 +9618,17 @@ function quickLogTxn() {
   const ruToggle = $('ql-roundup-toggle');
   const roundUpOn = ruToggle ? ruToggle.checked : false;
   if (roundUp > 0 && roundUp < 1 && roundUpOn && S.roundUpsEnabled !== false) {
-    S.bal = parseFloat((S.bal - roundUp).toFixed(2));
     const _destName = BRAIN.savings.getRoundUpDestinationName();
-    BRAIN.transaction.record(
+    // Bundle 30 Phase 1.B (FR-01) — record txn then route balance
+    // through canonical writer. Pre-1.B was `S.bal -= roundUp` direct.
+    // Folding round-up into parent recordWithAllocation per INV-31 is
+    // Phase 4 work (round-ups must fire synchronously with parent within
+    // 100ms); for Phase 1.B we keep them as separate txns.
+    const _ruRes = BRAIN.transaction.record(
       { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
       BRAIN.SOURCES.ROUNDUP
     );
+    BRAIN.balance.applyTxnDelta(-roundUp, BRAIN.SOURCES.ROUNDUP, _ruRes.ok ? _ruRes.ts : null);
     // Bundle 8: route round-up bucket write through BRAIN.savings.
     // Bundle 22 v3 Phase 0: bucket lookup uses S.roundUpDestination instead of
     // hardcoded 'china' substring match.
@@ -14762,31 +14782,33 @@ function executeChatAction(action) {
     case 'log_txn':
       if (action.amt > 0) {
         const roundUp = parseFloat((Math.ceil(action.amt) - action.amt).toFixed(2));
-        // Bundle 11: route through BRAIN.transaction. Source tag CHAT
-        // so audit log distinguishes AI-driven logs from manual ones.
-        BRAIN.transaction.record(
+        // Bundle 30 Phase 1.B (FR-01) — composed writer. Pre-1.B this
+        // chat path had a separate `S.bal -= action.amt` after record()
+        // which was the AI-driven version of the double-mutation risk.
+        BRAIN.transaction.recordWithAllocation(
           {
             amt: parseFloat(action.amt.toFixed(2)),
             note: action.note || 'Chat logged',
             cat: action.cat || 'Other',
-            income: false,
-            _balAffected: true,
+            direction: 'outflow',
             _chatLogged: true
           },
           BRAIN.SOURCES.CHAT
         );
-        S.bal = parseFloat((S.bal - action.amt).toFixed(2));
         if (roundUp > 0 && roundUp < 1 && S.roundUpsEnabled) {
           // Bundle 22 v3 Phase 0.F: chat-action round-up path (path #2). Twin
           // of the Quick Log path at quickLogTxn; kept separate because the
           // AI has no per-txn toggle and bucket update uses CHAT source tag
           // so audit can distinguish AI-driven round-ups.
+          //
+          // Bundle 30 Phase 1.B — record + canonical balance writer.
+          // Folding into parent recordWithAllocation per INV-31 is Phase 4.
           const _destName = BRAIN.savings.getRoundUpDestinationName();
-          BRAIN.transaction.record(
+          const _ruRes = BRAIN.transaction.record(
             { amt: roundUp, note: 'Round-up → ' + _destName, cat: 'Savings', income: false, _isRoundup: true, _balAffected: true },
             BRAIN.SOURCES.ROUNDUP
           );
-          S.bal = parseFloat((S.bal - roundUp).toFixed(2));
+          BRAIN.balance.applyTxnDelta(-roundUp, BRAIN.SOURCES.ROUNDUP, _ruRes.ok ? _ruRes.ts : null);
           // Bundle 8: route through BRAIN.savings.
           // Bundle 22 v3 Phase 0: bucket lookup via canonical helper.
           const bucket = BRAIN.savings.getBucket(S.roundUpDestination);
@@ -19256,6 +19278,16 @@ const BRAIN = {
         old, new: next, delta: n, source, ref: ref || null,
         ts: Date.now(),
       });
+      // BUNDLE-30-AUDITOR-SHIM: dual-log to AUDITOR until Bundle 31
+      // migration ADR lands. See FEATURE-MAP §7.1 + Bundle 31 ADR
+      // candidate. Remove this call when AUDITOR becomes
+      // BRAIN.audit-tiered. Grep target for mechanical removal.
+      try {
+        if (typeof AUDITOR !== 'undefined' && AUDITOR.record) {
+          AUDITOR.record('TXN_DELTA_' + source.toUpperCase().replace(/-/g, '_'),
+            old, next, n, ref ? ('ref:' + ref) : '');
+        }
+      } catch (_) {}
       try { save(); } catch (_) {}
       return { ok: true, old, new: next, delta: n };
     },
@@ -19286,6 +19318,16 @@ const BRAIN = {
         old, new: S.bal, diff, reason: reason || null, source,
         ts: Date.now(),
       });
+      // BUNDLE-30-AUDITOR-SHIM: dual-log to AUDITOR until Bundle 31
+      // migration ADR lands. See FEATURE-MAP §7.1 + Bundle 31 ADR
+      // candidate. Remove this call when AUDITOR becomes
+      // BRAIN.audit-tiered. Grep target for mechanical removal.
+      try {
+        if (typeof AUDITOR !== 'undefined' && AUDITOR.record) {
+          AUDITOR.record(diff > 0 ? 'BALANCE_CORRECTION_UP' : 'BALANCE_CORRECTION_DOWN',
+            old, S.bal, diff, 'Reconcile: ' + (reason || '—'));
+        }
+      } catch (_) {}
       try { save(); } catch (_) {}
       return { ok: true, old, new: S.bal, diff };
     },
@@ -19492,6 +19534,8 @@ const BRAIN = {
       // Bundle 30 1.A.8 — Dev Inspect registry
       ['BRAIN.devInspect exists', () => typeof BRAIN.devInspect === 'object' && BRAIN.devInspect !== null],
       ['BRAIN.devInspect.run callable', () => typeof BRAIN.devInspect.run === 'function'],
+      // Bundle 30 1.B — composed transaction writer
+      ['BRAIN.transaction.recordWithAllocation callable', () => typeof BRAIN.transaction.recordWithAllocation === 'function'],
     ],
     _lastRun: null,
     run() {
@@ -19552,6 +19596,14 @@ const BRAIN = {
         const sourcesCount = Object.keys(BRAIN.SOURCES).length;
         const setCount = BRAIN._SOURCE_SET.size;
         return sourcesCount + ' in SOURCES enum, ' + setCount + ' in _SOURCE_SET — ' + (sourcesCount === setCount ? 'IN SYNC ✓' : 'OUT OF SYNC ✗');
+      } },
+      // Bundle 30 1.B — composed writer reachability
+      { name: 'BRAIN.transaction.recordWithAllocation callable', run: () => typeof BRAIN.transaction.recordWithAllocation === 'function' ? 'YES ✓' : 'NO ✗' },
+      { name: 'Last balance_apply_delta audit entry', run: () => {
+        const entries = (S._auditLog || []).filter(e => e && e.type === 'balance_apply_delta');
+        if (!entries.length) return 'NONE — no apply_delta calls yet this session';
+        const last = entries[entries.length - 1];
+        return 'source=' + last.source + ', delta=$' + last.delta + ', old=$' + last.old + ' → new=$' + last.new;
       } },
     ],
     run(name) {
@@ -22270,6 +22322,72 @@ const BRAIN = {
       });
       try { save(); } catch (_) {}
       return { ok: true, txn: finalTxn, ts };
+    },
+    // Bundle 30 Phase 1.B — composed writer: txn append + S.bal mutation
+    // in one atomic call. Eliminates the parallel-paths anti-pattern that
+    // caused FR-01 (cash hero didn't decrement on transaction record
+    // because callers had to mutate S.bal separately and some forgot to).
+    //
+    // envelope shape:
+    //   { amt:positive number, note, cat, direction:'inflow'|'outflow',
+    //     income?:bool (legacy alias for direction), _txnType, flagged,
+    //     ...other txn fields }
+    //
+    // Phase 1.B scope: cash side only. Bucket destination, FX-fee child,
+    // round-up folding, INV-27 negative gate, INV-28 free-money gate all
+    // arrive in Phases 2/4 per SDD-bundle-30 §3 + §10.
+    //
+    // Return envelope:
+    //   { ok, txnTs, txn, balanceOld, balanceNew, delta, reason? }
+    // STRICT: if balance update fails after txn append, removes the txn
+    // (rollback) and returns rolledBack:true so caller knows to refresh UI.
+    recordWithAllocation(envelope, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      if (!envelope || typeof envelope !== 'object') {
+        return { ok: false, reason: 'invalid-envelope' };
+      }
+      const amt = +envelope.amt;
+      if (!isFinite(amt) || amt <= 0) {
+        return { ok: false, reason: 'invalid-amount' };
+      }
+      // Direction: explicit field wins; legacy `income:true` → inflow.
+      let direction = envelope.direction;
+      if (direction !== 'inflow' && direction !== 'outflow') {
+        direction = envelope.income ? 'inflow' : 'outflow';
+      }
+      const delta = direction === 'inflow' ? amt : -amt;
+      // Strip envelope-only field; persist with legacy `income` boolean
+      // so existing renderers / filters / undo-flows continue to work.
+      const txnFields = { ...envelope, _balAffected: true };
+      delete txnFields.direction;
+      if (!('income' in txnFields)) txnFields.income = (direction === 'inflow');
+      // Append txn via existing canonical writer.
+      const recRes = this.record(txnFields, source);
+      if (!recRes.ok) {
+        return { ok: false, reason: 'record-failed:' + recRes.reason };
+      }
+      // Apply balance delta via canonical balance writer. Phase 1.B core
+      // value: ONE place mutates S.bal for transaction-driven changes.
+      const balRes = BRAIN.balance.applyTxnDelta(delta, source, recRes.ts);
+      if (!balRes.ok) {
+        // STRICT rollback: txn appended but balance didn't update.
+        // applyTxnDelta only fails on invalid-source/invalid-delta, both
+        // already validated above, so this should never fire — but the
+        // CC manual §7 "writers return envelopes, callers MUST check ok"
+        // contract requires us to handle it.
+        try { this.removeByTs(recRes.ts); } catch (_) {}
+        return { ok: false, reason: 'balance-failed:' + balRes.reason, rolledBack: true };
+      }
+      return {
+        ok: true,
+        txnTs: recRes.ts,
+        txn: recRes.txn,
+        balanceOld: balRes.old,
+        balanceNew: balRes.new,
+        delta,
+      };
     },
     // Find a single txn by ts (back-ref lookup). Returns undefined if
     // not found — callers can `?.amt` chain safely.
