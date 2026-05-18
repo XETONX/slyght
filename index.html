@@ -1548,6 +1548,8 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
           </div>
           <button onclick="_emergencyImportFromWorker()" style="width:100%;padding:12px;background:var(--amber, #d97706);border:none;border-radius:8px;color:#000;font-size:14px;font-weight:700;min-height:48px;cursor:pointer">🚨 Import reconciled state from worker</button>
           <div id="recon-import-msg" style="font-size:13px;margin-top:8px;min-height:18px;color:var(--text)"></div>
+          <button onclick="_showCurrentReconState()" style="width:100%;margin-top:8px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">🔎 Show current state (diagnostic)</button>
+          <button onclick="_rollbackReconImport()" style="width:100%;margin-top:8px;padding:10px;background:var(--bg3);border:1px solid var(--red, #ef4444);border-radius:8px;color:var(--red, #ef4444);font-size:14px;min-height:44px;cursor:pointer">↩️ Rollback to pre-import backup</button>
         </div>
         <!-- BUNDLE-30-RECON-IMPORT END -->
 
@@ -13219,6 +13221,51 @@ function _emergencyImportFromWorker() {
       alert('✗ ' + VER + ' Import failed at: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted yet).');
       setMsg('✗ Import failed: ' + (e.message || e), 'var(--red)');
     });
+}
+
+// BUNDLE-30-RECON-IMPORT DIAGNOSTIC — single-alert dump of post-boot state.
+// John taps "🔎 Show current state" after a reload (or anytime) to see what
+// actually landed in localStorage and what BRAIN.balance reports.
+function _showCurrentReconState() {
+  var raw = localStorage.getItem('slyght_v5') || '';
+  var p = null;
+  try { p = JSON.parse(raw); } catch (_) {}
+  var lsBal = p && p.S && p.S.bal;
+  var lsTxns = p && p.S && p.S.txns && p.S.txns.length;
+  var sKeys = p && p.S ? Object.keys(p.S).length : 0;
+  var brainBal = 'BRAIN-unavailable';
+  try { brainBal = (typeof BRAIN !== 'undefined' && BRAIN.balance) ? BRAIN.balance.get() : 'BRAIN-unavailable'; } catch (_) {}
+  var hasBackup = !!localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19');
+  var backupLen = (localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19') || '').length;
+  var expecting = localStorage.getItem('_recon_expecting') || 'null';
+  // Read the actual hero-rendered balance from DOM if visible.
+  var heroEl = document.querySelector('[data-hero-bal], #hero-balance, .hero-balance, .bal-hero');
+  var heroText = heroEl ? heroEl.textContent : '(hero element not found in DOM)';
+  alert('🔎 RECON DIAGNOSTIC v3\n\n' +
+        'localStorage slyght_v5: ' + raw.length + ' bytes\n' +
+        '  S.bal: $' + lsBal + '\n' +
+        '  S.txns count: ' + lsTxns + '\n' +
+        '  S top-level keys: ' + sKeys + '\n' +
+        '\nIn-memory BRAIN.balance: $' + brainBal + '\n' +
+        '\nHero DOM text (best match): ' + heroText + '\n' +
+        '\nBackup key present: ' + hasBackup + ' (' + backupLen + ' bytes)\n' +
+        '_recon_expecting flag: ' + expecting + '\n\n' +
+        'SCREENSHOT this and send to Claude.');
+}
+
+// BUNDLE-30-RECON-IMPORT ROLLBACK — restore pre-import backup if import was wrong.
+function _rollbackReconImport() {
+  var backup = localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19');
+  if (!backup) {
+    alert('No backup key found. Cannot rollback.\n\n(Backup is created automatically when "🚨 Import" runs. If you never tapped it, there is nothing to restore.)');
+    return;
+  }
+  if (!confirm('Restore pre-import backup?\n\nThis will replace your current slyght_v5 with the version saved BEFORE the import attempt.\nBackup is ' + backup.length + ' bytes.\nAfter restore, the page will reload.')) return;
+  localStorage.setItem('slyght_v5', backup);
+  // Clear the diagnostic flag so post-boot popup doesn\'t fire.
+  localStorage.removeItem('_recon_expecting');
+  alert('✓ Backup restored. Reloading.');
+  location.reload();
 }
 
 // BUNDLE-30-RECON-IMPORT BOOT CHECK — fires after reload to verify the
