@@ -1563,6 +1563,25 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
           </div>
         </div>
 
+        <!-- Bundle 30 1.A.6 — Boot self-test card (BRAIN.selfTest results) -->
+        <div class="settings-group-title">Boot self-test</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div id="sub-boot-test-content" style="font-size:14px;color:var(--text2);line-height:1.6"></div>
+          <button onclick="runDiagnosticCheck('selftest')" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Re-run boot self-test</button>
+        </div>
+
+        <!-- Bundle 30 1.A.8 — Dev Inspect card (runtime introspection) -->
+        <div class="settings-group-title">Dev inspect</div>
+        <div class="settings-group-card" style="padding:12px 14px">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:8px;line-height:1.5">Runtime checks for phone-side verification (e.g. balance reads, snapshot existence). Bundle 30 extensible — future phases add their own checks.</div>
+          <div id="sub-dev-inspect-buttons"></div>
+          <div id="sub-dev-inspect-output" style="margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:12px;color:var(--text2);min-height:60px;white-space:pre-wrap;word-break:break-word">Tap a check button above to run it. Output appears here.</div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="runDiagnosticCheck('devinspect-all')" style="flex:1;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Run all</button>
+            <button onclick="document.getElementById('sub-dev-inspect-output').textContent='(cleared)';" style="padding:10px 14px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);font-size:13px;min-height:44px;cursor:pointer">Clear</button>
+          </div>
+        </div>
+
         <div class="settings-group-title">UX intelligence</div>
         <div class="settings-group-card" style="padding:12px 14px">
           <div id="sub-ux-report-content"></div>
@@ -1571,6 +1590,13 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
 
         <div class="settings-group-title">Activity log</div>
         <div class="settings-group-card" style="padding:12px 14px">
+          <!-- Bundle 30 1.A.7 — filter row (text + source-tag dropdown) -->
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <input type="search" id="sub-audit-filter-text" placeholder="🔍 Search action / notes / type…" style="flex:1;padding:8px 10px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;min-height:40px" oninput="setAuditFilter('text', this.value)">
+            <select id="sub-audit-filter-source" onchange="setAuditFilter('source', this.value)" style="padding:8px 10px;background:var(--bg);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;min-height:40px;max-width:140px">
+              <option value="">All sources</option>
+            </select>
+          </div>
           <div id="sub-audit-log-content"></div>
           <button onclick="runDiagnosticCheck('audit')" style="width:100%;margin-top:10px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">Refresh log</button>
         </div>
@@ -3329,8 +3355,16 @@ function getActiveDebtsDueBeforePayday() {
 function getTxnSpent() {
   return S.txns.filter(t => !t.income).reduce((s,t) => s+t.amt, 0);
 }
-// S.bal IS the live balance — single source of truth. No arithmetic.
-function getLiveBal() { return S.bal; }
+// Bundle 30 Phase 1 — thin alias for BRAIN.balance.get(). Identical
+// semantics in Phase 1+2 (delegates to the same S.bal field); becomes
+// computational (replay from last reconciliation) in Phase 4 per SDD §2.
+// Defensive fallback: if BRAIN.balance not yet initialised at call time
+// (boot ordering edge case), falls back to direct S.bal read.
+function getLiveBal() {
+  return (typeof BRAIN !== 'undefined' && BRAIN.balance)
+    ? BRAIN.balance.get()
+    : (typeof S !== 'undefined' && typeof S.bal === 'number' ? S.bal : 0);
+}
 // FA2: dynamic buffer — tiered by free money available, not static
 function getDynamicBuffer() {
   const bal = getLiveBal();
@@ -6449,6 +6483,10 @@ function renderAll() {
   if ($('pg-chat') && $('pg-chat').classList.contains('active') && !_chatRendering) renderChatTab();
   if ($('pg-settings') && $('pg-settings').classList.contains('active')) {
     try { renderMathHealth(); } catch (_) {}
+    // Bundle 30 1.A.6 + 1.A.8 — render new diagnostic surfaces when
+    // settings is active so John sees current state without manual refresh.
+    try { if (typeof renderBootSelfTest === 'function') renderBootSelfTest(); } catch (_) {}
+    try { if (typeof renderDevInspect === 'function') renderDevInspect(); } catch (_) {}
   }
 
   // Layer 2 — runtime invariants. NEVER crash renderAll: every check is
@@ -6490,6 +6528,25 @@ function renderMathHealth() {
     });
     html += '</div>';
   }
+
+  // Bundle 30 1.A.6 — "View detailed checks" expansion. Lists every
+  // MathInvariants entry by name + tier + pass/fail so John can see the
+  // full set, not just the failing summary. Per CC manual §3 amendment:
+  // diagnostic surfaces show the underlying data, not just the count.
+  const violationNames = new Set(violations.map(v => v.name));
+  const detailId = 'math-health-details';
+  html += '<button onclick="(function(){var d=document.getElementById(\'' + detailId + '\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\';})()" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">View detailed checks (' + MathInvariants.invariants.length + ')</button>';
+  html += '<div id="' + detailId + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
+  html += '<div style="color:var(--text3);margin-bottom:6px;line-height:1.5">' + MathInvariants.invariants.length + ' invariants from MathInvariants registry — cross-cutting math checks (state-shape, money-flow). Separate from BRAIN.selfTest (structural-bubble checks) and from FINANCIAL-INVARIANTS.md (the spec; Bundle 31+ will bridge these namespaces).</div>';
+  MathInvariants.invariants.forEach(inv => {
+    const failed = violationNames.has(inv.name);
+    const color = failed ? 'var(--red)' : 'var(--green)';
+    const mark = failed ? '✗' : '✓';
+    const tier = inv.tier || '?';
+    html += '<div style="padding:3px 0"><span style="color:' + color + ';display:inline-block;width:14px">' + mark + '</span> <span style="color:var(--text2)">' + esc(inv.name) + '</span> <span style="color:var(--text3);font-size:10px;margin-left:6px">[' + tier + ']</span></div>';
+  });
+  html += '</div>';
+
   html += '<div style="font-size:12px;color:var(--text3);margin-top:10px">Last check: ' + ts + '</div>';
   // Recent violation history (last 24h via session counts)
   const trackedRules = Object.keys(counts);
@@ -6503,6 +6560,94 @@ function renderMathHealth() {
     html += '</div>';
   }
   el.innerHTML = html;
+}
+
+// ─── Bundle 30 1.A.6 — Boot Self-Test renderer ───────────────────────────
+// Reads BRAIN.selfTest._lastRun (or invokes BRAIN.selfTest.run() if absent)
+// and renders per-row pass/fail into #boot-test-content (mirrored into
+// #sub-boot-test-content via the diagnostics mirror at the bottom of
+// runDiagnosticCheck).
+function renderBootSelfTest() {
+  const el = document.getElementById('sub-boot-test-content');
+  if (!el) return;
+  if (typeof BRAIN === 'undefined' || !BRAIN.selfTest || !BRAIN.selfTest.run) {
+    el.innerHTML = '<div style="color:var(--red);font-size:14px">BRAIN.selfTest not available — boot self-test bubble missing</div>';
+    return;
+  }
+  const res = BRAIN.selfTest.run();
+  const total = res.results.length;
+  const failures = res.failures.length;
+  const ts = new Date(res.ts).toLocaleTimeString('en-AU');
+  let html = '';
+  if (failures === 0) {
+    html += '<div style="color:var(--green);font-weight:600">✅ All ' + total + ' boot self-test checks passing</div>';
+  } else {
+    html += '<div style="color:var(--red);font-weight:700">🚨 ' + failures + ' of ' + total + ' failing</div>';
+  }
+  const detailId = 'boot-test-details';
+  html += '<button onclick="(function(){var d=document.getElementById(\'' + detailId + '\');if(d)d.style.display=d.style.display===\'none\'?\'block\':\'none\';})()" style="margin-top:10px;font-size:13px;padding:6px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text2);cursor:pointer">View detailed checks (' + total + ')</button>';
+  html += '<div id="' + detailId + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;font-family:var(--mono);font-size:12px">';
+  html += '<div style="color:var(--text3);margin-bottom:6px;line-height:1.5">Structural-bubble checks — BRAIN bubble availability, callable functions, DOM element presence, SOURCES tag registration. Separate from MathInvariants (cross-cutting math) and FINANCIAL-INVARIANTS.md (the spec). Bundle 31+ will bridge.</div>';
+  res.results.forEach(r => {
+    const color = r.ok ? 'var(--green)' : 'var(--red)';
+    const mark = r.ok ? '✓' : '✗';
+    let line = '<div style="padding:3px 0"><span style="color:' + color + ';display:inline-block;width:14px">' + mark + '</span> <span style="color:var(--text2)">' + esc(r.name) + '</span>';
+    if (!r.ok) {
+      const detail = r.error ? ' threw: ' + r.error : ' (returned ' + JSON.stringify(r.value) + ')';
+      line += ' <span style="color:var(--text3);font-size:10px;display:block;margin-left:20px">' + esc(detail) + '</span>';
+    }
+    line += '</div>';
+    html += line;
+  });
+  html += '</div>';
+  html += '<div style="font-size:12px;color:var(--text3);margin-top:10px">Last run: ' + ts + '</div>';
+  el.innerHTML = html;
+}
+
+// ─── Bundle 30 1.A.8 — Dev Inspect renderer ──────────────────────────────
+// Renders the BRAIN.devInspect.checks registry as a list of tappable
+// buttons. Each button invokes runDevInspectCheck(name) which calls
+// BRAIN.devInspect.run(name) and writes the result into
+// #sub-dev-inspect-output. Extensible: future Bundle 30 phases append
+// checks to BRAIN.devInspect.checks and they automatically render here.
+function renderDevInspect() {
+  const el = document.getElementById('sub-dev-inspect-buttons');
+  if (!el) return;
+  if (typeof BRAIN === 'undefined' || !BRAIN.devInspect || !BRAIN.devInspect.checks) {
+    el.innerHTML = '<div style="color:var(--red);font-size:14px">BRAIN.devInspect not available</div>';
+    return;
+  }
+  el.innerHTML = BRAIN.devInspect.checks.map(c => {
+    const safeName = esc(c.name);
+    const onclickName = c.name.replace(/'/g, "\\'");
+    return '<button onclick="runDevInspectCheck(\'' + onclickName + '\')" style="display:block;width:100%;text-align:left;margin-bottom:6px;padding:10px 12px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;min-height:44px;cursor:pointer">▸ ' + safeName + '</button>';
+  }).join('');
+}
+
+function runDevInspectCheck(name) {
+  const out = document.getElementById('sub-dev-inspect-output');
+  if (!out) return;
+  if (typeof BRAIN === 'undefined' || !BRAIN.devInspect || !BRAIN.devInspect.run) {
+    out.textContent = 'BRAIN.devInspect not available';
+    return;
+  }
+  const r = BRAIN.devInspect.run(name);
+  const ts = new Date(r.ts || Date.now()).toLocaleTimeString('en-AU');
+  if (r.ok) {
+    out.textContent = '[' + ts + '] ' + r.name + '\n→ ' + (typeof r.result === 'object' ? JSON.stringify(r.result) : String(r.result));
+  } else {
+    out.textContent = '[' + ts + '] ' + (r.name || name) + '\n✗ ' + (r.error || r.reason || 'unknown error');
+  }
+}
+
+// ─── Bundle 30 1.A.7 — Activity log filter state ──────────────────────────
+// Module-level filter state consulted by renderAuditLog. setAuditFilter is
+// wired to the filter inputs in the sub-diagnostics activity-log card.
+let _auditFilter = { text: '', source: '' };
+function setAuditFilter(key, value) {
+  if (!Object.prototype.hasOwnProperty.call(_auditFilter, key)) return;
+  _auditFilter[key] = (value || '').toString();
+  try { renderAuditLog(); } catch (_) {}
 }
 
 function renderEmergencyFundStatus() {
@@ -9811,6 +9956,22 @@ function runDiagnosticCheck(kind, opts) {
     }
     else if (kind === 'ux' && typeof UX !== 'undefined' && UX.renderReport) UX.renderReport();
     else if (kind === 'audit' && typeof renderAuditLog === 'function') renderAuditLog();
+    // Bundle 30 1.A.6 — Boot self-test card
+    else if (kind === 'selftest' && typeof renderBootSelfTest === 'function') renderBootSelfTest();
+    // Bundle 30 1.A.8 — Dev Inspect "run all" button
+    else if (kind === 'devinspect-all') {
+      if (typeof BRAIN !== 'undefined' && BRAIN.devInspect && BRAIN.devInspect.runAll) {
+        const results = BRAIN.devInspect.runAll();
+        const out = document.getElementById('sub-dev-inspect-output');
+        if (out) {
+          const ts = new Date().toLocaleTimeString('en-AU');
+          out.textContent = '[' + ts + '] All ' + results.length + ' checks:\n\n' +
+            results.map(r => (r.ok ? '✓ ' : '✗ ') + (r.name || '?') + '\n  → ' +
+              (r.ok ? (typeof r.result === 'object' ? JSON.stringify(r.result) : String(r.result))
+                    : (r.error || r.reason || 'error'))).join('\n\n');
+        }
+      }
+    }
   } catch (e) { console.warn('[Diagnostics]', kind, 'failed:', e); }
   // Mirror the freshly-rendered legacy HTML into the sub-screen target
   // immediately so the user sees the result without waiting for the next
@@ -13546,61 +13707,30 @@ window.addEventListener('DOMContentLoaded', () => {
 // dashboard surface for these but for now console + audit is enough.
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
-    const failures = [];
-    const tests = [
-      ['BRAIN.plan exists', () => !!(typeof BRAIN !== 'undefined' && BRAIN.plan)],
-      ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
-      ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
-      ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
-      // r74 fix (John 2026-05-14: "after every commit the PLAN gets wiped"):
-      // MUST NOT invoke rolloverIfNeeded() in the boot self-test — it
-      // executes the side effect (archives current plan + creates fresh
-      // empty plan) when cycleEnd is in the past. On a once-per-month
-      // cycle this fires on EVERY boot once the cycle end-date has
-      // passed, silently wiping the plan. Switch to a type-check only.
-      ['BRAIN.plan.rolloverIfNeeded reachable', () => typeof BRAIN.plan.rolloverIfNeeded === 'function'],
-      ['BRAIN.plan.setBonus callable', () => typeof BRAIN.plan.setBonus === 'function'],
-      ['BRAIN.plan.markPaydayLanded reachable', () => typeof BRAIN.plan.markPaydayLanded === 'function'],
-      ['markPaydayLandedToday wrapper reachable', () => typeof markPaydayLandedToday === 'function'],
-      ['BRAIN.SOURCES.PAYDAY_MANUAL_LANDED defined', () => typeof BRAIN.SOURCES.PAYDAY_MANUAL_LANDED === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.PAYDAY_MANUAL_LANDED)],
-      ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
-      ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
-      ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
-      ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],
-      ['explainMaxPerDay reachable', () => typeof explainMaxPerDay === 'function'],
-      ['convertEditedTransactionToLoan reachable', () => typeof convertEditedTransactionToLoan === 'function'],
-      ['_buildPaydayAskAIPrompt reachable', () => typeof _buildPaydayAskAIPrompt === 'function'],
-      ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
-      ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
-      ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
-      ['BRAIN.assets.netWorth callable', () => { BRAIN.assets.netWorth(); return true; }],
-      ['openPaydayPlan reachable', () => typeof openPaydayPlan === 'function'],
-      ['renderPaydayPlanRoot reachable', () => typeof renderPaydayPlanRoot === 'function'],
-      ['#pg-payday-plan exists in DOM', () => !!document.getElementById('pg-payday-plan')],
-      ['#pg-payday-plan has CSS transform', () => {
-        const el = document.getElementById('pg-payday-plan');
-        if (!el) return false;
-        const cs = window.getComputedStyle(el);
-        return cs && cs.transform !== 'none' && cs.transform !== '';
-      }],
-    ];
-    tests.forEach(([name, fn]) => {
-      try {
-        const r = fn();
-        if (r !== true) failures.push(name + ' (returned ' + r + ')');
-      } catch (e) {
-        failures.push(name + ' threw: ' + (e && e.message));
+    // Bundle 30 Phase 1 — one-shot pre-state insurance snapshot (SDD §10).
+    // Idempotency-guarded inside; safe to call on every boot.
+    try {
+      if (typeof BRAIN !== 'undefined' && BRAIN.balance && BRAIN.balance._initPreBundle30Snapshot) {
+        BRAIN.balance._initPreBundle30Snapshot();
       }
-    });
-    if (failures.length) {
-      console.error('[Boot self-test] ' + failures.length + ' failure(s):', failures);
-      try {
-        if (BRAIN && BRAIN.audit) {
-          BRAIN.audit.append({ type: 'boot_self_test_fail', failures, ts: Date.now() });
+    } catch (_) {}
+
+    // Bundle 30 1.A.6 — boot self-test promoted to BRAIN.selfTest bubble.
+    // Tests array + runner now live in BRAIN.selfTest. This handler just
+    // invokes it and surfaces the result to console + audit (the audit
+    // append for failures happens inside BRAIN.selfTest.run itself).
+    try {
+      if (typeof BRAIN !== 'undefined' && BRAIN.selfTest && BRAIN.selfTest.run) {
+        const res = BRAIN.selfTest.run();
+        if (res && res.failures && res.failures.length) {
+          console.error('[Boot self-test] ' + res.failures.length + ' failure(s):',
+            res.failures.map(f => f.name + (f.error ? ': ' + f.error : '')));
+        } else if (window.SLYGHT_DEBUG) {
+          console.log('[Boot self-test] all ' + res.results.length + ' checks passed');
         }
-      } catch (_) {}
-    } else if (window.SLYGHT_DEBUG) {
-      console.log('[Boot self-test] all checks passed');
+      }
+    } catch (e) {
+      try { console.error('[Boot self-test] runner threw:', e); } catch (_) {}
     }
   }, 500);
 });
@@ -15825,35 +15955,113 @@ markDebtPaid = function() {
 // applyBalanceCorrection (the canonical dashboard balance writer) handles its
 // own AUDITOR.record + SNAPSHOTS.autoSnapshot path.
 
+// Bundle 30 1.A.7 — renderAuditLog enhanced. Merges AUDITOR.log (action
+// history) + BRAIN audit (S._auditLog, source-tagged write events) into
+// a unified view. Filter state at module-level (_auditFilter) is consulted
+// on every render. Writes to both the legacy #audit-log-content target
+// AND the sub-screen #sub-audit-log-content target (sub is what John sees).
+// Populates the source-tag dropdown from BRAIN.SOURCES on first render.
 function renderAuditLog() {
-  const el = document.getElementById('audit-log-content');
-  if (!el) return;
-  const all = AUDITOR.log;
-  if (all.length === 0) {
-    el.innerHTML = '<div style="color:var(--text3);font-size:14px;padding:8px 0">No activity recorded yet.</div>';
-    return;
+  // Populate source dropdown from BRAIN.SOURCES (idempotent — re-run safe)
+  const sourceSel = document.getElementById('sub-audit-filter-source');
+  if (sourceSel && sourceSel.options.length <= 1 && typeof BRAIN !== 'undefined' && BRAIN.SOURCES) {
+    const tags = Object.values(BRAIN.SOURCES).filter(v => typeof v === 'string').sort();
+    tags.forEach(tag => {
+      const opt = document.createElement('option');
+      opt.value = tag;
+      opt.textContent = tag;
+      sourceSel.appendChild(opt);
+    });
   }
-  const issues = all.filter(e => !e.ok || e.action.includes('ERROR') || e.action.includes('FAIL'));
-  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
-  const todayCount = all.filter(e => new Date(e.ts || 0) >= todayStart).length;
-  const summaryLine = issues.length > 0
-    ? '<div style="color:var(--amber);font-size:14px;font-weight:600;padding:8px 0">⚠️ ' + issues.length + ' issue' + (issues.length !== 1 ? 's' : '') + ' detected</div>'
-    : '<div style="color:var(--green);font-size:14px;padding:8px 0">' + (todayCount > 0 ? todayCount + ' actions logged today · ' : '') + 'All clear ✓</div>';
-  const displayEntries = issues.slice(0, 20);
-  const entriesHtml = displayEntries.map(entry => {
-    const isError = entry.action.includes('ERROR') || (entry.action.includes('FAIL') && !entry.ok);
-    const color = isError ? 'var(--red)' : 'var(--amber)';
-    const icon = isError ? '🚨' : '⚠️';
-    return '<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:13px">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center">' +
-        '<span style="color:' + color + ';font-weight:600">' + icon + ' ' + esc(entry.action) + '</span>' +
-        '<span style="color:var(--text3)">' + entry.time + '</span>' +
-      '</div>' +
-      (entry.notes ? '<div style="color:var(--text3);margin-top:2px">' + esc(entry.notes) + '</div>' : '') +
-    '</div>';
-  }).join('');
-  el.innerHTML = summaryLine + entriesHtml +
-    '<button onclick="renderAuditLogFull()" style="margin-top:8px;font-size:13px;color:var(--text3);background:none;border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer">Show all activity (' + all.length + ')</button>';
+
+  const filter = _auditFilter || { text: '', source: '' };
+  const filterText = (filter.text || '').toLowerCase();
+  const filterSource = filter.source || '';
+
+  // Source A: AUDITOR.log — action history with ok/before/after/notes
+  const auditorEntries = (typeof AUDITOR !== 'undefined' && AUDITOR.log ? AUDITOR.log : []).map(e => ({
+    _kind: 'AUDITOR',
+    ts: e.ts ? new Date(e.ts).getTime() : 0,
+    time: e.time,
+    action: e.action || '',
+    notes: e.notes || '',
+    ok: e.ok !== false,
+    source: null, // AUDITOR has no source tag
+    raw: e,
+  }));
+  // Source B: BRAIN audit (S._auditLog) — canonical write events
+  const brainEntries = (S._auditLog || []).map(e => ({
+    _kind: 'BRAIN',
+    ts: typeof e.ts === 'number' ? e.ts : 0,
+    time: e.ts ? new Date(e.ts).toLocaleTimeString('en-AU') : '—',
+    action: e.type || 'unknown',
+    notes: (function(){
+      const parts = [];
+      if (typeof e.old !== 'undefined' && typeof e.new !== 'undefined') parts.push(e.old + ' → ' + e.new);
+      if (e.reason) parts.push(e.reason);
+      if (e.delta) parts.push('Δ ' + e.delta);
+      return parts.join(' · ');
+    })(),
+    ok: !(e.type && e.type.indexOf('fail') >= 0),
+    source: e.source || null,
+    raw: e,
+  }));
+
+  let merged = auditorEntries.concat(brainEntries).sort((a, b) => b.ts - a.ts);
+
+  // Apply filters
+  if (filterText) {
+    merged = merged.filter(e =>
+      (e.action || '').toLowerCase().includes(filterText) ||
+      (e.notes || '').toLowerCase().includes(filterText) ||
+      (e.source || '').toLowerCase().includes(filterText) ||
+      e._kind.toLowerCase().includes(filterText)
+    );
+  }
+  if (filterSource) {
+    merged = merged.filter(e => e.source === filterSource);
+  }
+
+  // Render
+  const targetIds = ['audit-log-content', 'sub-audit-log-content'];
+  let html;
+  if (merged.length === 0) {
+    if (filterText || filterSource) {
+      html = '<div style="color:var(--text3);font-size:14px;padding:8px 0">No entries match the current filter. <button onclick="setAuditFilter(\'text\',\'\');setAuditFilter(\'source\',\'\');var t=document.getElementById(\'sub-audit-filter-text\');if(t)t.value=\'\';var s=document.getElementById(\'sub-audit-filter-source\');if(s)s.value=\'\'" style="background:none;border:none;color:var(--green);text-decoration:underline;cursor:pointer;padding:0;font-size:13px">Clear filter</button></div>';
+    } else {
+      html = '<div style="color:var(--text3);font-size:14px;padding:8px 0">No activity recorded yet.</div>';
+    }
+  } else {
+    const totalCount = auditorEntries.length + brainEntries.length;
+    const shownCount = Math.min(merged.length, 50);
+    const summary = (filterText || filterSource)
+      ? '<div style="color:var(--text2);font-size:13px;padding:6px 0">Showing ' + shownCount + ' of ' + merged.length + ' matching · ' + totalCount + ' total (' + auditorEntries.length + ' AUDITOR + ' + brainEntries.length + ' BRAIN audit)</div>'
+      : '<div style="color:var(--text3);font-size:13px;padding:6px 0">' + shownCount + ' of ' + totalCount + ' shown (' + auditorEntries.length + ' AUDITOR + ' + brainEntries.length + ' BRAIN audit) — filter above to narrow</div>';
+    const entriesHtml = merged.slice(0, 50).map(entry => {
+      const isError = !entry.ok || (entry.action || '').toLowerCase().includes('error') || (entry.action || '').toLowerCase().includes('fail');
+      const color = isError ? 'var(--red)' : (entry._kind === 'BRAIN' ? 'var(--text2)' : 'var(--amber)');
+      const icon = isError ? '🚨' : (entry._kind === 'BRAIN' ? '·' : '⚠️');
+      const kindBadge = '<span style="font-size:10px;color:var(--text3);background:var(--bg3);padding:1px 5px;border-radius:3px;margin-left:4px">' + entry._kind + '</span>';
+      const sourceBadge = entry.source
+        ? '<span style="font-size:10px;color:var(--green);background:var(--bg3);padding:1px 5px;border-radius:3px;margin-left:4px">' + esc(entry.source) + '</span>'
+        : '';
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px">' +
+          '<span style="color:' + color + ';font-weight:500;min-width:0;word-break:break-word">' + icon + ' ' + esc(entry.action) + kindBadge + sourceBadge + '</span>' +
+          '<span style="color:var(--text3);font-size:11px;flex-shrink:0">' + (entry.time || '—') + '</span>' +
+        '</div>' +
+        (entry.notes ? '<div style="color:var(--text3);margin-top:2px;font-size:11px">' + esc(entry.notes) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    html = summary + entriesHtml;
+  }
+
+  // Write to both targets (sub-screen is what John sees; legacy target kept
+  // for backward compat with renderAll mirror system)
+  targetIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  });
 }
 
 function renderAuditLogFull() {
@@ -18816,6 +19024,14 @@ const BRAIN = {
     SETTINGS_API_ALERT_THRESHOLD: 'settings-api-alert-threshold',
     // Bundle 28 round 72+ — manual payday-landed affordance
     PAYDAY_MANUAL_LANDED:        'payday-manual-landed',
+    // Bundle 30 Phase 1 — BRAIN.balance bubble + new writers (SDD-bundle-30)
+    TXN_WITH_ALLOCATION:         'txn-with-allocation',
+    FX_FEE_AUTO:                 'fx-fee-auto',
+    BALANCE_APPLY_DELTA:         'balance-apply-delta',
+    BALANCE_RECONCILE_TO:        'balance-reconcile-to',
+    BALANCE_NEGATIVE_CONFIRMED:  'balance-negative-confirmed',
+    CHAT_UPDATE_BALANCE_TARGET:  'chat-update-balance-target',
+    CHAT_UPDATE_BALANCE_DELTA:   'chat-update-balance-delta',
   }),
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
@@ -18872,6 +19088,10 @@ const BRAIN = {
     'settings-api-alert-threshold',
     // Bundle 28 round 72+ — manual payday-landed affordance
     'payday-manual-landed',
+    // Bundle 30 Phase 1 — BRAIN.balance bubble + new writers (SDD-bundle-30)
+    'txn-with-allocation', 'fx-fee-auto',
+    'balance-apply-delta', 'balance-reconcile-to', 'balance-negative-confirmed',
+    'chat-update-balance-target', 'chat-update-balance-delta',
   ]),
 
   // ─── BRAIN.audit — append-only mutation ledger ──────────────────────────
@@ -18967,6 +19187,354 @@ const BRAIN = {
       if (typeof criteria.limit === 'number' && criteria.limit > 0) entries = entries.slice(-criteria.limit);
       return entries;
     }
+  },
+
+  // ─── BRAIN.balance — single-writer bubble for S.bal mutations (Bundle 30) ─
+  // Per FIELD-REPORT-2026-05-15 + SDD-bundle-30-financial-math-integrity.md:
+  // pre-Bundle-30 `S.bal` was mutated from ~31 sites with no single canonical
+  // writer (FR-01 root cause). This bubble is the new single writer.
+  //
+  // Phase 1 (this commit, 1.A) — scaffolding only. No existing writer migrates
+  //   yet; `getLiveBal()` becomes thin alias for `BRAIN.balance.get()`.
+  // Phase 1 Commit 1.B — migrates the 9 transaction-record sites identified
+  //   in SDD §3 to route through `BRAIN.transaction.recordWithAllocation`
+  //   which internally calls `applyTxnDelta` here.
+  // Phase 3 reader migration + Phase 4 derived computation: future bundles.
+  balance: {
+    // Single canonical reader. Identical to direct S.bal access in Phase 1+2;
+    // becomes computational (replay-from-reconciliation) in Phase 4.
+    get() {
+      return (typeof S !== 'undefined' && typeof S.bal === 'number') ? S.bal : 0;
+    },
+
+    // Transaction-driven balance change. `delta` is signed (+ inflow,
+    // − outflow). `source` must be a valid BRAIN.SOURCES tag. `ref` is the
+    // originating txn ts (optional, for audit cross-reference).
+    applyTxnDelta(delta, source, ref) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +delta;
+      if (!isFinite(n)) return { ok: false, reason: 'invalid-delta' };
+      const old = (typeof S.bal === 'number' ? S.bal : 0);
+      const next = parseFloat((old + n).toFixed(2));
+      S.bal = next;
+      BRAIN.audit.append({
+        type: 'balance_apply_delta',
+        old, new: next, delta: n, source, ref: ref || null,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: next, delta: n };
+    },
+
+    // Reconciliation write — sets S.bal to an explicit new value AND
+    // records a corrective txn via BRAIN.transaction.recordCorrection so
+    // the txn ledger reflects the gap. Used by hero balance edit and the
+    // AI set_balance_target tool (wired in Phase 3).
+    reconcileTo(newBal, source, reason) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +newBal;
+      if (!isFinite(n)) return { ok: false, reason: 'invalid-newBal' };
+      const old = (typeof S.bal === 'number' ? S.bal : 0);
+      const diff = parseFloat((n - old).toFixed(2));
+      if (Math.abs(diff) < 0.01) {
+        return { ok: true, old, new: old, diff: 0, noop: true };
+      }
+      try {
+        if (BRAIN.transaction && BRAIN.transaction.recordCorrection) {
+          BRAIN.transaction.recordCorrection(diff, reason || 'Reconcile');
+        }
+      } catch (_) {}
+      S.bal = parseFloat(n.toFixed(2));
+      BRAIN.audit.append({
+        type: 'balance_reconcile_to',
+        old, new: S.bal, diff, reason: reason || null, source,
+        ts: Date.now(),
+      });
+      try { save(); } catch (_) {}
+      return { ok: true, old, new: S.bal, diff };
+    },
+
+    // Delta version of reconcileTo. Used by AI apply_balance_delta tool
+    // (wired in Phase 3). Routes through reconcileTo so a correction txn
+    // is logged for the gap.
+    applyDelta(delta, source, reason) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const n = +delta;
+      if (!isFinite(n)) return { ok: false, reason: 'invalid-delta' };
+      const old = (typeof S.bal === 'number' ? S.bal : 0);
+      return this.reconcileTo(parseFloat((old + n).toFixed(2)), source, reason);
+    },
+
+    // One-shot override flag. When armed, the next `recordWithAllocation`
+    // call (Phase 2) is permitted to drive S.bal negative without the
+    // INV-27 confirm gate. Cleared on consumption. UI flow per SDD §10
+    // Phase 4.A: writer returns 'negative-warning-required' → UI opens
+    // EDIT_MODAL.openConfirm → on confirm calls this method → writer is
+    // re-fired → consumption clears the flag.
+    _negativeOverrideArmed: false,
+    confirmNegativeOverride() {
+      this._negativeOverrideArmed = true;
+      BRAIN.audit.append({
+        type: 'balance_negative_override_armed',
+        source: BRAIN.SOURCES.BALANCE_NEGATIVE_CONFIRMED,
+        ts: Date.now(),
+      });
+    },
+    _consumeNegativeOverride() {
+      const was = this._negativeOverrideArmed;
+      this._negativeOverrideArmed = false;
+      return was;
+    },
+
+    // Bundle 30 pre-flight insurance — captures pre-Bundle-30 state on
+    // first load after Commit 1.A lands. Belt-and-suspenders to the
+    // external JSON export John takes manually per SDD §10 Q2 answer.
+    //
+    // Commit 1.A.5 fix (this revision):
+    //   1.A bug A: `_initPreBundle30Snapshot` checked `s.label === ...`
+    //              but SNAPSHOTS stores `reason` (no .label field) — the
+    //              idempotency guard was always false; would have created
+    //              a duplicate snapshot every boot if take() had succeeded.
+    //   1.A bug B: called `SNAPSHOTS.take('pre-bundle-30', { reason: ... })`
+    //              but SNAPSHOTS.take() signature is take(reason) — single
+    //              arg. The second arg was silently ignored.
+    //   1.A bug C: no UI refresh after take, so the snapshots list in
+    //              Settings → Data & Backup stayed stale until the user
+    //              navigated away and back.
+    // Fix: use s.reason for idempotency, drop the second arg, tag the
+    // snapshot so eviction can never remove our forensic insurance, audit
+    // both success and failure paths, call renderSnapshots() to refresh.
+    _initPreBundle30Snapshot() {
+      // Hard guard: required globals
+      if (typeof SNAPSHOTS === 'undefined' || !SNAPSHOTS.take || !SNAPSHOTS.load || !SNAPSHOTS.save) {
+        try {
+          BRAIN.audit.append({
+            type: 'pre_bundle_30_snapshot_skipped',
+            reason: 'SNAPSHOTS module unavailable',
+            source: BRAIN.SOURCES.MIGRATION,
+            ts: Date.now(),
+          });
+        } catch (_) {}
+        return;
+      }
+      // Idempotency by reason field (the actual field SNAPSHOTS uses)
+      try {
+        const existing = SNAPSHOTS.load() || [];
+        const already = existing.some(s => s && s.reason === 'pre-bundle-30');
+        if (already) {
+          // Belt-and-suspenders: ensure the existing one is tagged (pinned)
+          // so eviction can never sweep it. Re-tagging is idempotent.
+          let mutated = false;
+          existing.forEach(s => {
+            if (s && s.reason === 'pre-bundle-30' && !s.tagged) {
+              s.tagged = true;
+              s.taggedAt = Date.now();
+              mutated = true;
+            }
+          });
+          if (mutated) {
+            try { SNAPSHOTS.save(existing); } catch (_) {}
+          }
+          return;
+        }
+      } catch (_) {}
+      // Take the snapshot
+      let snap = null;
+      try {
+        snap = SNAPSHOTS.take('pre-bundle-30');
+      } catch (e) {
+        try {
+          BRAIN.audit.append({
+            type: 'pre_bundle_30_snapshot_failed',
+            error: (e && e.message) || String(e),
+            source: BRAIN.SOURCES.MIGRATION,
+            ts: Date.now(),
+          });
+        } catch (_) {}
+        return;
+      }
+      if (!snap) {
+        try {
+          BRAIN.audit.append({
+            type: 'pre_bundle_30_snapshot_failed',
+            reason: 'SNAPSHOTS.take returned null/undefined',
+            source: BRAIN.SOURCES.MIGRATION,
+            ts: Date.now(),
+          });
+        } catch (_) {}
+        return;
+      }
+      // Pin it — forensic insurance must never be evicted
+      try {
+        const after = SNAPSHOTS.load() || [];
+        const idx = after.findIndex(s => s && s.reason === 'pre-bundle-30');
+        if (idx >= 0) {
+          after[idx].tagged = true;
+          after[idx].taggedAt = Date.now();
+          SNAPSHOTS.save(after);
+        }
+      } catch (_) {}
+      // Audit-log the success
+      try {
+        BRAIN.audit.append({
+          type: 'pre_bundle_30_snapshot_taken',
+          snapTs: snap.ts || null,
+          snapBal: typeof snap.bal === 'number' ? snap.bal : null,
+          source: BRAIN.SOURCES.MIGRATION,
+          ts: Date.now(),
+        });
+      } catch (_) {}
+      // Refresh snapshot list UI if rendered already (Settings → Data & Backup)
+      try {
+        if (typeof renderSnapshots === 'function') renderSnapshots();
+      } catch (_) {}
+    },
+  },
+
+  // ─── BRAIN.selfTest — Boot self-test registry (Bundle 30 1.A.6) ────────
+  // Promoted from inline `tests` array in the DOMContentLoaded handler
+  // (Bundle 27 boot self-test). Per CLAUDE.md §3 amendment: all diagnostic
+  // functionality fronts through BRAIN. Tests remain LAZY (thunks) so refs
+  // to other BRAIN bubbles resolve at call-time, not at object construction.
+  //
+  // The renderBootSelfTest UI surface (Diagnostics → Boot self-test card)
+  // reads BRAIN.selfTest._lastRun to display per-row pass/fail. SDD §8 boot
+  // self-test additions live in this `tests` array now, not in the
+  // DOMContentLoaded handler.
+  selfTest: {
+    tests: [
+      ['BRAIN.plan exists', () => !!(typeof BRAIN !== 'undefined' && BRAIN.plan)],
+      ['BRAIN.plan.getSnapshot callable', () => { BRAIN.plan.getSnapshot(); return true; }],
+      ['BRAIN.plan.intent reachable', () => typeof BRAIN.plan.intent === 'object' && typeof BRAIN.plan.intent.add === 'function' && typeof BRAIN.plan.intent.list === 'function'],
+      ['BRAIN.plan.intent.list callable', () => { BRAIN.plan.intent.list(); return true; }],
+      ['BRAIN.plan.rolloverIfNeeded reachable', () => typeof BRAIN.plan.rolloverIfNeeded === 'function'],
+      ['BRAIN.plan.setBonus callable', () => typeof BRAIN.plan.setBonus === 'function'],
+      ['BRAIN.plan.markPaydayLanded reachable', () => typeof BRAIN.plan.markPaydayLanded === 'function'],
+      ['markPaydayLandedToday wrapper reachable', () => typeof markPaydayLandedToday === 'function'],
+      ['BRAIN.SOURCES.PAYDAY_MANUAL_LANDED defined', () => typeof BRAIN.SOURCES.PAYDAY_MANUAL_LANDED === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.PAYDAY_MANUAL_LANDED)],
+      ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
+      ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
+      ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
+      ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],
+      ['explainMaxPerDay reachable', () => typeof explainMaxPerDay === 'function'],
+      ['convertEditedTransactionToLoan reachable', () => typeof convertEditedTransactionToLoan === 'function'],
+      ['_buildPaydayAskAIPrompt reachable', () => typeof _buildPaydayAskAIPrompt === 'function'],
+      ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
+      ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
+      ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
+      ['BRAIN.assets.netWorth callable', () => { BRAIN.assets.netWorth(); return true; }],
+      ['openPaydayPlan reachable', () => typeof openPaydayPlan === 'function'],
+      ['renderPaydayPlanRoot reachable', () => typeof renderPaydayPlanRoot === 'function'],
+      ['#pg-payday-plan exists in DOM', () => !!document.getElementById('pg-payday-plan')],
+      ['#pg-payday-plan has CSS transform', () => {
+        const el = document.getElementById('pg-payday-plan');
+        if (!el) return false;
+        const cs = window.getComputedStyle(el);
+        return cs && cs.transform !== 'none' && cs.transform !== '';
+      }],
+      // Bundle 30 Phase 1 — BRAIN.balance scaffold + new SOURCES tags
+      ['BRAIN.balance exists', () => typeof BRAIN.balance === 'object' && BRAIN.balance !== null],
+      ['BRAIN.balance.get callable', () => typeof BRAIN.balance.get === 'function'],
+      ['BRAIN.balance.applyTxnDelta callable', () => typeof BRAIN.balance.applyTxnDelta === 'function'],
+      ['BRAIN.balance.reconcileTo callable', () => typeof BRAIN.balance.reconcileTo === 'function'],
+      ['BRAIN.balance.applyDelta callable', () => typeof BRAIN.balance.applyDelta === 'function'],
+      ['BRAIN.balance.confirmNegativeOverride callable', () => typeof BRAIN.balance.confirmNegativeOverride === 'function'],
+      ['BRAIN.balance.get() === S.bal (Phase 1+2 alias contract)', () => BRAIN.balance.get() === S.bal],
+      ['getLiveBal() === BRAIN.balance.get() (function-level alias)', () => getLiveBal() === BRAIN.balance.get()],
+      ['BRAIN.SOURCES.TXN_WITH_ALLOCATION defined', () => typeof BRAIN.SOURCES.TXN_WITH_ALLOCATION === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.TXN_WITH_ALLOCATION)],
+      ['BRAIN.SOURCES.FX_FEE_AUTO defined', () => typeof BRAIN.SOURCES.FX_FEE_AUTO === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.FX_FEE_AUTO)],
+      ['BRAIN.SOURCES.BALANCE_APPLY_DELTA defined', () => typeof BRAIN.SOURCES.BALANCE_APPLY_DELTA === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.BALANCE_APPLY_DELTA)],
+      ['BRAIN.SOURCES.BALANCE_RECONCILE_TO defined', () => typeof BRAIN.SOURCES.BALANCE_RECONCILE_TO === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.BALANCE_RECONCILE_TO)],
+      ['BRAIN.SOURCES.BALANCE_NEGATIVE_CONFIRMED defined', () => typeof BRAIN.SOURCES.BALANCE_NEGATIVE_CONFIRMED === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.BALANCE_NEGATIVE_CONFIRMED)],
+      ['BRAIN.SOURCES.CHAT_UPDATE_BALANCE_TARGET defined', () => typeof BRAIN.SOURCES.CHAT_UPDATE_BALANCE_TARGET === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.CHAT_UPDATE_BALANCE_TARGET)],
+      ['BRAIN.SOURCES.CHAT_UPDATE_BALANCE_DELTA defined', () => typeof BRAIN.SOURCES.CHAT_UPDATE_BALANCE_DELTA === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.CHAT_UPDATE_BALANCE_DELTA)],
+      // Bundle 30 1.A.6 — boot self-test self-reference
+      ['BRAIN.selfTest exists', () => typeof BRAIN.selfTest === 'object' && BRAIN.selfTest !== null],
+      ['BRAIN.selfTest.run callable', () => typeof BRAIN.selfTest.run === 'function'],
+      // Bundle 30 1.A.8 — Dev Inspect registry
+      ['BRAIN.devInspect exists', () => typeof BRAIN.devInspect === 'object' && BRAIN.devInspect !== null],
+      ['BRAIN.devInspect.run callable', () => typeof BRAIN.devInspect.run === 'function'],
+    ],
+    _lastRun: null,
+    run() {
+      const results = this.tests.map(t => {
+        const name = t[0], fn = t[1];
+        try {
+          const r = fn();
+          return { name, ok: r === true, value: r };
+        } catch (e) {
+          return { name, ok: false, error: (e && e.message) || String(e) };
+        }
+      });
+      const failures = results.filter(r => !r.ok);
+      this._lastRun = { ts: Date.now(), results, failures };
+      if (failures.length) {
+        try {
+          BRAIN.audit.append({
+            type: 'boot_self_test_fail',
+            failures: failures.map(f => f.name + (f.error ? ': ' + f.error : '')),
+            ts: Date.now(),
+          });
+        } catch (_) {}
+      }
+      return this._lastRun;
+    },
+    getResults() { return this._lastRun; },
+  },
+
+  // ─── BRAIN.devInspect — runtime introspection registry (Bundle 30 1.A.8) ─
+  // Tappable runtime checks rendered into Diagnostics → Dev Inspect card.
+  // Extensible: future Bundle 30 phases add their own checks to the `checks`
+  // array. Each check returns a value (passed directly to UI) or throws.
+  // Used by John for phone-side verification when console isn't available.
+  devInspect: {
+    checks: [
+      { name: 'BRAIN.balance.get()', run: () => BRAIN.balance.get() },
+      { name: 'getLiveBal()', run: () => getLiveBal() },
+      { name: 'BRAIN.balance.get() vs getLiveBal() match', run: () => BRAIN.balance.get() === getLiveBal() ? 'MATCH ✓' : 'MISMATCH ✗ (' + BRAIN.balance.get() + ' vs ' + getLiveBal() + ')' },
+      { name: 'BRAIN.balance.get() vs S.bal match (Phase 1+2 alias contract)', run: () => BRAIN.balance.get() === S.bal ? 'MATCH ✓' : 'MISMATCH ✗ (' + BRAIN.balance.get() + ' vs ' + S.bal + ')' },
+      { name: 'Pre-bundle-30 snapshot exists', run: () => {
+        if (typeof SNAPSHOTS === 'undefined') return 'SNAPSHOTS undefined';
+        const snaps = SNAPSHOTS.load() || [];
+        const hit = snaps.find(s => s && s.reason === 'pre-bundle-30');
+        return hit
+          ? 'YES ✓ (taken ' + (hit.date || '?') + ' ' + (hit.time || '?') + ', tagged=' + (hit.tagged ? 'yes' : 'NO ⚠️') + ', bal=$' + (typeof hit.bal === 'number' ? hit.bal.toFixed(2) : '?') + ')'
+          : 'NO ✗ — snapshot did not fire';
+      } },
+      { name: 'BRAIN.audit pre_bundle_30 entries', run: () => {
+        const entries = (S._auditLog || []).filter(e => e && typeof e.type === 'string' && e.type.indexOf('pre_bundle_30') === 0);
+        if (!entries.length) return 'NONE — _initPreBundle30Snapshot never reached audit step';
+        return entries.length + ' entry/entries: ' + entries.map(e => e.type).join(', ');
+      } },
+      { name: 'BRAIN bubble count', run: () => {
+        const keys = Object.keys(BRAIN).filter(k => typeof BRAIN[k] === 'object' && BRAIN[k] !== null && k !== 'SOURCES' && k !== '_SOURCE_SET');
+        return keys.length + ' bubbles: ' + keys.join(', ');
+      } },
+      { name: 'BRAIN.SOURCES total tag count', run: () => {
+        const sourcesCount = Object.keys(BRAIN.SOURCES).length;
+        const setCount = BRAIN._SOURCE_SET.size;
+        return sourcesCount + ' in SOURCES enum, ' + setCount + ' in _SOURCE_SET — ' + (sourcesCount === setCount ? 'IN SYNC ✓' : 'OUT OF SYNC ✗');
+      } },
+    ],
+    run(name) {
+      const c = this.checks.find(x => x.name === name);
+      if (!c) return { ok: false, reason: 'check-not-found:' + name };
+      try {
+        const result = c.run();
+        return { ok: true, name, result, ts: Date.now() };
+      } catch (e) {
+        return { ok: false, name, error: (e && e.message) || String(e), ts: Date.now() };
+      }
+    },
+    runAll() {
+      return this.checks.map(c => this.run(c.name));
+    },
   },
 
   // ─── BRAIN.config — Config bubble (seeded Bundle 22 v3) ────────────────
