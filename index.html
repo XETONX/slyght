@@ -13151,19 +13151,21 @@ function _emptyActivePlan() {
 // reload and verifies the reconciled state survived the boot lifecycle.
 // Catches the case where boot logic overwrites our localStorage write.
 function _emergencyImportFromWorker() {
-  var VER = 'v3-diagnostic';
+  var VER = 'v5-atomic';
   var msgEl = document.getElementById('recon-import-msg');
   var setMsg = function(text, color) {
     if (msgEl) { msgEl.textContent = text; msgEl.style.color = color || 'var(--text)'; }
   };
   if (!confirm('🔍 RECON IMPORT ' + VER + '\n\n' +
-               'Replace ALL local state with the reconciled snapshot from worker?\n\n' +
-               'Expected: hero balance becomes $1,113.61, txns become 212.\n\n' +
-               'You will see 4 popups during the process. Read each one carefully and tell Claude what they say.')) {
+               'Replace local state with reconciled $1,113.61 version?\n\n' +
+               'v3 diagnosed save() race condition (in-memory S overwrote our localStorage write during the pre-reload window). v5 fixes by:\n' +
+               '• Monkey-patching save() to no-op before writes\n' +
+               '• Atomic write + immediate reload in same JS tick (no alerts/setTimeout between)\n' +
+               '• Single post-boot popup confirms success on next page load\n\n' +
+               'Tap OK to proceed (you will see one Step-2 alert with payload numbers, then page reloads immediately).')) {
     setMsg('Cancelled.', 'var(--text2)');
     return;
   }
-  alert('🔍 ' + VER + '\n\nStep 1/4: Fetching reconciled state from worker…\n\nTap OK to start fetch.');
   setMsg('⏳ Fetching…', 'var(--text)');
   var URL_RECON = 'https://slyght-worker.johndounas.workers.dev/recon-payload?token=427169922a24fe022647e3463834e2f77c20cc160033c955';
   fetch(URL_RECON)
@@ -13173,16 +13175,37 @@ function _emergencyImportFromWorker() {
     })
     .then(function(data) {
       if (!data.S || !data.BILLS) throw new Error('Invalid payload: missing S or BILLS');
-      var payloadBal = (data.S.bal != null) ? data.S.bal.toFixed(2) : 'MISSING';
+      if (Math.abs((data.S.bal || 0) - 1113.61) > 0.01) {
+        throw new Error('Payload bal mismatch: $' + data.S.bal + ' (expected $1113.61) — KV may be wrong');
+      }
       var payloadTxns = (data.S.txns || []).length;
-      alert('Step 2/4 ✓ ' + VER + '\n\nFetch OK.\nPayload balance: $' + payloadBal + ' (expected $1113.61)\nPayload txns: ' + payloadTxns + ' (expected 212)');
+      if (payloadTxns !== 212) {
+        throw new Error('Payload txns mismatch: ' + payloadTxns + ' (expected 212)');
+      }
 
-      var oldRaw = localStorage.getItem('slyght_v5') || '';
-      var oldLen = oldRaw.length;
-      var oldBal = null;
-      try { oldBal = JSON.parse(oldRaw).S.bal; } catch (_) {}
+      // ─── SHOW Step 2 alert ONLY — last alert before atomic write ───
+      // After this alert dismisses, write+reload run in the same JS tick
+      // with no opportunity for save() to fire between them.
+      alert('Step 2/2 ✓ ' + VER + '\n\nFetch OK.\nPayload bal: $' + data.S.bal.toFixed(2) + ' ✓\nPayload txns: ' + payloadTxns + ' ✓\n\nTap OK → write + reload in same tick (no save() race window).\n\nAfter reload you will see ONE final popup confirming whether the reconciled state survived boot.');
+
+      // ─── ATOMIC WRITE + RELOAD ───
+      // Everything from here runs synchronously. The browser does not get
+      // to dispatch any event-loop tasks (including queued microtasks from
+      // BRAIN/MODEL/RECONCILER) until location.reload() unloads the page.
+
+      // 1. Disable save() so any synchronous call from inside any setItem
+      // observer can't write the stale in-memory S back over our write.
+      var _origSave = null;
+      try {
+        if (typeof save === 'function') {
+          _origSave = save;
+          save = function _noOpSaveDuringReconImport() { /* blocked */ };
+        }
+      } catch (_) {}
+
+      // 2. Preserve sensitive fields from existing state.
       var existing = null;
-      try { existing = JSON.parse(oldRaw || '{}'); } catch (_) {}
+      try { existing = JSON.parse(localStorage.getItem('slyght_v5') || '{}'); } catch (_) {}
       var newS = data.S;
       if (existing && existing.S) {
         if (existing.S.apiKey)      newS.apiKey      = existing.S.apiKey;
@@ -13190,35 +13213,32 @@ function _emergencyImportFromWorker() {
         if (existing.S.pin)         newS.pin         = existing.S.pin;
         if (existing.S.pinHash)     newS.pinHash     = existing.S.pinHash;
       }
-      alert('Step 3/4 ' + VER + '\n\nCurrent slyght_v5: ' + oldLen + ' bytes (bal $' + oldBal + ')\nAbout to backup and write new state.\nTap OK to write.');
 
-      if (oldLen > 0) localStorage.setItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19', oldRaw);
-      localStorage.setItem('slyght_v5', JSON.stringify({S: newS, BILLS: data.BILLS}));
+      // 3. Backup current state.
+      var oldRaw = localStorage.getItem('slyght_v5');
+      if (oldRaw) localStorage.setItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19', oldRaw);
+
+      // 4. Seed bills-reset-month so paidBills survives boot's monthly check.
       var t = new Date();
       localStorage.setItem('slyght_bills_reset_month', t.getFullYear() + '-' + (t.getMonth() + 1));
 
-      // Flag for post-boot verifier. 60s validity window.
+      // 5. Set verification flag BEFORE main write so even if save()
+      // somehow slips through, the flag persists (save() only touches
+      // slyght_v5, not _recon_expecting).
       localStorage.setItem('_recon_expecting', JSON.stringify({bal: 1113.61, txns: 212, ts: Date.now()}));
 
-      // Verify the write took.
-      var newRaw = localStorage.getItem('slyght_v5') || '';
-      var newLen = newRaw.length;
-      var verifyBal = null, verifyTxns = null;
-      try {
-        var p = JSON.parse(newRaw);
-        verifyBal = p.S.bal;
-        verifyTxns = (p.S.txns || []).length;
-      } catch (_) {}
-      alert('Step 4/4 ✓ ' + VER + '\n\nWrite complete + read-back verified.\n' +
-            'New slyght_v5: ' + newLen + ' bytes (expected ~278885)\n' +
-            'Read-back bal: $' + verifyBal + ' (expected 1113.61)\n' +
-            'Read-back txns: ' + verifyTxns + ' (expected 212)\n\n' +
-            'Reloading in 5 seconds. After reload you will see ANOTHER popup confirming whether reconciliation survived boot. Screenshot now if you want to record these numbers.');
-      setMsg('✓ Wrote ' + newLen + ' bytes. Reloading in 5s…', 'var(--green)');
-      setTimeout(function() { location.reload(); }, 5000);
+      // 6. Write reconciled state.
+      localStorage.setItem('slyght_v5', JSON.stringify({S: newS, BILLS: data.BILLS}));
+
+      // 7. Reload IMMEDIATELY — same tick, no opportunity for save() to fire.
+      // Use replace() with a cache-bust to bypass SW serving cached HTML.
+      location.replace(location.pathname + '?cb=recon-' + Date.now());
     })
     .catch(function(e) {
-      alert('✗ ' + VER + ' Import failed at: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted yet).');
+      // Restore save() if we'd disabled it (we hadn't yet at this point,
+      // but defensive).
+      try { if (typeof window._origSave === 'function') save = window._origSave; } catch (_) {}
+      alert('✗ ' + VER + ' Import failed: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted).');
       setMsg('✗ Import failed: ' + (e.message || e), 'var(--red)');
     });
 }
@@ -13278,12 +13298,12 @@ window.addEventListener('load', function() {
     var flag = null;
     try { flag = JSON.parse(localStorage.getItem('_recon_expecting') || 'null'); } catch (_) {}
     if (!flag) return;
-    // Only check if flag is recent (< 60s) — stale flags from earlier runs are ignored.
-    if (Date.now() - flag.ts > 60000) {
-      localStorage.removeItem('_recon_expecting');
-      return;
-    }
-    // Read what actually landed in localStorage post-boot.
+    // v5 fix: removed the 60s stale-flag silent-cleanup. v3 had it which is
+    // why John's first attempt never fired a popup — the 5s pre-reload
+    // delay + boot time pushed flag age past 60s, branch silently bailed.
+    // Now we ALWAYS surface the result. Flag age is included so we can
+    // distinguish "import I just did" from "stale flag from a prior run."
+    var ageSec = ((Date.now() - flag.ts) / 1000).toFixed(1);
     var raw = localStorage.getItem('slyght_v5') || '';
     var lsBal = null, lsTxns = null;
     try {
@@ -13291,24 +13311,26 @@ window.addEventListener('load', function() {
       lsBal = p && p.S && p.S.bal;
       lsTxns = p && p.S && p.S.txns && p.S.txns.length;
     } catch (_) {}
-    // Also read in-memory S/BRAIN if available.
-    var memBal = (typeof BRAIN !== 'undefined' && BRAIN.balance && typeof BRAIN.balance.get === 'function')
-      ? BRAIN.balance.get() : 'BRAIN-unavailable';
+    var memBal = 'BRAIN-unavailable';
+    try { memBal = (typeof BRAIN !== 'undefined' && BRAIN.balance && typeof BRAIN.balance.get === 'function')
+      ? BRAIN.balance.get() : 'BRAIN-unavailable'; } catch (_) {}
     var balMatch = (Math.abs((lsBal || 0) - flag.bal) < 0.01);
     var txnMatch = (lsTxns === flag.txns);
     if (balMatch && txnMatch) {
-      alert('✓ POST-RELOAD VERIFIED v3-diagnostic\n\n' +
+      alert('✓ POST-RELOAD VERIFIED v5-atomic\n\n' +
             'Reconciliation persisted through boot.\n' +
             'localStorage bal: $' + lsBal + '\n' +
             'localStorage txns: ' + lsTxns + '\n' +
-            'In-memory BRAIN.balance: $' + memBal + '\n\n' +
-            'Hero should show $' + flag.bal + '. If it doesn\'t, surface to Claude.');
+            'In-memory BRAIN.balance: $' + memBal + '\n' +
+            'Flag age: ' + ageSec + 's\n\n' +
+            'Hero should show $' + flag.bal + '. Reconciliation complete.');
     } else {
-      alert('⚠️ POST-RELOAD MISMATCH v3-diagnostic\n\n' +
+      alert('⚠️ POST-RELOAD MISMATCH v5-atomic\n\n' +
             'Expected:  bal=$' + flag.bal + ' txns=' + flag.txns + '\n' +
             'localStorage: bal=$' + lsBal + ' txns=' + lsTxns + ' (len ' + raw.length + ')\n' +
-            'In-memory BRAIN.balance: $' + memBal + '\n\n' +
-            'Something overwrote the reconciled state during boot. SCREENSHOT this alert and send to Claude.');
+            'In-memory BRAIN.balance: $' + memBal + '\n' +
+            'Flag age: ' + ageSec + 's\n\n' +
+            'Reconciled state did NOT survive boot. Tell Claude — likely another save() path we missed. Rollback available via "↩️ Rollback" button.');
     }
     localStorage.removeItem('_recon_expecting');
   }, 1500);
