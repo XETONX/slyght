@@ -13139,30 +13139,39 @@ function _emptyActivePlan() {
   };
 }
 
-// BUNDLE-30-RECON-IMPORT START — temporary one-shot for 2026-05-19 bank
-// reconciliation. v3-diagnostic: replaces silent status-line writes with
-// blocking alert() popups so John sees explicit per-step feedback that
-// can't be clipped by the navbar (v1/v2 of this had inline status that
-// John couldn't see). Each alert includes the version marker so we can
-// tell if the service worker is serving stale handler code (if alerts
-// don't show, SW is stale; if they show "v3-diagnostic", code is fresh).
+// BUNDLE-30-RECON-IMPORT START — one-shot reconciliation import.
+// Landed 2026-05-19 ($2,304.16 → $1,113.61 bank-matched, 40 new txns).
+// To be formalized as Bundle 31 ADR-E "Weekly bank reconciliation workflow."
 //
-// Pairs with the boot-check below (window.load handler) that fires AFTER
-// reload and verifies the reconciled state survived the boot lifecycle.
-// Catches the case where boot logic overwrites our localStorage write.
+// Design (final, v5-atomic — landed after diagnosing a save() race in v3):
+// - User taps button → confirm → fetch from token-gated worker endpoint
+// - SYNCHRONOUSLY: backup current state → set _recon_expecting flag →
+//   write reconciled state → location.replace() — all in same JS tick
+// - save() is monkey-patched to no-op immediately before writes, belt-and-
+//   braces against any setItem-triggered observer firing save() with the
+//   stale in-memory S during the write window
+// - Pairs with the window.load handler below — fires post-reload, reads
+//   _recon_expecting, alerts whether reconciled state survived boot
+//
+// The save() race (v3 failure mode):
+// v3 had alert() + setTimeout(reload, 5000) between localStorage.setItem
+// and reload. During that ~5s window, any save() call (from render cycle,
+// observer, setInterval, focus event) wrote the IN-MEMORY S (still at the
+// pre-import value because we only mutated localStorage) back over our
+// fresh write. By the time location.reload() fired, localStorage was
+// reverted. The post-boot popup ALSO didn't fire because v3 had a 60s
+// stale-flag silent-cleanup branch — flag age exceeded 60s during the
+// pre-reload window so the check bailed silently. Both bugs fixed in v5.
 function _emergencyImportFromWorker() {
-  var VER = 'v5-atomic';
   var msgEl = document.getElementById('recon-import-msg');
   var setMsg = function(text, color) {
     if (msgEl) { msgEl.textContent = text; msgEl.style.color = color || 'var(--text)'; }
   };
-  if (!confirm('🔍 RECON IMPORT ' + VER + '\n\n' +
-               'Replace local state with reconciled $1,113.61 version?\n\n' +
-               'v3 diagnosed save() race condition (in-memory S overwrote our localStorage write during the pre-reload window). v5 fixes by:\n' +
-               '• Monkey-patching save() to no-op before writes\n' +
-               '• Atomic write + immediate reload in same JS tick (no alerts/setTimeout between)\n' +
-               '• Single post-boot popup confirms success on next page load\n\n' +
-               'Tap OK to proceed (you will see one Step-2 alert with payload numbers, then page reloads immediately).')) {
+  if (!confirm('Reconciliation import\n\n' +
+               'Replace local state with the reconciled snapshot from worker?\n' +
+               'Current state will be backed up automatically.\n\n' +
+               'You will see one fetch-confirmation popup, then the page reloads.\n' +
+               'After reload, a single post-boot popup confirms whether the import landed.')) {
     setMsg('Cancelled.', 'var(--text2)');
     return;
   }
@@ -13183,10 +13192,11 @@ function _emergencyImportFromWorker() {
         throw new Error('Payload txns mismatch: ' + payloadTxns + ' (expected 212)');
       }
 
-      // ─── SHOW Step 2 alert ONLY — last alert before atomic write ───
-      // After this alert dismisses, write+reload run in the same JS tick
-      // with no opportunity for save() to fire between them.
-      alert('Step 2/2 ✓ ' + VER + '\n\nFetch OK.\nPayload bal: $' + data.S.bal.toFixed(2) + ' ✓\nPayload txns: ' + payloadTxns + ' ✓\n\nTap OK → write + reload in same tick (no save() race window).\n\nAfter reload you will see ONE final popup confirming whether the reconciled state survived boot.');
+      // ─── Final confirmation alert — last alert before atomic write ───
+      // After this dismisses, write+reload run in the same JS tick with
+      // no opportunity for any save() call to overwrite our localStorage
+      // write with the stale in-memory S (the bug v3 had).
+      alert('Fetch OK.\nPayload bal: $' + data.S.bal.toFixed(2) + ' ✓\nPayload txns: ' + payloadTxns + ' ✓\n\nTap OK to write + reload.');
 
       // ─── ATOMIC WRITE + RELOAD ───
       // Everything from here runs synchronously. The browser does not get
@@ -13235,10 +13245,10 @@ function _emergencyImportFromWorker() {
       location.replace(location.pathname + '?cb=recon-' + Date.now());
     })
     .catch(function(e) {
-      // Restore save() if we'd disabled it (we hadn't yet at this point,
-      // but defensive).
+      // Restore save() if we'd disabled it (defensive — at this point in
+      // the chain the monkey-patch hasn't run yet, but safe).
       try { if (typeof window._origSave === 'function') save = window._origSave; } catch (_) {}
-      alert('✗ ' + VER + ' Import failed: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted).');
+      alert('✗ Import failed: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted).');
       setMsg('✗ Import failed: ' + (e.message || e), 'var(--red)');
     });
 }
@@ -13261,7 +13271,7 @@ function _showCurrentReconState() {
   // Read the actual hero-rendered balance from DOM if visible.
   var heroEl = document.querySelector('[data-hero-bal], #hero-balance, .hero-balance, .bal-hero');
   var heroText = heroEl ? heroEl.textContent : '(hero element not found in DOM)';
-  alert('🔎 RECON DIAGNOSTIC v3\n\n' +
+  alert('🔎 Reconciliation diagnostic\n\n' +
         'localStorage slyght_v5: ' + raw.length + ' bytes\n' +
         '  S.bal: $' + lsBal + '\n' +
         '  S.txns count: ' + lsTxns + '\n' +
@@ -13317,20 +13327,19 @@ window.addEventListener('load', function() {
     var balMatch = (Math.abs((lsBal || 0) - flag.bal) < 0.01);
     var txnMatch = (lsTxns === flag.txns);
     if (balMatch && txnMatch) {
-      alert('✓ POST-RELOAD VERIFIED v5-atomic\n\n' +
-            'Reconciliation persisted through boot.\n' +
+      alert('✓ Reconciliation complete\n\n' +
             'localStorage bal: $' + lsBal + '\n' +
             'localStorage txns: ' + lsTxns + '\n' +
             'In-memory BRAIN.balance: $' + memBal + '\n' +
             'Flag age: ' + ageSec + 's\n\n' +
-            'Hero should show $' + flag.bal + '. Reconciliation complete.');
+            'Hero should show $' + flag.bal + '.');
     } else {
-      alert('⚠️ POST-RELOAD MISMATCH v5-atomic\n\n' +
+      alert('⚠️ Reconciled state did NOT survive boot\n\n' +
             'Expected:  bal=$' + flag.bal + ' txns=' + flag.txns + '\n' +
             'localStorage: bal=$' + lsBal + ' txns=' + lsTxns + ' (len ' + raw.length + ')\n' +
             'In-memory BRAIN.balance: $' + memBal + '\n' +
             'Flag age: ' + ageSec + 's\n\n' +
-            'Reconciled state did NOT survive boot. Tell Claude — likely another save() path we missed. Rollback available via "↩️ Rollback" button.');
+            'Use the "↩️ Rollback" button to restore the pre-import backup, then investigate.');
     }
     localStorage.removeItem('_recon_expecting');
   }, 1500);
