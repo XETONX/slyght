@@ -22,10 +22,12 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
+const { captureState } = require('../helpers/capture-state');
 
 const FIXTURE_PATH = path.resolve(__dirname, '../../state-snapshot.json');
 const FROZEN_ISO = '2026-05-05T22:00:00+10:00';
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
+const SPEC_FILE = 'tests/smoke/transaction-paths.smoke.js';
 
 function buildSlyghtV5(fx) {
   const S = Object.assign({}, fx.S || {});
@@ -80,9 +82,25 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(shape.envelopeShape).toBe(true);
     expect(shape.invalidEnvelope).toBe(true);
     expect(shape.invalidSource).toBe(true);
+    await captureState(page, {
+      label: 'envelope-probed',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 83,
+      codeUnderTest: 'fn() / fn({}, "log-expense") / fn({...}, "NOT-A-SOURCE") — 3 invalid invocations',
+      expectedState: 'all three return {ok:false, reason:<string>}; no S.bal mutation; no txn appended',
+      clipTo: null,
+    });
   });
 
   test('INV-01 outflow: recordWithAllocation decrements S.bal by exact amount', async ({ page }) => {
+    await captureState(page, {
+      label: 'pre-write',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 85,
+      codeUnderTest: 'pre-state: about to record $200 Bills outflow via envelope',
+      expectedState: 'S.bal at fixture baseline; S.txns at fixture length; audit log baseline',
+      clipTo: null,
+    });
     const result = await page.evaluate(() => {
       const balBefore = S.bal;
       const txnCountBefore = (S.txns || []).length;
@@ -111,6 +129,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.auditDelta).toBeGreaterThanOrEqual(2);
     expect(result.auditTypesAfter).toContain('txn_record');
     expect(result.auditTypesAfter).toContain('balance_apply_delta');
+    await captureState(page, {
+      label: 'post-write',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 113,
+      codeUnderTest: 'recordWithAllocation({amt:200, cat:Bills, direction:outflow}, LOG_EXPENSE)',
+      expectedState: 'INV-01: S.bal decremented by exactly 200; txn appended; audit_window has txn_record + balance_apply_delta entries (Phase 2.E adds AUDITOR shim TXN_DELTA_LOG_EXPENSE)',
+      clipTo: null,
+    });
   });
 
   test('INV-04 inflow: recordWithAllocation increments S.bal by exact amount', async ({ page }) => {
@@ -129,6 +155,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.ok).toBe(true);
     expect(result.envelope.delta).toBe(7282.33);
     expect(result.balDelta).toBe(7282.33);
+    await captureState(page, {
+      label: 'post-inflow',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 131,
+      codeUnderTest: 'recordWithAllocation({amt:7282.33, cat:Income, direction:inflow}, LOG_INCOME)',
+      expectedState: 'INV-04: S.bal incremented by exactly 7282.33; Income-cat txn appended; audit_window shows positive delta',
+      clipTo: null,
+    });
   });
 
   test('BUNDLE-30-AUDITOR-SHIM: applyTxnDelta dual-logs to AUDITOR', async ({ page }) => {
@@ -158,6 +192,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     // The shim writes TXN_DELTA_<SOURCE_UPPER_UNDERSCORED>
     expect(result.newestAuditorAction).toBe('TXN_DELTA_LOG_EXPENSE');
     expect(result.newestAuditorExpected).toBe(-42);
+    await captureState(page, {
+      label: 'post-shim-write',
+      featurePath: 'BRAIN → BALANCE → APPLY_TXN_DELTA',
+      specFile: SPEC_FILE, specLine: 160,
+      codeUnderTest: 'recordWithAllocation triggers applyTxnDelta which dual-logs to AUDITOR (BUNDLE-30-AUDITOR-SHIM)',
+      expectedState: 'AUDITOR.log[0] = {action:"TXN_DELTA_LOG_EXPENSE", before, after, expected:-42}; BRAIN.audit also has balance_apply_delta entry',
+      clipTo: null,
+    });
   });
 
   test('Rollback on invalid source: no orphan txn, balance unchanged', async ({ page }) => {
@@ -178,6 +220,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.reason.indexOf('unknown-source')).toBe(0);
     expect(result.balUnchanged).toBe(true);
     expect(result.txnCountUnchanged).toBe(true);
+    await captureState(page, {
+      label: 'post-rollback',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 181,
+      codeUnderTest: 'recordWithAllocation with invalid source tag — must reject before any mutation',
+      expectedState: 'envelope.ok=false, reason starts with "unknown-source:"; S.bal unchanged; S.txns length unchanged; no audit entries appended',
+      clipTo: null,
+    });
   });
 
   // ─── Phase 2.A — bucket destination ──────────────────────────────
@@ -212,6 +262,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.bucketCredit.bucket).toBe(result.bucketName);
     expect(result.balDelta).toBe(-25);   // INV-02 cash side
     expect(result.bucketDelta).toBe(25); // INV-12 bucket side
+    await captureState(page, {
+      label: 'post-bucket-credit',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 215,
+      codeUnderTest: 'recordWithAllocation with destination:{type:bucket, id:<first-bucket>} + _skipFreeMoneyGate:true',
+      expectedState: 'INV-02 + INV-12: S.bal -25, bucket.saved +25, envelope.bucketCredit reflects both sides atomically',
+      clipTo: null,
+    });
   });
 
   test('Phase 2.A: invalid bucket destination returns bucket-not-found, no side effects', async ({ page }) => {
@@ -234,6 +292,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.reason).toMatch(/^bucket-not-found/);
     expect(result.balUnchanged).toBe(true);
     expect(result.txnCountUnchanged).toBe(true);
+    await captureState(page, {
+      label: 'post-invalid-bucket-reject',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 237,
+      codeUnderTest: 'recordWithAllocation with destination.id pointing to non-existent bucket',
+      expectedState: 'envelope.ok=false, reason matches /^bucket-not-found/; rollback complete — S.bal + S.txns unchanged',
+      clipTo: null,
+    });
   });
 
   // ─── Phase 2.B — INV-28 free-money gate ──────────────────────────
@@ -277,6 +343,20 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.bucketUnchanged).toBe(true);
     expect(result.refusalAuditEntry).toBeTruthy();
     expect(result.refusalAuditEntry.requested).toBe(result.askAmount);
+    await captureState(page, {
+      label: 'post-inv28-refusal',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 280,
+      codeUnderTest: 'recordWithAllocation with allocation > snap.derived.availableNow + no exemption flags',
+      expectedState: 'envelope.ok=false, reason=insufficient-free-money, requested/available populated; S.bal + bucket unchanged; inv28_refusal audit entry appended',
+      clipTo: null,
+      knownStateNotes: [
+        {
+          code: 'INV28_DORMANT_GATE',
+          description: 'INV-28 currently dormant in production — no live UI surface triggers this gate (Bundle 30.5.0 removed the dead bucket-quick-add UI; payday-plan ticks/round-ups bypass via exemption flags). Smoke is the only exercise. Tracked in ADR-Bundle31-A + B Gap A.',
+        },
+      ],
+    });
   });
 
   // ─── Q-2.3 — round-ups exempt from INV-28 (inheritance) ──────────
@@ -309,6 +389,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.ok).toBe(true);
     expect(result.envelope.reason).toBeUndefined();
     expect(result.bucketAfter).toBeGreaterThan(result.bucketBefore);
+    await captureState(page, {
+      label: 'post-roundup-exempt',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 312,
+      codeUnderTest: 'recordWithAllocation with _isRoundup:true + amt > availableNow',
+      expectedState: 'Q-2.3 inheritance: envelope.ok=true despite amt > free_money; bucket credited; no inv28_refusal audit',
+      clipTo: null,
+    });
   });
 
   test('Q-2.2: _skipFreeMoneyGate envelope exempt from INV-28 (payday-tick semantics)', async ({ page }) => {
@@ -336,6 +424,14 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     // _skipFreeMoneyGate is set (lock-time committed allocation).
     expect(result.envelope.ok).toBe(true);
     expect(result.envelope.reason).toBeUndefined();
+    await captureState(page, {
+      label: 'post-tick-exempt',
+      featurePath: 'BRAIN → TRANSACTION → RECORD_WITH_ALLOCATION',
+      specFile: SPEC_FILE, specLine: 339,
+      codeUnderTest: 'recordWithAllocation with _skipFreeMoneyGate:true (simulates payday-plan tick semantics)',
+      expectedState: 'Q-2.2 exemption: envelope.ok=true despite amt > free_money; lock-time pre-committed allocation behavior',
+      clipTo: null,
+    });
   });
 
   // ─── Phase 2.E — markPaid envelope (internal refactor) ───────────
@@ -363,9 +459,25 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.markPaidResult.entry).toBeTruthy();
     expect(result.markPaidResult.entry.paid).toBe(true);
     expect(result.balDelta).toBe(-result.billAmt);
+    await captureState(page, {
+      label: 'post-markpaid',
+      featurePath: 'BRAIN → BILLS → MARK_PAID',
+      specFile: SPEC_FILE, specLine: 366,
+      codeUnderTest: 'BRAIN.bills.markPaid(unpaid, PAY_BILL_NOW) — Phase 2.E envelope composition',
+      expectedState: 'public API: returns {ok, key, entry} same as pre-2.E; internal: txn + balance + audit composed atomically via recordWithAllocation; S.bal decremented by bill.amt',
+      clipTo: null,
+    });
   });
 
   test('quickLogTxn expense end-to-end produces coherent state', async ({ page }) => {
+    await captureState(page, {
+      label: 'pre-log',
+      featurePath: 'UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH',
+      specFile: SPEC_FILE, specLine: 370,
+      codeUnderTest: 'pre-state: about to invoke quickLogTxn() with $50 Food/Coffee expense',
+      expectedState: 'S.bal at fixture baseline; modal DOM elements present (ql-amt, ql-cat-hidden, ql-txn-type) ready for value injection',
+      clipTo: null,
+    });
     // Drive the full UI path: open Quick Log modal, set amount, log.
     const result = await page.evaluate(() => {
       const balBefore = S.bal;
@@ -390,5 +502,13 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.latestTxn.amt).toBe(50);
     expect(result.latestTxn.cat).toBe('Food / Coffee');
     expect(result.latestTxn._balAffected).toBe(true);
+    await captureState(page, {
+      label: 'post-log',
+      featurePath: 'UI → GLOBAL → QUICK_LOG_MODAL → EXPENSE_BRANCH',
+      specFile: SPEC_FILE, specLine: 393,
+      codeUnderTest: 'quickLogTxn() — full Quick Log expense flow with $50 Food/Coffee',
+      expectedState: 'S.bal -= 50 via recordWithAllocation; latest S.txn = {amt:50, cat:Food/Coffee, _balAffected:true}; audit_window has txn_record + balance_apply_delta + AUDITOR shim entry',
+      clipTo: null,
+    });
   });
 });

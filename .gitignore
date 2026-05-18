@@ -20,3 +20,11 @@ archive/screenshots/
 # for visual regression but excluded from git history (would balloon
 # repo size). Bundle 28 round 20 added per Noticed item.
 captures/
+
+# Bundle 30.5 Phase A — visual capture infrastructure for smoke specs.
+# tests/visual-captures/<short-sha>[-dirty]/ holds per-run screenshots +
+# DOM excerpts + state snapshots + audit windows + index.json. Run
+# artifacts — reproducible from spec, gitignored per Q5 answer. Rotation
+# policy keeps last 10 SHA dirs locally (oldest auto-pruned at capture
+# init). Bundle 31+ may add a baselines/ subdir for diff-regression.
+tests/visual-captures/

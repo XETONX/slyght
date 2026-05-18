@@ -701,6 +701,17 @@ Commit 3.B — confirmation-flow UI wiring:
 
 *INV-28 (bucket overdraw refusal) ships writer-side in **Phase 2 Commit 2.A** — it's enforced inside `recordWithAllocation` step 4 when bucket-destination logic arrives. Phase 4 adds no UI work for INV-28 because the refusal surfaces via the standard `{ok:false, reason:'insufficient-free-money'}` envelope that callers' existing failure-toast handlers already render.*
 
+#### Phase 4 cleanup candidates — surfaced, not yet folded into Phase 4 scope
+
+The following sites still mutate `S.bal` directly (not via the canonical writer) and weren't migrated in Phase 1.B/2 because they didn't fit the markPaid envelope migration or the tick-site migration patterns. **Keep surfaced for explicit Phase 4 scoping; do NOT auto-fold into Phase 4 implementation:**
+
+- **`BRAIN.bills.unmark` internal restore** (`index.html:~22744`) — reversal path inside the unmark writer; restores `S.bal` after removing the paired txn. Currently direct `S.bal += amt`. Migration target: `BRAIN.balance.applyTxnDelta(+amt, UNMARK_BILL, txnTs)`. Source `UNMARK_BILL` already exists. PERMANENT exception candidate (no new txn to compose) or `applyTxnDelta`-only callsite.
+- **`BRAIN.debts.unmark` internal restore** (`index.html:~23083`) — same pattern, twin of bills.unmark. Source `UNMARK_DEBT` already exists.
+- **`rmTxn` manual delete** (`index.html:~9786`) — UI-driven txn deletion + balance restore. Direct `S.bal +=` / `-=`. Migration target: `applyTxnDelta` direct. Reversal semantics — no new txn to compose.
+- **WRX allocation flow** (`index.html:~22669+`, `~23282`) — composite flow in `allocateWrxProceeds`. Multi-step (cash + carloan + wrxStatus + wrxValue). Per code comment at L22610: "Multi-bubble composition... not yet a bubble." Larger refactor candidate; deferred from Phase 1.B as special case.
+
+**Gap B note** (Bundle 30.5 Phase 2.F smoke coverage audit, 2026-05-19): the unmark restore paths above currently have no smoke coverage. Whether or not Phase 4 migrates them, Phase 4 smoke should add an "undo flow" assertion (mark bill paid → unmark → balance restored + txn removed) since the user-facing undo affordances rely on these reversal branches working correctly.
+
 Commit 4.A — INV-27 negative balance confirm flow (writer-side):
 - `recordWithAllocation` returns `'negative-warning-required'` when projected `S.bal < 0` and no override flag.
 - UI handler intercepts this reason, opens `EDIT_MODAL.openConfirm` with the projected balance shown.
