@@ -184,6 +184,35 @@ export default {
       }
     }
 
+    // GET /recon-payload — one-shot reconciliation delivery endpoint.
+    // Added 2026-05-19 for bank-reconciliation workflow. Token-gated to
+    // prevent accidental public fetch. KV key + this handler should be
+    // removed in Bundle 31 ADR-E ("Weekly bank reconciliation workflow")
+    // unless promoted to permanent infra.
+    if (path === '/recon-payload' && request.method === 'GET') {
+      const RECON_TOKEN = '427169922a24fe022647e3463834e2f77c20cc160033c955';
+      const KV_KEY = 'recon-payload-2026-05-19';
+      const token = url.searchParams.get('token');
+      if (token !== RECON_TOKEN) {
+        return new Response(JSON.stringify({ error: 'unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const payload = await env.SLYGHT_DATA.get(KV_KEY);
+      if (!payload) {
+        return new Response(JSON.stringify({ error: 'not-found', key: KV_KEY }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(payload, {
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        },
+      });
+    }
+
     // POST /unsubscribe — clear push subscription from KV
     if (path === '/unsubscribe' && request.method === 'POST') {
       try {
