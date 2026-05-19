@@ -84,3 +84,27 @@ Items from prior session carry-overs PLUS Bundle 31 discoveries:
 ## Open invariants questions (FINANCIAL-INVARIANTS.md)
 
 The five "pending decisions" at the bottom of FINANCIAL-INVARIANTS.md still need John's sign-off (negative-balance warning, bucket overdraw, plan-lock semantics, FX fee handling, round-up timing). Bundle 32 candidate to close those before they become tech debt.
+
+**INV-29 now landed** (Bundle 32.2, commit 604c3ad) — plan-time over-allocation refusal. Documented in FINANCIAL-INVARIANTS.md §C between INV-11 and §D. Not in the original 5-pending-decisions list.
+
+---
+
+## Phase status (updated 2026-05-19 post-session)
+
+| Phase | Status | Commit / link |
+|---|---|---|
+| 32.0 — Triage + dedupe (doc-only) | ✓ doc landed | `docs/audit/2026-05-19-bundle-32-triage-by-model-field.md` |
+| **32.0a — Audit script Welcome modal pre-dismiss** | ✓ **SHIPPED** | `0ab35e6` — Run 3 produced clean baseline (0 modal artifacts vs Run 2's 27) |
+| **32.1 — `snap.derived` canonical allocation reader** | ✓ **SHIPPED** | `6f28efc` — 5 new derived fields + `snap.provisions` + 2 renderer migrations + smoke spec |
+| **32.2 — INV-29 write-time over-allocation refusal** | ✓ **SHIPPED** | `604c3ad` — INV check in `BRAIN.plan.setOverride` + FINANCIAL-INVARIANTS.md entry + smoke spec |
+| Run 4 (post-architectural-fix baseline) | ✓ committed | `fa4d1a4` — 74 findings (+2 vs Run 3, within LLM variance; prediction-vs-reality lesson documented) |
+| 32.3 — Trip-aware survival forecast | **pending** — ADR-worthy; defer until ADR drafted | Largest scope; affects multiple Dashboard/Analysis displays |
+| 32.4 — `MODEL.essentialsVsDiscretionary` + drilldown | **pending** | ~40-60 LOC; tap-to-expand drilldown on Analysis tile |
+| 32.5 — Hero cycle-spend always-visible | **pending** | ~10-20 LOC; layout decision |
+| 32.6 — `BRAIN.plan.resetCycle` + UI button | **pending** | ~30-50 LOC; new canonical writer + Settings affordance |
+| G — Filter-scatter cleanup (OPEN-BUGS #6B + #7 + #8 + #17) | **pending** | Mirrors 32.1 pattern; ~50-80 LOC; collapses 4 OPEN-BUGS |
+| H — Pure UX polish residual (~15 findings) | **pending** | Per-surface bundles; not architectural |
+
+### Lesson from Run 4 (committed in `fa4d1a4`):
+
+Audit-finding-count is a poor proxy for architectural progress. 32.1+32.2 are logic-layer fixes; they prevent FUTURE drift but don't change current display. Display-layer findings remain until 32.3+ phases address them. Measure architectural work via smoke specs + INV audit entries + conservation invariants — NOT via raw audit-finding deltas.
