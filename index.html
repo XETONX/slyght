@@ -11560,9 +11560,13 @@ function openPaydayLockPlan() {
     // to "Lock anyway" to surface the intent.
     danger: !!tight,
     save: () => {
+      // Bundle 32.7 Pass 1.b: route through canonical writer. The snapshot
+      // is forensic metadata for audit history — actual locked timestamp
+      // is stamped by BRAIN.plan.lock on S.activePlan.lockedAt. Defensive
+      // code (streak idempotency · save error surfacing · persist round-
+      // trip verify · audit-log mismatch) now lives inside the writer.
       const snapshot = {
         cycleId: snap.cycleId,
-        lockedAt: Date.now(),
         totalToPlan: snap.totalToPlan,
         billsTotal: snap.bills.total,
         debtsTotal: snap.debts.total,
@@ -11571,52 +11575,8 @@ function openPaydayLockPlan() {
         livingTotal: snap.dailyLiving.plannedTotal,
         bufferFloor: buffer,
       };
-      const r = BRAIN.allocation.lock(snapshot, BRAIN.SOURCES.CANVAS_LOCK);
+      const r = BRAIN.plan.lock({ snapshot }, BRAIN.SOURCES.CANVAS_LOCK);
       if (!r.ok) return r;
-      // Bundle 29 demon-time defensive lock-persist: John 2026-05-14 reported
-      // "lock basically does nothing — leaving canvas loses the lock". Couldn't
-      // repro from code-reading, so adding belt-and-braces:
-      //   1. Stamp S.activePlan.lockedAt + streak
-      //   2. Call save() with surfaced failure (no silent swallow)
-      //   3. Re-read localStorage after save to verify the lock landed
-      //   4. Audit-log mismatches so debugging the in-the-wild bug has data
-      if (S.activePlan) {
-        S.activePlan.lockedAt = Date.now();
-        // Bundle 29 F-09 fix: streak should increment ONCE per cycleId, not
-        // every lock. Pre-fix: unlock→relock within same cycle inflated streak.
-        // Now we track lastStreakedCycleId; only increment if the current
-        // cycleId hasn't been streaked yet. rolloverIfNeeded clears the gate
-        // implicitly by creating a new cycleId.
-        const _currentCycleId = S.activePlan.cycleId;
-        if (S.activePlan.lastStreakedCycleId !== _currentCycleId) {
-          S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
-          S.activePlan.lastStreakedCycleId = _currentCycleId;
-        }
-        let saveOk = true;
-        let saveErr = null;
-        try { save(); } catch (e) { saveOk = false; saveErr = String(e && e.message || e); }
-        // Re-read verification — does S.activePlan.lockedAt survive a round-trip?
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          const parsed = raw ? JSON.parse(raw) : null;
-          const persistedLockedAt = parsed && parsed.S && parsed.S.activePlan && parsed.S.activePlan.lockedAt;
-          if (!persistedLockedAt || persistedLockedAt !== S.activePlan.lockedAt) {
-            BRAIN.audit.append({
-              type: 'lock_persist_mismatch',
-              expected: S.activePlan.lockedAt,
-              found: persistedLockedAt || null,
-              saveOk, saveErr,
-              ts: Date.now(),
-            });
-            if (typeof console !== 'undefined') console.warn('[lock] persist mismatch — expected', S.activePlan.lockedAt, 'found', persistedLockedAt, 'saveOk', saveOk, saveErr);
-          }
-        } catch (e) {
-          if (typeof console !== 'undefined') console.warn('[lock] re-read verify threw', e);
-        }
-        if (!saveOk && typeof showToast === 'function') {
-          showToast('⚠️ Lock saved in memory but disk write failed — export your data');
-        }
-      }
       // Bundle 29 demon-time: if bonus.status === 'confirmed' AND included,
       // user is telling us the money has actually landed in the account.
       // Treat lock as the moment to fire markPaydayLanded so paydayReceived
