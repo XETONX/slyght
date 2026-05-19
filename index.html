@@ -19483,25 +19483,42 @@ const BRAIN = {
       return this.reconcileTo(parseFloat((old + n).toFixed(2)), source, reason);
     },
 
-    // One-shot override flag. When armed, the next `recordWithAllocation`
+    // One-shot override token. When armed, the next `recordWithAllocation`
     // call (Phase 2) is permitted to drive S.bal negative without the
     // INV-27 confirm gate. Cleared on consumption. UI flow per SDD §10
     // Phase 4.A: writer returns 'negative-warning-required' → UI opens
     // EDIT_MODAL.openConfirm → on confirm calls this method → writer is
-    // re-fired → consumption clears the flag.
-    _negativeOverrideArmed: false,
+    // re-fired → consumption clears the token.
+    //
+    // Bundle 33.x INV-27 refinement: stamped as a timestamp, not a bool,
+    // with a 30-second TTL. Stale confirmations (user confirmed minutes
+    // ago then attempted a NEW txn) must not silently authorize. The TTL
+    // forces the user back through the modal if too much time has passed.
+    _negativeOverrideArmedAt: 0,
+    _NEGATIVE_OVERRIDE_TTL_MS: 30 * 1000,
     confirmNegativeOverride() {
-      this._negativeOverrideArmed = true;
+      this._negativeOverrideArmedAt = Date.now();
       BRAIN.audit.append({
         type: 'balance_negative_override_armed',
         source: BRAIN.SOURCES.BALANCE_NEGATIVE_CONFIRMED,
-        ts: Date.now(),
+        ts: this._negativeOverrideArmedAt,
       });
     },
     _consumeNegativeOverride() {
-      const was = this._negativeOverrideArmed;
-      this._negativeOverrideArmed = false;
-      return was;
+      const armedAt = this._negativeOverrideArmedAt || 0;
+      this._negativeOverrideArmedAt = 0;
+      if (!armedAt) return false;
+      const ageMs = Date.now() - armedAt;
+      if (ageMs > this._NEGATIVE_OVERRIDE_TTL_MS) {
+        BRAIN.audit.append({
+          type: 'balance_negative_override_stale',
+          ageMs,
+          ttlMs: this._NEGATIVE_OVERRIDE_TTL_MS,
+          ts: Date.now(),
+        });
+        return false;
+      }
+      return true;
     },
 
     // Bundle 30 pre-flight insurance — captures pre-Bundle-30 state on
@@ -22672,12 +22689,65 @@ const BRAIN = {
         }
       }
 
+      // ─── Phase 4.A — INV-27 negative balance guard ────────────────
+      // INV-27: outflows that would drive S.bal < 0 are refused unless the
+      // caller (a) sets `envelope._overrideNegativeWarn: true` AND (b) has
+      // a fresh confirmation token from BRAIN.balance.confirmNegativeOverride()
+      // (≤30s old).
+      //
+      // The flag alone is insufficient — flag is the caller's acknowledgement
+      // that they understand the rule; the token is the audit trail that the
+      // user actually saw + confirmed a modal. Stale tokens (>30s) refuse
+      // even with the flag set — they can't authorize unrelated future txns.
+      //
+      // Inflows always proceed (income lands regardless of starting balance).
+      // `_isRoundup` siblings + payday-tick (`_skipFreeMoneyGate`) bypass —
+      // those are downstream of a parent that already passed the gate.
+      if (direction === 'outflow' && !envelope._isRoundup && !envelope._skipFreeMoneyGate) {
+        const currentBal = +S.bal || 0;
+        const projectedBal = currentBal + delta;
+        if (projectedBal < 0) {
+          let refusalReason = null;
+          if (!envelope._overrideNegativeWarn) {
+            // Legacy caller — no opt-in. Refuse for UI to open confirm modal.
+            refusalReason = 'no-override-flag';
+          } else if (!BRAIN.balance._consumeNegativeOverride()) {
+            // Flag set but token missing or stale (TTL expired).
+            // _consumeNegativeOverride() audit-logs `balance_negative_override_stale`
+            // for the stale case; the missing-token case is silent (the inv27_refusal
+            // entry below covers it).
+            refusalReason = 'stale-or-missing-token';
+          }
+          if (refusalReason) {
+            BRAIN.audit.append({
+              type: 'inv27_refusal',
+              cat: envelope.cat,
+              requested: amt,
+              currentBal: parseFloat(currentBal.toFixed(2)),
+              projectedBal: parseFloat(projectedBal.toFixed(2)),
+              shortfall: parseFloat((-projectedBal).toFixed(2)),
+              refusalReason,
+              source, ts: Date.now(),
+            });
+            return {
+              ok: false,
+              reason: 'negative-warning-required',
+              refusalReason,
+              currentBal: parseFloat(currentBal.toFixed(2)),
+              projectedBal: parseFloat(projectedBal.toFixed(2)),
+              shortfall: parseFloat((-projectedBal).toFixed(2)),
+            };
+          }
+        }
+      }
+
       // Strip envelope-only fields; persist legacy `income` boolean
       // so existing renderers / filters / undo-flows continue to work.
       const txnFields = { ...envelope, _balAffected: true };
       delete txnFields.direction;
       delete txnFields.destination;
       delete txnFields._skipFreeMoneyGate;
+      delete txnFields._overrideNegativeWarn;
       if (!('income' in txnFields)) txnFields.income = (direction === 'inflow');
 
       // Append txn via existing canonical writer.
@@ -23092,8 +23162,17 @@ const BRAIN = {
         // Eliminates the need for callers to apply S.bal separately
         // (Phase 1.B sites at markDebtPaid + withMarkPaidGate dropped
         // their BRAIN.balance.applyTxnDelta calls in this revision).
+        //
+        // Bundle 33.x INV-27: scheduled auto-debits are pre-committed at
+        // autoDebit-setup time; refusing them at execution would defeat
+        // the "automatic" semantics. Routed through `_skipFreeMoneyGate`
+        // (semantics: "downstream of prior commitment") to bypass both
+        // INV-27 and INV-28. Manual mark-paid path (autoDebit=false)
+        // still subject to the gates — silent overdraw on manual
+        // payments remains protected.
         const rec = BRAIN.transaction.recordWithAllocation(
-          { amt: billAmt, note: bill.name + ' — paid', cat: bill.tag || 'Bills', direction: 'outflow' },
+          { amt: billAmt, note: bill.name + ' — paid', cat: bill.tag || 'Bills', direction: 'outflow',
+            ...(opts.autoDebit ? { _skipFreeMoneyGate: true } : {}) },
           txnSource
         );
         if (!rec.ok) {

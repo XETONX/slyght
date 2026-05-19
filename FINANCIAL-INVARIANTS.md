@@ -53,6 +53,13 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: hero shows $X, footer shows $Y, NW cash shows $Z, all different
 - Test: take 3 snapshots of balance from 3 different surfaces. Assert all equal.
 
+**INV-27: No `recordWithAllocation` outflow that would drive `S.bal < 0` succeeds without a fresh `BRAIN.balance.confirmNegativeOverride()` arm (≤30s old) AND an explicit `_overrideNegativeWarn: true` flag on the envelope.**
+- Why: Silent overdraw destroys trust. The user must consciously accept negative-balance state via a confirm modal; the confirmation token expires after 30 seconds so stale confirms can't authorize unrelated future txns.
+- Violated when: a writer accepts an outflow that takes `S.bal` below 0 without both (a) a fresh `_negativeOverrideArmedAt` timestamp (≤30s old) and (b) `envelope._overrideNegativeWarn: true`. Inflows are exempt (income always lands). `_isRoundup` and `_skipFreeMoneyGate` are exempt (downstream of a parent that already passed the gate).
+- Status: SHIPPED Bundle 33.x in `BRAIN.transaction.recordWithAllocation` Phase 4.A. Opt-in flag — existing callers see no behavioral change; UI migration to confirm modal lands per-site.
+- Test: `tests/smoke/inv27-negative-balance.smoke.js` — 5 cases: (1) refusal without arm · (2) confirm-then-retry with `_overrideNegativeWarn:true` succeeds, audit logs arm event with `balance-negative-confirmed` source · (3) inflow always succeeds regardless of starting balance · (4) boundary $0.01 → $0.02 refused, then confirm + retry succeeds · (5) TTL: arm + simulate >30s age → retry refused with audit entry `balance_negative_override_stale`.
+- Token lifecycle: `BRAIN.balance.confirmNegativeOverride()` stamps `_negativeOverrideArmedAt = Date.now()`. `_consumeNegativeOverride()` returns true only if age ≤ `_NEGATIVE_OVERRIDE_TTL_MS` (30000); audit-logs `balance_negative_override_stale` and returns false if stale. Token clears on either consumption path.
+
 ---
 
 ## B. Net worth
@@ -91,8 +98,8 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: cross-surface inconsistency
 - Test: Playwright walks canvas root → savings sub-screen → auto-allocate modal. Scrape the "free money" number from each. Assert all match.
 
-**INV-27: Negative balance warning (RESERVED — SDD-bundle-30 §C#1).**
-- Status: Reserved invariant number. Decision pending per "Pending decisions" section below. When this invariant ships, fold its body in here.
+**INV-27: Negative balance warning.**
+- Status: SHIPPED Bundle 33.x. Canonical body lives in §A after INV-05 (write-time guard belongs with the balance-conservation invariants). Cross-reference only.
 
 **INV-28: A `recordWithAllocation` call with `direction:'outflow'`, `cat: ['Savings','Transfer']`, and a bucket destination is refused if the requested amount exceeds `free_money_remaining` for the current cycle. Exemptions: `_skipFreeMoneyGate` (payday-tick semantics), `_isRoundup` (round-up sibling txns).**
 - Why: Bucket-allocation outflows draw from the same surplus pool that payday-plan allocations earmark. Without a refusal gate, ad-hoc bucket allocations can drain the pool past what the plan committed.
