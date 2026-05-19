@@ -25607,9 +25607,14 @@ function lockPaydayPlan() {
 }
 
 function confirmLockPaydayPlan() {
-  // Bundle 26.1.5b: route lock through BRAIN.allocation. Snapshot captures
-  // the locked plan shape for audit history. PLAN.saveGoal mirrors retained
-  // below for backwards compat with PLAN goal monthly fields.
+  // Bundle 32.7 Pass 1.e: route lock through BRAIN.plan.lock canonical
+  // writer. The writer mirrors to BRAIN.allocation.lock internally and
+  // handles streak idempotency + persist verify + audit-log. Pre-32.7
+  // this site ALSO wrote a legacy `reread.locked = true` flag to
+  // slyght_payday_plan localStorage (storage #3 in the ADR's three-
+  // store map); that direct mutation is now removed. The legacy flag
+  // had no remaining live readers — only comment claimed "for non-BRAIN
+  // consumers" but a grep finds none.
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
   const snapshot = {
     payday: S.payday,
@@ -25618,12 +25623,12 @@ function confirmLockPaydayPlan() {
     freedom: stored.freedom || 0,
     darwin: stored.darwin || 0,
   };
-  BRAIN.allocation.lock(snapshot, BRAIN.SOURCES.PLAN_LOCK_PAYDAY);
-  // Legacy stored.locked flag preserved for non-BRAIN consumers (e.g.,
-  // existing UI conditional checks). BRAIN.allocation.isLocked is the
-  // canonical reader.
+  BRAIN.plan.lock({ snapshot }, BRAIN.SOURCES.PLAN_LOCK_PAYDAY);
+  // Preserve the payday field on the allocation storage (separate from
+  // lock state — used by allocation-history reads). The writer's
+  // allocation.lock mirror writes lockedAt + lockedSnapshot only; payday
+  // is independent metadata so we still need to stamp it here.
   const reread = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
-  reread.locked = true;
   reread.payday = S.payday;
   localStorage.setItem('slyght_payday_plan', JSON.stringify(reread));
 
@@ -25642,10 +25647,27 @@ function confirmLockPaydayPlan() {
   showToast('✅ Plan Locked — SLYGHT Will Hold You To This');
 }
 
+// Bundle 32.7 Pass 1.e: surfaced during migration — this 5th unlock path
+// (called by the "Update Plan" button at :25400) was not in the ADR's
+// 4-site map but exhibits the same divergence class. Pre-32.7 it cleared
+// ONLY the legacy slyght_payday_plan.locked flag, leaving
+// S.activePlan.lockedAt set if the user had locked via the canvas. Now
+// routed through BRAIN.plan.unlock so all three lock stores clear
+// atomically. Behavior fix: clicking "Update Plan" now actually unlocks
+// the canvas plan too — previously it was a partial unlock that left
+// the canvas reporting locked.
 function unlockAndEdit() {
-  const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
-  stored.locked = false;
-  localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+  if (BRAIN.plan.isLocked()) {
+    BRAIN.plan.unlock(BRAIN.SOURCES.PLAN_UNLOCK_PAYDAY);
+  } else {
+    // Already unlocked at the canonical level — just ensure the legacy
+    // flag (if anything still reads it) is clear too.
+    const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
+    if (stored.locked) {
+      stored.locked = false;
+      localStorage.setItem('slyght_payday_plan', JSON.stringify(stored));
+    }
+  }
   renderPlanMode();
   showToast('Plan Unlocked — Adjust And Re-Lock');
 }
