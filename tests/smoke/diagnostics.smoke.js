@@ -82,6 +82,24 @@ test.describe('Bundle 30 1.A.6 — Diagnostics expand buttons (regression guard)
     // Dismiss the splash screen (overlay at z-index 500 covers the app).
     // splashTap() routes to showMain() when txns exist (fixture has 16+).
     await page.evaluate(() => { if (typeof splashTap === 'function') splashTap(); });
+
+    // Bundle 31 fixture-refresh fix: dismiss the End-of-Day reconciliation
+    // modal if it fires. checkEodRecon() (index.html:3697) opens the modal
+    // when S.lastOpenDate differs from today AND there are unpaid bills with
+    // day matching yesterday. The 2026-05-19 reconciled fixture has
+    // lastOpenDate from May 18, so this modal fires every test boot at
+    // frozen 2026-05-05 — overlaying the diagnostics panel and intercepting
+    // taps (Playwright error: "eod-recon-modal class='recon-overlay open'
+    // intercepts pointer events"). Dismissed here the way a user would,
+    // via the canonical eodReconAccept() handler — NOT by suppressing the
+    // modal in production code. The modal IS real production behaviour that
+    // users see; the test just handles it the way users do.
+    await page.evaluate(() => {
+      const modal = document.getElementById('eod-recon-modal');
+      if (modal && modal.classList.contains('open') && typeof eodReconAccept === 'function') {
+        eodReconAccept();
+      }
+    });
   });
 
   test('Math Health "View detailed checks" — tap expands, tap collapses', async ({ page }) => {
