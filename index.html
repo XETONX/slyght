@@ -1638,6 +1638,26 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
 
   </div>
 
+  <!-- Bundle 32.4 — Essentials drilldown sub-screen.
+       Mounted as a top-level screen (not under pg-spend) because goPage()
+       deactivates other screens via the `.screen` class — clean isolation.
+       Reads from snap.derived.essentialsBreakdown (Bundle 32.4 substrate
+       shipped commit b551f46). Renderer: renderEssentialsDetail() at the
+       JS layer. Conservation footer ("sum of parts: $X = $A + $B + ...")
+       proves the math receipt-style — same pattern intended for future
+       drilldowns. Smoke spec asserts the displayed sum === snap.derived
+       value. -->
+  <div class="screen" id="pg-essentials-detail">
+    <div style="position:sticky;top:0;background:var(--bg);z-index:5;padding:14px 16px 10px;border-bottom:1px solid var(--border2);display:flex;align-items:center;gap:12px">
+      <button onclick="goPage('pg-spend')" aria-label="Back to Analysis" style="background:transparent;border:none;color:var(--text);font-size:22px;line-height:1;padding:4px 8px;cursor:pointer;min-width:32px;min-height:32px">←</button>
+      <div style="flex:1">
+        <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Drilldown</div>
+        <div style="font-size:17px;font-weight:700;color:var(--text);margin-top:1px">Essentials this cycle</div>
+      </div>
+    </div>
+    <div id="essentials-detail-content" style="padding:14px 16px 100px"></div>
+  </div>
+
   <!-- Bundle 22 v3 Phase 4b: 3-stage Reset All Data flow (replaces native confirm chain). -->
   <div class="edit-modal" id="reset-flow-modal" role="dialog" aria-modal="true" aria-labelledby="reset-flow-title" onclick="if(event.target===this)RESET_FLOW.cancel()">
     <div class="edit-modal-card" id="reset-flow-card"></div>
@@ -5825,6 +5845,42 @@ function renderAnalysisTab() {
   // call from renderAll() (line ~7553) becomes a graceful no-op via its `if (!el) return` guard.
   let html = '<div id="spending-pivot" data-period="week" data-expanded="" style="margin-bottom:16px"></div><div id="survival-forecast" style="margin-bottom:16px"></div>';
 
+  // Bundle 32.4 — Essentials drilldown tile. Reads from snap.derived.
+  // essentialsBreakdown (substrate landed Bundle 32.4 / commit b551f46).
+  // Tap → opens #pg-essentials-detail sub-screen. Total + 4-component
+  // proportions visible at-a-glance; full breakdown one tap away.
+  try {
+    const _snap = (BRAIN.plan && BRAIN.plan.getSnapshot) ? BRAIN.plan.getSnapshot() : null;
+    const _eb = _snap && _snap.derived && _snap.derived.essentialsBreakdown;
+    const _et = _snap && _snap.derived && _snap.derived.essentialsTotal;
+    if (_eb && typeof _et === 'number' && _et > 0) {
+      const _components = [
+        { key: 'bills',       label: 'Bills',     emoji: '🧾', amt: +_eb.bills       || 0, col: '#4ECDC4' },
+        { key: 'debts',       label: 'Debts',     emoji: '💳', amt: +_eb.debts       || 0, col: '#FF6B35' },
+        { key: 'dailyLiving', label: 'Living',    emoji: '🍱', amt: +_eb.dailyLiving || 0, col: '#FFC107' },
+        { key: 'provisions',  label: 'Provisions', emoji: '🏦', amt: +_eb.provisions  || 0, col: '#9B59B6' },
+      ];
+      const _bar = _components.map(c => {
+        const pct = _et > 0 ? (c.amt / _et * 100) : 0;
+        return pct > 0 ? `<div style="width:${pct}%;background:${c.col};height:100%" title="${c.label} $${Math.round(c.amt).toLocaleString()}"></div>` : '';
+      }).join('');
+      html += '<button onclick="openEssentialsDetail()" aria-label="See essentials breakdown" style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:14px;padding:14px 16px;margin-bottom:16px;display:block;cursor:pointer;text-align:left;color:inherit;font-family:inherit">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
+          '<div>' +
+            '<div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">📜 Essentials this cycle</div>' +
+            '<div style="font-family:var(--mono);font-size:24px;font-weight:800;color:var(--text);margin-top:4px;line-height:1.1">$' + Math.round(_et).toLocaleString() + '</div>' +
+            '<div style="font-size:12px;color:var(--text3);margin-top:3px">' + _components.filter(c => c.amt > 0).length + ' categories · tap to drill down</div>' +
+          '</div>' +
+          '<span style="font-size:22px;color:var(--text3);line-height:1">›</span>' +
+        '</div>' +
+        '<div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--bg3);margin-bottom:8px">' + _bar + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;font-size:11px;color:var(--text2);font-family:var(--mono)">' +
+          _components.map(c => `<span><span style="color:${c.col}">●</span> ${c.label} $${Math.round(c.amt).toLocaleString()}</span>`).join('') +
+        '</div>' +
+      '</button>';
+    }
+  } catch (_) { /* renderer must never throw — skip the tile if snapshot unavailable */ }
+
   if (!S.txns || !S.txns.length) {
     c.innerHTML = html + '<div class="card"><div style="text-align:center;padding:32px 0"><div style="font-size:40px;margin-bottom:12px">&#x1F4CA;</div><div style="font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px">No spending data yet</div><div style="font-size:14px;color:var(--text3);line-height:1.7">Use the + button to log transactions.<br>Analysis builds automatically as you spend.</div></div></div>';
     renderSurvivalForecast();
@@ -6059,6 +6115,209 @@ function renderAnalysisTab() {
   renderSurvivalForecast();
   renderSpendingPivot();
   // #17 — renderGoalTracker() call removed from Analysis. Plan Mode owns goals UI.
+}
+
+// Bundle 32.4 — Essentials drilldown sub-screen.
+// Opens #pg-essentials-detail and renders the breakdown. Reads from
+// snap.derived.essentialsBreakdown (substrate Bundle 32.4 / b551f46).
+// Conservation footer ("Sum of parts: $X = ...") proves the math
+// receipt-style — the smoke spec scrapes this footer and asserts the
+// equality, so the receipt is testable.
+function openEssentialsDetail() {
+  // Navigate to the screen — goPage deactivates the .screen class on others.
+  if ($('pg-essentials-detail')) {
+    document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+    document.querySelectorAll('.screen').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    $('pg-essentials-detail').classList.add('active');
+  }
+  renderEssentialsDetail();
+}
+
+function renderEssentialsDetail() {
+  const el = $('essentials-detail-content');
+  if (!el) return;
+  let snap = null;
+  try { snap = (BRAIN.plan && BRAIN.plan.getSnapshot) ? BRAIN.plan.getSnapshot() : null; } catch (_) {}
+  if (!snap || !snap.derived || !snap.derived.essentialsBreakdown) {
+    el.innerHTML = '<div class="card"><div style="padding:24px 12px;text-align:center;color:var(--text3)">Drilldown unavailable — no active plan snapshot.</div></div>';
+    return;
+  }
+  const eb = snap.derived.essentialsBreakdown;
+  const total = +snap.derived.essentialsTotal || 0;
+  const totalToPlan = +snap.totalToPlan || 0;
+  const pctOfPlan = totalToPlan > 0 ? Math.round((total / totalToPlan) * 100) : 0;
+
+  // Component definitions — single source of truth used by hero stack-bar,
+  // per-category cards, and conservation footer. Order matters (largest
+  // first per UX heuristic; ties broken by stable key order).
+  const components = [
+    { key: 'bills',       label: 'Bills',      emoji: '🧾', amt: +eb.bills       || 0, col: '#4ECDC4', ctx: _essentialsContext('bills', snap) },
+    { key: 'debts',       label: 'Debts',      emoji: '💳', amt: +eb.debts       || 0, col: '#FF6B35', ctx: _essentialsContext('debts', snap) },
+    { key: 'dailyLiving', label: 'Living',     emoji: '🍱', amt: +eb.dailyLiving || 0, col: '#FFC107', ctx: _essentialsContext('dailyLiving', snap) },
+    { key: 'provisions',  label: 'Provisions', emoji: '🏦', amt: +eb.provisions  || 0, col: '#9B59B6', ctx: _essentialsContext('provisions', snap) },
+  ].sort((a, b) => b.amt - a.amt);
+  const nonZeroCount = components.filter(c => c.amt > 0).length;
+
+  // Stacked progress bar
+  const stackBar = components.map(c => {
+    const pct = total > 0 ? (c.amt / total * 100) : 0;
+    return pct > 0
+      ? `<div style="width:${pct}%;background:${c.col};height:100%" title="${c.label}"></div>`
+      : '';
+  }).join('');
+
+  // Hero card
+  let html = '<div class="card" style="padding:18px 16px;margin-bottom:14px">' +
+    '<div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Total essentials · this cycle</div>' +
+    '<div style="display:flex;align-items:baseline;gap:10px;margin-top:6px">' +
+      '<div style="font-family:var(--mono);font-size:32px;font-weight:800;color:var(--text);line-height:1">$' + Math.round(total).toLocaleString() + '</div>' +
+      '<div style="font-size:13px;color:var(--text2);font-weight:600">' + pctOfPlan + '% of $' + Math.round(totalToPlan).toLocaleString() + ' this cycle</div>' +
+    '</div>' +
+    '<div style="font-size:12px;color:var(--text3);margin-top:6px">' + nonZeroCount + ' active categor' + (nonZeroCount === 1 ? 'y' : 'ies') + '</div>' +
+    '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--bg3);margin-top:12px">' + stackBar + '</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px 14px;font-size:11px;color:var(--text2);font-family:var(--mono);margin-top:8px">' +
+      components.filter(c => c.amt > 0).map(c => `<span><span style="color:${c.col};font-size:14px;line-height:1">●</span> ${c.label}</span>`).join('') +
+    '</div>' +
+  '</div>';
+
+  // Per-category cards
+  for (const c of components) {
+    if (c.amt === 0) continue;
+    const pct = total > 0 ? Math.round((c.amt / total) * 100) : 0;
+    const safeKey = c.key.replace(/[^a-z0-9]/gi, '');
+    html += '<div role="button" tabindex="0" data-ess-cat="' + safeKey + '" onclick="toggleEssentialsCat(\'' + safeKey + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleEssentialsCat(\'' + safeKey + '\');}" style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;margin-bottom:10px;cursor:pointer;overflow:hidden">' +
+      '<div style="display:flex;align-items:center;gap:12px;padding:14px 14px">' +
+        '<div style="font-size:24px;line-height:1">' + c.emoji + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div style="font-size:15px;font-weight:700;color:var(--text)">' + c.label + '</div>' +
+          '<div style="font-size:12px;color:var(--text3);margin-top:2px">' + c.ctx + '</div>' +
+        '</div>' +
+        '<div style="text-align:right;min-width:80px">' +
+          '<div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--text)">$' + Math.round(c.amt).toLocaleString() + '</div>' +
+          '<div style="font-size:11px;color:var(--text3);margin-top:1px">' + pct + '%</div>' +
+        '</div>' +
+        '<div data-ess-chevron="' + safeKey + '" style="font-size:18px;color:var(--text3);margin-left:6px;transition:transform .2s">›</div>' +
+      '</div>' +
+      '<div data-ess-expand="' + safeKey + '" style="display:none;padding:0 14px 14px;border-top:1px solid var(--border2);background:var(--bg3)">' +
+        _essentialsExpandHtml(c.key, snap) +
+      '</div>' +
+    '</div>';
+  }
+
+  // Conservation footer — receipt-style. The smoke spec asserts the
+  // displayed sum literal here equals snap.derived.essentialsTotal.
+  const partsParts = components.filter(c => c.amt > 0).map(c => '$' + Math.round(c.amt).toLocaleString());
+  html += '<div data-essentials-receipt style="background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:14px 16px;margin-top:6px;font-family:var(--mono);font-size:12px;color:var(--text2);line-height:1.7">' +
+    '<div style="font-size:10px;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;font-family:inherit">RECEIPT — sum of parts proves the total</div>' +
+    '<div data-essentials-sum-line>$' + Math.round(total).toLocaleString() + ' = ' + partsParts.join(' + ') + '</div>' +
+  '</div>';
+
+  el.innerHTML = html;
+}
+
+// Per-category expansion content — best-effort breakdown per category type.
+// Returns HTML string. Bills/Debts/Provisions list their members; Living
+// shows the daily-floor math because it's a budgeted allocation not a list
+// of individual txns.
+function _essentialsExpandHtml(catKey, snap) {
+  if (!snap) return '';
+  try {
+    if (catKey === 'bills') {
+      const billsList = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+      if (!billsList.length) return '<div style="padding:10px 0;color:var(--text3);font-size:13px">No bills this cycle.</div>';
+      return billsList.map(b => {
+        const amt = +b.amt || 0;
+        const paid = !!b.paid;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">' +
+            (paid ? '<span style="color:var(--green);font-size:14px">✓</span>' : '<span style="color:var(--text3);font-size:14px">○</span>') +
+            '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:' + (paid ? 'var(--text3)' : 'var(--text)') + ';' + (paid ? 'text-decoration:line-through;opacity:0.7;' : '') + '">' + _escHtml(b.name || '') + '</div>' +
+          '</div>' +
+          '<div style="font-family:var(--mono);font-size:13px;font-weight:600;color:' + (paid ? 'var(--text3)' : 'var(--text)') + '">$' + Math.round(amt).toLocaleString() + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    if (catKey === 'debts') {
+      const debts = (S.debts || []).filter(d => !d.paid && !d.viaRent);
+      if (!debts.length) return '<div style="padding:10px 0;color:var(--text3);font-size:13px">No active debts.</div>';
+      return debts.map(d => {
+        const amt = +d.amt || 0;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _escHtml(d.name || '') + '</div>' +
+          '<div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">$' + Math.round(amt).toLocaleString() + '</div>' +
+        '</div>';
+      }).join('');
+    }
+    if (catKey === 'dailyLiving') {
+      const dl = snap.dailyLiving || {};
+      const floor = +dl.floor || 0;
+      const days = +snap.daysInCycle || 0;
+      return '<div style="padding:10px 0;font-size:13px;color:var(--text2);line-height:1.7">' +
+        '<div>Daily floor: <strong style="color:var(--text);font-family:var(--mono)">$' + floor + '</strong> × <strong style="color:var(--text);font-family:var(--mono)">' + days + ' days</strong></div>' +
+        '<div style="margin-top:6px;color:var(--text3);font-size:12px">Budgeted allocation, not a list of transactions. Adjust the floor in Settings → Plan to change.</div>' +
+      '</div>';
+    }
+    if (catKey === 'provisions') {
+      let provs = [];
+      try { provs = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions) ? (PLAN.getAnnualProvisions() || []) : []; } catch (_) {}
+      if (!provs.length) return '<div style="padding:10px 0;color:var(--text3);font-size:13px">No provisions configured.</div>';
+      return provs.map(p => {
+        const monthly = +p.monthly || 0;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _escHtml(p.name || '') + ' <span style="color:var(--text3);font-size:11px">' + _escHtml(p.frequency || '') + '</span></div>' +
+          '<div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--text)">$' + Math.round(monthly).toLocaleString() + '/mo</div>' +
+        '</div>';
+      }).join('');
+    }
+  } catch (_) {}
+  return '<div style="padding:10px 0;color:var(--text3);font-size:13px">No detail available.</div>';
+}
+
+// Brief context line shown on the per-category card head (next to label).
+function _essentialsContext(catKey, snap) {
+  if (!snap) return '';
+  try {
+    if (catKey === 'bills') {
+      const billsList = (BRAIN.bills && BRAIN.bills.getThisCycle) ? BRAIN.bills.getThisCycle() : [];
+      const paid = billsList.filter(b => b.paid).length;
+      return billsList.length + ' bills · ' + paid + ' paid this cycle';
+    }
+    if (catKey === 'debts') {
+      const active = (S.debts || []).filter(d => !d.paid && !d.viaRent).length;
+      return active + ' active debt' + (active === 1 ? '' : 's') + ' this cycle';
+    }
+    if (catKey === 'dailyLiving') {
+      const floor = +(snap.dailyLiving && snap.dailyLiving.floor) || 30;
+      const days = +snap.daysInCycle || 0;
+      return '$' + floor + '/day × ' + days + ' days';
+    }
+    if (catKey === 'provisions') {
+      let n = 0;
+      try { n = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions) ? (PLAN.getAnnualProvisions() || []).length : 0; } catch (_) {}
+      return n + ' annual sinking fund' + (n === 1 ? '' : 's');
+    }
+  } catch (_) {}
+  return '';
+}
+
+// Tap handler for per-category expansion. State lives in the DOM
+// (no React-style state model needed) — flip display + rotate chevron.
+function toggleEssentialsCat(catKey) {
+  const expand = document.querySelector('[data-ess-expand="' + catKey + '"]');
+  const chev = document.querySelector('[data-ess-chevron="' + catKey + '"]');
+  if (!expand) return;
+  const open = expand.style.display !== 'none';
+  expand.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+// Minimal HTML escape — keeps user-controlled strings (bill names, debt
+// names) from breaking the DOM if they contain < or & characters.
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function filterTxns() {
