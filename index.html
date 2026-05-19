@@ -11773,19 +11773,33 @@ function _buildPaydayAskAIPrompt() {
     return 'Help me allocate this payday — where should the surplus go?';
   }
 }
+// Bundle 32.7 Pass 1.d: routed through BRAIN.plan.unlock canonical writer.
+// The writer handles dual-store sync (S.activePlan + BRAIN.allocation),
+// streak gate clearing, and save() with surfaced failure. Modal replaces
+// window.confirm per §8 (same EDIT_MODAL.openCustom pattern as
+// unlockPlanWithConfirm at :3303). Function becomes async-callback.
 function openPaydayUnlockPlan() {
-  if (!confirm('Re-plan? Your allocations will become editable again. Ticked items stay ticked.')) return;
-  const r = BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK);
-  if (!r.ok) {
-    if (typeof showToast === 'function') showToast('Unlock failed: ' + r.reason);
-    return;
-  }
-  if (S.activePlan) {
-    S.activePlan.lockedAt = null;
-    try { save(); } catch (_) {}
-  }
-  renderPaydayPlanRoot();
-  if (typeof showToast === 'function') showToast('🔓 Plan unlocked — re-plan freely');
+  if (!BRAIN.plan.isLocked()) return;
+  EDIT_MODAL.openCustom({
+    title: 'Re-plan this cycle?',
+    hint: 'Your allocations become editable again. Ticked items stay ticked.',
+    bodyHtml:
+      '<div style="font-size:13px;color:var(--text2);line-height:1.5;padding:4px 0">' +
+        'Unlocking lets you adjust overrides + savings allocations again. ' +
+        'Your tick history is preserved.' +
+      '</div>',
+    saveLabel: 'Unlock',
+    save: () => {
+      const r = BRAIN.plan.unlock(BRAIN.SOURCES.CANVAS_UNLOCK);
+      if (!r.ok) {
+        if (typeof showToast === 'function') showToast('Unlock failed: ' + r.reason);
+        return r;
+      }
+      renderPaydayPlanRoot();
+      if (typeof showToast === 'function') showToast('🔓 Plan unlocked — re-plan freely');
+      return { ok: true };
+    },
+  });
 }
 
 // ─── Safety buffer editor (Phase 6.2) ──────────────────────────────────
