@@ -399,6 +399,16 @@ function appendTrace(tracePath, line) {
     try { localStorage.setItem('slyght_seeded_v12', '1'); } catch (_) {}
     try { localStorage.setItem('slyght_seeded_v11', '1'); } catch (_) {}
     try { localStorage.setItem('slyght_bills_reset_month', args.monthKey); } catch (_) {}
+    // Bundle 32.0a: pre-set the "Welcome to Payday Plan" onboarding-seen flag
+    // so the 400ms-delayed welcome modal NEVER fires during audit captures.
+    // Run 1 + Run 2 had ~23 findings polluted by this modal blocking surfaces.
+    // John triages real production UX, not modal-overlay artifacts. The user
+    // sees this modal exactly once in real life; the audit should reflect
+    // post-dismiss state, not first-visit state. (index.html:9948)
+    try { localStorage.setItem('slyght_payday_canvas_seen', '1'); } catch (_) {}
+    // Same pattern for the dashboard onboard banner (slyght_onboarded flag).
+    // Real users dismiss it once; audit captures should reflect dismissed state.
+    try { localStorage.setItem('slyght_onboarded', '1'); } catch (_) {}
   }, { seed, monthKey: '2026-5' });
   const page = await ctx.newPage();
   await page.clock.install({ time: new Date('2026-05-19T10:00:00+10:00') });
