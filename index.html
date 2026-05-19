@@ -10354,6 +10354,118 @@ function paydayUndoLast() {
     showToast('↩️ Reversed: ' + t.replace(/_/g, ' '));
   }
 }
+
+// Bundle 32.6 UI integration — canvas overflow menu (⋯ button next to
+// the existing ↩️ undo button). Hosts destructive plan-wide actions
+// (Reset cycle being the first; future entries: Export plan, etc).
+//
+// Menu is a positioned popover anchored to the canvas header right-edge.
+// Click outside to dismiss. Aria-expanded reflects open state.
+function toggleCanvasOverflow() {
+  const menu = document.getElementById('canvas-overflow-menu');
+  const btn = document.getElementById('canvas-overflow-btn');
+  if (!menu || !btn) return;
+  const isOpen = menu.style.display !== 'none' && menu.style.display !== '';
+  menu.style.display = isOpen ? 'none' : 'block';
+  btn.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+  if (!isOpen) {
+    // Wire click-outside dismissal (one-shot listener — removed on close).
+    setTimeout(() => {
+      const onOutside = (ev) => {
+        if (!menu.contains(ev.target) && ev.target !== btn) {
+          menu.style.display = 'none';
+          btn.setAttribute('aria-expanded', 'false');
+          document.removeEventListener('click', onOutside, true);
+        }
+      };
+      document.addEventListener('click', onOutside, true);
+    }, 0);
+  }
+}
+
+// Bundle 32.6 UI integration — receipt-style confirm modal for plan
+// reset. Reads dryRun preState from BRAIN.plan.resetCycle so the
+// counts are pulled from canonical source (not re-implemented inline).
+// On confirm save() calls resetCycle without dryRun (commits the
+// mutation) + re-renders the canvas + closes the overflow menu.
+//
+// Modal content lives in _buildResetCycleBodyHtml() — kept separate so
+// the smoke spec can verify the receipt-pattern (preserved counts +
+// cleared counts) renders correctly under different preStates.
+function openResetCycleConfirm() {
+  // Close the overflow menu first
+  const menu = document.getElementById('canvas-overflow-menu');
+  const btn = document.getElementById('canvas-overflow-btn');
+  if (menu) menu.style.display = 'none';
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  // Dry-run resetCycle for accurate pre-state counts
+  const dry = (BRAIN && BRAIN.plan && BRAIN.plan.resetCycle)
+    ? BRAIN.plan.resetCycle(BRAIN.SOURCES.PLAN_CYCLE_RESET, { dryRun: true })
+    : null;
+  if (!dry || !dry.ok || !dry.preState) {
+    if (typeof showToast === 'function') showToast('Cannot reset — no active plan to reset.');
+    return;
+  }
+  EDIT_MODAL.openCustom({
+    title: 'Reset this cycle?',
+    hint: 'Receipt below shows exactly what changes.',
+    bodyHtml: _buildResetCycleBodyHtml(dry.preState),
+    saveLabel: 'Reset cycle',
+    danger: true,
+    save: () => {
+      const r = BRAIN.plan.resetCycle(BRAIN.SOURCES.PLAN_CYCLE_RESET);
+      if (!r || !r.ok) {
+        if (typeof showToast === 'function') showToast('Reset failed: ' + (r && r.reason));
+        return r;
+      }
+      // Re-render canvas + dashboard
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      if (typeof renderAll === 'function') renderAll();
+      if (typeof showToast === 'function') showToast('🔄 Cycle reset');
+      return { ok: true };
+    },
+  });
+}
+
+// Build the receipt-style modal body. Surfaced as a separate fn so
+// the smoke spec can assert specific lines + so John's copy review
+// can target the literal markup.
+function _buildResetCycleBodyHtml(ps) {
+  ps = ps || {};
+  const lockedLabel = ps.wasLocked
+    ? (ps.lockedAt ? 'locked since ' + new Date(ps.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : 'locked')
+    : 'unlocked';
+  const bonusLabel = ps.bonusIncluded
+    ? '✓ included ($' + Math.round(+ps.bonusAmount || 0).toLocaleString() + ')'
+    : '— not included';
+  const cycleRange = (ps.cycleStartDate && ps.cycleEndDate)
+    ? (ps.cycleStartDate + ' → ' + ps.cycleEndDate)
+    : (ps.cycleId || '—');
+  // Mono receipt styling — matches the 32.4 drilldown footer pattern.
+  return '' +
+    '<div style="font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.7">' +
+      '<div style="font-size:11px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-family:inherit">WILL CLEAR</div>' +
+      '<div style="padding:8px 12px;background:rgba(255,68,85,0.06);border:1px solid rgba(255,68,85,0.20);border-radius:8px;margin-bottom:14px">' +
+        '<div style="display:flex;justify-content:space-between"><span>Overrides</span><span>' + (ps.overridesCount || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Ticked items</span><span>' + (ps.ticksCount || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Upcoming items</span><span>' + (ps.knownUpcomingCount || 0) + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Lock</span><span>' + lockedLabel + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Bonus included</span><span>' + bonusLabel + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Streak gate</span><span>' + (ps.streak > 0 ? '✓ active' : '—') + '</span></div>' +
+      '</div>' +
+      '<div style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-family:inherit">WILL KEEP</div>' +
+      '<div style="padding:8px 12px;background:rgba(0,232,122,0.06);border:1px solid rgba(0,232,122,0.20);border-radius:8px;margin-bottom:14px">' +
+        '<div style="display:flex;justify-content:space-between"><span>Cycle</span><span>' + cycleRange + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Net pay</span><span>$' + Math.round(+ps.netPay || 0).toLocaleString() + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Daily living</span><span>$' + Math.round(+ps.dailyLivingFloor || 0) + '/day</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Buffer</span><span>$' + Math.round(+ps.bufferFloor || 0).toLocaleString() + '</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Logged transactions</span><span>' + (+ps.txnsCount || 0) + ' preserved</span></div>' +
+        '<div style="display:flex;justify-content:space-between"><span>Account balance</span><span>$' + (+ps.balance || 0).toFixed(2) + '</span></div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text3);font-family:inherit;line-height:1.5">Snapshot saved to your plan history.</div>' +
+    '</div>';
+}
+
 function closePaydayPlan() {
   const el = document.getElementById('pg-payday-plan');
   if (el) el.classList.remove('payday-active');
@@ -21139,22 +21251,41 @@ const BRAIN = {
     // Audit log captures a compressed pre-state snapshot for forensic
     // recovery: counts + key totals only (no full content) to avoid
     // bloating the 500-entry log cap with one giant entry.
-    resetCycle(source) {
+    resetCycle(source, opts) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
       if (!S.activePlan) return { ok: false, reason: 'no-active-plan' };
       const p = S.activePlan;
-      // Compressed pre-state snapshot for audit-log
+      const dryRun = !!(opts && opts.dryRun);
+      // Compressed pre-state snapshot for audit-log + dryRun modal preview
       const preState = {
         cycleId: p.cycleId,
         wasLocked: !!p.lockedAt,
+        lockedAt: p.lockedAt || null,
         overridesCount: Object.keys(p.overrides || {}).length,
         knownUpcomingCount: (p.knownUpcoming || []).length,
         savingsMirrorCount: Object.keys(p.savings || {}).length,
         ticksCount: ['bill','debt','savings','kia-extra','upcoming']
           .reduce((s, cat) => s + Object.keys((p.ticks && p.ticks[cat]) || {}).length, 0),
         bonusIncluded: !!(p.income && p.income.bonus && p.income.bonus.included),
+        bonusAmount: (p.income && p.income.bonus && +p.income.bonus.amount) || 0,
         streak: +p.streak || 0,
+        // Preserved fields surfaced for the dryRun receipt modal
+        cycleStartDate: p.cycleStartDate,
+        cycleEndDate: p.cycleEndDate,
+        netPay: (p.income && +p.income.netPay) || +S.income || 0,
+        dailyLivingFloor: +p.dailyLivingFloor || 30,
+        bufferFloor: +p.bufferFloor || 0,
+        // Bundle 32.6 modal-receipt fields — preserved-data totals that the
+        // "WILL KEEP" section displays so the receipt is a complete trust
+        // artifact: every category of user data appears in either WILL CLEAR
+        // (acceptable loss) or WILL KEEP (preserved). resetCycle does NOT
+        // touch S.txns or S.bal; surfacing them in the receipt confirms it.
+        txnsCount: (S.txns || []).length,
+        balance: +S.bal || 0,
       };
+      // dryRun: return the pre-state without mutating. Lets the receipt
+      // modal render accurate "what clears" / "what stays" counts.
+      if (dryRun) return { ok: true, dryRun: true, preState };
       // Preserve cycle identity + user preferences
       const preserved = {
         cycleId: p.cycleId,
@@ -21812,11 +21943,25 @@ const BRAIN = {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
       const log = (S._auditLog || []);
       // Walk backwards looking for the most recent reversible plan/canvas event.
-      const REVERSIBLE_TYPES = ['plan_tick', 'plan_override_set', 'plan_bonus_edit', 'known_upcoming_add', 'known_upcoming_update', 'plan_daily_floor_edit', 'plan_buffer_floor_edit'];
+      // Bundle 32.6 UI integration: added payday_plan_locked + payday_plan_unlocked
+      // to close the help-text-vs-behavior gap. In-app help at :9977 claims
+      // ↩️ reverses "most recent change" — pre-fix it didn't cover lock-state
+      // transitions, so a user who locked then tapped ↩️ saw "Nothing to undo"
+      // immediately. Now the lock IS reversible via ↩️ (mirrors what
+      // unlockPlanWithConfirm does on the inline-banner Unlock path).
+      const REVERSIBLE_TYPES = ['plan_tick', 'plan_override_set', 'plan_bonus_edit', 'known_upcoming_add', 'known_upcoming_update', 'plan_daily_floor_edit', 'plan_buffer_floor_edit', 'payday_plan_locked', 'payday_plan_unlocked'];
       for (let i = log.length - 1; i >= 0; i--) {
         const e = log[i];
         if (!e || !REVERSIBLE_TYPES.includes(e.type)) continue;
         try {
+          if (e.type === 'payday_plan_locked') {
+            const r = this.unlock(source);
+            return { ok: true, reversed: e, downstream: r };
+          }
+          if (e.type === 'payday_plan_unlocked') {
+            const r = this.lock({}, source);
+            return { ok: true, reversed: e, downstream: r };
+          }
           if (e.type === 'plan_tick') {
             const r = this.untickItem(e.category, e.itemId, source);
             return { ok: true, reversed: e, downstream: r };
@@ -27549,7 +27694,16 @@ document.getElementById('plan-modal-overlay')
       <div style="color:var(--text);font-size:16px;font-weight:700;letter-spacing:0.5px">📋 Payday Plan</div>
       <div id="payday-cycle-label" style="color:var(--text3);font-size:12px;margin-top:2px">—</div>
     </div>
-    <button onclick="paydayUndoLast()" aria-label="Undo last change" title="Undo your most recent plan change" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);color:var(--text2);font-size:18px;line-height:1;padding:0;width:40px;height:40px;border-radius:50%;cursor:pointer">↩️</button>
+    <div style="display:flex;gap:8px;align-items:center;position:relative">
+      <button onclick="paydayUndoLast()" aria-label="Undo last change" title="Undo your most recent plan change" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);color:var(--text2);font-size:18px;line-height:1;padding:0;width:40px;height:40px;border-radius:50%;cursor:pointer">↩️</button>
+      <button onclick="toggleCanvasOverflow()" aria-label="More plan actions" aria-haspopup="true" aria-expanded="false" id="canvas-overflow-btn" title="More actions" style="background:rgba(255,255,255,0.06);border:1px solid var(--border2);color:var(--text2);font-size:20px;line-height:1;padding:0;width:40px;height:40px;border-radius:50%;cursor:pointer">⋯</button>
+      <div id="canvas-overflow-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:180px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,0.4);z-index:20;overflow:hidden">
+        <button onclick="openResetCycleConfirm()" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 14px;background:transparent;border:none;color:var(--red);font-size:14px;font-weight:600;text-align:left;cursor:pointer;min-height:44px">
+          <span style="font-size:18px">🔄</span>
+          <span>Reset cycle…</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Root navigator content (re-rendered on open) -->
