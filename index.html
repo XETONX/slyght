@@ -4491,6 +4491,46 @@ function computeFinancialModel(state, now) {
   const todaySpent = (typeof computeSpentInRange === 'function')
     ? computeSpentInRange(todayMs, now.getTime()) : 0;
 
+  // Phase G Pass 1.a — STRICT-DISCRETIONARY canonical family.
+  //
+  // CRITICAL ARCHITECTURAL FINDING (surfaced during Phase G implementation):
+  // slyght has TWO canonical filter helpers that pre-existed Phase G:
+  //   getDiscretionarySpend (line ~3655)  — LAX filter:
+  //     excluded cats: ['Debt repayment','Savings','Loan','Income']
+  //     plus _txnType + correction/roundup exclusions
+  //     used by:  MODEL.cycleSpent + MODEL.weekSpent + a few renderers
+  //   computeSpentInRange (line ~3403)    — STRICT filter:
+  //     !income && !_NON_SPEND_CATS.has(cat) && !_isCorrection && !_isRoundup
+  //     where _NON_SPEND_CATS = 8 cats (adds Bills, Transfer, Car Loan,
+  //                                     CC Payment to the lax list)
+  //     used by:  MODEL.todaySpent + getDiscretionaryByCategory + most renderers
+  //
+  // The 4-cat gap is OPEN-BUGS #8 ("Dashboard pace tile uses lax filter
+  // and inflates discretionary on bill-pay days"). MODEL.todaySpent
+  // already uses STRICT; MODEL.cycleSpent + weekSpent use LAX. Cross-
+  // surface coherence breaks accordingly.
+  //
+  // Phase G fix per the audit + John's Option B approval: add a strict-
+  // filter canonical family in MODEL. Behavioral-neutral in THIS commit
+  // (no existing consumer migrated; MODEL.cycleSpent/weekSpent stay lax
+  // for backward compatibility). Per-consumer migrations land as
+  // subsequent commits; each migration moves a specific renderer from
+  // its inline filter (or from lax MODEL.cycleSpent) to the strict
+  // canonical, which IS the user-visible number change. That migration
+  // sequence is what closes #6B/#7/#8/#17.
+  const todayDiscretionarySpend = (typeof computeSpentInRange === 'function')
+    ? computeSpentInRange(todayMs, now.getTime()) : 0;
+  const weekDiscretionarySpend = (typeof computeSpentInRange === 'function')
+    ? computeSpentInRange(weekAgoMs, now.getTime()) : 0;
+  const cycleDiscretionarySpend = (typeof computeSpentInRange === 'function')
+    ? computeSpentInRange(cycleStart.getTime(), now.getTime()) : 0;
+  const cycleDiscretionaryByCategory = (typeof getDiscretionaryByCategory === 'function')
+    ? getDiscretionaryByCategory(cycleStart.getTime(), now.getTime())
+    : {};
+  // Conservation invariant — strict family is internally coherent:
+  //   Σ(cycleDiscretionaryByCategory[*].total) === cycleDiscretionarySpend
+  // Smoke-asserted at tests/smoke/phase-g-discretionary-canonical.smoke.js
+
   // Plan-mode shapes — wrapped in try/catch because PLAN is declared with
   // `const` later in the file. During boot, refreshModel() called from load()
   // runs before PLAN's initializer, putting it in the temporal dead zone.
@@ -4565,6 +4605,9 @@ function computeFinancialModel(state, now) {
 
     bal: state.bal || 0,
     todaySpent, weekSpent, cycleSpent,
+    // Phase G strict-discretionary canonical family (Pass 1.a)
+    todayDiscretionarySpend, weekDiscretionarySpend, cycleDiscretionarySpend,
+    cycleDiscretionaryByCategory,
     noSpendStreak: (typeof getNoSpendStreak === 'function') ? getNoSpendStreak() : 0,
 
     liquidAssets: nw.liquidAssets,
@@ -4612,7 +4655,10 @@ function _modelStub() {
     paydayDate: new Date(), daysToPayday: 1,
     paydayReceived: false,
     cycleStart: new Date(), cycleEnd: new Date(),
-    bal: 0, todaySpent: 0, weekSpent: 0, cycleSpent: 0, noSpendStreak: 0,
+    bal: 0, todaySpent: 0, weekSpent: 0, cycleSpent: 0,
+    todayDiscretionarySpend: 0, weekDiscretionarySpend: 0, cycleDiscretionarySpend: 0,
+    cycleDiscretionaryByCategory: {},
+    noSpendStreak: 0,
     liquidAssets: 0, totalAssets: 0, totalLiabilities: 0,
     liquidNet: 0, totalNet: 0, nwBreakdown: {},
     safeToSpendToday: 0, userCap: 60, survivalMode: 'normal',
