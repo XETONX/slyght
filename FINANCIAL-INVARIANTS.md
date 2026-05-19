@@ -91,6 +91,12 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: cross-surface inconsistency
 - Test: Playwright walks canvas root → savings sub-screen → auto-allocate modal. Scrape the "free money" number from each. Assert all match.
 
+**INV-29: A `savings:*` override write that INCREASES allocation is refused if it would push `sum(savings:* thisCycleAmount)` above `snap.derived.surplus + ε`. Reductions are always allowed regardless of resulting state.**
+- Why: Pre-Bundle-32.2 the override-write path bypassed all gates. User could allocate $1,433 to savings goals against a $1,170 surplus and the writes succeeded — the savings sub-screen surfaced "-$263 over allocated to goals" as a red display warning, but state was already corrupt. INV-28 covers the txn-time path; INV-29 covers the plan-time path.
+- Why reductions allowed: a user with currently-over-allocated state needs to be able to fix it by reducing allocations. Refusing reductions creates a stuck state.
+- Violated when: a savings:* override increase is accepted that pushes total savings allocation above surplus
+- Test: load fixture; inject savings override > surplus via `BRAIN.plan.setOverride('savings', X, amt, {}, source)`. Assert `r.ok === false`, `r.reason === 'inv29-over-allocation'`, no state mutation, audit log appended `inv29_refusal` entry. Then assert a reduction call (`amt < oldAmt`) succeeds even in over-allocated state.
+
 ---
 
 ## D. Bucket balances

@@ -20298,6 +20298,59 @@ const BRAIN = {
         }
         return { ok: true, deferred: 0, normalAmount, newAmount: normalAmount, normalised: true };
       }
+      // Bundle 32.2: INV-29 — refuse savings overrides that INCREASE allocation
+      // AND would push sum(savings:* thisCycleAmount) > snap.derived.surplus.
+      // Reductions always allowed (they improve over-allocated state). The 5
+      // existing modal save handlers (openEditPaydaySavings, openEditPayday-
+      // TripAlloc, etc.) already handle {ok:false, reason} via the standard
+      // EDIT_MODAL envelope — modal stays open + toast surfaces the reason.
+      // Pay-in-full normalisation above fires BEFORE this check; INV-29 doesn't
+      // see those cases (they're already a clear-override, not an increase).
+      // Scope: savings only this commit; kia-extra follow-up if needed.
+      if (category === 'savings') {
+        try {
+          const oldOv = S.activePlan.overrides[key];
+          const oldAmt = oldOv ? (+oldOv.thisCycleAmount || 0) : 0;
+          const delta = n - oldAmt;
+          if (delta > 0) {
+            // Snapshot AFTER override would land — simulate to compute
+            // wouldBeSavingsTotal without committing the write.
+            const snap = (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.getSnapshot)
+              ? BRAIN.plan.getSnapshot() : null;
+            if (snap && snap.derived && typeof snap.derived.surplus === 'number') {
+              const wouldBeSavingsTotal = (snap.savings.total || 0) - oldAmt + n;
+              const surplus = snap.derived.surplus;
+              if (wouldBeSavingsTotal > surplus + 0.01) {
+                BRAIN.audit.append({
+                  type: 'inv29_refusal',
+                  key,
+                  requested: n,
+                  oldAmt,
+                  delta,
+                  currentSavingsTotal: snap.savings.total,
+                  wouldBeSavingsTotal: parseFloat(wouldBeSavingsTotal.toFixed(2)),
+                  surplus,
+                  wouldOverBy: parseFloat((wouldBeSavingsTotal - surplus).toFixed(2)),
+                  source,
+                  ts: Date.now(),
+                });
+                return {
+                  ok: false,
+                  reason: 'inv29-over-allocation',
+                  requested: n,
+                  available: parseFloat(Math.max(0, surplus - (snap.savings.total - oldAmt)).toFixed(2)),
+                  wouldOverBy: parseFloat((wouldBeSavingsTotal - surplus).toFixed(2)),
+                };
+              }
+            }
+          }
+        } catch (e) {
+          // Defensive: if snapshot computation fails, fall through to original
+          // behavior (write proceeds without INV-29 check). Logged so failures
+          // surface in audit forensics instead of silently bypassing the rule.
+          try { BRAIN.audit.append({ type: 'inv29_check_failed', key, error: String(e && e.message || e), source, ts: Date.now() }); } catch (_) {}
+        }
+      }
       const old = S.activePlan.overrides[key];
       S.activePlan.overrides[key] = {
         normalAmount,
