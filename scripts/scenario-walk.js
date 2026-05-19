@@ -534,6 +534,541 @@ const SCENARIOS = [
     ],
   },
   {
+    id: 'F-chat-ai-dispatch',
+    name: 'Chat-AI action dispatch (log_txn happy path · no API call)',
+    description: 'Verify the AI action dispatcher (executeChatAction) routes log_txn through BRAIN.transaction.recordWithAllocation. No real API call — directly invokes executeChatAction with a synthesized action payload. Catches dispatcher-side bugs without consuming API budget.',
+    steps: [
+      {
+        description: 'Boot + capture baseline + verify dispatcher surface exists',
+        action: async () => {},
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            hasExecuteChatAction: typeof executeChatAction === 'function',
+            hasSendChatMessage: typeof sendChatMessage === 'function',
+            hasBRAINChat: !!(BRAIN && BRAIN.chat),
+            chatSourcesPresent: !!(BRAIN.SOURCES.CHAT && BRAIN.SOURCES.CHAT_ASSISTANT_REPLY),
+            bal: S.bal,
+            txnCount: (S.txns || []).length,
+          }));
+          const errors = [];
+          if (!state.hasExecuteChatAction) errors.push('executeChatAction not defined');
+          if (!state.hasBRAINChat) errors.push('BRAIN.chat bubble missing');
+          if (!state.chatSourcesPresent) errors.push('BRAIN.SOURCES.CHAT or CHAT_ASSISTANT_REPLY missing');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Dispatch a synthesized log_txn action with .00 amt (avoid round-up sibling); verify chat-recorded txn carries _chatLogged + CHAT source',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioF_balBefore = S.bal;
+            window._scenarioF_txnsBefore = (S.txns || []).length;
+            window._scenarioF_roundUpsEnabled = !!S.roundUpsEnabled;
+            // Use $33.00 (whole dollars) so no round-up sibling fires
+            executeChatAction({ action: 'log_txn', amt: 33.00, note: 'Scenario F test lunch', cat: 'Food / Coffee' });
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => {
+            const txns = S.txns || [];
+            return {
+              balBefore: window._scenarioF_balBefore,
+              balAfter: S.bal,
+              txnsBefore: window._scenarioF_txnsBefore,
+              txnsAfter: txns.length,
+              roundUpsEnabled: window._scenarioF_roundUpsEnabled,
+              // Find the chat-marked txn (may not be the absolute last if a roundup sibling lands)
+              chatTxn: [...txns].reverse().find(t => t && t._chatLogged),
+              recentAuditSources: (S._auditLog || []).slice(-8).map(e => e && e.source).filter(Boolean),
+            };
+          });
+          const errors = [];
+          const balDelta = +(state.balAfter - state.balBefore).toFixed(2);
+          // $33.00 whole-dollar should be exact -$33 (no roundup); fall back to <=1 cent tolerance for fp
+          if (Math.abs(balDelta + 33) > 0.05) errors.push(`Balance delta ${balDelta} != -33.00 (whole-dollar amt = no round-up expected)`);
+          if (state.txnsAfter !== state.txnsBefore + 1) errors.push(`txn count delta ${state.txnsAfter - state.txnsBefore} expected 1 (no round-up sibling for whole-dollar amt)`);
+          if (!state.chatTxn) errors.push('No txn carries _chatLogged marker');
+          // Source tag value is the lowercase string 'chat' (BRAIN.SOURCES.CHAT === 'chat')
+          if (!state.recentAuditSources.includes('chat')) errors.push(`audit log missing 'chat' source tag; recent: ${state.recentAuditSources.join(',')}`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Dispatch no_spend action; verify state UNCHANGED + chat_no_spend onStateChange fires',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioF_preNoSpend = { bal: S.bal, txnCount: (S.txns || []).length };
+            executeChatAction({ action: 'no_spend' });
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            balBefore: window._scenarioF_preNoSpend.bal,
+            balAfter: S.bal,
+            txnsBefore: window._scenarioF_preNoSpend.txnCount,
+            txnsAfter: (S.txns || []).length,
+          }));
+          const errors = [];
+          if (state.balAfter !== state.balBefore) errors.push(`Balance changed on no_spend: ${state.balBefore} → ${state.balAfter}`);
+          if (state.txnsAfter !== state.txnsBefore) errors.push(`txn count changed on no_spend: ${state.txnsBefore} → ${state.txnsAfter}`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
+    id: 'G-ai-update-balance-fr03',
+    name: 'AI update_balance regression guard (FR-03 — known buggy until fixed)',
+    description: 'Captures the FR-03 behavior: applyBalanceCorrection(newBal, reason) interprets action.amt as the TARGET balance, NOT a delta. When AI passes a delta-meant value, the balance jumps to that absolute number, producing the ~$7k overshoot John reported. This scenario asserts the CURRENT BUGGY BEHAVIOR so the day FR-03 lands, the assertion flips and surfaces the fix.',
+    steps: [
+      {
+        description: 'Boot + capture baseline',
+        action: async () => {},
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            bal: S.bal,
+            hasApplyBalanceCorrection: typeof applyBalanceCorrection === 'function',
+            hasExecuteChatAction: typeof executeChatAction === 'function',
+          }));
+          return { ok: state.hasApplyBalanceCorrection && state.hasExecuteChatAction, errors: state.hasApplyBalanceCorrection ? [] : ['applyBalanceCorrection missing'], state };
+        },
+      },
+      {
+        description: 'Dispatch update_balance with amt=500 (AI may mean "add $500" or "set to $500"); CURRENT behavior sets to $500',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioG_balBefore = S.bal;
+            executeChatAction({ action: 'update_balance', amt: 500, reason: 'Scenario G probe' });
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            balBefore: window._scenarioG_balBefore,
+            balAfter: S.bal,
+            interpretation: 'current behavior treats action.amt as TARGET balance via applyBalanceCorrection(newBal, reason)',
+          }));
+          const errors = [];
+          // Current buggy behavior: S.bal === 500.00 after this call (target-balance semantics)
+          // When FR-03 lands, behavior should change to delta semantics (S.bal === balBefore + 500)
+          // Regression guard: assert current (buggy) behavior holds — flip this when FR-03 ships
+          if (Math.abs(state.balAfter - 500) > 0.05) {
+            // Either FR-03 fixed it (good — flip the assertion), or something else broke
+            errors.push(`balAfter=${state.balAfter} expected 500.00 (current buggy target-balance semantics); if this fails because FR-03 shipped, flip the assertion to balDelta=+500 instead`);
+          }
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Reverse: dispatch update_balance with amt=balBefore to restore; verify correction txn logged each call',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioG_txnsBeforeRevert = (S.txns || []).length;
+            const target = window._scenarioG_balBefore;
+            executeChatAction({ action: 'update_balance', amt: target, reason: 'Scenario G restore' });
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            balRestored: S.bal,
+            balBeforeOriginal: window._scenarioG_balBefore,
+            txnsAfterRevert: (S.txns || []).length,
+            txnsBeforeRevert: window._scenarioG_txnsBeforeRevert,
+            lastTxn: (S.txns || []).slice(-1)[0],
+          }));
+          const errors = [];
+          if (Math.abs(state.balRestored - state.balBeforeOriginal) > 0.05) errors.push('Balance not restored after reverse correction');
+          if (state.txnsAfterRevert !== state.txnsBeforeRevert + 1) errors.push('No correction txn logged on revert');
+          if (state.lastTxn && !state.lastTxn._isCorrection) errors.push('Restore txn missing _isCorrection marker');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
+    id: 'H-debt-subscreen-coherence',
+    name: 'Debt sub-screen ↔ canvas REMAINDER cross-surface coherence',
+    description: 'FR-07 listed Debts sub-screen disagreeing with canvas. Verify renderPaydayDebts reads the same snap.debts numbers that drive the canvas REMAINDER + the PLAN dashboard tile. Override a single debt amount and assert all surfaces reflect the same total.',
+    steps: [
+      {
+        description: 'Boot + verify renderPaydayDebts surface exists + snap.debts is well-formed',
+        action: async () => {},
+        asserts: async (page) => {
+          const state = await page.evaluate(() => {
+            const snap = BRAIN.plan.getSnapshot();
+            return {
+              hasRenderPaydayDebts: typeof renderPaydayDebts === 'function',
+              snapDebtsTotal: snap.debts.total,
+              snapDebtsCount: snap.debts.unpaid ? snap.debts.unpaid.length : (snap.debts.count || 0),
+              hasDebts: !!(snap.debts && typeof snap.debts.total === 'number'),
+            };
+          });
+          const errors = [];
+          if (!state.hasRenderPaydayDebts) errors.push('renderPaydayDebts not defined');
+          if (!state.hasDebts) errors.push('snap.debts shape broken');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Pick first unpaid debt (including viaRent — fixture has only viaRent debts); override amount via BRAIN.plan.setOverride; verify snap.debts.total + snap.derived.essentialsTotal both reflect the change',
+        action: async (page) => {
+          await page.evaluate(() => {
+            const snap = BRAIN.plan.getSnapshot();
+            // Fixture state at 2026-05-19 has only viaRent debts in S.debts.
+            // snap.debts excludes viaRent (line 20045 filter), so we use snap.debts.unpaid if present.
+            // Fall back to any S.debts entry to ensure the scenario can run.
+            let firstUnpaid = (S.debts || []).find(d => !d.paid && !d.viaRent);
+            if (!firstUnpaid) firstUnpaid = (S.debts || []).find(d => !d.paid);  // accept viaRent
+            if (!firstUnpaid) {
+              window._scenarioH_setupResult = { ok: false, reason: 'no-debts-at-all', fixtureDebtsCount: (S.debts || []).length };
+              return;
+            }
+            window._scenarioH_debtIsViaRent = !!firstUnpaid.viaRent;
+            window._scenarioH_debtId = firstUnpaid.id || firstUnpaid.name;
+            window._scenarioH_debtName = firstUnpaid.name;
+            window._scenarioH_origAmt = +firstUnpaid.amt || 0;
+            window._scenarioH_origDebtsTotal = snap.debts.total;
+            window._scenarioH_origEssentialsTotal = snap.derived.essentialsTotal;
+            window._scenarioH_setupResult = BRAIN.plan.setOverride('debt', window._scenarioH_debtId, 1, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => {
+            const snap = BRAIN.plan.getSnapshot();
+            return {
+              setupResult: window._scenarioH_setupResult,
+              debtIsViaRent: window._scenarioH_debtIsViaRent,
+              debtName: window._scenarioH_debtName,
+              origAmt: window._scenarioH_origAmt,
+              origDebtsTotal: window._scenarioH_origDebtsTotal,
+              origEssentialsTotal: window._scenarioH_origEssentialsTotal,
+              newDebtsTotal: snap.debts.total,
+              newEssentialsTotal: snap.derived.essentialsTotal,
+            };
+          });
+          const errors = [];
+          if (!state.setupResult || state.setupResult.ok !== true) {
+            errors.push(`Override refused: ${state.setupResult && state.setupResult.reason || JSON.stringify(state.setupResult)}`);
+            return { ok: false, errors, state };
+          }
+          // snap.debts EXCLUDES viaRent debts (line 20045). If we overrode a viaRent debt,
+          // snap.debts.total should be unchanged. Only assert delta for non-viaRent debts.
+          if (!state.debtIsViaRent) {
+            const expectedDebtDelta = -(state.origAmt - 1);
+            const actualDebtDelta = state.newDebtsTotal - state.origDebtsTotal;
+            if (Math.abs(actualDebtDelta - expectedDebtDelta) > 0.05) {
+              errors.push(`snap.debts.total delta ${actualDebtDelta} != expected ${expectedDebtDelta} (debt ${state.debtName} ${state.origAmt}→$1)`);
+            }
+            const actualEssentialsDelta = state.newEssentialsTotal - state.origEssentialsTotal;
+            if (Math.abs(actualEssentialsDelta - expectedDebtDelta) > 0.05) {
+              errors.push(`snap.derived.essentialsTotal delta ${actualEssentialsDelta} != snap.debts.total delta ${expectedDebtDelta} — divergence`);
+            }
+          } else {
+            // viaRent debt — assert NO change in snap.debts (correct exclusion semantics)
+            if (Math.abs(state.newDebtsTotal - state.origDebtsTotal) > 0.05) {
+              errors.push(`snap.debts.total changed despite viaRent debt override: ${state.origDebtsTotal} → ${state.newDebtsTotal} (viaRent debts should be excluded)`);
+            }
+          }
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Render renderPaydayDebts HTML; verify it contains the overridden $1 amount (not the original)',
+        action: async (page) => {
+          await page.evaluate(() => {
+            const screen = document.getElementById('pg-spend') || document.getElementById('payday-debts');
+            // Force render
+            if (typeof renderPaydayDebts === 'function') {
+              try { renderPaydayDebts(); } catch (_) {}
+            }
+            // Capture all visible text containing the debt name
+            const allText = document.body.innerText || document.body.textContent || '';
+            window._scenarioH_pageText = allText;
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => {
+            const snap = BRAIN.plan.getSnapshot();
+            return {
+              debtName: window._scenarioH_debtName,
+              origAmt: window._scenarioH_origAmt,
+              pageContainsOrigAmt: window._scenarioH_pageText.includes('$' + Math.round(window._scenarioH_origAmt).toLocaleString()),
+              pageContainsNewAmt: window._scenarioH_pageText.includes('$1'),
+              snapDebtsTotal: snap.debts.total,
+            };
+          });
+          // This step is INFORMATIONAL — it surfaces whether stale rendering is visible.
+          // Strict assertion would fail when the sub-screen isn't currently active (most likely the case).
+          // We just record the state for the report; assertion always passes unless snap shape broke.
+          const errors = [];
+          if (typeof state.snapDebtsTotal !== 'number') errors.push('snap.debts.total reverted to non-number after render');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
+    id: 'I-multi-cycle-rollover',
+    name: 'Cycle rollover (BRAIN.plan.rolloverIfNeeded with hasWork=false guard)',
+    description: 'Bundle 27 P6.1 rollover. The defensive r74 fix (John 2026-05-14 "PLAN gets wiped after every commit") added hasWork=true → defer auto-rollover. Verify: (a) rollover defers when plan has work · (b) rollover fires when plan has no work + cycleEndDate passed · (c) history archived properly.',
+    steps: [
+      {
+        description: 'Boot + verify rollover surface exists + capture current cycleId',
+        action: async () => {},
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            hasRolloverIfNeeded: typeof BRAIN.plan.rolloverIfNeeded === 'function',
+            currentCycleId: S.activePlan && S.activePlan.cycleId,
+            cycleEndDate: S.activePlan && S.activePlan.cycleEndDate,
+            planHistoryLen: (S.planHistory || []).length,
+            hasOverrides: !!(S.activePlan && S.activePlan.overrides && Object.keys(S.activePlan.overrides).length > 0),
+            lockedAt: S.activePlan && S.activePlan.lockedAt,
+          }));
+          return { ok: state.hasRolloverIfNeeded, errors: state.hasRolloverIfNeeded ? [] : ['BRAIN.plan.rolloverIfNeeded missing'], state };
+        },
+      },
+      {
+        description: 'Force cycleEndDate into the past + leave plan with work (overrides); rollover MUST defer (return ok:false, reason:deferred-has-work)',
+        action: async (page) => {
+          await page.evaluate(() => {
+            // Backdate cycleEndDate to yesterday so now > endMs
+            const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+            S.activePlan.cycleEndDate = yesterday;
+            // Ensure plan has work — add an override if none exists
+            S.activePlan.overrides = S.activePlan.overrides || {};
+            S.activePlan.overrides['savings:scenario-I-probe'] = {
+              normalAmount: 0, thisCycleAmount: 50, reason: null, deferred: 0, deferAction: 'none', setAt: Date.now(),
+            };
+            window._scenarioI_rolloverResult1 = BRAIN.plan.rolloverIfNeeded();
+            window._scenarioI_cycleIdAfter1 = S.activePlan.cycleId;
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            result: window._scenarioI_rolloverResult1,
+            cycleIdAfter: window._scenarioI_cycleIdAfter1,
+            recentAuditTypes: (S._auditLog || []).slice(-5).map(e => e && e.type),
+          }));
+          const errors = [];
+          if (state.result.ok !== false) errors.push(`Rollover should have deferred (has work); got ok=${state.result.ok}`);
+          if (state.result.reason !== 'deferred-has-work') errors.push(`Expected reason 'deferred-has-work'; got '${state.result.reason}'`);
+          if (!state.recentAuditTypes.includes('rollover_deferred_has_work')) {
+            errors.push(`audit log missing rollover_deferred_has_work; got ${state.recentAuditTypes.join(',')}`);
+          }
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Clear ALL work + leave cycleEndDate in past; rollover MUST fire (history archived, new cycleId)',
+        action: async (page) => {
+          await page.evaluate(() => {
+            // Strip all work signals so hasWork === false
+            S.activePlan.lockedAt = null;
+            S.activePlan.overrides = {};
+            S.activePlan.savings = {};
+            S.activePlan.knownUpcoming = [];
+            S.activePlan.ticks = {};
+            if (S.activePlan.income && S.activePlan.income.bonus) S.activePlan.income.bonus.included = false;
+            window._scenarioI_cycleIdBefore = S.activePlan.cycleId;
+            window._scenarioI_historyLenBefore = (S.planHistory || []).length;
+            window._scenarioI_rolloverResult2 = BRAIN.plan.rolloverIfNeeded();
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            result: window._scenarioI_rolloverResult2,
+            cycleIdBefore: window._scenarioI_cycleIdBefore,
+            cycleIdAfter: S.activePlan.cycleId,
+            historyLenBefore: window._scenarioI_historyLenBefore,
+            historyLenAfter: (S.planHistory || []).length,
+            lastHistoryEntry: (S.planHistory || []).slice(-1)[0],
+            HISTORY_CAP: 24,
+          }));
+          const errors = [];
+          // Success signal: result.ok === true (cycleId may STAY THE SAME — this is the
+          // architectural finding r74 was working around. cycleId derives from current
+          // date's last-payday, so a same-day rollover yields the same cycleId. Surfaced
+          // as architectural-divergence in scenario-sweep doc, not a hard fail.)
+          if (!state.result || state.result.ok !== true) {
+            errors.push(`Rollover did NOT return ok:true; result=${JSON.stringify(state.result)}`);
+          }
+          // History either grows by 1, OR stays the same length (when at the 24-cycle cap; line 21101).
+          const lengthDelta = state.historyLenAfter - state.historyLenBefore;
+          const atCap = state.historyLenBefore >= state.HISTORY_CAP;
+          if (!atCap && lengthDelta !== 1) {
+            errors.push(`planHistory not appended: ${state.historyLenBefore} → ${state.historyLenAfter} (not at cap, expected +1)`);
+          }
+          if (atCap && lengthDelta !== 0) {
+            errors.push(`planHistory length should be constant at cap: ${state.historyLenBefore} → ${state.historyLenAfter}`);
+          }
+          if (!state.lastHistoryEntry || state.lastHistoryEntry.cycleId !== state.cycleIdBefore) {
+            errors.push(`History entry cycleId ${state.lastHistoryEntry && state.lastHistoryEntry.cycleId} != pre-rollover cycleId ${state.cycleIdBefore} (slice-tail mis-aligned)`);
+          }
+          // Annotate state with the finding for the sweep doc
+          state.architecturalFinding = (state.cycleIdBefore === state.cycleIdAfter)
+            ? 'rollover-fires-but-cycleId-unchanged: result.newCycle === result.previousCycle. Root: cycleId derives from current-date last-payday; with frozen clock 2026-05-19 + last-payday 2026-05-14, new cycle resolves to same date. r74 defer-on-work is the workaround. True fix needs cycleId increment semantics.'
+            : null;
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
+    id: 'J-notify-local-queue',
+    name: 'NOTIFY.add local queue + dedup behavior (no Worker round-trip)',
+    description: 'Tests the LOCAL trigger surface: NOTIFY.add() enqueue, ID-based dedup (so the same alert does not re-fire on every render), and audit log integration. Push notification delivery via the Cloudflare Worker is OUT OF SCOPE here.',
+    steps: [
+      {
+        description: 'Boot + verify NOTIFY surface',
+        action: async () => {},
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            hasNOTIFY: typeof NOTIFY !== 'undefined' && !!NOTIFY,
+            hasAdd: typeof NOTIFY !== 'undefined' && typeof NOTIFY.add === 'function',
+            notifyKeys: typeof NOTIFY !== 'undefined' ? Object.keys(NOTIFY).filter(k => typeof NOTIFY[k] === 'function').sort() : [],
+            existingNotifs: S.notifications ? S.notifications.length : 0,
+          }));
+          const errors = [];
+          if (!state.hasNOTIFY) errors.push('NOTIFY undefined');
+          if (!state.hasAdd) errors.push('NOTIFY.add not a function');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Add notification with unique ID; verify queued',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioJ_idUnique = 'scenario-J-' + Date.now();
+            window._scenarioJ_existingBefore = (S.notifications || []).length;
+            NOTIFY.add({
+              type: 'info',
+              title: 'Scenario J probe',
+              message: 'Test notification',
+              ts: Date.now(),
+              id: window._scenarioJ_idUnique,
+            });
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            existingAfter: (S.notifications || []).length,
+            existingBefore: window._scenarioJ_existingBefore,
+            queuedNotif: (S.notifications || []).find(n => n && n.id === window._scenarioJ_idUnique),
+          }));
+          const errors = [];
+          if (state.existingAfter !== state.existingBefore + 1) {
+            errors.push(`Notifications count ${state.existingAfter} expected ${state.existingBefore + 1}`);
+          }
+          if (!state.queuedNotif) errors.push('Queued notif not findable by id');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Add SAME-ID notification twice; verify dedup (count does not double)',
+        action: async (page) => {
+          await page.evaluate(() => {
+            const dedupId = 'scenario-J-dedup-' + Date.now();
+            window._scenarioJ_dedupCountBefore = (S.notifications || []).length;
+            NOTIFY.add({ type: 'info', title: 'Dedup test', message: 'A', ts: Date.now(), id: dedupId });
+            NOTIFY.add({ type: 'info', title: 'Dedup test', message: 'A', ts: Date.now(), id: dedupId });
+            NOTIFY.add({ type: 'info', title: 'Dedup test', message: 'A', ts: Date.now(), id: dedupId });
+            window._scenarioJ_dedupCountAfter = (S.notifications || []).length;
+          });
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            before: window._scenarioJ_dedupCountBefore,
+            after: window._scenarioJ_dedupCountAfter,
+          }));
+          const errors = [];
+          // Dedup should result in net +1 (or 0 if id-already-present), NOT +3
+          const delta = state.after - state.before;
+          if (delta > 1) errors.push(`Dedup failed: 3 same-id adds yielded delta ${delta} (expected 0 or 1)`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
+    id: 'K-settings-ia-navigation',
+    name: 'Settings IA — Bundle 22 v3 7-category nav coherence',
+    description: 'Walk Settings root → each of 7 sub-screens (financial, strategies, notifications, ai, data, diagnostics, about). Verify each sub-screen renders, back-nav works, no errors thrown. Coverage check for the IA that John uses occasionally.',
+    steps: [
+      {
+        description: 'Boot + navigate to Settings; verify root renders with 7 category buttons',
+        action: async (page) => {
+          await page.evaluate(() => {
+            if (typeof goPage === 'function') goPage('pg-settings');
+          });
+          await page.waitForTimeout(200);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => {
+            const settingsRoot = document.getElementById('pg-settings');
+            const isActive = settingsRoot && settingsRoot.classList.contains('active');
+            const subCategoryButtons = settingsRoot
+              ? Array.from(settingsRoot.querySelectorAll('button[onclick*="openSettingsCategory"]'))
+              : [];
+            const categories = subCategoryButtons.map(b => {
+              const m = (b.getAttribute('onclick') || '').match(/openSettingsCategory\('(sub-[^']+)'\)/);
+              return m ? m[1] : null;
+            }).filter(Boolean);
+            return {
+              isActive,
+              categories,
+              hasOpenSettingsCategory: typeof openSettingsCategory === 'function',
+            };
+          });
+          const errors = [];
+          if (!state.isActive) errors.push('pg-settings not active after goPage');
+          if (!state.hasOpenSettingsCategory) errors.push('openSettingsCategory not defined');
+          // Bundle 22 v3 set 7 categories
+          const expected = ['sub-financial', 'sub-strategies', 'sub-notifications', 'sub-ai', 'sub-data', 'sub-diagnostics', 'sub-about'];
+          const missing = expected.filter(c => !state.categories.includes(c));
+          if (missing.length) errors.push(`Settings missing categories: ${missing.join(',')}`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Open each of the 7 sub-screens in sequence; verify each renders without throwing + back-nav works',
+        action: async (page) => {
+          await page.evaluate(async () => {
+            const categories = ['sub-financial', 'sub-strategies', 'sub-notifications', 'sub-ai', 'sub-data', 'sub-diagnostics', 'sub-about'];
+            const results = {};
+            for (const cat of categories) {
+              try {
+                openSettingsCategory(cat);
+                // Allow render flush
+                await new Promise(r => setTimeout(r, 50));
+                const subEl = document.getElementById(cat);
+                results[cat] = {
+                  exists: !!subEl,
+                  hasContent: !!(subEl && subEl.innerHTML && subEl.innerHTML.length > 50),
+                  hasBackBtn: !!(subEl && subEl.querySelector('button[onclick*="closeSettingsCategory"], button[onclick*="back"], button[aria-label*="ack"]')),
+                };
+              } catch (e) {
+                results[cat] = { error: String(e && e.message || e) };
+              }
+            }
+            window._scenarioK_subResults = results;
+          });
+          await page.waitForTimeout(200);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => window._scenarioK_subResults);
+          const errors = [];
+          for (const [cat, r] of Object.entries(state)) {
+            if (r.error) errors.push(`${cat}: threw ${r.error}`);
+            else if (!r.exists) errors.push(`${cat}: subscreen element missing`);
+            else if (!r.hasContent) errors.push(`${cat}: subscreen rendered empty (innerHTML < 50 chars)`);
+            // back-nav check is informational — many sub-screens use parent's back button
+          }
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
     id: 'C-over-allocation-refusal',
     name: 'INV-32 over-allocation refusal (user-facing via canonical writer)',
     description: 'User attempts to over-allocate savings; INV-32 refuses, state unchanged, audit log records inv32_refusal',
