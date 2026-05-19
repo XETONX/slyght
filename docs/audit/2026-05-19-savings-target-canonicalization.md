@@ -373,3 +373,29 @@ The **20+ reader migration** is the remaining work. Plus a few additions to roun
 ---
 
 **The 32.3 scope just got 60% smaller because Bundle 28 already did the hardest part. The architectural mess John flagged IS real, but the canonical-store substrate is already shipped — what remained were the consumer migrations + the trip-awareness derived state.**
+
+---
+
+## ADDENDUM (2026-05-19) — Pass 3 section-structure correction
+
+**Direction from John, 2026-05-19 batched with Finding 2 substrate decisions:**
+
+> When you get to consumer migration on PLAN dashboard, do NOT consolidate "Savings Targets" + "Upcoming Trips" into one section. KEEP THEM SEPARATE.
+>
+> Trips have different semantics (spendWindow, daily rate, ACTIVE state) than goals (accumulating, no activation). Combining them would hide that semantic distinction even with mode badges.
+
+**Implication for Pass 3 (consumer migration):**
+
+When migrating renderers off `PLAN.getTrips()` / `PLAN.getGoals()` to `BRAIN.plan.intent.byKind('trip')` / `byKind('goal')` / `byKind('buffer')` / `byKind('provision')`:
+
+- PLAN dashboard renders FOUR separate sections, one per kind:
+  - **Savings Targets** — `byKind('goal')` (includes Property Deposit hybrid)
+  - **Upcoming Trips** — `byKind('trip')` (Darwin, China, etc — with spendWindow + active-state badges)
+  - **Rainy Day Fund** — `byKind('buffer')` (single buffer typically)
+  - **Annual Provisions** — `byKind('provision')` (Rego, Insurance, Health, etc)
+
+- Do NOT introduce a "unified savings UI" that lists all kinds in one tile-grid. The audit's "single canonical concept" framing was about DATA (one store, one schema). Display structure stays section-per-kind so the semantic distinctions (window/activation/accumulation/sinking) remain visible.
+
+**Why:** users navigate by kind in their mental model. Trip = "where am I going + when". Goal = "what am I saving toward". Buffer = "what if". Provision = "what's coming up that I'd forgotten." Mode badges on a flat list don't communicate this as well as section headers do.
+
+Logged for Pass 3 implementation. Doesn't block Pass 1 (additions only — substrate work shipped commit `bd1c9f1`) or Pass 2 (forecast trip-awareness — values call pending).

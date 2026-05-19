@@ -10803,24 +10803,94 @@ function renderPaydayPlanRoot() {
   html += '<span style="font-family:var(--mono);font-weight:700;color:var(--text2)">' + fmt(essentialsTotal) + '</span>';
   html += '</div>';
 
-  // ── REMAINDER card — F-15 relabel + premium glow styling ──
-  // F-15: "Remainder after essentials" stays as the canonical canvas label
-  // (it's the unambiguous one — total income minus locked essentials). The
-  // sub-screen Savings "Pool" gets clearer relabeling separately.
-  const _isNeg = remainder < 0;
-  const _isAmber = !_isNeg && remainder < (snap.bufferFloor || 0);
-  const _cardCls = 'pd-remainder-card' + (_isNeg ? ' is-neg' : _isAmber ? ' is-amber' : '');
-  const _amtCol = _isNeg ? 'var(--red)' : _isAmber ? 'var(--amber)' : 'var(--green)';
-  html += '<div id="payday-remainder-tile" class="' + _cardCls + '">';
-  html += '<div class="pd-rc-label">🎯 Your free money this cycle</div>';
-  html += '<div id="payday-remainder-value" class="pd-rc-amt" style="color:' + _amtCol + '">' + fmt(remainder) + '</div>';
-  html += '<div class="pd-rc-math">' + fmt(snap.totalToPlan) + ' coming in − ' + fmt(essentialsTotal) + ' essentials</div>';
+  // ── WHERE THE MONEY SITS — Bundle 32.5 hero breakdown ──
+  // Replaces the prior pd-remainder-card "Your free money this cycle $X"
+  // panel. The pre-change panel showed only the free-money figure with
+  // inline math (totalToPlan − essentials); a user looking at $7,282
+  // coming in couldn't see what's ALREADY HAPPENED ($5,624 paid) vs
+  // STILL AHEAD ($1,229 upcoming essentials + $429 free).
+  //
+  // Per the 2026-05-19 decisions (Finding 2 substrate-gap):
+  //   - Already Paid Out  = snap.derived.essentialsPaidTotal
+  //                         (bill + debt mark-paid events only — Option A)
+  //   - Essentials Still Upcoming = snap.derived.essentialsUpcomingTotal
+  //                                 (unpaid bills + unpaid debts +
+  //                                  dailyLiving budgeted + provisions)
+  //   - Free To Allocate  = snap.derived.remainder
+  //                         (NOT stillToAllocate — see Decision 2:
+  //                          savings commitments are SOFT; remainder shows
+  //                          what's not yet eaten by STRUCTURAL essentials)
+  //
+  // Conservation (smoke-asserted in essentials-lifecycle-split.smoke.js):
+  //   paid + upcoming + remainder ≡ totalToPlan
+  //
+  // Receipt-style footer renders that equality literally so the user can
+  // see the math holds; matches the 32.4 drilldown footer pattern and the
+  // 32.6 reset-modal receipt pattern. Render-truth invariant made visible.
+  const paidOut = +snap.derived.essentialsPaidTotal || 0;
+  const upcomingEssentials = +snap.derived.essentialsUpcomingTotal || 0;
+  const freeToAllocate = +remainder || 0;
+  const _heroTotal = +snap.totalToPlan || 0;
+  const _isNeg = freeToAllocate < 0;
+  const _isAmber = !_isNeg && freeToAllocate < (snap.bufferFloor || 0);
+  const _freeCol = _isNeg ? 'var(--red)' : _isAmber ? 'var(--amber)' : 'var(--green)';
+  // Stacked bar widths — flex-grow values match dollar amounts (one
+  // segment per non-zero component; absolute values cover the negative-
+  // free case so the bar still renders meaningfully)
+  const _segPaid = Math.max(0, Math.round(paidOut));
+  const _segUpcoming = Math.max(0, Math.round(upcomingEssentials));
+  const _segFree = Math.max(0, Math.round(Math.abs(freeToAllocate)));
+  const _liveBal = (typeof getLiveBal === 'function') ? getLiveBal() : (S.bal || 0);
+
+  html += '<div id="payday-remainder-tile" class="pd-remainder-card' + (_isNeg ? ' is-neg' : _isAmber ? ' is-amber' : '') + '" data-money-breakdown="true">';
+  html += '  <div class="pd-rc-label" style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">Where the ' + fmt(_heroTotal) + ' sits now</div>';
+  // 3 breakdown lines
+  html += '  <div style="display:flex;flex-direction:column;gap:8px">';
+  // Already Paid Out — solid dot
+  html += '    <div data-line="paid" style="display:flex;align-items:center;justify-content:space-between">';
+  html += '      <div style="display:flex;align-items:center;gap:8px">';
+  html += '        <span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;flex-shrink:0"></span>';
+  html += '        <span style="font-size:13px;color:var(--text)">Already paid out</span>';
+  html += '      </div>';
+  html += '      <span style="font-family:var(--mono);font-size:14px;color:var(--text);font-weight:600">' + fmt(paidOut) + '</span>';
+  html += '    </div>';
+  // Essentials Still Upcoming — hollow dot (border only)
+  html += '    <div data-line="upcoming" style="display:flex;align-items:center;justify-content:space-between">';
+  html += '      <div style="display:flex;align-items:center;gap:8px">';
+  html += '        <span style="width:8px;height:8px;border-radius:50%;background:transparent;border:1.5px solid var(--green);display:inline-block;box-sizing:border-box;flex-shrink:0"></span>';
+  html += '        <span style="font-size:13px;color:var(--text2)">Essentials still upcoming</span>';
+  html += '      </div>';
+  html += '      <span style="font-family:var(--mono);font-size:14px;color:var(--text2);font-weight:600">' + fmt(upcomingEssentials) + '</span>';
+  html += '    </div>';
+  // Free To Allocate — highlighted (solid + accent color when healthy)
+  html += '    <div data-line="free" style="display:flex;align-items:center;justify-content:space-between">';
+  html += '      <div style="display:flex;align-items:center;gap:8px">';
+  html += '        <span style="width:8px;height:8px;border-radius:50%;background:' + _freeCol + ';display:inline-block;flex-shrink:0;box-shadow:0 0 0 2px rgba(0,232,122,0.12)"></span>';
+  html += '        <span style="font-size:13px;color:' + _freeCol + ';font-weight:700">Free to allocate</span>';
+  html += '      </div>';
+  html += '      <span id="payday-remainder-value" style="font-family:var(--mono);font-size:15px;color:' + _freeCol + ';font-weight:800">' + fmt(freeToAllocate) + '</span>';
+  html += '    </div>';
+  html += '  </div>';
+  // Stacked progress bar
+  if (_segPaid + _segUpcoming + _segFree > 0) {
+    html += '  <div style="height:6px;border-radius:3px;overflow:hidden;display:flex;margin-top:14px;background:rgba(255,255,255,0.04)">';
+    if (_segPaid > 0) html += '<div style="background:var(--green);flex:' + _segPaid + '"></div>';
+    if (_segUpcoming > 0) html += '<div style="background:rgba(0,232,122,0.35);flex:' + _segUpcoming + '"></div>';
+    if (_segFree > 0) html += '<div style="background:' + (_isNeg ? 'var(--red)' : 'var(--green-bright, #5DCAA5)') + ';flex:' + _segFree + '"></div>';
+    html += '  </div>';
+  }
+  // Conservation receipt — proves the math literally
+  html += '  <div data-money-receipt style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:10px">Σ ' + fmt(paidOut) + ' + ' + fmt(upcomingEssentials) + ' + ' + fmt(freeToAllocate) + ' = ' + fmt(_heroTotal) + ' ✓</div>';
+  // Account-balance grounding line — preserved per spec ("relevant grounding context")
+  html += '  <div style="display:flex;align-items:center;justify-content:space-between;padding-top:10px;margin-top:10px;border-top:1px solid var(--border)">';
+  html += '    <span style="font-size:11px;color:var(--text3)">Account balance today</span>';
+  html += '    <span data-line="account-balance" style="font-family:var(--mono);font-size:14px;color:var(--green);font-weight:600">$' + (_liveBal || 0).toFixed(2) + '</span>';
+  html += '  </div>';
+  // Negative-free advisory (preserved from prior pd-remainder-card behavior)
   if (_isNeg) {
-    html += '<div class="pd-rc-explain">⚠️ You\'re overcommitted. Trim a goal, defer a bill, or lower a floor before locking.</div>';
+    html += '  <div class="pd-rc-explain" style="margin-top:10px">⚠️ You\'re overcommitted. Trim a goal, defer a bill, or lower a floor before locking.</div>';
   } else if (_isAmber) {
-    html += '<div class="pd-rc-explain">⚠️ Below safety-buffer floor ($' + Math.round(snap.bufferFloor) + '). Tight cycle ahead.</div>';
-  } else {
-    html += '<div class="pd-rc-explain">This is what you have to allocate toward savings goals + upcoming items.</div>';
+    html += '  <div class="pd-rc-explain" style="margin-top:10px">⚠️ Below safety-buffer floor ($' + Math.round(snap.bufferFloor) + '). Tight cycle ahead.</div>';
   }
   html += '</div>';
 
@@ -20609,6 +20679,27 @@ const BRAIN = {
       const remainder = totalToPlan - essentialsTotal;
       const allocatedTotal = savingsTotal + upcomingTotal;
       const stillToAllocate = remainder - allocatedTotal;
+
+      // Bundle 32.5 Pass 1.a — essentials lifecycle split. The hero "where
+      // the money sits" breakdown shows essentials split into PAID-OUT
+      // (executed via bill/debt mark-paid events) vs STILL-UPCOMING (future
+      // commitments — budgeted daily-living + provisions + unpaid bills +
+      // unpaid debts).
+      //
+      // Per the 2026-05-19 decision batch (Option A): daily-living +
+      // provisions are budgets, not transacted events, so they live in
+      // "upcoming" (no proportional split based on days elapsed — that's
+      // option B, rejected for complexity vs accuracy trade-off).
+      //
+      // Conservation:
+      //   essentialsPaidTotal + essentialsUpcomingTotal === essentialsTotal
+      //   (smoke-asserted; locks the lifecycle split against drift)
+      const billsPaidTotal = billsTotal - billsUnpaidTotal;  // both fields already exist above
+      const paidDebtsTotal = (S.debts || [])
+        .filter(d => d && d.paid && !d.viaRent)
+        .reduce((s, d) => s + _debtAmt(d), 0);
+      const essentialsPaidTotal = billsPaidTotal + paidDebtsTotal;
+      const essentialsUpcomingTotal = essentialsTotal - essentialsPaidTotal;
       const surplusVal = Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax);
       const savingsOverAllocated = Math.max(0, savingsTotal - surplusVal);
       return {
@@ -20670,6 +20761,11 @@ const BRAIN = {
             knownUpcoming: parseFloat(upcomingTotal.toFixed(2)),
             stillToAllocate: parseFloat(stillToAllocate.toFixed(2)),
           },
+          // Bundle 32.5 Pass 1.a — essentials lifecycle split. Hero
+          // breakdown ("where the $7,282 sits now") consumes these. See
+          // computation block above.
+          essentialsPaidTotal: parseFloat(essentialsPaidTotal.toFixed(2)),
+          essentialsUpcomingTotal: parseFloat(essentialsUpcomingTotal.toFixed(2)),
         },
         bufferFloor: +p.bufferFloor || 0,
         driftSensitivity: +p.driftSensitivity || 0.15,
