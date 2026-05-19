@@ -728,6 +728,53 @@
 **Notes:** Phase 2.E internal refactor only. Public API stable: callers still call `BRAIN.bills.markPaid(bill, source, options)` unchanged. The internal txn append (no-txnTs branch) now uses `recordWithAllocation` envelope so balance + txn land atomically. Eliminated 2 of the 8 Phase 1.B exception-list entries.
 **Last touched:** Bundle 30 Phase 2.E (2026-05-18)
 
+### BRAIN.bills.processAutoDebits (boot-fired batch — Bundle 31 Item 16)
+**Path:** `BRAIN → BILLS → PROCESS_AUTODEBITS`
+**Type:** writer (batch — composes per-bill markPaid)
+**Lives in:** `index.html:23051-23147` (approx — within BRAIN.bills bubble, after markPaid + _setPaidEntry + _propagateDepositLoop)
+**Inside BRAIN?** yes (`BRAIN.bills.processAutoDebits`)
+**Smoke coverage:** `tests/smoke/autodebit-batch.smoke.js` (6 cases: pre-floor-skip · eligible-process · future-skip · idempotency · manual-pre-paid-skip · first-boot-init)
+**Reads from:** `BILLS` (recurring/autoDebit/day/amt), `S.payday`, `S.autodebitProcessingStartTs` (cycle-floor), `S.paidBills` (via `isThisMonthlyBillPaid`)
+**Writes to:** `S.txns` (via `markPaid` → `recordWithAllocation`), `S.bal` (via `markPaid` → `recordWithAllocation`), `S.paidBills[key]` (via `markPaid` → `_setPaidEntry`), `S._auditLog` (`autodebit_batch_run` with processed/skipped/errors lists + per-bill `bill_mark_paid` entries via inner markPaid)
+**Triggers:** `BRAIN.bills.markPaid` (per eligible bill, with `{autoDebit:true, month:billMonth, year:billYear}` options), `BRAIN.audit.append`
+**Related features:**
+- writer-used: `BRAIN → BILLS → MARK_PAID` (called per eligible bill; new options.month/options.year additive extension lands cycle-relative paidBills keys)
+- consumer: boot wiring at `index.html:13898-13911` (DOMContentLoaded + 500ms, after MODEL build + autodebit-floor INIT)
+- peer: `BRAIN → BILLS → MARK_PAID`
+**Notes:** Bundle 31 Item 16. Boot-fired catch-up handler scans BILLS for `autoDebit:true` entries whose billDate has passed in the current cycle, atomically writes txn + marks paid. Cycle-floor guard `S.autodebitProcessingStartTs` (millisecond timestamp) prevents reprocessing of cycles already settled by bank reconciliation. First-deploy initialization sets floor to `MODEL.paydayDate.getTime()` (= 2026-06-15 for John's reconciled state) — May cycle bills are pre-floor and correctly skipped. ADR-E will codify the reconciliation-bumps-floor contract.
+**Last touched:** Bundle 31 Item 16 (2026-05-19, commit ca71d6e)
+
+### BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED (Bundle 31 Item 16)
+**Path:** `BRAIN → SOURCES → AUTODEBIT_BATCH_LANDED`
+**Type:** element (source tag — meta)
+**Lives in:** `index.html:19158` (enum) + `index.html:19223` (_SOURCE_SET) — both required per validation contract at `:19044`
+**Inside BRAIN?** yes (`BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED`)
+**Smoke coverage:** indirectly verified by `tests/smoke/autodebit-batch.smoke.js` (every case asserts `BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED` is callable as a writer source)
+**Reads from:** —
+**Writes to:** — (constant string `'autodebit-batch-landed'`)
+**Triggers:** —
+**Related features:**
+- consumer: `BRAIN → BILLS → PROCESS_AUTODEBITS` (outer source for the batch run + per-bill `markPaid` calls)
+- peer: `BRAIN → SOURCES → PAYDAY_MANUAL_LANDED` (same naming pattern — manual vs batch landing of an expected cycle event)
+**Notes:** New source tag for boot-fired autodebit batch processor. Must appear in BOTH the SOURCES enum AND `_SOURCE_SET` array per the validation contract — `recordWithAllocation` rejects unknown sources at write time.
+**Last touched:** Bundle 31 Item 16 (2026-05-19, commit ca71d6e)
+
+### S.autodebitProcessingStartTs (Bundle 31 Item 16 — cycle-floor state field)
+**Path:** `S → AUTODEBIT_PROCESSING_START_TS`
+**Type:** element (state field)
+**Lives in:** initialized in boot wiring at `index.html:13881-13897`; read by `BRAIN.bills.processAutoDebits` at `:23080`
+**Inside BRAIN?** no (state field on the global S object; canonical accessor is `BRAIN.bills.processAutoDebits` which reads this field internally)
+**Smoke coverage:** `tests/smoke/autodebit-batch.smoke.js` Case 6 explicitly asserts: undefined-before-init → set-after-init → matches MODEL.paydayDate.getTime() → audit entry `autodebit_floor_initialized` appended
+**Reads from:** `MODEL.paydayDate.getTime()` (initialization only)
+**Writes to:** — (read-only after init; future reconciliation contract will bump this on each bank-sync event)
+**Triggers:** —
+**Related features:**
+- writer (init): boot wiring DOMContentLoaded+500ms, executes ONCE per session if field is undefined
+- reader: `BRAIN → BILLS → PROCESS_AUTODEBITS` (uses as `floor` constant; bills with billDate < floor are skipped with reason `pre-floor`)
+- future-writer: ADR-E reconciliation contract (bumps floor to next-cycle start on each successful bank reconciliation)
+**Notes:** Cycle-floor guard for autodebit batch processor. Millisecond timestamp of the first cycle eligible for batch processing. Default `Infinity` (skip-all safe default) if field is somehow undefined at processAutoDebits call time. ADR-E will codify the "each reconciliation bumps the floor" contract — until then, the floor is one-shot-initialized per Bundle 31's first-deploy logic.
+**Last touched:** Bundle 31 Item 16 (2026-05-19, commit ca71d6e)
+
 ### BRAIN.debts.markPaid (envelope composition — Phase 2.E)
 **Path:** `BRAIN → DEBTS → MARK_PAID`
 **Type:** writer
