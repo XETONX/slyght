@@ -5914,12 +5914,16 @@ function renderAnalysisTab() {
 
   // #26 — Spending DNA tile removed (unused per John's backlog).
 
-  // FIX 7 ORDER 4: Essential vs Discretionary breakdown
+  // FIX 7 ORDER 4: Essential vs Discretionary breakdown (Bundle 31 cycle-bound — OPEN-BUGS #6 part-A)
   const ESSENTIAL_CATS = new Set(['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings']);
   const ESSENTIAL_KEYS = ['Fixed','Loan','Transport / Fuel','Food / Coffee','Health','Savings'];
   let essTotal = 0, discTotal = 0;
-  // guardian-allow: no-bare-non-income-filter-on-txns — Essential vs Discretionary breakdown excludes only Debt repayment; should switch to strict _NON_SPEND_CATS filter to align with Bundle B canonical (removable when OPEN-BUGS #6 is fixed)
-  S.txns.filter(t => !t.income && t.cat !== 'Debt repayment').forEach(t => {
+  // Bundle 31 (2026-05-19): scope to current cycle. Pre-fix iterated lifetime
+  // S.txns and produced impossible totals (e.g. $15k essential+discretionary
+  // when cycle spend was $4,578). John's gut-audit Item 3 / OPEN-BUGS #6 part-A.
+  const _cycleStartMs = (typeof MODEL !== 'undefined' && MODEL.cycleStart) ? MODEL.cycleStart.getTime() : 0;
+  // guardian-allow: no-bare-non-income-filter-on-txns — Essential vs Discretionary classifier still uses the original {!income, !Debt repayment} predicate plus a cycle-start bound (Bundle 31 part-A). Strict _NON_SPEND_CATS migration deferred — that would reclassify Loan/Savings/Bills out of "essentials" entirely, which is a separable design decision (removable when OPEN-BUGS #6 part-B ships)
+  S.txns.filter(t => !t.income && t.cat !== 'Debt repayment' && t.ts >= _cycleStartMs).forEach(t => {
     const k = t.cat || 'Other';
     // guardian-allow: no-hardcoded-bill-name — "Fuel" used here as a category-alias check (legacy txns logged with cat='Fuel' rather than 'Transport / Fuel'), not as a bill-name ref (removable when ESSENTIAL_KEYS is extracted to a constant and category vocabulary normalized — earliest review 2026-09-01)
     if (ESSENTIAL_KEYS.includes(k) || k === 'Fuel') essTotal += t.amt;
