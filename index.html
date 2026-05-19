@@ -12598,7 +12598,16 @@ function renderPaydaySavings() {
   const bufferReserved = +snap.bufferFloor || 0;
   html += '<div class="settings-group-title">Pool to allocate</div>';
   html += '<div class="settings-group-card" style="padding:14px 16px">';
-  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + fmtC2(allocatable) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">left to split across goals</span></div>';
+  // Bundle 31 (2026-05-19): reframe headline same as renderAllocateTile —
+  // lead with "still to split" (the actionable number), contextualise with
+  // already-assigned underneath. Pool is still labelled the same; only the
+  // headline number / sub-line wording change. Math unchanged.
+  const _savStill = Math.max(0, allocatable - allocated);
+  const _savOver = allocated > allocatable;
+  const _savHeadlineLabel = _savOver ? 'over-allocated to goals'
+    : (allocated > 0 ? 'still to split across goals' : 'to split across goals');
+  const _savHeadlineNum = _savOver ? (allocated - allocatable) : _savStill;
+  html += '<div style="font-family:var(--mono);font-size:20px;color:var(--text);line-height:1.2"><strong>' + (_savOver ? '-' : '') + fmtC2(_savHeadlineNum) + '</strong> <span style="font-size:13px;color:var(--text3);font-weight:normal">' + _savHeadlineLabel + '</span></div>';
   if (bufferReserved > 0) {
     const surplusBeforeBuffer = Math.max(0, freeTotal);
     // Bundle 29 F-02/E-01 fix: equation as displayed must balance. Previously
@@ -12615,7 +12624,8 @@ function renderPaydaySavings() {
     html += '<div style="font-size:12px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$' + Math.round(surplusBeforeBuffer).toLocaleString() + ' surplus' + provsHtml + ' − $' + Math.round(bufferReserved).toLocaleString() + ' safety buffer = $' + Math.round(allocatable).toLocaleString() + '</div>';
   }
   if (allocated > 0) {
-    html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Already allocated this cycle: <strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocated) + '</strong></div>';
+    // Bundle 31: match renderAllocateTile pattern — "$X already assigned of $Y this cycle".
+    html += '<div style="font-size:13px;color:var(--text3);margin-top:6px"><strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocated) + '</strong> already assigned of <strong style="font-family:var(--mono);color:var(--text2)">' + fmtC2(allocatable) + '</strong> this cycle</div>';
   } else {
     html += '<div style="font-size:13px;color:var(--text3);margin-top:6px">Tap a goal below to allocate part of your free money to it this cycle.</div>';
   }
@@ -24478,18 +24488,32 @@ function renderAllocateTile() {
   const essentialsTotal = (snap.bills?.total || 0) + (snap.debts?.total || 0) + (snap.dailyLiving?.plannedTotal || 0) + _provisionsTotalDash;
   const remainder = (snap.totalToPlan || 0) - essentialsTotal;
   const allocatedTotal = (snap.savings?.total || 0) + (snap.knownUpcoming?.total || 0);
-  const isPositive = remainder >= 0;
-  const fmt = '$' + Math.abs(Math.round(remainder)).toLocaleString();
+  // Bundle 31 (2026-05-19): reframe headline to lead with the actionable
+  // "still to allocate" number rather than the full remainder. John's gut-
+  // audit Item 4 — $1,770 headline felt incoherent when $1,133 was already
+  // assigned and only $637 was uncommitted. Math unchanged; only labels.
+  const stillToAllocate = remainder - allocatedTotal;
+  const isOvercommitted = remainder < 0;
+  const isOverAllocated = !isOvercommitted && stillToAllocate < 0;
+  const isHealthy = !isOvercommitted && !isOverAllocated;
+  // Headline picks the most-actionable number. Negative remainder dominates
+  // (you can't allocate what you don't have); over-allocation comes next;
+  // healthy state shows the still-to-allocate figure.
+  const headlineNum = isOvercommitted ? remainder : stillToAllocate;
+  const headlineLabel = isOvercommitted ? 'left to allocate'
+    : isOverAllocated ? 'over-allocated'
+    : (allocatedTotal > 0 ? 'still to allocate' : 'to allocate');
+  const fmt = '$' + Math.abs(Math.round(headlineNum)).toLocaleString();
   const daysRem = snap.daysRemaining || 0;
   // Bundle 29 demon-time: PLAN dashboard Payday Plan tile gets the bubble
   // treatment that matches the canvas REMAINDER card. Premium green glow
   // (or red when overcommitted), large mono headline, "x of y allocated"
   // sub-stat, lock badge top-right when locked, animated chevron.
-  const _wrapBg = isPositive
+  const _wrapBg = isHealthy
     ? 'linear-gradient(135deg,rgba(0,232,122,0.10),rgba(0,232,122,0.02))'
     : 'linear-gradient(135deg,rgba(255,68,85,0.10),rgba(255,68,85,0.02))';
-  const _wrapBorder = isPositive ? 'var(--green-border)' : 'var(--red-border)';
-  const _amtCol = isPositive ? 'var(--green)' : 'var(--red)';
+  const _wrapBorder = isHealthy ? 'var(--green-border)' : 'var(--red-border)';
+  const _amtCol = isHealthy ? 'var(--green)' : 'var(--red)';
   const lockBadge = isLocked
     ? `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:10px;background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.40);color:var(--amber);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em">🔒 locked</span>`
     : '';
@@ -24502,10 +24526,10 @@ function renderAllocateTile() {
         ${lockBadge}
       </div>
       <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-        <span style="font-family:var(--mono);font-size:30px;font-weight:800;color:${_amtCol};line-height:1">${isPositive ? '' : '-'}${fmt}</span>
-        <span style="font-size:12px;color:var(--text2);font-weight:600">left to allocate</span>
+        <span style="font-family:var(--mono);font-size:30px;font-weight:800;color:${_amtCol};line-height:1">${headlineNum < 0 ? '-' : ''}${fmt}</span>
+        <span style="font-size:12px;color:var(--text2);font-weight:600">${headlineLabel}</span>
       </div>
-      ${allocatedTotal > 0 ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$${Math.round(allocatedTotal).toLocaleString()} of $${Math.round(remainder).toLocaleString()} allocated · ${_allocPct}%</div><div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden"><div style="height:100%;width:${_allocPct}%;background:var(--green);transition:width .35s ease-out"></div></div>` : '<div style="font-size:11px;color:var(--text3);margin-top:6px;font-style:italic">Tap to start allocating</div>'}
+      ${allocatedTotal > 0 && remainder > 0 ? `<div style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">$${Math.round(allocatedTotal).toLocaleString()} already assigned of $${Math.round(remainder).toLocaleString()} this cycle · ${_allocPct}%</div><div style="margin-top:8px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden"><div style="height:100%;width:${_allocPct}%;background:var(--green);transition:width .35s ease-out"></div></div>` : (remainder > 0 ? '<div style="font-size:11px;color:var(--text3);margin-top:6px;font-style:italic">Tap to start allocating</div>' : '')}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11px;color:var(--text3)">
         <span>${daysRem}d to next payday · tap to walk the canvas</span>
         <span style="font-size:18px;color:${_amtCol};line-height:1">›</span>
