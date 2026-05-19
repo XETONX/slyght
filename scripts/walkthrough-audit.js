@@ -339,10 +339,39 @@ function startServer() {
   });
 }
 
+// ─── trace logging ────────────────────────────────────────────────
+// Bundle 31 methodology fix: per-API-call JSONL trace so audit runs
+// are verifiable (request IDs, token counts, raw responses persisted).
+// Audit reports without backing traces are not Guardian-equivalent.
+function screenshotHash(absPath) {
+  if (!fs.existsSync(absPath)) return 'no-screenshot';
+  const buf = fs.readFileSync(absPath);
+  return crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16);
+}
+
+function openTraceFile() {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const tracePath = path.join(PROJECT_ROOT, 'docs', 'audit', `${ts}-trace.jsonl`);
+  fs.mkdirSync(path.dirname(tracePath), { recursive: true });
+  // Truncate/create the file; we append line-by-line below.
+  fs.writeFileSync(tracePath, '');
+  return tracePath;
+}
+
+function appendTrace(tracePath, line) {
+  // Synchronous append per call so a crash mid-run preserves all completed
+  // entries. JSONL = one JSON object per line; downstream tooling can
+  // stream-parse without loading whole file.
+  fs.appendFileSync(tracePath, JSON.stringify(line) + '\n');
+}
+
 // ─── main ─────────────────────────────────────────────────────────
 (async () => {
   const start = Date.now();
   console.log('[audit] starting walkthrough audit at ' + new Date().toISOString());
+
+  const tracePath = openTraceFile();
+  console.log('[audit] trace file: ' + path.relative(PROJECT_ROOT, tracePath));
 
   let server;
   try { server = await startServer(); console.log('[audit] server on :' + PORT); }
@@ -406,17 +435,62 @@ function startServer() {
       }
     } catch (e) {
       console.warn('[audit]   screenshot failed:', e.message);
+      appendTrace(tracePath, {
+        timestamp: new Date().toISOString(),
+        surface_id: surface.id,
+        outcome: 'screenshot-failed',
+        error: e.message,
+      });
       surfaceResults.push({ surface, findings: [], error: 'screenshot-failed: ' + e.message });
       continue;
     }
     // Haiku
     const imageBytes = fs.readFileSync(shotPath);
+    const shotHash = screenshotHash(shotPath);
     const prompt = buildAuditPrompt(surface, PHASE_1A_SUMMARY);
+    const callStart = Date.now();
     const r = await callHaikuWithRetry(imageBytes, prompt);
-    if (!r.ok) { console.warn('[audit]   haiku failed:', r.error); surfaceResults.push({ surface, findings: [], error: r.error }); continue; }
+    const callMs = Date.now() - callStart;
+    if (!r.ok) {
+      console.warn('[audit]   haiku failed:', r.error);
+      appendTrace(tracePath, {
+        timestamp: new Date().toISOString(),
+        surface_id: surface.id,
+        screenshot_hash: shotHash,
+        outcome: 'haiku-failed',
+        error: r.error,
+        call_ms: callMs,
+      });
+      surfaceResults.push({ surface, findings: [], error: r.error });
+      continue;
+    }
     totalCost += r.cost_usd || 0;
-    if (!r.parsed) { console.warn('[audit]   parse failed:', r.parseError); surfaceResults.push({ surface, findings: [], error: 'parse: ' + r.parseError, raw: r.raw }); continue; }
-    console.log(`[audit]   ${r.parsed.length} finding(s), $${r.cost_usd.toFixed(4)} (total $${totalCost.toFixed(4)})`);
+    // Persist trace BEFORE evaluating parse success — even if JSON parse
+    // fails, we want the API call record on disk for verification.
+    appendTrace(tracePath, {
+      timestamp: new Date().toISOString(),
+      surface_id: surface.id,
+      screenshot_hash: shotHash,
+      outcome: r.parsed ? 'ok' : 'parse-failed',
+      api_response_id: r.api_response_id || null,
+      model: MODEL,
+      input_tokens: r.input_tokens || 0,
+      output_tokens: r.output_tokens || 0,
+      cost_usd: r.cost_usd || 0,
+      cumulative_cost_usd: totalCost,
+      call_ms: callMs,
+      parsed_findings_count: r.parsed ? r.parsed.length : 0,
+      parse_error: r.parseError || null,
+      // Truncate raw response to ~2000 chars to keep trace file lean while
+      // still letting reviewers verify API output shape.
+      raw_response_text: (r.raw || '').slice(0, 2000),
+    });
+    if (!r.parsed) {
+      console.warn('[audit]   parse failed:', r.parseError);
+      surfaceResults.push({ surface, findings: [], error: 'parse: ' + r.parseError, raw: r.raw });
+      continue;
+    }
+    console.log(`[audit]   ${r.parsed.length} finding(s), $${r.cost_usd.toFixed(4)} (total $${totalCost.toFixed(4)}) · req=${(r.api_response_id || '').slice(0, 14)}`);
     // P0 inline surface
     const p0 = r.parsed.filter(f => f.severity === 'P0');
     if (p0.length) console.log(`[audit]   ⚠️  P0(s) on this surface: ` + p0.map(f => f.finding).join(' | '));
@@ -444,6 +518,7 @@ function startServer() {
   lines.push(`**Total Haiku cost:** $${totalCost.toFixed(4)}  `);
   lines.push(`**Duration:** ${durationMin} min  `);
   lines.push(`**Aborted:** ${aborted ? 'yes (cap hit)' : 'no'}  `);
+  lines.push(`**API call trace:** \`${path.relative(PROJECT_ROOT, tracePath).replace(/\\/g, '/')}\` (one JSONL line per API call — request IDs, token counts, raw responses for verification)  `);
   lines.push('');
   lines.push('## Findings by severity');
   lines.push('');
@@ -475,6 +550,13 @@ function startServer() {
   }
   fs.writeFileSync(reportPath, lines.join('\n'));
   console.log(`[audit] report: ${path.relative(PROJECT_ROOT, reportPath)}`);
+  console.log(`[audit] trace:  ${path.relative(PROJECT_ROOT, tracePath)}`);
+  // Verifiable line count from disk (not in-memory counter) so reviewers
+  // can re-derive call count from the trace file independently.
+  try {
+    const traceLines = fs.readFileSync(tracePath, 'utf8').split('\n').filter(l => l.trim()).length;
+    console.log(`[audit] trace lines: ${traceLines} (verify by: wc -l ${path.relative(PROJECT_ROOT, tracePath)})`);
+  } catch (_) {}
   console.log(`[audit] summary: ${allFindings.length} findings · P0=${bySeverity.P0.length} P1=${bySeverity.P1.length} P2=${bySeverity.P2.length} P3=${bySeverity.P3.length} · $${totalCost.toFixed(4)}`);
 
   process.exit(0);
