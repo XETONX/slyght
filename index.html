@@ -10252,8 +10252,10 @@ function renderPaydayPlanRoot() {
   // TDZ guard: PLAN const is declared later in the file but this render
   // path only fires from user actions (modal open) so PLAN is initialised
   // by then. try/catch keeps the static analyser happy.
-  let _provisionsTotal = 0;
-  try { _provisionsTotal = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
+  // Bundle 32.1: consume canonical snap.provisions.total. Pre-fix this renderer
+  // + renderAllocateTile + renderPaydaySavings each called PLAN.getTotalProvisions()
+  // inline; snap.provisions.total is now the single source.
+  const _provisionsTotal = (snap.provisions && +snap.provisions.total) || 0;
   // Bundle 28 round 72+ (R3): dropped the Mum-readable one-liner summary
   // bubble (r46) that re-stated "$X coming in, $Y FIXED, $Z yours" — the
   // same fact is rendered structurally below via the ESSENTIALS section +
@@ -10281,8 +10283,11 @@ function renderPaydayPlanRoot() {
   const billsPaidPct = billsCount > 0 ? Math.round((billsPaid / billsCount) * 100) : 0;
   let _provisionsCount = 0;
   try { _provisionsCount = (PLAN && PLAN.getAnnualProvisions) ? (PLAN.getAnnualProvisions() || []).length : 0; } catch (_) {}
-  const essentialsTotal = snap.bills.total + snap.debts.total + snap.dailyLiving.plannedTotal + _provisionsTotal;
-  const remainder = snap.totalToPlan - essentialsTotal;
+  // Bundle 32.1: consume canonical snap.derived.essentialsTotal / remainder.
+  // Pre-fix this renderer computed inline; renderAllocateTile did the same
+  // independently. snap.derived is now the single source of truth.
+  const essentialsTotal = snap.derived.essentialsTotal;
+  const remainder = snap.derived.remainder;
   // Daily living status pill for the tile
   const _livingMax = +snap.dailyLiving.maxAffordablePerDay || 0;
   const _livingFloor = +snap.dailyLiving.floor || 0;
@@ -10349,8 +10354,12 @@ function renderPaydayPlanRoot() {
   html += '</div>';
 
   // ── ALLOCATING THE REMAINDER section (savings + upcoming) ──
-  const discretionaryTotal = snap.savings.total + snap.knownUpcoming.total;
-  const stillFree = remainder - discretionaryTotal;
+  // Bundle 32.1: consume canonical snap.derived.allocatedTotal / stillToAllocate.
+  // Pre-fix this renderer named them `discretionaryTotal` / `stillFree`;
+  // renderAllocateTile named them `allocatedTotal` / `stillToAllocate` (Bundle 31
+  // Item 4 vocabulary). Standardising on Bundle 31 names via the canonical reader.
+  const discretionaryTotal = snap.derived.allocatedTotal;
+  const stillFree = snap.derived.stillToAllocate;
   const stillFreeCol = stillFree >= 0 ? 'var(--green)' : 'var(--red)';
   const _savingsPct = remainder > 0 ? Math.round((snap.savings.total / remainder) * 100) : 0;
   const _upcomingPct = remainder > 0 ? Math.round((snap.knownUpcoming.total / remainder) * 100) : 0;
@@ -20103,6 +20112,31 @@ const BRAIN = {
         ? (totalToPlan - _committed) / daysInCycle
         : 0;
       const maxAffordablePerDay = Math.max(0, maxAffordablePerDayRaw);
+      // Bundle 32.1: canonical allocation derived-state. Pre-fix three
+      // renderers (renderAllocateTile, renderPaydayPlanRoot REMAINDER,
+      // renderPaydaySavings) re-computed essentialsTotal / remainder /
+      // allocatedTotal / stillToAllocate inline from snap fields — drift
+      // was structural. These five new fields are the single source.
+      //
+      //   essentialsTotal      = bills + debts + dailyLiving + provisions
+      //                          (locked obligations this cycle)
+      //   remainder            = totalToPlan − essentialsTotal
+      //                          ("free money this cycle" — canvas REMAINDER tile)
+      //   allocatedTotal       = savings + knownUpcoming
+      //                          (what's earmarked for goals/items)
+      //   stillToAllocate      = remainder − allocatedTotal
+      //                          (uncommitted; negative when over-allocated;
+      //                           PLAN dashboard tile headline)
+      //   savingsOverAllocated = max(0, savings − surplus)
+      //                          (positive when goals exceed pool; canonical
+      //                           input for INV-29 over-allocation write-check
+      //                           — Bundle 32.2 prerequisite)
+      const essentialsTotal = billsTotal + debtsTotal + livingTotal + _provsForMax;
+      const remainder = totalToPlan - essentialsTotal;
+      const allocatedTotal = savingsTotal + upcomingTotal;
+      const stillToAllocate = remainder - allocatedTotal;
+      const surplusVal = Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax);
+      const savingsOverAllocated = Math.max(0, savingsTotal - surplusVal);
       return {
         cycleId: p.cycleId,
         cycleStartDate: p.cycleStartDate,
@@ -20115,6 +20149,9 @@ const BRAIN = {
         debts: { total: parseFloat(debtsTotal.toFixed(2)), items: debtsList.length },
         savings: { total: parseFloat(savingsTotal.toFixed(2)), items: allBuckets.length },
         knownUpcoming: { total: parseFloat(upcomingTotal.toFixed(2)), items: (p.knownUpcoming || []).length, list: p.knownUpcoming || [] },
+        // Bundle 32.1: provisions exposed at top-level snap (mirrors bills/debts/savings shape).
+        // Previously three renderers each called PLAN.getTotalProvisions() inline.
+        provisions: { total: parseFloat(_provsForMax.toFixed(2)) },
         dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)), maxAffordablePerDay: parseFloat(maxAffordablePerDay.toFixed(2)) },
         derived: {
           claimedTotal: parseFloat(claimedTotal.toFixed(2)),
@@ -20130,10 +20167,16 @@ const BRAIN = {
           // Previously: canvas freeTotal omitted provisions+buffer, and
           // recommendAllocation used a 1.1× living padding — three different
           // formulas, three different displayed numbers. Now they reconcile.
-          surplus: parseFloat(Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax).toFixed(2)),
-          allocatableToSavings: parseFloat(Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax - savingsTotal).toFixed(2)),
+          surplus: parseFloat(surplusVal.toFixed(2)),
+          allocatableToSavings: parseFloat(Math.max(0, surplusVal - savingsTotal).toFixed(2)),
           currentBalance: parseFloat(currentBalance.toFixed(2)),
           projectedEndBalance: parseFloat(projectedEndBalance.toFixed(2)),
+          // Bundle 32.1 additions — canonical allocation derived state.
+          essentialsTotal: parseFloat(essentialsTotal.toFixed(2)),
+          remainder: parseFloat(remainder.toFixed(2)),
+          allocatedTotal: parseFloat(allocatedTotal.toFixed(2)),
+          stillToAllocate: parseFloat(stillToAllocate.toFixed(2)),
+          savingsOverAllocated: parseFloat(savingsOverAllocated.toFixed(2)),
         },
         bufferFloor: +p.bufferFloor || 0,
         driftSensitivity: +p.driftSensitivity || 0.15,
@@ -24655,29 +24698,23 @@ function renderAllocateTile() {
   try { snap = BRAIN.plan.getSnapshot(); } catch (_) { return ''; }
   if (!snap) return '';
   const isLocked = !!snap.lockedAt;
-  // Same essentials calc the Canvas uses (renderPaydayPlanRoot ~L9215).
-  // Bundle 28 round 47: includes Annual Provisions (~$298/mo set-aside)
-  // so this dashboard tile matches the Canvas's "Remainder after
-  // essentials" line. Pre-r47 dashboard ignored provisions → leftOver
-  // looked $298 higher than the Canvas figure.
-  let _provisionsTotalDash = 0;
-  try { _provisionsTotalDash = (PLAN && PLAN.getTotalProvisions) ? +PLAN.getTotalProvisions() || 0 : 0; } catch (_) {}
-  // Bundle 29 demon-time: dashboard tile now shows the SAME "Remainder
-  // after essentials" figure the canvas hero shows. Pre-fix dashboard
-  // subtracted savings+upcoming on TOP of essentials → reported $172 while
-  // canvas reported $1372 for the same state. John 2026-05-14: "in the
-  // homescreen of PLAN dashboard it doesnt update the remainder to allocate
-  // like within payday plan, must have its own calculation and doesnt link".
-  // Now both surfaces compute remainder = totalToPlan − essentials, and
-  // the "already allocated" figure surfaces as a sub-line for context.
-  const essentialsTotal = (snap.bills?.total || 0) + (snap.debts?.total || 0) + (snap.dailyLiving?.plannedTotal || 0) + _provisionsTotalDash;
-  const remainder = (snap.totalToPlan || 0) - essentialsTotal;
-  const allocatedTotal = (snap.savings?.total || 0) + (snap.knownUpcoming?.total || 0);
-  // Bundle 31 (2026-05-19): reframe headline to lead with the actionable
-  // "still to allocate" number rather than the full remainder. John's gut-
-  // audit Item 4 — $1,770 headline felt incoherent when $1,133 was already
-  // assigned and only $637 was uncommitted. Math unchanged; only labels.
-  const stillToAllocate = remainder - allocatedTotal;
+  // Bundle 32.1: consume canonical snap.derived.{essentialsTotal, remainder,
+  // allocatedTotal, stillToAllocate}. Pre-fix this renderer + renderPaydayPlanRoot
+  // each computed these inline from snap.bills.total / snap.debts.total /
+  // snap.dailyLiving.plannedTotal / PLAN.getTotalProvisions() / snap.savings.total
+  // / snap.knownUpcoming.total — same math twice, structural drift risk. The
+  // Bundle 28 r47 + Bundle 29 demon-time + Bundle 31 Item 4 history below
+  // describes the prior unification attempts that landed numbers in sync but
+  // kept the inline duplication. Bundle 32.1 finishes the job: one canonical
+  // computation lives in BRAIN.plan.getSnapshot, both consumers read from it.
+  //
+  // Bundle 31 (2026-05-19) reframed the headline to lead with `stillToAllocate`
+  // (uncommitted) rather than `remainder` (post-essentials total) — John's
+  // gut-audit Item 4. Math unchanged; only label/headline-prominence.
+  const essentialsTotal = snap.derived.essentialsTotal;
+  const remainder = snap.derived.remainder;
+  const allocatedTotal = snap.derived.allocatedTotal;
+  const stillToAllocate = snap.derived.stillToAllocate;
   const isOvercommitted = remainder < 0;
   const isOverAllocated = !isOvercommitted && stillToAllocate < 0;
   const isHealthy = !isOvercommitted && !isOverAllocated;
