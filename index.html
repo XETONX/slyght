@@ -4573,9 +4573,14 @@ function computeFinancialModel(state, now) {
     const phase = (typeof getMonthPhase === 'function') ? getMonthPhase() : 'MID_MONTH';
     if (phase === 'PRE_PAYDAY' || phase === 'PAYDAY') return false; // phase suppression
     const days = Math.max(1, daysToPayday);
-    const recentPace = (typeof getDiscretionarySpend === 'function')
-      ? getDiscretionarySpend(now.getTime() - 7 * 86400000, now.getTime()) / 7
-      : 0;
+    // Phase G Pass 1.c — strict-filter pace. Pre-Phase-G this used
+    // getDiscretionarySpend (LAX — only excludes Debt/Savings/Loan/Income),
+    // which counted Bills + Car Loan + CC Payment + Transfer as "pace
+    // spend." On heavy bill-pay weeks the inflated pace falsely tripped
+    // the spending-alert banner. Now uses the strict weekDiscretionary
+    // Spend already computed above (computeSpentInRange — _NON_SPEND_CATS
+    // exclusion is comprehensive). OPEN-BUGS #8.
+    const recentPace = weekDiscretionarySpend / 7;
     const minDaily = (typeof getMinDailySpend === 'function') ? getMinDailySpend() : 25;
     const todaySpentLocal = todaySpent;
     const liveBal = state.bal || 0;
