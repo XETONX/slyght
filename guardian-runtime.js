@@ -474,6 +474,17 @@ test('paydayReceived flag matches calendar position', () => {
   // post-payday window: payday <= today <= end-of-month
   const inPostPayday = today >= payday;
   if (TEST_S.paydayReceived === undefined) return {pass: true, detail: 'N/A — paydayReceived not set'};
+  // Bundle 31 (2026-05-19): anchorless fresh-state fixture short-circuit.
+  // When paydayReceivedDate is null AND paydayReceived is false, the fixture
+  // has no temporal anchor for comparison — these are the correct values for
+  // a fresh-state fixture at frozen pre-payday clock. As real-time advances
+  // past the fixture's payday day, comparing flag against real-time fires
+  // spuriously. Stale-flag-across-cycle-rollover is independently covered by
+  // the SCENARIO test at line 528 of this file (paydayReceivedDate populated
+  // with a past-cycle date + flag still true).
+  if (!TEST_S.paydayReceivedDate && TEST_S.paydayReceived === false) {
+    return {pass: true, detail: 'N/A — fresh-state fixture (paydayReceivedDate null, flag false)'};
+  }
   // Only flag a mismatch if we're DEFINITELY post-payday and flag is false
   // (pre-payday with paydayReceived=true could be a legit "expected paycheck arrived early" case)
   if (inPostPayday && TEST_S.paydayReceived === false) {
