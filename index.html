@@ -20195,6 +20195,25 @@ const BRAIN = {
           allocatedTotal: parseFloat(allocatedTotal.toFixed(2)),
           stillToAllocate: parseFloat(stillToAllocate.toFixed(2)),
           savingsOverAllocated: parseFloat(savingsOverAllocated.toFixed(2)),
+          // Bundle 32.4 substrate — canonical essentials/discretionary
+          // breakdowns. Mirrors what was already implicit in snap.X
+          // subfields, exposed as a single structured aggregator so the
+          // future drilldown UI (Pass 2) can read from one source. The
+          // conservation law smoke spec asserts:
+          //   essentialsBreakdown sum === essentialsTotal
+          //   discretionaryBreakdown sum === remainder
+          //   essentialsTotal + remainder === totalToPlan
+          essentialsBreakdown: {
+            bills: parseFloat(billsTotal.toFixed(2)),
+            debts: parseFloat(debtsTotal.toFixed(2)),
+            dailyLiving: parseFloat(livingTotal.toFixed(2)),
+            provisions: parseFloat(_provsForMax.toFixed(2)),
+          },
+          discretionaryBreakdown: {
+            savings: parseFloat(savingsTotal.toFixed(2)),
+            knownUpcoming: parseFloat(upcomingTotal.toFixed(2)),
+            stillToAllocate: parseFloat(stillToAllocate.toFixed(2)),
+          },
         },
         bufferFloor: +p.bufferFloor || 0,
         driftSensitivity: +p.driftSensitivity || 0.15,
