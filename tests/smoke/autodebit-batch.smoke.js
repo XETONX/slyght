@@ -276,8 +276,11 @@ test.describe('Bundle 31 Phase 3A — Batch auto-debit processor (Item 16)', () 
     expect(typeof result.floorAfterInit).toBe('number');
     // (b) value matches MODEL.paydayDate
     expect(result.floorAfterInit).toBe(result.modelPaydayTs);
-    // (c) audit log records the init event
-    expect(result.auditEntryAppended).toBeGreaterThanOrEqual(1);
+    // (c) audit log records the init event. Bundle 31 fixture-refresh fix:
+    // removed `auditEntryAppended >= 1` length-based check. S._auditLog
+    // caps at 500 entries (index.html:19238); fixtures with audit logs
+    // at-cap make every length-delta assertion fail even when the writer
+    // correctly appends. `initEntry` content check below is cap-immune.
     expect(result.initEntry).not.toBeNull();
     expect(result.initEntry.type).toBe('autodebit_floor_initialized');
     expect(result.initEntry.startTs).toBe(result.modelPaydayTs);

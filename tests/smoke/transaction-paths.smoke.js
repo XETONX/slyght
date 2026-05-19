@@ -125,8 +125,11 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
     expect(result.envelope.balanceNew).toBe(result.balAfter);
     expect(result.balDelta).toBe(-200);
     expect(result.txnCountDelta).toBe(1);
-    // Audit log: at least txn_record + balance_apply_delta (2 entries minimum)
-    expect(result.auditDelta).toBeGreaterThanOrEqual(2);
+    // Bundle 31 fixture-refresh fix: removed `auditDelta >= 2` length-based
+    // check. S._auditLog caps at 500 entries (index.html:19238); fixtures
+    // with audit logs at-cap make every length-delta assertion fail even
+    // when the writer correctly appends. Content-based checks below are
+    // cap-immune — slice(-3) always returns the most recent entries.
     expect(result.auditTypesAfter).toContain('txn_record');
     expect(result.auditTypesAfter).toContain('balance_apply_delta');
     await captureState(page, {
@@ -323,9 +326,13 @@ test.describe('Bundle 30 Phase 1.B — Transaction canonical-writer smoke', () =
           // No _skipFreeMoneyGate — gate must fire
         BRAIN.SOURCES.BUCKET_QUICK_ADD
       );
-      // Audit should have an inv28_refusal entry
-      const newAudit = (S._auditLog || []).slice(auditBefore);
-      const refusalEntry = newAudit.find(e => e && e.type === 'inv28_refusal');
+      // Audit should have an inv28_refusal entry. Bundle 31 fixture-refresh
+      // fix: search the LAST N entries instead of slice(auditBefore). When
+      // S._auditLog is at the 500-entry cap, an append trims an older
+      // entry, so slice(auditBefore=500) returns []. Content-based search
+      // in slice(-10) finds the refusal entry regardless of cap state.
+      const recentAudit = (S._auditLog || []).slice(-10);
+      const refusalEntry = recentAudit.find(e => e && e.type === 'inv28_refusal' && +e.requested === askAmount);
       return {
         envelope: r,
         available,
