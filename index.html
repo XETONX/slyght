@@ -9366,9 +9366,18 @@ function renderCutSliders() {
 
   // RC2: suggestions read STRICT discretionary (excludes Bills/Car Loan/CC
   // Payment/Transfer + corrections/roundups) so we don't suggest cutting
-  // categories that aren't real discretionary spend. All-time scope; the
-  // monthly-baseline comparison should narrow scope later — logged separately.
-  const catData = getDiscretionaryByCategory(0, Date.now());
+  // categories that aren't real discretionary spend.
+  //
+  // Phase G Pass 1.b — switched from all-time scope to cycle scope. The
+  // baselines below are monthly ($480/mo Food, $750/mo Entertainment, etc).
+  // Pre-Phase-G this used getDiscretionaryByCategory(0, Date.now()) which
+  // returned ALL-TIME totals — those got compared to monthly baselines, so
+  // "over" was always inflated and the suggested cut multiplied that into
+  // an even bigger fantasy number. OPEN-BUGS #7. Now reads from the
+  // canonical cycle-bound MODEL field; per-cycle math is roughly aligned
+  // with monthly baselines (cycle ≈ month) so "over by $X" + "cut $X/2"
+  // become real signals.
+  const catData = MODEL.cycleDiscretionaryByCategory || {};
   const cats = {};
   Object.keys(catData).forEach(k => { cats[k] = catData[k].total; });
 
