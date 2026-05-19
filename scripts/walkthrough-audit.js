@@ -307,7 +307,7 @@ async function callHaiku(imageBytes, prompt, attempt) {
   const usage = data.usage || {};
   const costUsd = ((usage.input_tokens || 0) * 1 + (usage.output_tokens || 0) * 5) / 1_000_000;
   const parsed = parseAuditResponse(text);
-  return { ok: true, parsed: parsed.parsed, parseError: parsed.error, raw: text, input_tokens: usage.input_tokens || 0, output_tokens: usage.output_tokens || 0, cost_usd: costUsd };
+  return { ok: true, parsed: parsed.parsed, parseError: parsed.error, raw: text, api_response_id: data.id || null, input_tokens: usage.input_tokens || 0, output_tokens: usage.output_tokens || 0, cost_usd: costUsd };
 }
 
 async function callHaikuWithRetry(imageBytes, prompt) {
