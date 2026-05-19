@@ -22029,8 +22029,8 @@ const BRAIN = {
     //   emoji         string
     //   kind          'trip' | 'goal' | 'provision' | 'buffer'
     //   targetAmount  number  dollars
-    //   startDate     string  'YYYY-MM-DD' optional
-    //   endDate       string  'YYYY-MM-DD' optional
+    //   startDate     string  'YYYY-MM-DD' optional         (spendWindow start)
+    //   endDate       string  'YYYY-MM-DD' optional         (spendWindow end)
     //   bucketId      string  S.savingsBuckets[].name or special token (FK)
     //   category      string  free-text taxonomy
     //   notes         string
@@ -22039,6 +22039,23 @@ const BRAIN = {
     //   meta          object  kind-specific extras (frequency, gfSplitting...)
     //   createdAt     number  epoch ms
     //   updatedAt     number  epoch ms
+    //
+    //   Bundle 32.3 Pass 1 — activation fields (additions only):
+    //   autoActivate     boolean  default true. When true + kind:'trip' +
+    //                             today within [startDate, endDate],
+    //                             isActive() returns true. Set false to
+    //                             opt OUT of auto-activation even within
+    //                             the spend window.
+    //   manualActivation 'on'|'off'|null  null = follow auto-activate
+    //                             rule; 'on' = force active regardless of
+    //                             window; 'off' = force inactive (e.g.,
+    //                             "trip cancelled, manually off"). Manual
+    //                             override always wins.
+    //
+    //   Reader/writer additions for Pass 1:
+    //     isActive(id)              — resolves auto vs manual
+    //     getActiveSpendingTrips()  — derived list of kind:'trip' + active
+    //     setActivation(id, val, src) — manual override writer ('on'/'off'/null)
     intent: {
       // ── Reads (pure) ──
       get(id) {
@@ -22057,6 +22074,54 @@ const BRAIN = {
       },
       byKind(kind) { return this.list({ kind }); },
       byBucket(bucketId) { return this.list({ bucketId }); },
+
+      // ── Activation resolution (Bundle 32.3 Pass 1) ──
+      // Resolves auto-vs-manual activation state for an intent.
+      //   manualActivation === 'on'    → ACTIVE (override wins)
+      //   manualActivation === 'off'   → INACTIVE (override wins; e.g.,
+      //                                  "trip cancelled — toggle off")
+      //   manualActivation === null    → follow auto:
+      //     autoActivate === false     → INACTIVE (opted out)
+      //     kind !== 'trip'            → ACTIVE (goal/provision/buffer
+      //                                  always count; they don't have
+      //                                  spendWindow semantics)
+      //     kind === 'trip' + no dates → INACTIVE (can't auto-activate
+      //                                  without a window)
+      //     kind === 'trip' + dates    → ACTIVE iff today ∈ [start, end]
+      //
+      // Bundle 32.3 Pass 2 (forecast) will read isActive on trip intents
+      // to apply per-day spend uplift during trip days.
+      isActive(id) {
+        const intent = this.get(id);
+        if (!intent) return false;
+        // Manual override always wins
+        if (intent.manualActivation === 'on') return true;
+        if (intent.manualActivation === 'off') return false;
+        // Auto path
+        if (intent.autoActivate === false) return false;  // explicit opt-out
+        if (intent.kind !== 'trip') return true;  // non-trip = always active
+        // Trip: needs a spendWindow
+        if (!intent.startDate || !intent.endDate) return false;
+        const now = Date.now();
+        const start = new Date(intent.startDate).getTime();
+        // endDate is inclusive (cover the full last day)
+        const end = new Date(intent.endDate).getTime() + 86400000 - 1;
+        if (!isFinite(start) || !isFinite(end)) return false;
+        return now >= start && now <= end;
+      },
+      // Derived: all trip intents that are currently active. Pass 2
+      // forecast consumer reads this to compute trip-aware survival.
+      getActiveSpendingTrips() {
+        return this.byKind('trip').filter(t => this.isActive(t.id));
+      },
+      // Manual-activation writer. activation: 'on' | 'off' | null
+      //   null clears the manual override → reverts to auto behavior.
+      setActivation(id, activation, source) {
+        if (activation !== 'on' && activation !== 'off' && activation !== null) {
+          return { ok: false, reason: 'invalid-activation:' + activation };
+        }
+        return this.update(id, { manualActivation: activation }, source);
+      },
 
       // ── Internal helpers ──
       _slug(name) {
@@ -22103,6 +22168,12 @@ const BRAIN = {
           priority: +intentLike.priority || 3,
           archived: false,
           meta: (intentLike.meta && typeof intentLike.meta === 'object') ? intentLike.meta : {},
+          // Bundle 32.3 Pass 1 — activation fields (additions only).
+          // Existing intents seeded by seedV25 lack these; lazy-defaulted
+          // via reader-side coalescing (see isActive — `=== false` /
+          // `=== 'on'` / `=== 'off'` checks; undefined → auto path).
+          autoActivate: intentLike.autoActivate !== false,
+          manualActivation: intentLike.manualActivation === 'on' || intentLike.manualActivation === 'off' ? intentLike.manualActivation : null,
           createdAt: now,
           updatedAt: now,
         };
@@ -22133,7 +22204,9 @@ const BRAIN = {
         if (!patch || typeof patch !== 'object') return { ok: false, reason: 'missing-patch' };
 
         const allowed = ['name', 'emoji', 'targetAmount', 'startDate', 'endDate',
-                         'bucketId', 'category', 'notes', 'priority', 'meta'];
+                         'bucketId', 'category', 'notes', 'priority', 'meta',
+                         // Bundle 32.3 Pass 1 activation fields
+                         'autoActivate', 'manualActivation'];
         const applied = {};
         for (const k of Object.keys(patch)) {
           if (!allowed.includes(k)) {
