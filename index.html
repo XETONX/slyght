@@ -13860,6 +13860,54 @@ window.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       try { console.error('[Boot self-test] runner threw:', e); } catch (_) {}
     }
+
+    // ─── Bundle 31 Item 16: batch auto-debit processor wiring ──────────
+    //
+    // ORDER OF OPERATIONS (critical — do not refactor apart):
+    //   1. MODEL is built and BRAIN.audit is ready (prerequisites of this
+    //      setTimeout block — earlier blocks already depend on BRAIN.*).
+    //   2. autodebitProcessingStartTs INIT — set the cycle-floor from
+    //      MODEL.paydayDate IF undefined. This must run BEFORE step 3,
+    //      otherwise processAutoDebits reads Infinity and skips every-
+    //      thing forever (never recovers, no future-cycle bills process).
+    //   3. processAutoDebits — scans + processes auto-debit bills past
+    //      their billDate in eligible (post-floor) cycles.
+    //
+    // First-deploy rationale: the 2026-05-15 cycle was settled by the
+    // 2026-05-19 ADHOC reconciliation (Claude MAX + others already
+    // accounted for in the $4,544.63 adjustment). Setting the floor to
+    // MODEL.paydayDate (next payday = 2026-06-15) skips the May cycle.
+    // After 2026-06-15, ADR-E reconciliation should bump the floor again.
+    try {
+      if (S.autodebitProcessingStartTs == null
+          && typeof MODEL !== 'undefined' && MODEL && MODEL.paydayDate
+          && typeof BRAIN !== 'undefined' && BRAIN.audit) {
+        S.autodebitProcessingStartTs = MODEL.paydayDate.getTime();
+        BRAIN.audit.append({
+          type: 'autodebit_floor_initialized',
+          startTs: S.autodebitProcessingStartTs,
+          startIso: new Date(S.autodebitProcessingStartTs).toISOString(),
+          rationale: 'Bundle 31 Item 16 first-deploy — floor set from MODEL.paydayDate (next-cycle start). 2026-05-15 cycle already settled via 2026-05-19 ADHOC reconciliation.',
+          ts: Date.now(),
+        });
+        try { save(); } catch (_) {}
+      }
+    } catch (e) {
+      try { console.error('[autodebit-floor init] threw:', e); } catch (_) {}
+    }
+    try {
+      if (typeof BRAIN !== 'undefined' && BRAIN.bills && BRAIN.bills.processAutoDebits) {
+        const r = BRAIN.bills.processAutoDebits(Date.now(), BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED);
+        if (r && r.ok && r.processed && r.processed.length > 0) {
+          if (window.SLYGHT_DEBUG) {
+            console.log('[autodebit-batch] processed ' + r.processed.length + ' bill(s):',
+              r.processed.map(p => p.name + ' on day ' + p.day));
+          }
+        }
+      }
+    } catch (e) {
+      try { console.error('[autodebit-batch] threw:', e); } catch (_) {}
+    }
   }, 500);
 });
 
@@ -19155,6 +19203,8 @@ const BRAIN = {
     SETTINGS_API_ALERT_THRESHOLD: 'settings-api-alert-threshold',
     // Bundle 28 round 72+ — manual payday-landed affordance
     PAYDAY_MANUAL_LANDED:        'payday-manual-landed',
+    // Bundle 31 Item 16 — batch auto-debit processor (boot-fired catch-up)
+    AUTODEBIT_BATCH_LANDED:      'autodebit-batch-landed',
     // Bundle 30 Phase 1 — BRAIN.balance bubble + new writers (SDD-bundle-30)
     TXN_WITH_ALLOCATION:         'txn-with-allocation',
     FX_FEE_AUTO:                 'fx-fee-auto',
@@ -19219,6 +19269,8 @@ const BRAIN = {
     'settings-api-alert-threshold',
     // Bundle 28 round 72+ — manual payday-landed affordance
     'payday-manual-landed',
+    // Bundle 31 Item 16 — batch auto-debit processor
+    'autodebit-batch-landed',
     // Bundle 30 Phase 1 — BRAIN.balance bubble + new writers (SDD-bundle-30)
     'txn-with-allocation', 'fx-fee-auto',
     'balance-apply-delta', 'balance-reconcile-to', 'balance-negative-confirmed',
@@ -22909,7 +22961,12 @@ const BRAIN = {
         return { ok: false, reason: 'invalid-bill' };
       }
       const opts = options || {};
-      const key = paidBillKey(bill.name, bill.day);
+      // Bundle 31 Item 16: accept optional cycle-relative month/year for
+      // bills whose debit-day falls in a different calendar month than
+      // today (e.g. day=15 bills in a payday-15 cycle start in the
+      // cycle-start month, not today's month). Defaults to today via
+      // paidBillKey's argless behaviour — existing callers unaffected.
+      const key = paidBillKey(bill.name, bill.day, opts.month, opts.year);
       let txnTs;
       let autoDebit = !!opts.autoDebit;
       if (typeof opts.txnTs === 'number') {
@@ -23019,6 +23076,134 @@ const BRAIN = {
         debtCleared: cleared,
         ts: Date.now()
       });
+    },
+
+    // ─── Bundle 31 Item 16: batch auto-debit processor ──────────────────
+    // Scans BILLS for entries with autoDebit:true, computes each bill's
+    // date within the current cycle, and atomically writes a txn + marks
+    // paid for any bill whose debit-day has passed AND is not yet recorded
+    // for this cycle. Fired on boot (DOMContentLoaded + 500ms wiring at
+    // ~L13836) so users who don't manually mark auto-debit bills don't
+    // accumulate silent balance drift each cycle.
+    //
+    // Cycle-floor guard: S.autodebitProcessingStartTs holds the millisecond
+    // timestamp of the first cycle-start eligible for batch processing.
+    // Bills with billDate < floor are skipped (e.g. 2026-05-15 cycle bills
+    // are skipped on first deploy because reconciliation 2026-05-19 already
+    // settled them via ADHOC bucket adjustment).
+    //
+    // Idempotency: isThisMonthlyBillPaid() check ensures bills already paid
+    // (manually or in a prior batch run) are not double-processed.
+    //
+    // Source: AUTODEBIT_BATCH_LANDED for both the outer audit entry and
+    // the inner BRAIN.bills.markPaid call (which routes the inner txn
+    // through MARK_BILL_PAID per markPaid's internal switching).
+    //
+    // Returns: { ok, processed: [...], skipped: [...], errors: [...] }
+    processAutoDebits(asOfTs, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) {
+        return { ok: false, reason: 'unknown-source:' + source };
+      }
+      const now = (typeof asOfTs === 'number') ? new Date(asOfTs) : new Date();
+      const nowMs = now.getTime();
+      // Infinity = skip-all safe default if the floor field isn't set.
+      // Floor init happens in boot wiring BEFORE this call; if it didn't
+      // (e.g. MODEL build failed), we degrade to no-op rather than risk
+      // double-processing reconciled cycles.
+      const floor = +S.autodebitProcessingStartTs || Infinity;
+      const result = { ok: true, processed: [], skipped: [], errors: [], floor, asOfTs: nowMs };
+
+      const BILLS_ref = (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS : [];
+      const payday = +S.payday || 15;
+
+      // Compute the current cycle's start-month using today's relationship
+      // to payday. If today's date >= payday, current cycle started THIS
+      // month on the payday day; else it started LAST month.
+      let cycleStartMonth = now.getMonth();
+      let cycleStartYear = now.getFullYear();
+      if (now.getDate() < payday) {
+        cycleStartMonth -= 1;
+        if (cycleStartMonth < 0) { cycleStartMonth = 11; cycleStartYear -= 1; }
+      }
+
+      for (const bill of BILLS_ref) {
+        if (!bill || bill.recurring === false) continue;
+        if (!bill.autoDebit) continue;
+        if (typeof bill.day !== 'number') {
+          result.skipped.push({ name: bill && bill.name, reason: 'invalid-day' });
+          continue;
+        }
+        // Compute the bill's date within the current cycle. Bills with
+        // day >= payday fall in the cycle's start month; bills with day
+        // < payday roll over to the next month (still inside the cycle).
+        let billMonth = cycleStartMonth;
+        let billYear = cycleStartYear;
+        if (bill.day < payday) {
+          billMonth += 1;
+          if (billMonth > 11) { billMonth = 0; billYear += 1; }
+        }
+        const billDate = new Date(billYear, billMonth, bill.day);
+        const billDateMs = billDate.getTime();
+
+        if (billDateMs < floor) {
+          result.skipped.push({ name: bill.name, reason: 'pre-floor', billDateMs, floor });
+          continue;
+        }
+        if (billDateMs > nowMs) {
+          result.skipped.push({ name: bill.name, reason: 'future', billDateMs, nowMs });
+          continue;
+        }
+        // Idempotency: bill already paid this cycle (via prior batch,
+        // manual mark, etc.). Use the bill's CYCLE-RELATIVE month/year —
+        // matches the key shape markPaid will write to (we pass the same
+        // month/year through options below).
+        if (typeof isThisMonthlyBillPaid === 'function'
+            && isThisMonthlyBillPaid(bill.name, bill.day, billMonth, billYear)) {
+          result.skipped.push({ name: bill.name, reason: 'already-paid' });
+          continue;
+        }
+
+        // Process: BRAIN.bills.markPaid atomically composes the txn write
+        // + paidBills entry. The autoDebit:true option flags the entry
+        // with _scheduledAutoDebit:true so downstream surfaces know this
+        // was a scheduled debit (no banner, AUTO badge applies).
+        // month/year: pass the bill's cycle-relative date so the paidBills
+        // key matches what isThisMonthlyBillPaid above looked up (bills
+        // with day >= payday land in cycle's start month, not today's).
+        const r = this.markPaid(bill, source, { autoDebit: true, month: billMonth, year: billYear });
+        if (r.ok) {
+          result.processed.push({
+            name: bill.name,
+            day: bill.day,
+            amt: bill.amt,
+            billDateIso: billDate.toISOString(),
+            paidKey: r.key,
+            txnTs: r.entry && r.entry.ts,
+          });
+        } else {
+          result.errors.push({ name: bill.name, reason: r.reason });
+        }
+      }
+
+      BRAIN.audit.append({
+        type: 'autodebit_batch_run',
+        source,
+        asOfTs: nowMs,
+        floor,
+        processedCount: result.processed.length,
+        skippedCount: result.skipped.length,
+        errorCount: result.errors.length,
+        // Trim arrays for audit log size — keep names + reasons, drop heavy fields
+        processed: result.processed.map(p => ({ name: p.name, day: p.day, amt: p.amt, billDateIso: p.billDateIso })),
+        errors: result.errors,
+        ts: Date.now(),
+      });
+
+      if (result.processed.length > 0) {
+        try { save(); } catch (_) {}
+      }
+
+      return result;
     },
 
     // ─── Canonical writer: unmark ───────────────────────────────────────
