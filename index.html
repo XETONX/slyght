@@ -10435,32 +10435,54 @@ function _buildResetCycleBodyHtml(ps) {
   const lockedLabel = ps.wasLocked
     ? (ps.lockedAt ? 'locked since ' + new Date(ps.lockedAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : 'locked')
     : 'unlocked';
-  const bonusLabel = ps.bonusIncluded
-    ? '✓ included ($' + Math.round(+ps.bonusAmount || 0).toLocaleString() + ')'
-    : '— not included';
   const cycleRange = (ps.cycleStartDate && ps.cycleEndDate)
     ? (ps.cycleStartDate + ' → ' + ps.cycleEndDate)
     : (ps.cycleId || '—');
+  // Bundle 32.6 fix (Finding 1 — bonus preservation trust break, 2026-05-19):
+  // pre-fix the row "Bonus included" read as a single concept mixing two
+  // different pieces of state. resetCycle PRESERVES bonus.amount + .status
+  // but CLEARS bonus.included. The original row "Bonus included ✓ included
+  // ($1,341)" inside WILL CLEAR confused users into reading "$1,341 will be
+  // kept" when only the AMOUNT is kept (the inclusion flag clears).
+  //
+  // Split into two distinct rows:
+  //   WILL CLEAR  → "Bonus inclusion" — only shown when bonusIncluded=true
+  //                 (something IS being cleared)
+  //   WILL KEEP   → "Bonus amount"    — always shown when bonusAmount>0
+  //                 (the dollar value is preserved regardless of inclusion)
+  //
+  // Two states → two rows → each row's section matches its actual fate
+  // under resetCycle. Smoke spec asserts this row-vs-reality match (no
+  // hardcoded copy — the assertion walks displayed rows and verifies
+  // each one's promise against post-reset state).
+  const bonusAmt = +ps.bonusAmount || 0;
+  const showBonusInclusionInClear = !!ps.bonusIncluded;  // only show when there's something to clear
+  const showBonusAmountInKeep = bonusAmt > 0;            // only show when amount exists to preserve
   // Mono receipt styling — matches the 32.4 drilldown footer pattern.
   return '' +
     '<div style="font-family:var(--mono);font-size:13px;color:var(--text);line-height:1.7">' +
       '<div style="font-size:11px;font-weight:800;color:var(--red);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-family:inherit">WILL CLEAR</div>' +
-      '<div style="padding:8px 12px;background:rgba(255,68,85,0.06);border:1px solid rgba(255,68,85,0.20);border-radius:8px;margin-bottom:14px">' +
-        '<div style="display:flex;justify-content:space-between"><span>Overrides</span><span>' + (ps.overridesCount || 0) + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Ticked items</span><span>' + (ps.ticksCount || 0) + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Upcoming items</span><span>' + (ps.knownUpcomingCount || 0) + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Lock</span><span>' + lockedLabel + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Bonus included</span><span>' + bonusLabel + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Streak gate</span><span>' + (ps.streak > 0 ? '✓ active' : '—') + '</span></div>' +
+      '<div data-receipt-section="clear" style="padding:8px 12px;background:rgba(255,68,85,0.06);border:1px solid rgba(255,68,85,0.20);border-radius:8px;margin-bottom:14px">' +
+        '<div data-receipt-row="overrides" style="display:flex;justify-content:space-between"><span>Overrides</span><span>' + (ps.overridesCount || 0) + '</span></div>' +
+        '<div data-receipt-row="ticks" style="display:flex;justify-content:space-between"><span>Ticked items</span><span>' + (ps.ticksCount || 0) + '</span></div>' +
+        '<div data-receipt-row="upcoming" style="display:flex;justify-content:space-between"><span>Upcoming items</span><span>' + (ps.knownUpcomingCount || 0) + '</span></div>' +
+        '<div data-receipt-row="lock" style="display:flex;justify-content:space-between"><span>Lock</span><span>' + lockedLabel + '</span></div>' +
+        (showBonusInclusionInClear
+          ? '<div data-receipt-row="bonus-inclusion" style="display:flex;justify-content:space-between"><span>Bonus inclusion</span><span>✓ active</span></div>'
+          : '') +
+        '<div data-receipt-row="streak" style="display:flex;justify-content:space-between"><span>Streak gate</span><span>' + (ps.streak > 0 ? '✓ active' : '—') + '</span></div>' +
       '</div>' +
       '<div style="font-size:11px;font-weight:800;color:var(--green);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;font-family:inherit">WILL KEEP</div>' +
-      '<div style="padding:8px 12px;background:rgba(0,232,122,0.06);border:1px solid rgba(0,232,122,0.20);border-radius:8px;margin-bottom:14px">' +
-        '<div style="display:flex;justify-content:space-between"><span>Cycle</span><span>' + cycleRange + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Net pay</span><span>$' + Math.round(+ps.netPay || 0).toLocaleString() + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Daily living</span><span>$' + Math.round(+ps.dailyLivingFloor || 0) + '/day</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Buffer</span><span>$' + Math.round(+ps.bufferFloor || 0).toLocaleString() + '</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Logged transactions</span><span>' + (+ps.txnsCount || 0) + ' preserved</span></div>' +
-        '<div style="display:flex;justify-content:space-between"><span>Account balance</span><span>$' + (+ps.balance || 0).toFixed(2) + '</span></div>' +
+      '<div data-receipt-section="keep" style="padding:8px 12px;background:rgba(0,232,122,0.06);border:1px solid rgba(0,232,122,0.20);border-radius:8px;margin-bottom:14px">' +
+        '<div data-receipt-row="cycle" style="display:flex;justify-content:space-between"><span>Cycle</span><span>' + cycleRange + '</span></div>' +
+        '<div data-receipt-row="net-pay" style="display:flex;justify-content:space-between"><span>Net pay</span><span>$' + Math.round(+ps.netPay || 0).toLocaleString() + '</span></div>' +
+        '<div data-receipt-row="daily-living" style="display:flex;justify-content:space-between"><span>Daily living</span><span>$' + Math.round(+ps.dailyLivingFloor || 0) + '/day</span></div>' +
+        '<div data-receipt-row="buffer" style="display:flex;justify-content:space-between"><span>Buffer</span><span>$' + Math.round(+ps.bufferFloor || 0).toLocaleString() + '</span></div>' +
+        (showBonusAmountInKeep
+          ? '<div data-receipt-row="bonus-amount" style="display:flex;justify-content:space-between"><span>Bonus amount</span><span>$' + Math.round(bonusAmt).toLocaleString() + '</span></div>'
+          : '') +
+        '<div data-receipt-row="txns" style="display:flex;justify-content:space-between"><span>Logged transactions</span><span>' + (+ps.txnsCount || 0) + ' preserved</span></div>' +
+        '<div data-receipt-row="balance" style="display:flex;justify-content:space-between"><span>Account balance</span><span>$' + (+ps.balance || 0).toFixed(2) + '</span></div>' +
       '</div>' +
       '<div style="font-size:11px;color:var(--text3);font-family:inherit;line-height:1.5">Snapshot saved to your plan history.</div>' +
     '</div>';
