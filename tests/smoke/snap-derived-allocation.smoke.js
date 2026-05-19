@@ -18,7 +18,7 @@
 //   4. Essentials composition: essentialsTotal === bills + debts + living +
 //      provisions
 //   5. Over-allocation detection: inject a savings override exceeding surplus,
-//      verify savingsOverAllocated > 0 (INV-29 prerequisite)
+//      verify savingsOverAllocated > 0 (INV-32 prerequisite)
 //   6. Renderer migration: rendered HTML of renderAllocateTile contains the
 //      same dollar figures as snap.derived (proves renderer consumes canonical)
 //
@@ -133,7 +133,7 @@ test.describe('Bundle 32.1 — snap.derived allocation canonical-reader', () => 
 
   test('Over-allocation: injecting savings override > surplus → savingsOverAllocated > 0', async ({ page }) => {
     // Inject an override large enough to push savings.total > surplus.
-    // This is the canonical input for the Bundle 32.2 INV-29 over-allocation
+    // This is the canonical input for the Bundle 32.2 INV-32 over-allocation
     // write-time check. Verify the derived value flips from 0 to positive.
     const data = await page.evaluate(() => {
       const before = BRAIN.plan.getSnapshot();

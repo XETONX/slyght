@@ -110,10 +110,10 @@ These are **different concepts** (total post-essentials vs uncommitted-after-all
 
 **Architectural root cause:** Override-write path bypasses INV-28. There's no plan-time sibling rule. The display side surfaces the over-allocation as a red warning, but the WRITE accepted invalid state.
 
-**FINANCIAL-INVARIANTS.md doesn't have a rule for this.** INV-29 candidate: *"`sum(S.activePlan.overrides['savings:*'].thisCycleAmount) ≤ snap.derived.allocatableToSavings`. Violated when: savings sub-screen shows '-$X over allocated to goals'."*
+**FINANCIAL-INVARIANTS.md doesn't have a rule for this.** Originally proposed as "INV-29 candidate" in this diagnostic; renumbered to **INV-32** after the state-of-project audit discovered SDD-bundle-30 reserved INV-29 for plan-lock-narrow-semantics. Final rule: *"`sum(S.activePlan.overrides['savings:*'].thisCycleAmount) ≤ snap.derived.allocatableToSavings`. Violated when: savings sub-screen shows '-$X over allocated to goals'."*
 
 **Proposed fix shape:**
-- Add INV-29 to FINANCIAL-INVARIANTS.md (awaiting John's sign-off per the pending-decisions discipline)
+- Add INV-32 to FINANCIAL-INVARIANTS.md (awaiting John's sign-off per the pending-decisions discipline)
 - Write-time: `openEditPaydaySavings` save handler validates against `snap.derived.allocatableToSavings - sum(other-bucket overrides)`. Refuses with toast + keeps modal open if exceeded
 - Display-side: keep the existing red "over allocated" indicator as defense-in-depth for legacy override states
 - Add boot-time recovery: if state arrives over-allocated (legacy), surface a one-tap "trim the most-recent override" remediation
@@ -257,7 +257,7 @@ Proposed Bundle 32 phases:
 |---|---|---|
 | **32.0 — Triage** | Map Phase 1B Run 2 findings to MODEL-extension candidates; identify which are surface-side fixes vs architectural | One canonical backlog |
 | **32.1 — `MODEL.allocation`** | Add canonical allocation derived-state (Finding 1). Migrate `renderAllocateTile` + Canvas REMAINDER tile. Guardian rule. | Removes PLAN/Canvas drift permanently |
-| **32.2 — Over-allocation write-time INV** | Finding 2: INV-29 candidate. Block over-allocation at override save. | Closes "-$263 over allocated" symptom |
+| **32.2 — Over-allocation write-time INV** | Finding 2: INV-32 (originally proposed as INV-29; renumbered post-audit). Block over-allocation at override save. | Closes "-$263 over allocated" symptom |
 | **32.3 — Trip-aware survival forecast** | Finding 3: ADR-worthy. Refactor day-by-day loop. | Closes false-runout when trip-bucket-funded |
 | **32.4 — Essentials drilldown + MODEL extension** | Finding 5: tap-to-see-txns + `MODEL.essentialsVsDiscretionary` | Closes opacity |
 | **32.5 — Hero cycle-spend always-visible** | Finding 4: separate sub-line, not conditional | Closes "this cycle" missing |

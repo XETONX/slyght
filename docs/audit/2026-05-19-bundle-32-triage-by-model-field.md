@@ -11,7 +11,7 @@
 | Bundle 32 phase | Findings collapsed | Notes |
 |---|---|---|
 | **32.1 — `MODEL.allocation`** | ~14 findings (8 cluster-inconsistency + 6 allocation-vocabulary) | Highest leverage. Resolves Phase 1A Items 4-6 cluster residuals + 6+ Run 2 findings about "free money" / "remainder" / "still to allocate" framing. |
-| **32.2 — INV-29 over-allocation** | ~3 findings + 1 NEW BUG closed | Closes the "-$263 over allocated" data-integrity hole. Phase 1A Item 4 sub-bug residual. |
+| **32.2 — INV-32 over-allocation** (originally numbered INV-32; renumbered post-audit) | ~3 findings + 1 NEW BUG closed | Closes the "-$263 over allocated" data-integrity hole. Phase 1A Item 4 sub-bug residual. |
 | **32.3 — Trip-aware survival forecast** | ~2 findings + 1 NEW ARCHITECTURAL BUG | ADR-worthy. Closes false-runout when trip-funded. Phase 1A Item 9 partially adjacent. |
 | **32.4 — `MODEL.essentialsVsDiscretionary` drilldown** | ~5 findings (Analysis opacity cluster) | Phase 1A Item 3 residual opacity + Run 2 Analysis-tab visibility findings. |
 | **32.5 — Hero cycle-spend always-visible** | ~3 findings (Phase 1A Item 1 + Run 2 hero ambiguity) | Layout decision; small scope. |
@@ -87,11 +87,12 @@ MODEL.allocation = {
 
 ---
 
-## Phase 32.2 — INV-29 over-allocation write-time check (~3 findings collapse)
+## Phase 32.2 — INV-32 over-allocation write-time check (~3 findings collapse)
+> Originally numbered INV-32 in this triage doc; renumbered to INV-32 after the state-of-project audit discovered SDD-bundle-30 reserved INV-32 for plan-lock-narrow-semantics. INV-32 stands; INV-32 remains reserved for the SDD's original meaning.
 
 **Architectural addition:** New invariant + new validation in the override-write path.
 
-**INV-29 proposed wording:** *"`sum(S.activePlan.overrides['savings:*'].thisCycleAmount) ≤ MODEL.allocation.allocatableToSavings`. Violated when: savings sub-screen shows '$X over allocated to goals'."*
+**INV-32 proposed wording:** *"`sum(S.activePlan.overrides['savings:*'].thisCycleAmount) ≤ MODEL.allocation.allocatableToSavings`. Violated when: savings sub-screen shows '$X over allocated to goals'."*
 
 **Phase 1A findings collapsed:**
 - Item 4 sub-bug (tick conflated with assign — partially addressed by Item 4 label fix, but underlying integrity-hole not closed)
@@ -106,9 +107,9 @@ MODEL.allocation = {
 - `openEditPaydayUpcoming` save handler (`:~11115`)
 - `openEditPaydayKiaExtra` save handler (`:~11002`)
 - `openEditPaydayTripAlloc` save handler (`:~11049`)
-- All four share the override-write pattern; INV-29 wraps the canonical override-set path
+- All four share the override-write pattern; INV-32 wraps the canonical override-set path
 
-**Smoke spec:** extend `tests/smoke/autodebit-batch.smoke.js` style — synthetic over-allocation attempt, assert refusal + audit log `inv29_refusal` entry + state unchanged.
+**Smoke spec:** extend `tests/smoke/autodebit-batch.smoke.js` style — synthetic over-allocation attempt, assert refusal + audit log `inv32_refusal` entry + state unchanged.
 
 **Scope estimate:** ~60-80 LOC + INV registration + smoke spec. Depends on 32.1 (`MODEL.allocation.allocatableToSavings`). **Bundle together with 32.1 OR ship serially.**
 
@@ -227,7 +228,7 @@ These don't benefit from MODEL extension. They're individual label/density/affor
 |---|---|---|
 | 1 | **32.0a (fix audit script Welcome modal dismiss)** | Cheapest. Discards 23 false findings before they pollute triage further. |
 | 2 | **32.1 (`MODEL.allocation`)** | Foundation. Establishes the canonical-reader pattern. Collapses ~14 findings. Session-shippable. |
-| 3 | **32.2 (INV-29)** | Closes data-integrity hole. Depends on 32.1. Can bundle with 32.1 if scope fits. |
+| 3 | **32.2 (INV-32)** | Closes data-integrity hole. Depends on 32.1. Can bundle with 32.1 if scope fits. |
 | 4 | **G (filter-scatter cleanup)** | Mirrors 32.1 pattern. ~50-80 LOC. Closes 4 OPEN-BUGS. |
 | 5 | **32.4 (`MODEL.essentialsVsDiscretionary` + drilldown)** | Adjacent to G + benefits from 32.1's pattern. |
 | 6 | **32.5 (hero cycle-spend visibility)** | Small layout fix. Independent. |

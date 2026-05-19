@@ -91,11 +91,31 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: cross-surface inconsistency
 - Test: Playwright walks canvas root → savings sub-screen → auto-allocate modal. Scrape the "free money" number from each. Assert all match.
 
-**INV-29: A `savings:*` override write that INCREASES allocation is refused if it would push `sum(savings:* thisCycleAmount)` above `snap.derived.surplus + ε`. Reductions are always allowed regardless of resulting state.**
-- Why: Pre-Bundle-32.2 the override-write path bypassed all gates. User could allocate $1,433 to savings goals against a $1,170 surplus and the writes succeeded — the savings sub-screen surfaced "-$263 over allocated to goals" as a red display warning, but state was already corrupt. INV-28 covers the txn-time path; INV-29 covers the plan-time path.
+**INV-27: Negative balance warning (RESERVED — SDD-bundle-30 §C#1).**
+- Status: Reserved invariant number. Decision pending per "Pending decisions" section below. When this invariant ships, fold its body in here.
+
+**INV-28: A `recordWithAllocation` call with `direction:'outflow'`, `cat: ['Savings','Transfer']`, and a bucket destination is refused if the requested amount exceeds `free_money_remaining` for the current cycle. Exemptions: `_skipFreeMoneyGate` (payday-tick semantics), `_isRoundup` (round-up sibling txns).**
+- Why: Bucket-allocation outflows draw from the same surplus pool that payday-plan allocations earmark. Without a refusal gate, ad-hoc bucket allocations can drain the pool past what the plan committed.
+- Status: SHIPPED Bundle 30 Phase 2.B in `BRAIN.transaction.recordWithAllocation`. Currently DORMANT in production — no live UI surface triggers the gate (all three live allocation paths bypass via the exemption flags or omit the destination entirely). Resolved by ADR-Bundle31-A or ADR-Bundle31-B landing.
+- Violated when: a non-exempt bucket allocation > free_money_remaining is accepted
+- Test: `tests/smoke/transaction-paths.smoke.js:309` — Phase 2.B refusal probe
+
+**INV-29: Plan lock narrow semantics (RESERVED — SDD-bundle-30 §C#3).**
+- Status: Reserved invariant number for the locked-plan-state semantics work. Decision pending per "Pending decisions" section below. Earlier Bundle 32.2 work mistakenly assigned this number to the savings-override over-allocation rule; that rule is now correctly numbered INV-32 below. INV-29's reservation stands.
+
+**INV-30: FX fee separate transactions (RESERVED — SDD-bundle-30 §C#4).**
+- Status: Reserved invariant number. Decision pending per "Pending decisions" section below. When this invariant ships, fold its body in here.
+
+**INV-31: Round-up timing immediate (RESERVED — SDD-bundle-30 §C#5).**
+- Status: Reserved invariant number. Decision pending per "Pending decisions" section below. Round-ups exist in code (`BRAIN.SOURCES.ROUNDUP`) but the invariant body — "fires immediately on transaction record, not at end-of-day batch" — hasn't been formally asserted with a smoke spec. When this invariant ships, fold its body in here.
+
+**INV-32: A `savings:*` override write via `BRAIN.plan.setOverride` that INCREASES allocation is refused if it would push `sum(savings:* thisCycleAmount)` above `snap.derived.surplus + ε`. Reductions are always allowed regardless of resulting state.**
+- Why: Pre-Bundle-32.2 the override-write path bypassed all gates. User could allocate $1,433 to savings goals against a $1,170 surplus and the writes succeeded — the savings sub-screen surfaced "-$263 over allocated to goals" as a red display warning, but state was already corrupt at write time. INV-28 covers the txn-time path (`recordWithAllocation`); INV-32 covers the plan-time path (`setOverride`).
 - Why reductions allowed: a user with currently-over-allocated state needs to be able to fix it by reducing allocations. Refusing reductions creates a stuck state.
 - Violated when: a savings:* override increase is accepted that pushes total savings allocation above surplus
-- Test: load fixture; inject savings override > surplus via `BRAIN.plan.setOverride('savings', X, amt, {}, source)`. Assert `r.ok === false`, `r.reason === 'inv29-over-allocation'`, no state mutation, audit log appended `inv29_refusal` entry. Then assert a reduction call (`amt < oldAmt`) succeeds even in over-allocated state.
+- Status: SHIPPED Bundle 32.2 in `BRAIN.plan.setOverride` (`index.html:20276+`). Active in production (every modal save handler routes through `setOverride`).
+- Test: `tests/smoke/inv32-over-allocation.smoke.js` (renamed from `inv29-over-allocation.smoke.js` after the numbering correction). Load fixture; inject savings override > surplus via `BRAIN.plan.setOverride('savings', X, amt, {}, source)`. Assert `r.ok === false`, `r.reason === 'inv32-over-allocation'`, no state mutation, audit log appended `inv32_refusal` entry. Then assert a reduction call (`amt < oldAmt`) succeeds even in over-allocated state.
+- Numbering history: originally shipped 2026-05-19 as INV-29; renumbered to INV-32 same evening after the SDD-bundle-30 INV-29 reservation collision was discovered during state-of-project audit. INV-29 reservation stands for "plan lock narrow semantics" per SDD-bundle-30 §C#3.
 
 ---
 

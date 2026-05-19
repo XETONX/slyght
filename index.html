@@ -20129,8 +20129,12 @@ const BRAIN = {
       //                           PLAN dashboard tile headline)
       //   savingsOverAllocated = max(0, savings − surplus)
       //                          (positive when goals exceed pool; canonical
-      //                           input for INV-29 over-allocation write-check
+      //                           input for INV-32 over-allocation write-check
       //                           — Bundle 32.2 prerequisite)
+      //                          NOTE: originally named "INV-29" same evening;
+      //                          renumbered to INV-32 after discovering
+      //                          SDD-bundle-30 reserved INV-29 for plan-lock-
+      //                          narrow-semantics work. See FINANCIAL-INVARIANTS.md.
       const essentialsTotal = billsTotal + debtsTotal + livingTotal + _provsForMax;
       const remainder = totalToPlan - essentialsTotal;
       const allocatedTotal = savingsTotal + upcomingTotal;
@@ -20298,15 +20302,19 @@ const BRAIN = {
         }
         return { ok: true, deferred: 0, normalAmount, newAmount: normalAmount, normalised: true };
       }
-      // Bundle 32.2: INV-29 — refuse savings overrides that INCREASE allocation
+      // Bundle 32.2: INV-32 — refuse savings overrides that INCREASE allocation
       // AND would push sum(savings:* thisCycleAmount) > snap.derived.surplus.
       // Reductions always allowed (they improve over-allocated state). The 5
       // existing modal save handlers (openEditPaydaySavings, openEditPayday-
       // TripAlloc, etc.) already handle {ok:false, reason} via the standard
       // EDIT_MODAL envelope — modal stays open + toast surfaces the reason.
-      // Pay-in-full normalisation above fires BEFORE this check; INV-29 doesn't
+      // Pay-in-full normalisation above fires BEFORE this check; INV-32 doesn't
       // see those cases (they're already a clear-override, not an increase).
       // Scope: savings only this commit; kia-extra follow-up if needed.
+      // NUMBERING: originally shipped same evening as INV-29; renumbered to
+      // INV-32 after SDD-bundle-30 INV-29 reservation (plan-lock-narrow-
+      // semantics) was discovered in the state-of-project audit. INV-29
+      // reservation stands; this is INV-32. See FINANCIAL-INVARIANTS.md.
       if (category === 'savings') {
         try {
           const oldOv = S.activePlan.overrides[key];
@@ -20322,7 +20330,7 @@ const BRAIN = {
               const surplus = snap.derived.surplus;
               if (wouldBeSavingsTotal > surplus + 0.01) {
                 BRAIN.audit.append({
-                  type: 'inv29_refusal',
+                  type: 'inv32_refusal',
                   key,
                   requested: n,
                   oldAmt,
@@ -20336,7 +20344,7 @@ const BRAIN = {
                 });
                 return {
                   ok: false,
-                  reason: 'inv29-over-allocation',
+                  reason: 'inv32-over-allocation',
                   requested: n,
                   available: parseFloat(Math.max(0, surplus - (snap.savings.total - oldAmt)).toFixed(2)),
                   wouldOverBy: parseFloat((wouldBeSavingsTotal - surplus).toFixed(2)),
@@ -20346,9 +20354,9 @@ const BRAIN = {
           }
         } catch (e) {
           // Defensive: if snapshot computation fails, fall through to original
-          // behavior (write proceeds without INV-29 check). Logged so failures
+          // behavior (write proceeds without INV-32 check). Logged so failures
           // surface in audit forensics instead of silently bypassing the rule.
-          try { BRAIN.audit.append({ type: 'inv29_check_failed', key, error: String(e && e.message || e), source, ts: Date.now() }); } catch (_) {}
+          try { BRAIN.audit.append({ type: 'inv32_check_failed', key, error: String(e && e.message || e), source, ts: Date.now() }); } catch (_) {}
         }
       }
       const old = S.activePlan.overrides[key];

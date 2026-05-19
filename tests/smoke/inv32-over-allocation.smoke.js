@@ -1,20 +1,20 @@
-// Bundle 32.2 — INV-29 write-time over-allocation refusal smoke.
+// Bundle 32.2 — INV-32 write-time over-allocation refusal smoke.
 //
 // Why: pre-fix, BRAIN.plan.setOverride accepted any savings override regardless
 // of whether the resulting sum(savings:* thisCycleAmount) exceeded surplus.
 // User could allocate $1,433 to goals against $1,170 surplus — writes succeeded,
 // display surfaced "-$263 over allocated" as a red warning, but state was
 // already corrupt. INV-28 covers the txn-time path (recordWithAllocation);
-// INV-29 covers the plan-time path (setOverride).
+// INV-32 covers the plan-time path (setOverride).
 //
 // What this asserts:
 //   1. Increase that fits → allowed, override written, no refusal
-//   2. Increase that exceeds surplus → refused with reason 'inv29-over-allocation',
-//      audit log appended 'inv29_refusal', state unchanged
+//   2. Increase that exceeds surplus → refused with reason 'inv32-over-allocation',
+//      audit log appended 'inv32_refusal', state unchanged
 //   3. Reduction in over-allocated state → allowed (improves state even if final
 //      state still over — refusing reductions would create stuck state)
 //   4. Pay-in-full normalisation (within $0.50 of normal) → still clears override
-//      per Bundle 28 normalised path; INV-29 doesn't see those cases
+//      per Bundle 28 normalised path; INV-32 doesn't see those cases
 //   5. Audit log entry shape correct (all expected fields present)
 //
 // Run: npm run smoke
@@ -27,7 +27,7 @@ const { captureState } = require('../helpers/capture-state');
 const FIXTURE_PATH = path.resolve(__dirname, '../../state-snapshot.json');
 const FROZEN_ISO = '2026-05-05T22:00:00+10:00';
 const fixture = JSON.parse(fs.readFileSync(FIXTURE_PATH, 'utf8'));
-const SPEC_FILE = 'tests/smoke/inv29-over-allocation.smoke.js';
+const SPEC_FILE = 'tests/smoke/inv32-over-allocation.smoke.js';
 
 function buildSlyghtV5(fx) {
   const S = Object.assign({}, fx.S || {});
@@ -44,7 +44,7 @@ const SETTLE_CSS = `
   }
 `;
 
-test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () => {
+test.describe('Bundle 32.2 — INV-32 over-allocation write-time refusal', () => {
   test.beforeEach(async ({ page, context }) => {
     await page.clock.install({ time: new Date(FROZEN_ISO) });
     await context.addInitScript((args) => {
@@ -74,9 +74,9 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
       });
       const snap = BRAIN.plan.getSnapshot();
       const safeAmt = Math.floor(snap.derived.surplus * 0.25);
-      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv29-case1', safeAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv32-case1', safeAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
       const after = BRAIN.plan.getSnapshot();
-      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv29-case1'];
+      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv32-case1'];
       return {
         r, safeAmt,
         surplus: snap.derived.surplus,
@@ -92,7 +92,7 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
     expect(result.r.reason).toBeUndefined();
   });
 
-  test('Case 2: increase that exceeds surplus is refused with inv29-over-allocation', async ({ page }) => {
+  test('Case 2: increase that exceeds surplus is refused with inv32-over-allocation', async ({ page }) => {
     const result = await page.evaluate(() => {
       S.activePlan = S.activePlan || {};
       S.activePlan.overrides = S.activePlan.overrides || {};
@@ -104,10 +104,10 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
       const overAmt = Math.ceil(snap.derived.surplus * 1.5) + 100;
       const auditBefore = (S._auditLog || []).length;
       const balBefore = S.bal;
-      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv29-case2', overAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
-      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv29-case2'];
+      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv32-case2', overAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv32-case2'];
       const recentAudit = (S._auditLog || []).slice(-10);
-      const refusalEntry = recentAudit.find(e => e && e.type === 'inv29_refusal' && e.key === 'savings:bundle32-inv29-case2');
+      const refusalEntry = recentAudit.find(e => e && e.type === 'inv32_refusal' && e.key === 'savings:bundle32-inv32-case2');
       return {
         r, overAmt,
         surplus: snap.derived.surplus,
@@ -119,7 +119,7 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
 
     // Refusal envelope
     expect(result.r.ok, 'increase exceeding surplus must be refused').toBe(false);
-    expect(result.r.reason).toBe('inv29-over-allocation');
+    expect(result.r.reason).toBe('inv32-over-allocation');
     expect(result.r.requested).toBe(result.overAmt);
     expect(typeof result.r.available).toBe('number');
     expect(typeof result.r.wouldOverBy).toBe('number');
@@ -130,19 +130,19 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
     expect(result.balUnchanged).toBe(true);
 
     // Audit log entry appended with expected shape
-    expect(result.refusalEntry, 'inv29_refusal audit log entry must be appended').toBeTruthy();
-    expect(result.refusalEntry.type).toBe('inv29_refusal');
+    expect(result.refusalEntry, 'inv32_refusal audit log entry must be appended').toBeTruthy();
+    expect(result.refusalEntry.type).toBe('inv32_refusal');
     expect(result.refusalEntry.requested).toBe(result.overAmt);
     expect(typeof result.refusalEntry.wouldBeSavingsTotal).toBe('number');
     expect(typeof result.refusalEntry.surplus).toBe('number');
     expect(typeof result.refusalEntry.wouldOverBy).toBe('number');
 
     await captureState(page, {
-      label: 'inv29-refusal',
-      featurePath: 'BRAIN → PLAN → SET_OVERRIDE → INV29_REFUSAL',
+      label: 'inv32-refusal',
+      featurePath: 'BRAIN → PLAN → SET_OVERRIDE → INV32_REFUSAL',
       specFile: SPEC_FILE, specLine: 110,
-      codeUnderTest: `BRAIN.plan.setOverride('savings', 'bundle32-inv29-case2', ${result.overAmt}, {}, PLAN_OVERRIDE_SET) where overAmt > surplus (${result.surplus})`,
-      expectedState: `r.ok=false, r.reason='inv29-over-allocation', wouldOverBy=${result.r.wouldOverBy}; state unchanged; audit log inv29_refusal entry appended`,
+      codeUnderTest: `BRAIN.plan.setOverride('savings', 'bundle32-inv32-case2', ${result.overAmt}, {}, PLAN_OVERRIDE_SET) where overAmt > surplus (${result.surplus})`,
+      expectedState: `r.ok=false, r.reason='inv32-over-allocation', wouldOverBy=${result.r.wouldOverBy}; state unchanged; audit log inv32_refusal entry appended`,
       clipTo: null,
     });
   });
@@ -151,7 +151,7 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
     // Setup: inject two savings overrides totaling more than surplus (legacy
     // over-allocated state). Then attempt to REDUCE one of them. Must be allowed
     // even though resulting state is still over — refusing reductions would
-    // create stuck state per INV-29 policy.
+    // create stuck state per INV-32 policy.
     const result = await page.evaluate(() => {
       S.activePlan = S.activePlan || {};
       S.activePlan.overrides = S.activePlan.overrides || {};
@@ -162,10 +162,10 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
       const overAmt = Math.ceil(snapPre.derived.surplus * 0.7) + 200;
       // Direct-mutate to simulate legacy over-allocated state. Two overrides
       // each at overAmt → total = 2×overAmt > surplus (over-allocated).
-      S.activePlan.overrides['savings:bundle32-inv29-case3a'] = {
+      S.activePlan.overrides['savings:bundle32-inv32-case3a'] = {
         normalAmount: 0, thisCycleAmount: overAmt, reason: null, deferred: 0, deferAction: 'none', setAt: Date.now(),
       };
-      S.activePlan.overrides['savings:bundle32-inv29-case3b'] = {
+      S.activePlan.overrides['savings:bundle32-inv32-case3b'] = {
         normalAmount: 0, thisCycleAmount: overAmt, reason: null, deferred: 0, deferAction: 'none', setAt: Date.now(),
       };
       const snapOver = BRAIN.plan.getSnapshot();
@@ -173,8 +173,8 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
       const isOverBefore = snapOver.derived.savingsOverAllocated > 0;
       // Now REDUCE case3a from overAmt to overAmt/2 (still allocated, just less)
       const reducedAmt = Math.floor(overAmt / 2);
-      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv29-case3a', reducedAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
-      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv29-case3a'];
+      const r = BRAIN.plan.setOverride('savings', 'bundle32-inv32-case3a', reducedAmt, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
+      const overrideAfter = S.activePlan.overrides['savings:bundle32-inv32-case3a'];
       const snapAfter = BRAIN.plan.getSnapshot();
       return {
         r,
@@ -195,21 +195,21 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
     expect(result.overrideAfter, 'override should be updated to the reduced amount').toBe(result.reducedAmt);
 
     // Note: stillOverAfter may be true OR false depending on how much was reduced.
-    // INV-29 doesn't promise the state will be under-allocated after a reduction,
+    // INV-32 doesn't promise the state will be under-allocated after a reduction,
     // only that the reduction was allowed. That's the right policy.
   });
 
   test('Case 4: pay-in-full normalisation still works (Bundle 28 path preserved)', async ({ page }) => {
     // When the user picks an amount within $0.50 of normal, setOverride clears
-    // the override entirely (Bundle 29 demon-time normalisation). INV-29 must
+    // the override entirely (Bundle 29 demon-time normalisation). INV-32 must
     // not interfere with that path. Note: bills have a different defer-flow so
     // this test uses 'kia-extra' instead (also goes through the normalisation
-    // path for non-bill categories, but isn't affected by INV-29's savings-only scope).
+    // path for non-bill categories, but isn't affected by INV-32's savings-only scope).
     const result = await page.evaluate(() => {
       // Resolve a normal amount for a known bucket. We use kia-extra which has
-      // a defined normal via S.carloan etc. and is not subject to INV-29.
+      // a defined normal via S.carloan etc. and is not subject to INV-32.
       // The point of this test is that the normalisation short-circuit fires
-      // BEFORE the INV-29 check.
+      // BEFORE the INV-32 check.
       const carloan = +S.carloan || 0;
       if (carloan <= 0) {
         // No KIA loan in fixture — use a savings override with explicit normalAmount
@@ -219,7 +219,7 @@ test.describe('Bundle 32.2 — INV-29 over-allocation write-time refusal', () =>
       }
       // For kia-extra, normalAmount is resolved via _resolveNormalAmount(category, itemId).
       // The "pay in full" scenario means setting amt == carloan exactly.
-      // This is NOT a savings override, so INV-29 wouldn't apply anyway — but
+      // This is NOT a savings override, so INV-32 wouldn't apply anyway — but
       // we still verify the normalisation path fires cleanly.
       const r = BRAIN.plan.setOverride('kia-extra', 'KIA', carloan, {}, BRAIN.SOURCES.PLAN_OVERRIDE_SET);
       return { r, carloan };
