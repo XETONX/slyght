@@ -10,6 +10,117 @@
 
 ---
 
+## Bundle 31 — SHIPPED (2026-05-19 single session · 14 commits 818d63a..c53e0c8)
+
+**Theme:** Phase 1A user gut-audit + Phase 1B vision-paired walkthrough → math/UX fixes + Guardian rule debt close-out + fixture refresh + methodology amendments.
+
+**User-facing fixes (3 commits):**
+- **Item 3** (`17481ff`) Analysis tab Essential vs Discretionary breakdown — cycle-bound the filter (was lifetime, producing $15k impossible totals against $4,578 cycle spend). OPEN-BUGS #6 part-A. Smoke at `tests/smoke/analysis-essentials.smoke.js` with synthetic pre-cycle txn injection for regression-lock.
+- **Item 4** (`9d956c0`) Payday Plan "left to allocate" headline reframe — leads with "still to allocate" + subtitle "X already assigned of Y this cycle". Investigation revealed the original "auto-update assigned on tick" fix would have broken Bundle 27 locked-plan workflow + INV-08/INV-10. Resolves Items 4-6 cluster via vocabulary.
+- **Item 16** (`ca71d6e`) `BRAIN.bills.processAutoDebits` — boot-fired batch handler scans BILLS for auto-debit entries past their billDate, atomically writes txn + marks paid via `BRAIN.bills.markPaid`. Cycle-floor guard `S.autodebitProcessingStartTs` prevents reprocessing of cycles already settled by bank reconciliation. Initialized first-deploy to `MODEL.paydayDate.getTime()` (= 2026-06-15 for John's current state, correctly skipping the reconciled May cycle). New `BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED`. Smoke 6 cases covering pre-floor skip, eligible-process, future-skip, idempotency, manual-pre-paid skip, first-boot-init.
+
+**Guardian rule fixes (2 commits — prereq for full-Guardian-as-commit-gate):**
+- (`da904c2`) `getLiveBal returns only S.bal` rule rewritten — accepts both legacy `return S.bal` AND post-Bundle-30 `BRAIN.balance.get` delegation. Pre-fix matched only legacy → UNKNOWN verdict on current code. Verified against 6 synthetic cases.
+- (`2fd28ff`) Runtime Guardian S7 `paydayReceived` rule — N/A short-circuit for anchorless fresh-state fixtures (where `paydayReceivedDate=null` AND `paydayReceived=false`). Spurious failure when real-time advanced past fixture's payday day. Cycle-rollover staleness still caught by separate SCENARIO test at `guardian-runtime.js:528`.
+
+**Phase 1B vision audit infrastructure (3 commits):**
+- (`eb01778`) `scripts/walkthrough-audit.js` — 15 UI surfaces × Haiku 4.5 vision audit with 5-dimension structured-JSON prompt. Run 1 baseline at `docs/audit/...-RUN-1.md` (retained for diagnostic record but CONTAMINATED by stale fixture — discard).
+- (`a53a822`) Per-API-call trace logging — JSONL written per call with timestamp, surface_id, screenshot_hash (sha256-16), api_response_id, input/output tokens, cost, raw_response_text. Verifiable by `wc -l` + token-sum vs Anthropic billing.
+- (`601e4ca`) Run 2 against refreshed fixture (72 findings, P0:0 P1:35 P2:37 P3:0, $0.0873) + per-screen diff doc vs Run 1 + `api_response_id` logging-bug fix in `callHaiku()` return.
+
+**Methodology fixes post-fixture-refresh (4 commits):**
+- (`f5e13e1`) `state-snapshot.json` refreshed from `tests/state-dump/slyght-reconciled-2026-05-19.json` (was 5 days stale, pre-reconciliation $11.72 hero; now $1,113.61 reconciled state).
+- (`6581a0f`) Smoke Root Cause A — audit-log `.length` delta assertions decoupled from 500-entry cap. Affects INV-01 outflow + INV-28 refusal + Case 6 init.
+- (`1d37c81`) Smoke Root Cause B — autodebit Case 6 follow-up derives `asOfTs` from `result.floorAfterInit` instead of hardcoded date that assumed `paydayReceived=false`.
+- (`e3a593f`) Smoke Root Cause C — diagnostics beforeEach now dismisses End-of-Day modal via canonical `eodReconAccept()` handler. Modal fires on real-state fixture and intercepts pointer events for diagnostics expand-button taps.
+
+**Methodology amendments (2 commits):**
+- (`b7c0085`) CLAUDE.md §8 — full Guardian (`npm run guardian`) as commit gate (not guardian-static alone) + fixture currency rule (refresh on reconciliation) + audit trace requirement (vision-API scripts MUST write per-call JSONL) + investigate-before-coding pattern (codified after 3× validation this bundle).
+- (`c53e0c8`) `docs/bundle-32-scope.md` — Phase 1A carry-overs + Phase 1B Run 2 actionable set + 12 housekeeping items + 5 FINANCIAL-INVARIANTS pending decisions.
+
+**Discipline gains this bundle:**
+- "Investigate-before-coding" validated 3× (Items 4, 8, 16) — codified in §8
+- "Don't conflate fixture with live state" caught + saved to memory after a $11.72 / $1,113.61 confabulation
+- Stale fixture surfaced as systemic risk — 5 smoke specs were latently dependent on Bundle-27-era state values
+- Vision audit verification trail formalized (no-trace audits = not Guardian-equivalent)
+
+**Cost:** $0.0718 (Phase 1B Run 1) + $0.0873 (Phase 1B Run 2) + $0.0118 (test:all verify-visual passes) = ~$0.17 Haiku for the bundle.
+
+---
+
+## Bundle 30.5 + 30.6 — SHIPPED (rolled with Bundle 30)
+
+**Theme:** Visual feedback infrastructure + worker-KV import for one-shot bank reconciliation.
+
+**Bundle 30.5 (`cd303e5`):** Phases A-D shipped:
+- `tests/helpers/capture-state.js` + `tests/helpers/feature-map-paths.js`
+- `scripts/verify-visual-state.js` with Haiku 4.5 auto-flag mode + manual-review fallback
+- npm scripts: `smoke`, `verify-visual`, `verify-visual:force`, `test:all`
+- 26-capture verify-visual at $0.006/run on initial deploy
+
+**Bundle 30.6 (`1cad114`):** Temporary worker-import button for one-shot reconciliation + ADR-E preview. Infrastructure for 2026-05-19 bank-side reconciliation. v3 / v4 / v5-atomic iterations (`3c7008e`, `1735299`, `289c762`) hardened the save-race vs in-tick write+reload pattern. Final cleanup at `818d63a`.
+
+---
+
+## Bundle 30 — SHIPPED (2026-05-15 → 2026-05-18 · Phase 1 + Phase 2)
+
+**Theme:** Financial-math integrity. Closes FR-01 (`S.bal` doesn't decrement on transaction record) + FR-02 (bucket balances don't increment on allocation) per `FIELD-REPORT-2026-05-15.md`. Encodes mathematical contracts the app must satisfy via `FINANCIAL-INVARIANTS.md`.
+
+**Headline shipped:**
+- `BRAIN.balance.*` bubble — canonical single writer for `S.bal` (`fe3caba`)
+- `BRAIN.transaction.recordWithAllocation` envelope — composes balance + txn + audit atomically; 9 write sites migrated (`bbc1f48`)
+- AUDITOR shim — `applyTxnDelta` dual-logs to AUDITOR via TXN_DELTA_* entries
+- Bucket destination support — INV-02 + INV-12 (bucket credit on allocation)
+- INV-28 free-money refusal gate — `_skipFreeMoneyGate` + `_isRoundup` envelope exemptions
+- `BRAIN.bills.markPaid` envelope composition — Phase 2.E (no separate `applyTxnDelta` calls)
+- 5 plan tick paths migrated to canonical writers — Phase 2.C
+- New Guardian rule `no-direct-applyTxnDelta` — Phase 2.D
+- Diagnostic UI: Math Health card, Boot Self-Test card, Activity Log card (merged + filter), Dev Inspect card — Phase 1.A.6
+- Pre-Bundle-30 snapshot insurance (`BRAIN.balance._initPreBundle30Snapshot`) — one-shot at boot
+
+**Tooling:**
+- Smoke spec foundation (`tests/smoke/diagnostics.smoke.js`, `tests/smoke/transaction-paths.smoke.js`) — 19 specs at close
+- FEATURE-MAP v2 schema introduced (structured per-entry path/type/lives-in/inside-BRAIN/smoke-coverage/reads/writes/triggers/related/notes/last-touched)
+- 16 MathInvariants registered including RC1, INV-01-26
+
+**SDD:** `docs/sdd/SDD-bundle-30-financial-math-integrity.md` — the canonical spec for this bundle.
+
+---
+
+## Bundle 29 — SHIPPED (2026-05-13 → 2026-05-14 · "alive" + Section 12 retro)
+
+**Theme:** Make the app react instead of silently re-rendering. Premium-feel polish batch + interaction-state harness + cross-cutting math fixes from Plan-mode total audit.
+
+**"Alive" capabilities (`c1e30d5`, `8eeefe1`, `9a3c843`, `11cbd95`, `caa7549`, `55cc9fb`, `f87a39b`):**
+- Micro-animation foundation across hero / NW / MAX PER DAY / canvas REMAINDER tile
+- Counter-roll on value changes + pulse on tile state shifts
+- Bar smooth-resize on allocation changes
+- Edit-modal save-flash kill (`caa7549`) — modal hidden during `_save()` invocation
+- Visibility-instead-of-display on bonus toggles (`55cc9fb`) — kills layout reflow
+- Drop card opacity fade in edit-modal slide-in (`f87a39b`)
+- Premium-feel polish batch — MAX PER DAY hero, survival bubbles, analysis cards
+- `.add-btn` lifted from dashed thin grey to chunky green bubble button
+
+**Interaction-state harness (`d707afa`, `eae0138`, `0275f2d`):**
+- `layerV:deep` mode — Canvas sub-screens + modals coverage extension
+- Alive-vs-dead deep UX walk — interaction-state captures per surface
+
+**Section 12 retro sweep + Batch A approvals (`6ce96cd`, `84ab9fe`, `0db1c46`, `cfeea88`):**
+- Full Phase 1-4 sweep of Payday Plan canvas section 12
+- Opus vision review + cc-handoff-after-opus
+- Batch A math fixes: math sub-line provisions, buffer color, toast clip, lock-confirm button
+- Phase 5 closure: METADATA §7 findings status + §8 fixes shipped
+
+**Plan canvas math fix (`2fa589a`):** Analysis uses `BRAIN.bills.getThisCycle` as canonical source — Plan mode now authoritative on bills math.
+
+**Plan-active banner (`ce24ac9`):** Persistent PLAN-ACTIVE banner across dashboard / bills / analysis + explicit unlock affordance.
+
+**Trip allocation fix (`c9bf1bd`):** mark-as-allocated works for trips — was returning bucket-not-found silently.
+
+**Manual amendment (`0441fad`):** §9.1 strongest-assumption-first verification discipline — saved to memory after the close+replay storageState pattern proved itself against multiple "did it really land?" doubts.
+
+---
+
 ## Bundle 28 — SHIPPED (started 2026-05-13 13:33 · closed 2026-05-14 lunch · rounds 0-72)
 
 **Theme:** PLAN-mode deep dive + canonical-writer migration of the intent layer.
