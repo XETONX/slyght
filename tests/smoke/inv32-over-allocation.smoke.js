@@ -32,6 +32,10 @@ const SPEC_FILE = 'tests/smoke/inv32-over-allocation.smoke.js';
 function buildSlyghtV5(fx) {
   const S = Object.assign({}, fx.S || {});
   if (fx.paidBills && !S.paidBills) S.paidBills = fx.paidBills;
+  // Bundle 32.7 Pass 1: INV-29 plan-lock gate refuses setOverride on locked
+  // plans. INV-32 tests exercise setOverride and need an unlocked baseline.
+  // Force unlocked here so INV-32 cases reach the INV-32 surplus check.
+  if (S.activePlan) S.activePlan.lockedAt = null;
   return { S, BILLS: fx.BILLS || [] };
 }
 

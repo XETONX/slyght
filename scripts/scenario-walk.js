@@ -219,6 +219,13 @@ const SCENARIOS = [
           await page.evaluate(() => {
             S.activePlan = S.activePlan || {};
             S.activePlan.overrides = S.activePlan.overrides || {};
+            // Reset to unlocked baseline — fixture (John's real state) may be locked,
+            // and INV-29 refuses setOverride on locked plans. This scenario exercises
+            // the override-write path, so we need the plan unlocked for the test.
+            if (S.activePlan.lockedAt) {
+              S.activePlan.lockedAt = null;
+              try { BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK); } catch (_) {}
+            }
             // Clean any previous test overrides
             Object.keys(S.activePlan.overrides).forEach(k => {
               if (k.indexOf('savings:scenario-B-') === 0) delete S.activePlan.overrides[k];
@@ -308,7 +315,7 @@ const SCENARIOS = [
     description: 'Most-used daily flow per OPEN-BUGS #43 history. Verify locked plan tick path: lock (direct lockedAt set, since no BRAIN.plan.lock canonical writer exists — finding flagged) → BRAIN.plan.tickItem → balance decrements · txn appears · audit log entries · then unlock leaves state coherent.',
     steps: [
       {
-        description: 'Audit BRAIN.plan surface — flag missing canonical lock/unlock writers',
+        description: 'Audit BRAIN.plan surface — canonical lock/unlock writers MUST exist (Bundle 32.7 Pass 1)',
         action: async () => {},
         asserts: async (page) => {
           const state = await page.evaluate(() => {
@@ -319,40 +326,49 @@ const SCENARIOS = [
               hasUntickItem: typeof BRAIN.plan.untickItem === 'function',
               hasCanonicalLock: typeof BRAIN.plan.lock === 'function',
               hasCanonicalUnlock: typeof BRAIN.plan.unlock === 'function',
+              hasCanonicalIsLocked: typeof BRAIN.plan.isLocked === 'function',
               isLocked: !!(S.activePlan && S.activePlan.lockedAt),
             };
           });
           const errors = [];
           if (!state.hasTickItem) errors.push('BRAIN.plan.tickItem missing — Bundle 27 canonical writer expected');
           if (!state.hasUntickItem) errors.push('BRAIN.plan.untickItem missing');
-          // NOTE: lock/unlock canonical-writer absence is FRAMEWORK GAP, not a hard fail
-          // (codebase uses direct S.activePlan.lockedAt mutation at 4+ call sites).
-          // Scenario records the gap for the architecture report.
+          // Post Bundle 32.7 Pass 1 — these are HARD pass-conditions, not informational.
+          if (!state.hasCanonicalLock) errors.push('BRAIN.plan.lock missing — Bundle 32.7 Pass 1.a writer expected');
+          if (!state.hasCanonicalUnlock) errors.push('BRAIN.plan.unlock missing — Bundle 32.7 Pass 1.a writer expected');
+          if (!state.hasCanonicalIsLocked) errors.push('BRAIN.plan.isLocked missing — Bundle 32.7 Pass 1.a reader expected');
           return { ok: errors.length === 0, errors, state };
         },
       },
       {
-        description: 'Lock plan via direct S.activePlan.lockedAt = Date.now() (mirrors openPaydayLockPlan codepath)',
+        description: 'Lock plan via BRAIN.plan.lock canonical writer (Bundle 32.7 Pass 1)',
         action: async (page) => {
           await page.evaluate(() => {
-            const t = Date.now();
-            S.activePlan = S.activePlan || {};
-            S.activePlan.lockedAt = t;
-            // Mirror the audit-log entry that the canvas Lock button emits
-            if (BRAIN && BRAIN.audit && typeof BRAIN.audit.append === 'function') {
-              BRAIN.audit.append({ type: 'payday_plan_locked', source: 'scenario_d_walk', ts: t });
+            // Fixture state may already be locked (John's real 2026-05-19 state).
+            // Reset to unlocked first so we exercise the FIRST-time lock path
+            // (which mirrors to BRAIN.allocation). Idempotent re-lock would
+            // return alreadyLocked:true and skip the mirror — uninteresting.
+            if (S.activePlan && S.activePlan.lockedAt) {
+              S.activePlan.lockedAt = null;
+              try { BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK); } catch (_) {}
             }
-            window._scenarioD_lockedAt = t;
+            window._scenarioD_lockResult = BRAIN.plan.lock(
+              { snapshot: { cycleId: S.activePlan && S.activePlan.cycleId, source: 'scenario-D' } },
+              BRAIN.SOURCES.CANVAS_LOCK
+            );
           });
         },
         asserts: async (page) => {
           const state = await page.evaluate(() => ({
-            isLocked: !!BRAIN.plan.getSnapshot().lockedAt,
-            lockedAtSeen: BRAIN.plan.getSnapshot().lockedAt,
-            recentAudit: (S._auditLog || []).slice(-2).map(e => e && e.type),
+            lockResult: window._scenarioD_lockResult,
+            isLocked: BRAIN.plan.isLocked(),
+            allocLocked: BRAIN.allocation.isLocked(),
+            recentAudit: (S._auditLog || []).slice(-3).map(e => e && e.type),
           }));
           const errors = [];
-          if (!state.isLocked) errors.push('snap.lockedAt not picked up after direct set');
+          if (!state.lockResult || state.lockResult.ok !== true) errors.push(`BRAIN.plan.lock returned ${JSON.stringify(state.lockResult)}`);
+          if (!state.isLocked) errors.push('BRAIN.plan.isLocked() returned false after lock');
+          if (!state.allocLocked) errors.push('BRAIN.allocation.isLocked() returned false — dual-store sync broken');
           if (!state.recentAudit.includes('payday_plan_locked')) errors.push(`audit log missing payday_plan_locked; recent: ${state.recentAudit.join(',')}`);
           return { ok: errors.length === 0, errors, state };
         },
@@ -409,19 +425,18 @@ const SCENARIOS = [
         },
       },
       {
-        description: 'Unlock plan via direct S.activePlan.lockedAt=null; verify balance/txns preserved',
+        description: 'Unlock plan via BRAIN.plan.unlock canonical writer; verify balance/txns preserved + dual-store sync',
         action: async (page) => {
           await page.evaluate(() => {
             window._scenarioD_unlockBefore = { bal: S.bal, txnCount: (S.txns || []).length };
-            S.activePlan.lockedAt = null;
-            if (BRAIN.audit && BRAIN.audit.append) {
-              BRAIN.audit.append({ type: 'payday_plan_unlocked', source: 'scenario_d_walk', ts: Date.now() });
-            }
+            window._scenarioD_unlockResult = BRAIN.plan.unlock(BRAIN.SOURCES.CANVAS_UNLOCK);
           });
         },
         asserts: async (page) => {
           const state = await page.evaluate(() => ({
-            isLocked: !!BRAIN.plan.getSnapshot().lockedAt,
+            unlockResult: window._scenarioD_unlockResult,
+            isLocked: BRAIN.plan.isLocked(),
+            allocLocked: BRAIN.allocation.isLocked(),
             balBefore: window._scenarioD_unlockBefore.bal,
             balAfter: S.bal,
             txnsBefore: window._scenarioD_unlockBefore.txnCount,
@@ -429,7 +444,9 @@ const SCENARIOS = [
             recentAudit: (S._auditLog || []).slice(-2).map(e => e && e.type),
           }));
           const errors = [];
-          if (state.isLocked) errors.push('snap.lockedAt still truthy after unlock');
+          if (!state.unlockResult || state.unlockResult.ok !== true) errors.push(`BRAIN.plan.unlock returned ${JSON.stringify(state.unlockResult)}`);
+          if (state.isLocked) errors.push('BRAIN.plan.isLocked() still true after unlock');
+          if (state.allocLocked) errors.push('BRAIN.allocation.isLocked() still true — r77 divergence resurfacing');
           if (state.balAfter !== state.balBefore) errors.push(`Balance changed during unlock: ${state.balBefore} → ${state.balAfter}`);
           if (state.txnsAfter !== state.txnsBefore) errors.push(`Txns changed during unlock: ${state.txnsBefore} → ${state.txnsAfter}`);
           if (!state.recentAudit.includes('payday_plan_unlocked')) errors.push(`audit log missing payday_plan_unlocked`);
@@ -712,6 +729,11 @@ const SCENARIOS = [
         description: 'Pick first unpaid debt (including viaRent — fixture has only viaRent debts); override amount via BRAIN.plan.setOverride; verify snap.debts.total + snap.derived.essentialsTotal both reflect the change',
         action: async (page) => {
           await page.evaluate(() => {
+            // Reset to unlocked baseline (INV-29 refuses setOverride on locked plans)
+            if (S.activePlan && S.activePlan.lockedAt) {
+              S.activePlan.lockedAt = null;
+              try { BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK); } catch (_) {}
+            }
             const snap = BRAIN.plan.getSnapshot();
             // Fixture state at 2026-05-19 has only viaRent debts in S.debts.
             // snap.debts excludes viaRent (line 20045 filter), so we use snap.debts.unpaid if present.
@@ -1069,6 +1091,191 @@ const SCENARIOS = [
     ],
   },
   {
+    id: 'L-lock-unlock-cross-entry-flow',
+    name: 'Cross-entry lock/unlock cycle (canvas Lock → inline Unlock → legacy Lock → canvas Unlock)',
+    description: 'Bundle 32.7 Pass 1 integration test. Drives the plan through all 4 lock/unlock entry points sequentially. At every step asserts (1) BRAIN.plan.isLocked() and BRAIN.allocation.isLocked() agree (no divergence) and (2) S.activePlan.lockedAt reflects the expected state. Captures 8+ screenshots for Haiku flow verification.',
+    steps: [
+      {
+        description: 'Step 1 — boot, unlocked baseline; assert all stores agree on unlocked',
+        action: async (page) => {
+          await page.evaluate(() => {
+            // Force unlocked baseline regardless of fixture state
+            if (S.activePlan && S.activePlan.lockedAt) S.activePlan.lockedAt = null;
+            try { BRAIN.allocation.unlock(BRAIN.SOURCES.PLAN_UNLOCK_PAYDAY); } catch (_) {}
+            // Navigate to the Payday Plan canvas root for visual capture
+            if (typeof openPaydayPlan === 'function') openPaydayPlan();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            sLockedAt: S.activePlan && S.activePlan.lockedAt,
+          }));
+          const errors = [];
+          if (state.planIsLocked) errors.push(`BRAIN.plan.isLocked()=${state.planIsLocked} expected false`);
+          if (state.allocIsLocked) errors.push(`BRAIN.allocation.isLocked()=${state.allocIsLocked} expected false`);
+          if (state.sLockedAt) errors.push(`S.activePlan.lockedAt=${state.sLockedAt} expected null`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 2 — Lock via CANVAS_LOCK (canvas Lock save handler path); assert both stores locked',
+        action: async (page) => {
+          await page.evaluate(() => {
+            const snap = BRAIN.plan.getSnapshot();
+            BRAIN.plan.lock(
+              { snapshot: { cycleId: snap.cycleId, totalToPlan: snap.totalToPlan, entry: 'canvas-Lock' } },
+              BRAIN.SOURCES.CANVAS_LOCK
+            );
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            sLockedAt: S.activePlan && S.activePlan.lockedAt,
+            lastAudit: (S._auditLog || []).slice(-1)[0],
+          }));
+          const errors = [];
+          if (!state.planIsLocked) errors.push('BRAIN.plan.isLocked() false after canvas-Lock');
+          if (!state.allocIsLocked) errors.push('BRAIN.allocation.isLocked() false — dual-store sync failed');
+          if (!state.sLockedAt) errors.push('S.activePlan.lockedAt not set');
+          if (!state.lastAudit || state.lastAudit.type !== 'payday_plan_locked') errors.push(`last audit type ${state.lastAudit && state.lastAudit.type} expected payday_plan_locked`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 3 — Unlock via PLAN_UNLOCK_INLINE (banner Unlock — the r77 path); both stores must clear (the divergence-bug fix)',
+        action: async (page) => {
+          await page.evaluate(() => {
+            BRAIN.plan.unlock(BRAIN.SOURCES.PLAN_UNLOCK_INLINE);
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            sLockedAt: S.activePlan && S.activePlan.lockedAt,
+            lastAudit: (S._auditLog || []).slice(-1)[0],
+          }));
+          const errors = [];
+          if (state.planIsLocked) errors.push('BRAIN.plan.isLocked() still true after inline-Unlock');
+          if (state.allocIsLocked) errors.push('BRAIN.allocation.isLocked() still true after inline-Unlock — r77 divergence resurfaced');
+          if (state.sLockedAt) errors.push('S.activePlan.lockedAt not cleared');
+          if (!state.lastAudit || state.lastAudit.type !== 'payday_plan_unlocked') errors.push('last audit not payday_plan_unlocked');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 4 — Lock via PLAN_LOCK_PAYDAY (legacy plan-mode flow); both stores must lock again',
+        action: async (page) => {
+          await page.evaluate(() => {
+            BRAIN.plan.lock(
+              { snapshot: { entry: 'legacy-plan-mode', payday: S.payday } },
+              BRAIN.SOURCES.PLAN_LOCK_PAYDAY
+            );
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            sLockedAt: S.activePlan && S.activePlan.lockedAt,
+          }));
+          const errors = [];
+          if (!state.planIsLocked) errors.push('BRAIN.plan.isLocked() false after legacy-flow Lock');
+          if (!state.allocIsLocked) errors.push('BRAIN.allocation.isLocked() false — legacy flow not syncing both stores');
+          if (!state.sLockedAt) errors.push('S.activePlan.lockedAt not set by legacy flow lock');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 5 — Unlock via CANVAS_UNLOCK (canvas Re-plan path); both stores clear',
+        action: async (page) => {
+          await page.evaluate(() => {
+            BRAIN.plan.unlock(BRAIN.SOURCES.CANVAS_UNLOCK);
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+          }));
+          const errors = [];
+          if (state.planIsLocked) errors.push('BRAIN.plan.isLocked() still true after canvas-Unlock');
+          if (state.allocIsLocked) errors.push('BRAIN.allocation.isLocked() still true after canvas-Unlock');
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 6 — Lock via CANVAS_LOCK again (re-lock within same cycle); streak gate must NOT double-increment',
+        action: async (page) => {
+          await page.evaluate(() => {
+            window._scenarioL_streakBeforeRelock = S.activePlan && +S.activePlan.streak || 0;
+            BRAIN.plan.lock({ snapshot: { entry: 'canvas-Lock-relock' } }, BRAIN.SOURCES.CANVAS_LOCK);
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            streakBefore: window._scenarioL_streakBeforeRelock,
+            streakAfter: S.activePlan && +S.activePlan.streak || 0,
+          }));
+          const errors = [];
+          if (!state.planIsLocked) errors.push('not locked after relock');
+          if (!state.allocIsLocked) errors.push('alloc not locked after relock');
+          // Re-lock within same cycle should add at most 1 (per the unlock-clears-gate semantics of Bundle 32.7)
+          const streakDelta = state.streakAfter - state.streakBefore;
+          if (streakDelta > 1) errors.push(`streak incremented by ${streakDelta} on relock — expected ≤1`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+      {
+        description: 'Step 7 — Final unlock via PLAN_UNLOCK_INLINE; verify clean termination state',
+        action: async (page) => {
+          await page.evaluate(() => {
+            BRAIN.plan.unlock(BRAIN.SOURCES.PLAN_UNLOCK_INLINE);
+            if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+          });
+          await page.waitForTimeout(150);
+        },
+        asserts: async (page) => {
+          const state = await page.evaluate(() => ({
+            planIsLocked: BRAIN.plan.isLocked(),
+            allocIsLocked: BRAIN.allocation.isLocked(),
+            sLockedAt: S.activePlan && S.activePlan.lockedAt,
+            sLastStreaked: S.activePlan && S.activePlan.lastStreakedCycleId,
+            // Count all lock/unlock audit entries across the scenario for forensic verify
+            lockAuditCount: (S._auditLog || []).filter(e => e && e.type === 'payday_plan_locked').length,
+            unlockAuditCount: (S._auditLog || []).filter(e => e && e.type === 'payday_plan_unlocked').length,
+          }));
+          const errors = [];
+          if (state.planIsLocked) errors.push('plan still locked at scenario end');
+          if (state.allocIsLocked) errors.push('alloc still locked at scenario end');
+          if (state.sLockedAt) errors.push('S.activePlan.lockedAt not null at scenario end');
+          if (state.sLastStreaked) errors.push(`lastStreakedCycleId=${state.sLastStreaked} expected null after final unlock`);
+          // Scenario fires 3 locks + 3 unlocks; expect audit log to record all 6 events
+          if (state.lockAuditCount < 3) errors.push(`lockAuditCount ${state.lockAuditCount} expected ≥3`);
+          if (state.unlockAuditCount < 3) errors.push(`unlockAuditCount ${state.unlockAuditCount} expected ≥3`);
+          return { ok: errors.length === 0, errors, state };
+        },
+      },
+    ],
+  },
+  {
     id: 'C-over-allocation-refusal',
     name: 'INV-32 over-allocation refusal (user-facing via canonical writer)',
     description: 'User attempts to over-allocate savings; INV-32 refuses, state unchanged, audit log records inv32_refusal',
@@ -1093,6 +1300,13 @@ const SCENARIOS = [
         description: 'Attempt over-allocation (1.5x surplus) via setOverride — must refuse',
         action: async (page) => {
           await page.evaluate(() => {
+            // Reset to unlocked baseline — this scenario tests INV-32 refusal,
+            // which fires AFTER the INV-29 plan-lock gate. The fixture may be
+            // locked; unlock so the request reaches the INV-32 check.
+            if (S.activePlan && S.activePlan.lockedAt) {
+              S.activePlan.lockedAt = null;
+              try { BRAIN.allocation.unlock(BRAIN.SOURCES.CANVAS_UNLOCK); } catch (_) {}
+            }
             const snap = BRAIN.plan.getSnapshot();
             const overAmt = Math.ceil(snap.derived.surplus * 1.5) + 100;
             window._scenarioC_overAmt = overAmt;

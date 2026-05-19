@@ -113,8 +113,13 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: a non-exempt bucket allocation > free_money_remaining is accepted
 - Test: `tests/smoke/transaction-paths.smoke.js:309` — Phase 2.B refusal probe
 
-**INV-29: Plan lock narrow semantics (RESERVED — SDD-bundle-30 §C#3).**
-- Status: Reserved invariant number for the locked-plan-state semantics work. Decision pending per "Pending decisions" section below. Earlier Bundle 32.2 work mistakenly assigned this number to the savings-override over-allocation rule; that rule is now correctly numbered INV-32 below. INV-29's reservation stands.
+**INV-29: Plan lock prevents modification of `S.activePlan.overrides` only. It does NOT prevent ticking items, editing bonus, logging transactions, or marking bills paid.**
+- Why: Lock is about *plan-shape* commitment, not *execution* freeze. Users still need to record what they did during the cycle. Over-restrictive lock = users avoid locking. Under-restrictive lock = lock means nothing.
+- Violated when: locking the plan prevents tick operations / bonus edits / txn logging, OR fails to prevent override modifications.
+- Status: SHIPPED Bundle 32.7 Pass 1 in `BRAIN.plan.setOverride` + `BRAIN.plan.clearOverride` (`index.html:20300+`). Activated by the canonical lock-state substrate (Bundle 32.7 Pass 1.a–1.e). Pre-Pass-1 the gate could not ship because "is locked" returned different answers across three stores; post-Pass-1 the canonical reader `BRAIN.plan.isLocked()` is unambiguous and the enforcement is grounded.
+- Test: `tests/smoke/inv29-plan-lock-semantics.smoke.js` — 5 cases: (1) `setOverride` on locked plan refused with `reason:'plan-locked'`, state unchanged, audit logs `inv29_refusal` · (2) `clearOverride` also refused (clearing IS modification) · (3) `tickItem` SUCCEEDS on locked plan (ticks are post-lock execution) · (4) `setBonus` SUCCEEDS on locked plan (bonus is income-side, not override) · (5) `setOverride` succeeds again after `BRAIN.plan.unlock`.
+
+Numbering history: original Bundle 32.2 work mistakenly assigned this number to the savings-override over-allocation rule. That rule was renumbered to INV-32 (now §C). INV-29's body is now correctly the plan-lock narrow-semantics rule per SDD-bundle-30 §C#3 reservation.
 
 **INV-30: FX fee separate transactions.**
 - Status: SHIPPED Bundle 33.x. Canonical body lives in §A after INV-27 (write-time txn-shape rule belongs with the balance-conservation invariants). Cross-reference only.

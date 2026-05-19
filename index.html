@@ -20296,6 +20296,24 @@ const BRAIN = {
       if (!['bill', 'debt', 'savings', 'kia-extra'].includes(category)) return { ok: false, reason: 'invalid-category' };
       const n = +amount;
       if (!isFinite(n) || n < 0) return { ok: false, reason: 'invalid-amount' };
+      // ─── INV-29 — Plan lock narrow semantics ────────────────────
+      // INV-29 (SDD-bundle-30 §C#3): plan lock prevents modification of
+      // S.activePlan.overrides ONLY. Other state (transactions, balance,
+      // bill ticks, bonus edits) remains editable. Bundle 32.7 Pass 1
+      // landed the canonical lock writers; this guard now activates the
+      // invariant. Pre-32.7 the gate couldn't ship because "is locked"
+      // returned different answers across three stores; post-32.7 the
+      // canonical reader is unambiguous. UI surfaces that surface this
+      // refusal as a toast/modal close are the typical caller pattern.
+      if (typeof this.isLocked === 'function' && this.isLocked()) {
+        BRAIN.audit.append({
+          type: 'inv29_refusal',
+          category, itemId, requested: n,
+          reason: 'plan-locked',
+          source, ts: Date.now(),
+        });
+        return { ok: false, reason: 'plan-locked', category, itemId };
+      }
       S.activePlan = S.activePlan || _emptyActivePlan();
       S.activePlan.overrides = S.activePlan.overrides || {};
       const key = category + ':' + itemId;
@@ -20388,6 +20406,17 @@ const BRAIN = {
     },
     clearOverride(category, itemId, source) {
       if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source' };
+      // INV-29: clearing IS modification of S.activePlan.overrides. Refuse
+      // when plan is locked. Mirrors the setOverride gate above.
+      if (typeof this.isLocked === 'function' && this.isLocked()) {
+        BRAIN.audit.append({
+          type: 'inv29_refusal',
+          category, itemId, action: 'clear',
+          reason: 'plan-locked',
+          source, ts: Date.now(),
+        });
+        return { ok: false, reason: 'plan-locked', category, itemId };
+      }
       const key = category + ':' + itemId;
       const ovs = (S.activePlan && S.activePlan.overrides) || {};
       if (!(key in ovs)) return { ok: false, reason: 'not-found' };
