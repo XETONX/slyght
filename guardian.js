@@ -8,11 +8,29 @@ const checks = [
   // Balance architecture
   { name: 'getLiveBal returns only S.bal',
     test: () => {
-      const match = html.match(/function getLiveBal\(\)[^}]+}/);
+      // Bundle 31 (2026-05-19): rule rewritten to accept post-Bundle-30
+      // BRAIN.balance.get delegation pattern. Pre-fix regex matched only
+      // the legacy `return S.bal` shape and returned UNKNOWN against the
+      // current implementation. Intent preserved: no arithmetic on txn
+      // data; must read the canonical balance.
+      //
+      // Match function body. Non-greedy + \n\} so a future flat body
+      // with a `// reduce` comment doesn't bleed into adjacent code.
+      const match = html.match(/function getLiveBal\(\)\s*\{([\s\S]*?)\n\}/);
       if (!match) return 'MISSING';
-      const body = match[0];
-      if (body.includes('reduce') || body.includes('txns') || body.includes('filter')) return 'BROKEN — has arithmetic';
-      if (body.includes('return S.bal')) return 'OK';
+      const body = match[1];
+      // Arithmetic detection on txn data. Word-bounded so we don't false-
+      // positive on inline comments like `// reduce` or `// txns analysis`.
+      if (/\b\.?reduce\(/.test(body) || /\bS\.txns\b/.test(body) || /\.filter\(/.test(body)) {
+        return 'BROKEN — has arithmetic';
+      }
+      // Canonical-getter patterns. Either form is acceptable:
+      //   - `return S.bal`         — legacy (pre-Bundle-30)
+      //   - `BRAIN.balance.get`    — Bundle 30+ delegation
+      // Both ultimately read S.bal without arithmetic.
+      if (/\breturn\s+S\.bal\b/.test(body) || /BRAIN\.balance\.get/.test(body)) {
+        return 'OK';
+      }
       return 'UNKNOWN';
     }
   },
