@@ -16,6 +16,8 @@
     "verify-visual": "node scripts/verify-visual-state.js",
     "verify-visual:force": "node scripts/verify-visual-state.js --force",
     "test:all": "npm run smoke && npm run verify-visual",
+    "recon:dump": "node scripts/recon/dump-state.js",
+    "recon:apply": "node scripts/recon/reconcile-against-bank.js",
     "layerV": "node scripts/layerV-capture.js --local --skip-deep",
     "layerV:deep": "node scripts/layerV-capture.js --local --deep-only",
     "layerV:all": "node scripts/layerV-capture.js --local",
