@@ -131,6 +131,13 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: round-ups in transaction history but China Holiday bucket unchanged
 - Test: enable round-ups → China Holiday. Log transaction that triggers $0.40 round-up. Assert China Holiday `saved` += 0.40.
 
+**INV-31: Round-up transactions fire synchronously after their parent transaction records.**
+- Why: Deferred round-ups break audit-log temporal coherence ("why is my round-up audit ts hours after the parent?") and create reconciliation gaps if the user reconciles between parent and round-up. Synchronous keeps the parent+round-up as a single logical write. Also blocks the silent-drop class — if the app closes between parent and a `setTimeout`-scheduled round-up callback, the round-up vanishes.
+- Violated when: parent txn at audit-log time T, round-up child at T+Δ where Δ > 100ms; OR round-up landing in a different event-loop tick (e.g., wrapped in `setTimeout` / `setInterval` / `queueMicrotask` / `await`).
+- Status: SHIPPED Bundle 33.x. **Behavioral invariant** — codifies the existing synchronous pattern at both live emission sites (Quick Log `quickLogTxn` at index.html:9478 · chat `executeChatAction` log_txn at index.html:14931). The SDD §3 step 11 fold-into-`recordWithAllocation` migration is a separate future optimization; INV-31 holds either way.
+- Test: `tests/smoke/inv31-roundup-timing.smoke.js` — 3 cases. (1) `executeChatAction({action:'log_txn', amt:9.40, ...})` emits parent + round-up; assert `|child.ts - parent.ts| ≤ 100ms`; assert destination bucket credited synchronously. (2) `quickLogTxn()` via DOM seeding emits same shape with same temporal guarantee. (3) `recordWithAllocation` alone does NOT emit a round-up sibling (regression guard — assertion FLIPS when SDD §3 step 11 fold-in lands).
+- Anti-pattern enforcement: Guardian rule `no-async-roundup` (`guardian-static.js` rule #18) scans the AST for `setTimeout` / `setInterval` / `queueMicrotask` whose inline callback body references `_isRoundup`. Catches any future attempt to defer round-up emission. First anti-pattern rule in the Guardian catalog (counterpart to required-pattern rules like `no-direct-applyTxnDelta`).
+
 ---
 
 ## E. Cycle and date logic

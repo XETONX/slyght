@@ -1329,6 +1329,52 @@ const RULES = [
     },
   },
 
+  // ─── 18. no-async-roundup ───────────────────────
+  // Bundle 33.x INV-31 anti-pattern rule. Round-up emission must occur
+  // in the same JS event-loop tick as the parent transaction's record.
+  // If anyone wraps round-up logic in setTimeout / setInterval /
+  // queueMicrotask, they break INV-31's temporal coherence guarantee
+  // (parent ts and round-up ts within 100ms). Audit-log forensics
+  // assume same-tick emission; deferred round-ups silently drop if the
+  // app is closed between parent + scheduled callback.
+  //
+  // First anti-pattern Guardian rule (counterpart to required-pattern
+  // rules like no-direct-applyTxnDelta). Detects an UNDESIRED pattern
+  // rather than enforcing a required canonical writer.
+  {
+    name: 'no-async-roundup',
+    severity: 'fail',
+    anchor: 'FINANCIAL-INVARIANTS#INV-31',
+    check() {
+      const violations = [];
+      const ASYNC_DEFERS = new Set(['setTimeout', 'setInterval', 'queueMicrotask']);
+      walk.simple(ast, {
+        CallExpression(node) {
+          if (!node.callee || node.callee.type !== 'Identifier') return;
+          if (!ASYNC_DEFERS.has(node.callee.name)) return;
+          // Inspect the FIRST argument — the callback. If it's an inline
+          // function (FunctionExpression / ArrowFunctionExpression), check
+          // its body for `_isRoundup` references. If the callback is a
+          // named identifier, we can't statically follow it; smoke spec
+          // INV-31 temporal-coherence test catches that case.
+          const cb = node.arguments[0];
+          if (!cb) return;
+          if (cb.type !== 'FunctionExpression' && cb.type !== 'ArrowFunctionExpression') return;
+          const cbSrc = SCRIPT_SRC.slice(cb.range[0], cb.range[1]);
+          if (!/_isRoundup\b/.test(cbSrc)) return;
+          violations.push({
+            line: fileLine(node.loc.start.line),
+            col: node.loc.start.column,
+            evidence: 'Round-up firing must be synchronous with parent — ' + node.callee.name +
+              '/setInterval/queueMicrotask detected within callback that references _isRoundup. ' +
+              'INV-31 requires same-tick emission. See FINANCIAL-INVARIANTS.md INV-31.',
+          });
+        },
+      });
+      return violations;
+    },
+  },
+
 ];
 
 // ─── Run rules ────────────────────────────────────────────────────────────
