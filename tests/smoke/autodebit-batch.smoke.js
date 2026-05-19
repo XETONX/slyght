@@ -286,17 +286,26 @@ test.describe('Bundle 31 Phase 3A — Batch auto-debit processor (Item 16)', () 
     expect(result.initEntry.startTs).toBe(result.modelPaydayTs);
 
     // (d) subsequent processAutoDebits honours the new floor.
-    // At frozen 2026-05-05, MODEL.paydayDate = 2026-05-15. A bill with
-    // day=20 in May (within next cycle starting May 15) would land
-    // billDate=May 20 (if we pass asOfTs after May 15). Then May 20 >=
-    // floor (May 15) → eligible. Verify by passing asOfTs=June 1.
+    // Bundle 31 fixture-refresh fix: derive asOfTs FROM the just-initialized
+    // floor, instead of hardcoding a date that assumes paydayReceived=false.
+    // The pre-refresh fixture had paydayReceived=false → MODEL.paydayDate
+    // landed at 2026-05-15 (current-month payday). The 2026-05-19 reconciled
+    // fixture has paydayReceived=true → MODEL.paydayDate advances to
+    // 2026-06-15 (next-month payday). Hardcoding asOfTs=June 1 broke when
+    // the floor moved to June 15.
+    //
+    // Robust pattern: asOfTs = floor + 60 days. Always lands one full
+    // cycle past the floor, regardless of which payday the floor is. Bill
+    // day=20 (>= payday=15) falls in the cycle's start month, so
+    // billDate = floor + (~30-50 days) which is > floor AND < asOfTs.
+    const asOfTs = result.floorAfterInit + 60 * 86400000;
     const followup = await page.evaluate(({ bill, asOfTs }) => {
       BILLS.push(bill);
       const r = BRAIN.bills.processAutoDebits(asOfTs, BRAIN.SOURCES.AUTODEBIT_BATCH_LANDED);
       return r;
-    }, { bill: makeAutoBill(20, 'postFloorCase6'), asOfTs: new Date('2026-06-01T10:00:00+10:00').getTime() });
+    }, { bill: makeAutoBill(20, 'postFloorCase6'), asOfTs });
 
     const processed = followup.processed.find(p => p.name && p.name.includes('postFloorCase6'));
-    expect(processed, 'day-20 bill must process when asOfTs is June 1 and floor is May 15').toBeTruthy();
+    expect(processed, `day-20 bill must process when asOfTs is 60d past floor (${new Date(asOfTs).toISOString()}) and floor is ${new Date(result.floorAfterInit).toISOString()}`).toBeTruthy();
   });
 });
