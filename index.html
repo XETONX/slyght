@@ -3297,20 +3297,38 @@ function renderPlanActiveBanner(targetId) {
 }
 
 // r77 (John 2026-05-15 ask: "until i say no"): explicit user-initiated
-// unlock. Clears S.activePlan.lockedAt + the streak-eligibility token,
-// preserves ticks (history is valuable). Confirms before clearing so a
-// stray tap doesn't undo a deliberate lock.
+// unlock. Bundle 32.7 Pass 1.c: routed through BRAIN.plan.unlock canonical
+// writer. The writer atomically clears S.activePlan.lockedAt AND mirrors
+// to BRAIN.allocation.unlock — closing the pre-32.7 divergence bug where
+// snap.lockedAt reported unlocked but BRAIN.allocation.isLocked() still
+// reported locked (because this path only cleared S.activePlan).
+//
+// Also closes the §8 native-confirm violation: window.confirm replaced
+// with EDIT_MODAL.openCustom so the prompt renders inside the app's
+// modal frame (scroll-locked + back-button-intercepted + styled).
+// Function contract becomes async-callback (effect happens in the
+// modal save handler); no callers rely on the prior synchronous
+// boolean return — confirmed at all call sites.
 function unlockPlanWithConfirm() {
   if (!S.activePlan || !S.activePlan.lockedAt) return;
-  const ok = window.confirm('Unlock this plan? Your tick history stays; the lock flag clears so you can re-allocate.');
-  if (!ok) return;
-  S.activePlan.lockedAt = null;
-  S.activePlan.lastStreakedCycleId = null;  // re-allow streak credit on re-lock
-  try { BRAIN.audit.append({ type: 'plan_unlocked_by_user', cycleId: S.activePlan.cycleId, ts: Date.now() }); } catch (_) {}
-  if (typeof save === 'function') save();
-  if (typeof showToast === 'function') showToast('🔓 Plan unlocked');
-  if (typeof renderAll === 'function') renderAll();
-  if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+  EDIT_MODAL.openCustom({
+    title: 'Unlock this plan?',
+    hint: 'Your tick history stays; the lock flag clears so you can re-allocate.',
+    bodyHtml:
+      '<div style="font-size:13px;color:var(--text2);line-height:1.5;padding:4px 0">' +
+        'Unlocking lets you adjust overrides + savings allocations again. ' +
+        'You will lose the streak credit for this cycle (re-locking re-earns it).' +
+      '</div>',
+    saveLabel: 'Unlock',
+    save: () => {
+      const r = BRAIN.plan.unlock(BRAIN.SOURCES.PLAN_UNLOCK_INLINE);
+      if (!r.ok) return r;
+      if (typeof showToast === 'function') showToast('🔓 Plan unlocked');
+      if (typeof renderAll === 'function') renderAll();
+      if (typeof renderPaydayPlanRoot === 'function') renderPaydayPlanRoot();
+      return { ok: true };
+    },
+  });
 }
 function checkDayBudgetAlert() {
   const todaySpent = getTodayDiscretionarySpend();
