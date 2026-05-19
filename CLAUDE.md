@@ -119,32 +119,38 @@
 
 ## 5. Current state of the project
 
-**Last updated:** 2026-05-18
+**Last updated:** 2026-05-19 (post Bundle 31 + 32a)
 
-**Status:** Money-flow accounting integrity crisis. App diverged from real bank by $1,840+ as of yesterday. John cannot effectively use the app right now. Bundle 30 in scope.
+**Status:** Bundle 31 SHIPPED. App reconciled to bank ($1,113.61 hero matches Virgin Money). Math/UX integrity work continuing; no active "crisis" status.
 
-**Recently shipped:**
-- Bundle 28 Phase 0 (intent layer migration — `planIntents` populated)
-- Bonus persistence fix (verified resolved in dark-mode sweep)
-- 14-commit "demon time" session 2026-05-13
+**Recently shipped (newest first):**
+- **Bundle 31 (2026-05-19, 14 commits):** Items 3/4/16 (cycle-bound essentials · still-to-allocate framing · autoDebit batch processor) + 2 Guardian rule fixes + Phase 1B vision audit infrastructure (script + Run 1 baseline + Run 2 actionable) + fixture refresh from 2026-05-19 reconciliation + 4 methodology post-refresh smoke decoupling fixes + CLAUDE.md §8 amendments. See `CHANGELOG.md` for full entry.
+- **Bundle 30.5 + 30.6 (2026-05-15..18):** Visual feedback loop (verify-visual-state.js, capture-state.js, FEATURE-MAP v2 schema, 26-capture smoke) + worker-KV one-shot reconciliation import (v3 → v5-atomic) + 2026-05-19 bank reconciliation closed $1,840 drift.
+- **Bundle 30 (2026-05-15..18):** FR-01 + FR-02 fixed via `BRAIN.balance` bubble + `BRAIN.transaction.recordWithAllocation` envelope + INV-28 free-money gate + 5 plan tick paths migrated. SDD at `docs/sdd/SDD-bundle-30-financial-math-integrity.md`.
+- **Bundle 29 (2026-05-13..14):** "Alive" micro-animations across hero/NW/MAX-PER-DAY/canvas, counter-roll, interaction-state harness (`layerV:deep`), Section 12 retro sweep + Batch A approvals (math sub-line provisions, buffer color, toast clip, lock-confirm button).
+- **Bundle 28 (2026-05-13..14):** PLAN-mode deep dive, intent layer migration, BRAIN bubble migration (13 bubbles operational), 75+ SOURCES tags, 16 MathInvariants.
 
 **Currently active:**
-- **Bundle 30 = financial-math integrity.** NOT YET SPECCED. Triggered by `FIELD-REPORT-2026-05-15.md` surfacing 3 BLOCKING bugs (FR-01, FR-02, FR-03) plus 5 HIGH bugs.
+- **Bundle 32 (next session) — triage + dedupe pass.** Three parallel ledgers (Phase 1A items, Phase 1B Run 2 findings, OPEN-BUGS) need de-duplication into one canonical backlog before feature work. Scope draft at `docs/bundle-32-scope.md`.
 
-**Open critical bugs (from field report):**
-- **FR-01** — Cash hero `S.bal` doesn't decrement on transaction record. Violates INV-01, INV-05.
-- **FR-02** — Bucket balances don't increment when allocation transactions record. Violates INV-02, INV-12.
-- **FR-03** — AI agent `update_balance` tool overshoots corrections by ~$7k. Violates INV-20.
-- FR-06 HIGH — Payday countdown 3 different values across surfaces. Violates INV-14.
-- FR-07 HIGH — Debts sub-screen disagrees with canvas. Violates INV-11, INV-18.
+**Open critical bugs (from field report) — STATUS UPDATE:**
+- ~~**FR-01**~~ — Cash hero `S.bal` doesn't decrement on transaction record. **FIXED Bundle 30** via `BRAIN.transaction.recordWithAllocation` envelope at 9 write sites.
+- ~~**FR-02**~~ — Bucket balances don't increment when allocation transactions record. **FIXED Bundle 30 Phase 2.A** via bucket-destination support + INV-02/INV-12 enforcement.
+- **FR-03** — AI agent `update_balance` tool overshoots corrections by ~$7k. **STILL OPEN.** Violates INV-20. CLAUDE.md §10 advises "Don't trust in-app AI `update_balance` tool" until FR-03 lands.
+- FR-06 HIGH — Payday countdown 3 different values across surfaces. **STILL OPEN.** Violates INV-14.
+- FR-07 HIGH — Debts sub-screen disagrees with canvas. **STILL OPEN.** Violates INV-11, INV-18.
 
-**On deck (after Bundle 30):**
-- Pixel-fixable items from prior sweep (F-04, F-11, F-19, F-21, F-22, F-23)
-- Design-deferred items (F-05, F-14, F-16, F-17, F-18, F-20) — need Opus design pass
+**On deck (Bundle 32+):**
+- 32a (this session, after Bundle 31 push) — admin debt close: CHANGELOG + §5 + FEATURE-MAP + OPEN-BUGS status marks + recon scripts moved to `scripts/recon/`
+- 32b — triage + dedupe pass (Phase 1A ↔ OPEN-BUGS ↔ Phase 1B Run 2)
+- 32c — Phase 1A high-leverage P1s (Items 9, 11, 13) + possible P0 jump for OPEN-BUGS #43 if phone-repro confirms
+- 32d — filter-scatter root cleanup (OPEN-BUGS #6 part-B + #7 + #8 + #17 — high leverage, 4 bugs resolve transitively)
+- ADR-E (weekly reconciliation workflow + cycle-floor bump contract)
+- FR-03, FR-06, FR-07
 
 **Awaiting John's approval:**
-- Bundle 30 SDD (to be produced by CC)
-- Pending decisions at bottom of FINANCIAL-INVARIANTS.md (5 items)
+- Pending decisions at bottom of FINANCIAL-INVARIANTS.md (5 items, untouched since 2026-05-18 draft)
+- Bundle 32 priority order — fresh judgment per session-close discipline
 
 ---
 
