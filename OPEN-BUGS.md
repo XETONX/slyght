@@ -922,8 +922,7 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   `RECONCILE_CORRECTION` source. Audit log captures the recovery so
   the trail is auditable.
 - **Status:** fixed (Bundle 28 round 12)
-
-## 42. saveEditedTransaction — balance sign inverted for expense edits
+- **2026-05-19 phone-verify:** PASS — Bundle 28 round 12 fix still holds under refreshed reconciled state ($1,113.61 hero, 212 txns). Confirmed sequence: delete Txn A succeeds; rapid-tap on Txn B (within ~300ms) does NOT cascade-delete — explicit re-engagement with Txn B's delete affordance is required to trigger its deletion. Safe behavior. No data-integrity risk. The two-layer defence (ts-not-idx binding + clear-ts-on-entry guard) holds.
 - **Bug:** Pre-Bundle-28 `saveEditedTransaction` math (centralised in
   `BRAIN.transaction.update` round 10) adjusted `S.bal` by `+diff` when
   an EXPENSE amount edit grew (diff = newAmt - oldAmt). Walking it:
@@ -980,6 +979,17 @@ by a fix-bundle when scoped; until then they sit unscheduled.
   bundler or `<script src>` loading). **Defer.** Revisit after
   Guardian is in place when team has bandwidth.
 - **Status:** open (deferred)
+
+## 44. Multi-delete workflow friction — must re-engage delete affordance per txn
+- **Bug:** After deleting one txn, deleting a second txn requires a fresh long-press/tap on its delete affordance rather than continuing in a 'delete mode'. The behavior is SAFE (no cascade-delete risk per #43's two-layer defence) but creates friction when the user wants to clean up multiple test/erroneous txns at once (e.g., post-reconciliation cleanup, removing test artifacts).
+- **Source:** John phone-verify 2026-05-19 — surfaced while confirming #43's Bundle 28 fix still holds. The PASS verdict on #43 IS the same behavior that creates this friction.
+- **Repro needed:** no — current behavior is by design (safety vs friction tradeoff).
+- **Fix bundle:** Bundle 32 candidate — UX redesign. Options:
+  1. Bulk-select mode (long-press first txn enters select-multiple mode; checkboxes appear on remaining txns; single Delete-Selected action confirms all in one prompt)
+  2. Delete-and-stay mode (after first delete, modal closes but a fresh Delete affordance becomes visible on the next row without re-tap to engage edit modal)
+  3. Status-quo + accept friction (defer; only painful for power-cleanup workflows)
+- **Severity:** P2 UX (not data-integrity — #43's safety property is the right tradeoff)
+- **Status:** open (Bundle 32 candidate)
 
 ---
 

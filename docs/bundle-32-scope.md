@@ -40,6 +40,13 @@ Bundle 32 kickoff: triage Run 2 findings into actionable backlog. Discipline per
 
 ---
 
+## Phone-verify findings (post-Bundle-31 close)
+
+- **OPEN-BUGS #43** "Transaction delete — rapid-tap deletes wrong txn + double-bumps balance" — phone-verified 2026-05-19 PASS. Bundle 28 round 12 fix still holds under refreshed reconciled state. NOT a P0-jump for Bundle 32 (my earlier session-close framing of it as a P0-jump candidate was based on partial reading — the bug was already marked fixed, this verify just confirmed it stays fixed).
+- **NEW OPEN-BUGS #44** "Multi-delete workflow friction — must re-engage delete affordance per txn" — surfaced during #43's phone-verify. Behavior is SAFE (#43's defence holds) but creates friction during multi-txn cleanup. P2 UX. Three fix options sketched in OPEN-BUGS entry. Bundle 32 candidate.
+
+---
+
 ## Methodology validation (Bundle 32 dogfood items)
 
 1. **Verify trace logging includes `api_response_id` on next audit run.** Bundle 31 commit 601e4ca patched the missing field but didn't re-run. First Bundle 32 audit (if any) should confirm via trace inspection.
