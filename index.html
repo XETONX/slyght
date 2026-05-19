@@ -19163,6 +19163,8 @@ const BRAIN = {
     // source tag; this one distinguishes the inline-banner Unlock from
     // canvas Re-plan in audit forensics.
     PLAN_UNLOCK_INLINE:        'plan-unlock-inline',
+    // Bundle 32.6 — BRAIN.plan.resetCycle canonical writer source.
+    PLAN_CYCLE_RESET:          'plan-cycle-reset',
     AI_AFFORDABILITY_QUERY:    'ai-affordability-query',
     AI_PROPOSAL_APPLY:         'ai-proposal-apply',
     AI_KNOWN_UPCOMING_ADD:     'ai-known-upcoming-add',
@@ -19247,6 +19249,7 @@ const BRAIN = {
     'plan-bonus-edit', 'plan-bonus-confirm',
     'plan-daily-floor-edit', 'plan-buffer-floor-edit',
     'canvas-auto-apply', 'canvas-lock', 'canvas-unlock', 'plan-unlock-inline',
+    'plan-cycle-reset',
     'ai-affordability-query', 'ai-proposal-apply', 'ai-known-upcoming-add',
     'carried-from-prior-cycle',
     // Bundle 28 Phase 0 — PLAN.intents canonical entity
@@ -20801,6 +20804,91 @@ const BRAIN = {
     },
     isLocked() {
       return !!(S.activePlan && S.activePlan.lockedAt);
+    },
+    // ─── RESET CYCLE (Bundle 32.6 substrate) ─────────────
+    // Clears the active plan to a fresh-but-same-cycle state. Atomic
+    // operation: unlock + clear all user choices (overrides, ticks,
+    // knownUpcoming, savings mirror, pendingProposals, streak gate)
+    // while preserving cycle identity (cycleId + dates) and user
+    // preferences (income.netPay, dailyLivingFloor, bufferFloor,
+    // driftSensitivity).
+    //
+    // No UI invocation yet — UI button + confirm modal copy defer to
+    // a follow-up pass (UX values judgment). Writer is the substrate
+    // chokepoint.
+    //
+    // Audit log captures a compressed pre-state snapshot for forensic
+    // recovery: counts + key totals only (no full content) to avoid
+    // bloating the 500-entry log cap with one giant entry.
+    resetCycle(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (!S.activePlan) return { ok: false, reason: 'no-active-plan' };
+      const p = S.activePlan;
+      // Compressed pre-state snapshot for audit-log
+      const preState = {
+        cycleId: p.cycleId,
+        wasLocked: !!p.lockedAt,
+        overridesCount: Object.keys(p.overrides || {}).length,
+        knownUpcomingCount: (p.knownUpcoming || []).length,
+        savingsMirrorCount: Object.keys(p.savings || {}).length,
+        ticksCount: ['bill','debt','savings','kia-extra','upcoming']
+          .reduce((s, cat) => s + Object.keys((p.ticks && p.ticks[cat]) || {}).length, 0),
+        bonusIncluded: !!(p.income && p.income.bonus && p.income.bonus.included),
+        streak: +p.streak || 0,
+      };
+      // Preserve cycle identity + user preferences
+      const preserved = {
+        cycleId: p.cycleId,
+        cycleStartDate: p.cycleStartDate,
+        cycleEndDate: p.cycleEndDate,
+        income: {
+          netPay: (p.income && +p.income.netPay) || +S.income || 0,
+          // Keep bonus AMOUNT/status (user's expectation for the cycle stays);
+          // only the `included` flag clears so user re-opts-in if they want it
+          // to count toward this cycle's plan.
+          bonus: {
+            amount: (p.income && p.income.bonus && +p.income.bonus.amount) || 0,
+            included: false,
+            status: (p.income && p.income.bonus && p.income.bonus.status) || 'expected',
+          },
+        },
+        dailyLivingFloor: +p.dailyLivingFloor || 30,
+        bufferFloor: +p.bufferFloor || 300,
+        driftSensitivity: +p.driftSensitivity || 0.15,
+        // Preserve actualPaydayTs if set (user manually marked landed — that's a
+        // real event, not part of plan-shape state).
+        actualPaydayTs: p.actualPaydayTs || null,
+      };
+      // Apply the reset
+      S.activePlan = Object.assign({}, preserved, {
+        lockedAt: null,
+        lastStreakedCycleId: null,
+        overrides: {},
+        savings: {},
+        knownUpcoming: [],
+        ticks: { bill: {}, debt: {}, savings: {}, 'kia-extra': {}, upcoming: {} },
+        pendingProposals: [],
+        streak: 0,
+        uiState: { sections: {} },
+      });
+      // Dual-store sync — clear BRAIN.allocation lock state too (parallel
+      // to BRAIN.plan.unlock's mirror behavior). Reset implies unlock.
+      let mirrorOk = null;
+      try {
+        if (BRAIN.allocation && typeof BRAIN.allocation.unlock === 'function') {
+          const m = BRAIN.allocation.unlock(source);
+          mirrorOk = !!(m && m.ok);
+        }
+      } catch (_) { mirrorOk = false; }
+      let saveOk = true;
+      try { save(); } catch (_) { saveOk = false; }
+      BRAIN.audit.append({
+        type: 'plan_cycle_reset',
+        preState,
+        mirrorOk, saveOk,
+        source, ts: Date.now(),
+      });
+      return { ok: true, preState, mirrorOk, saveOk };
     },
     // ─── BONUS ─────────────────────────────────
     setBonus(patch, source) {
