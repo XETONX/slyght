@@ -104,7 +104,18 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **Fix bundle:** unscheduled (small, mirrors RC2 — extend
   `getDiscretionaryByCategory` consumers; bundle into a hygiene commit
   next time analysis-tab work happens)
-- **Status:** open
+- **Bundle 31 part-A landed:** Essential vs Discretionary tile (one of
+  the three Analysis consumers) is now cycle-bounded — commit 17481ff
+  added `t.ts >= MODEL.cycleStart.getTime()` to the existing filter,
+  fixing the impossible $15k lifetime aggregation. Classifier itself
+  unchanged (Loan/Savings still grouped as "essentials"); strict
+  `_NON_SPEND_CATS` migration deferred as part-B (separate design call —
+  reclassifying Loan/Savings out of essentials changes what the chart
+  MEANS to John). Smoke at `tests/smoke/analysis-essentials.smoke.js`.
+- **Status:** partially-fixed (Bundle 31 part-A — commit 17481ff, 2026-05-19);
+  part-B (strict-classifier migration + remaining 2 consumers of the lax
+  pattern) still open as Bundle 32+ candidate, ideally bundled with
+  OPEN-BUGS #7 + #8 + #17 as the filter-scatter root cleanup
 
 ## 7. renderCutSliders compares all-time spend to monthly baseline
 - **Bug:** `renderCutSliders` uses all-time txn history but compares to
