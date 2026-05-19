@@ -53,6 +53,12 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 - Violated when: hero shows $X, footer shows $Y, NW cash shows $Z, all different
 - Test: take 3 snapshots of balance from 3 different surfaces. Assert all equal.
 
+**INV-30: A `recordWithAllocation` call with `envelope.fxFee = {amt, sourceCurrency}` produces two transactions: the parent (envelope's `amt`, `cat`) and a sibling child (`fxFee.amt`, `cat:'FX Fee'`, `linkedTo: parent.ts`, `source: 'fx-fee-auto'`).**
+- Why: FX fees folded into the parent amount are invisible to "how much have I paid in FX fees this quarter" analysis. Separating them preserves the parent's true cost and makes the fee auditable as a category. Closes a pre-Bundle-33.x latent silent-data-loss bug — `recordWithAllocation` accepted `envelope.fxFee` and silently did nothing with it.
+- Violated when: a transaction with an `fxFee` opt lacks a sibling row with `cat='FX Fee'` AND `linkedTo` pointing at parent's `ts`.
+- Status: SHIPPED Bundle 33.x in `BRAIN.transaction.recordWithAllocation` Phase 4.B. Recursion guard: `_isFxFeeChild` flag on the recursive call prevents fee-on-fee. The child inherits `_skipFreeMoneyGate` so it bypasses INV-27 + INV-28 (downstream of the parent's authorization). **Dormant** — no live UI surface emits `fxFee` opt yet. Smoke spec is the only current exerciser; activates when first FX-fee surface ships.
+- Test: `tests/smoke/inv30-fx-fee.smoke.js` — 2 cases: (1) parent + child landed with correct shape, `linkedTo` back-reference, balance decremented by sum, sum-by-category audit query works · (2) recursion guard: child does NOT spawn its own grandchild.
+
 **INV-27: No `recordWithAllocation` outflow that would drive `S.bal < 0` succeeds without a fresh `BRAIN.balance.confirmNegativeOverride()` arm (≤30s old) AND an explicit `_overrideNegativeWarn: true` flag on the envelope.**
 - Why: Silent overdraw destroys trust. The user must consciously accept negative-balance state via a confirm modal; the confirmation token expires after 30 seconds so stale confirms can't authorize unrelated future txns.
 - Violated when: a writer accepts an outflow that takes `S.bal` below 0 without both (a) a fresh `_negativeOverrideArmedAt` timestamp (≤30s old) and (b) `envelope._overrideNegativeWarn: true`. Inflows are exempt (income always lands). `_isRoundup` and `_skipFreeMoneyGate` are exempt (downstream of a parent that already passed the gate).
@@ -110,8 +116,8 @@ If you (CC or Opus) are about to ship a change and you're not sure whether it pr
 **INV-29: Plan lock narrow semantics (RESERVED — SDD-bundle-30 §C#3).**
 - Status: Reserved invariant number for the locked-plan-state semantics work. Decision pending per "Pending decisions" section below. Earlier Bundle 32.2 work mistakenly assigned this number to the savings-override over-allocation rule; that rule is now correctly numbered INV-32 below. INV-29's reservation stands.
 
-**INV-30: FX fee separate transactions (RESERVED — SDD-bundle-30 §C#4).**
-- Status: Reserved invariant number. Decision pending per "Pending decisions" section below. When this invariant ships, fold its body in here.
+**INV-30: FX fee separate transactions.**
+- Status: SHIPPED Bundle 33.x. Canonical body lives in §A after INV-27 (write-time txn-shape rule belongs with the balance-conservation invariants). Cross-reference only.
 
 **INV-31: Round-up timing immediate (RESERVED — SDD-bundle-30 §C#5).**
 - Status: Reserved invariant number. Decision pending per "Pending decisions" section below. Round-ups exist in code (`BRAIN.SOURCES.ROUNDUP`) but the invariant body — "fires immediately on transaction record, not at end-of-day batch" — hasn't been formally asserted with a smoke spec. When this invariant ships, fold its body in here.

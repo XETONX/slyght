@@ -22743,11 +22743,15 @@ const BRAIN = {
 
       // Strip envelope-only fields; persist legacy `income` boolean
       // so existing renderers / filters / undo-flows continue to work.
+      // `_isFxFeeChild` + `linkedTo` are intentionally retained on the
+      // persisted txn so auditors can identify FX-fee children + walk
+      // back to the parent via the linked timestamp.
       const txnFields = { ...envelope, _balAffected: true };
       delete txnFields.direction;
       delete txnFields.destination;
       delete txnFields._skipFreeMoneyGate;
       delete txnFields._overrideNegativeWarn;
+      delete txnFields.fxFee;
       if (!('income' in txnFields)) txnFields.income = (direction === 'inflow');
 
       // Append txn via existing canonical writer.
@@ -22760,6 +22764,51 @@ const BRAIN = {
       if (!balRes.ok) {
         try { this.removeByTs(recRes.ts); } catch (_) {}
         return { ok: false, reason: 'balance-failed:' + balRes.reason, rolledBack: true };
+      }
+
+      // ─── Phase 4.B — INV-30 FX fee child txn ────────────────────────
+      // INV-30: when envelope.fxFee = {amt, sourceCurrency} is provided,
+      // emit a sibling txn (cat:'FX Fee', linkedTo: parent.ts, source:
+      // FX_FEE_AUTO) so FX fees are separately auditable. The recursive
+      // call carries `_isFxFeeChild:true` to prevent fee-on-fee recursion
+      // AND to exempt the child from INV-31 round-up generation (one
+      // fee per parent, no round-up on the fee). Pre-Bundle-33.x the
+      // writer accepted envelope.fxFee silently — landing INV-30 closes
+      // that latent silent-data-loss bug.
+      let fxFeeChild = null;
+      if (envelope.fxFee && !envelope._isFxFeeChild) {
+        const feeAmt = +envelope.fxFee.amt;
+        if (isFinite(feeAmt) && feeAmt > 0) {
+          const feeRes = this.recordWithAllocation(
+            {
+              amt: feeAmt,
+              cat: 'FX Fee',
+              direction: 'outflow',
+              note: 'FX fee (' + (envelope.fxFee.sourceCurrency || 'foreign') + ') → ' + (envelope.note || envelope.cat || 'parent txn'),
+              linkedTo: recRes.ts,
+              _isFxFeeChild: true,
+              // Inherit the parent's negative-balance authorization. The parent
+              // already passed the INV-27 gate; the fee is downstream of that
+              // same commitment. Without this, a confirmed parent could fail
+              // when the fee child re-encounters the gate with the (now-consumed)
+              // token. _skipFreeMoneyGate covers both INV-27 and INV-28.
+              _skipFreeMoneyGate: true,
+            },
+            BRAIN.SOURCES.FX_FEE_AUTO
+          );
+          if (feeRes.ok) {
+            fxFeeChild = { ts: feeRes.txnTs, amt: feeAmt, sourceCurrency: envelope.fxFee.sourceCurrency || null };
+          } else {
+            // Rollback chain on FX-fee failure: reverse balance + remove parent.
+            try { BRAIN.balance.applyTxnDelta(-delta, source, recRes.ts); } catch (_) {}
+            try { this.removeByTs(recRes.ts); } catch (_) {}
+            return {
+              ok: false,
+              reason: 'fx-fee-failed:' + (feeRes && feeRes.reason),
+              rolledBack: true,
+            };
+          }
+        }
       }
 
       // ─── Phase 2.A — bucket credit (after balance succeeds) ───────
@@ -22798,6 +22847,7 @@ const BRAIN = {
         balanceNew: balRes.new,
         delta,
         bucketCredit,
+        fxFeeChild,
       };
     },
     // Find a single txn by ts (back-ref lookup). Returns undefined if
