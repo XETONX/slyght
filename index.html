@@ -19166,6 +19166,11 @@ const BRAIN = {
     CANVAS_AUTO_APPLY:         'canvas-auto-apply',
     CANVAS_LOCK:               'canvas-lock',
     CANVAS_UNLOCK:             'canvas-unlock',
+    // Bundle 32.7 Pass 1 — inline banner Unlock affordance (r77 ask). The
+    // canvas-Unlock + legacy-PLAN_LOCK_PAYDAY paths each have their own
+    // source tag; this one distinguishes the inline-banner Unlock from
+    // canvas Re-plan in audit forensics.
+    PLAN_UNLOCK_INLINE:        'plan-unlock-inline',
     AI_AFFORDABILITY_QUERY:    'ai-affordability-query',
     AI_PROPOSAL_APPLY:         'ai-proposal-apply',
     AI_KNOWN_UPCOMING_ADD:     'ai-known-upcoming-add',
@@ -19249,7 +19254,7 @@ const BRAIN = {
     'plan-untick', 'plan-override-set', 'plan-override-clear',
     'plan-bonus-edit', 'plan-bonus-confirm',
     'plan-daily-floor-edit', 'plan-buffer-floor-edit',
-    'canvas-auto-apply', 'canvas-lock', 'canvas-unlock',
+    'canvas-auto-apply', 'canvas-lock', 'canvas-unlock', 'plan-unlock-inline',
     'ai-affordability-query', 'ai-proposal-apply', 'ai-known-upcoming-add',
     'carried-from-prior-cycle',
     // Bundle 28 Phase 0 — PLAN.intents canonical entity
@@ -20629,6 +20634,133 @@ const BRAIN = {
       BRAIN.audit.append({ type: 'payday_manual_landed', old, new: ts, source, ts: Date.now() });
       try { save(); } catch (_) {}
       return { ok: true, old, new: ts };
+    },
+    // ─── LOCK STATE (Bundle 32.7 Pass 1 canonical writers) ─────────
+    // S.activePlan.lockedAt is the dominant source of truth for "is the
+    // plan locked." Pre-Bundle-32.7 four call sites directly mutated this
+    // field, with the inline-banner unlock path clearing ONLY S.activePlan
+    // and leaving BRAIN.allocation's localStorage twin set — a real
+    // user-facing divergence (snap.lockedAt and BRAIN.allocation.isLocked
+    // disagreed after that path ran). These writers consolidate the
+    // pattern: write to S.activePlan + dual-store sync to BRAIN.allocation
+    // + audit-log + defensive Bundle 29 demon-time persist verify, all
+    // routed through one chokepoint.
+    //
+    // ADR: docs/adr/ADR-bundle-32-7-lock-state-canonicalisation.md (Option D Pass 1).
+    // INV-29 (plan lock narrow semantics) is now enforceable — its body
+    // can land in FINANCIAL-INVARIANTS.md after this writer ships.
+    lock(opts, source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      const o = opts || {};
+      const snapshot = o.snapshot || null;
+      S.activePlan = S.activePlan || _emptyActivePlan();
+      // Already locked? Idempotent return.
+      if (S.activePlan.lockedAt) {
+        return { ok: true, alreadyLocked: true, lockedAt: S.activePlan.lockedAt };
+      }
+      const lockedAt = Date.now();
+      S.activePlan.lockedAt = lockedAt;
+      // Streak idempotency per cycleId (Bundle 29 F-09 fix). Increment ONCE
+      // per cycle even if user unlocks + relocks within the same cycle.
+      // rolloverIfNeeded clears the gate implicitly by creating a new cycleId.
+      const cycleId = S.activePlan.cycleId;
+      let streakIncremented = false;
+      if (cycleId && S.activePlan.lastStreakedCycleId !== cycleId) {
+        S.activePlan.streak = (+S.activePlan.streak || 0) + 1;
+        S.activePlan.lastStreakedCycleId = cycleId;
+        streakIncremented = true;
+      }
+      // Dual-store sync: mirror lock to BRAIN.allocation (closes the
+      // pre-32.7 divergence class). If allocation.lock errors we keep
+      // S.activePlan locked anyway — S.activePlan is the dominant
+      // truth source post-32.7. Audit-log the mirror result.
+      let mirrorResult = null;
+      try {
+        if (typeof BRAIN !== 'undefined' && BRAIN.allocation && typeof BRAIN.allocation.lock === 'function') {
+          mirrorResult = BRAIN.allocation.lock(snapshot, source);
+        }
+      } catch (e) {
+        mirrorResult = { ok: false, reason: 'mirror-threw:' + (e && e.message) };
+      }
+      // Bundle 29 demon-time defensive persist verify. save() with surfaced
+      // failure → re-read localStorage → audit-log mismatch if disk write
+      // didn't land. Toast on save failure so user knows to export.
+      let saveOk = true;
+      let saveErr = null;
+      try { save(); } catch (e) { saveOk = false; saveErr = String(e && e.message || e); }
+      let persistOk = true;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const persistedLockedAt = parsed && parsed.S && parsed.S.activePlan && parsed.S.activePlan.lockedAt;
+        if (!persistedLockedAt || persistedLockedAt !== lockedAt) {
+          persistOk = false;
+          BRAIN.audit.append({
+            type: 'lock_persist_mismatch',
+            expected: lockedAt,
+            found: persistedLockedAt || null,
+            saveOk, saveErr,
+            source, ts: Date.now(),
+          });
+          if (typeof console !== 'undefined') console.warn('[BRAIN.plan.lock] persist mismatch — expected', lockedAt, 'found', persistedLockedAt, 'saveOk', saveOk, saveErr);
+        }
+      } catch (e) {
+        persistOk = false;
+        if (typeof console !== 'undefined') console.warn('[BRAIN.plan.lock] re-read verify threw', e);
+      }
+      if (!saveOk && typeof showToast === 'function') {
+        showToast('⚠️ Lock saved in memory but disk write failed — export your data');
+      }
+      BRAIN.audit.append({
+        type: 'payday_plan_locked',
+        cycleId,
+        lockedAt,
+        streakIncremented,
+        mirrorOk: mirrorResult ? !!mirrorResult.ok : null,
+        saveOk, persistOk,
+        snapshot,
+        source, ts: Date.now(),
+      });
+      return { ok: true, lockedAt, cycleId, streakIncremented, mirrorOk: mirrorResult ? !!mirrorResult.ok : null, saveOk, persistOk };
+    },
+    unlock(source) {
+      if (!source || !BRAIN._SOURCE_SET.has(source)) return { ok: false, reason: 'unknown-source:' + source };
+      if (!S.activePlan || !S.activePlan.lockedAt) {
+        return { ok: true, wasLocked: false };
+      }
+      const cycleId = S.activePlan.cycleId;
+      const previousLockedAt = S.activePlan.lockedAt;
+      S.activePlan.lockedAt = null;
+      // Clear streak-eligibility token so a subsequent re-lock within the
+      // same cycle re-earns the streak credit (matches inline-banner path's
+      // r77 semantics; the canvas-Re-plan path didn't clear this pre-32.7).
+      S.activePlan.lastStreakedCycleId = null;
+      // Dual-store sync: mirror unlock to BRAIN.allocation. Closes the
+      // r77 divergence bug where unlockPlanWithConfirm cleared S.activePlan
+      // but left BRAIN.allocation's twin set.
+      let mirrorResult = null;
+      try {
+        if (typeof BRAIN !== 'undefined' && BRAIN.allocation && typeof BRAIN.allocation.unlock === 'function') {
+          mirrorResult = BRAIN.allocation.unlock(source);
+        }
+      } catch (e) {
+        mirrorResult = { ok: false, reason: 'mirror-threw:' + (e && e.message) };
+      }
+      let saveOk = true;
+      let saveErr = null;
+      try { save(); } catch (e) { saveOk = false; saveErr = String(e && e.message || e); }
+      BRAIN.audit.append({
+        type: 'payday_plan_unlocked',
+        cycleId,
+        previousLockedAt,
+        mirrorOk: mirrorResult ? !!mirrorResult.ok : null,
+        saveOk, saveErr,
+        source, ts: Date.now(),
+      });
+      return { ok: true, wasLocked: true, cycleId, previousLockedAt, mirrorOk: mirrorResult ? !!mirrorResult.ok : null, saveOk };
+    },
+    isLocked() {
+      return !!(S.activePlan && S.activePlan.lockedAt);
     },
     // ─── BONUS ─────────────────────────────────
     setBonus(patch, source) {
