@@ -59,6 +59,96 @@ export default {
       }
     }
 
+    // POST /push-full-state — Bundle 32a fixture-freshness substrate.
+    // Receives the FULL {S, BILLS} localStorage blob from the app
+    // (debounced ~30s after each save()). Writes to KV key
+    // 'state-full-snapshot' so the dev side can pull the current
+    // canonical state via GET /pull-full-state without requiring a
+    // manual export. Distinct from /sync which only stores a curated
+    // notification-context subset under KV key 'state'.
+    //
+    // Payload size: ~200kB for John's current state. Cloudflare KV
+    // supports values up to 25MB so size is not a concern.
+    //
+    // Auth posture: CORS-only (matches existing /sync). Threat model
+    // unchanged from /sync — anyone who can forge an Origin header
+    // can write to KV. Proper auth (device-issued tokens via subscribe
+    // flow) tracked as follow-up in ADR-bundle-32a.
+    if (path === '/push-full-state' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        if (!body || typeof body !== 'object' || !body.S || !Array.isArray(body.BILLS)) {
+          return new Response(JSON.stringify({ error: 'expected {S, BILLS}' }), {
+            status: 400, headers: corsHeaders,
+          });
+        }
+        const json = JSON.stringify(body);
+        const meta = {
+          lastPushedAt: new Date().toISOString(),
+          byteSize: json.length,
+          txnCount: Array.isArray(body.S.txns) ? body.S.txns.length : 0,
+          planIntentCount: Array.isArray(body.S.planIntents) ? body.S.planIntents.length : 0,
+          balance: typeof body.S.bal === 'number' ? parseFloat(body.S.bal.toFixed(2)) : null,
+          billsCount: body.BILLS.length,
+        };
+        await env.SLYGHT_DATA.put('state-full-snapshot', json);
+        await env.SLYGHT_DATA.put('state-full-meta', JSON.stringify(meta));
+        return new Response(JSON.stringify({ ok: true, meta }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 400, headers: corsHeaders,
+        });
+      }
+    }
+
+    // GET /pull-full-state — Bundle 32a fixture-freshness substrate.
+    // Returns the JSON stored at KV key 'state-full-snapshot'. Used by
+    // scripts/recon/pull-from-kv.js to refresh state-snapshot.json
+    // before running smoke tests so the fixture reflects John's most
+    // recent app state. 404 if the app has never pushed.
+    //
+    // Auth posture: CORS-only. Dev-side puller uses Node fetch (no
+    // browser CORS enforcement). Browsers from other origins blocked
+    // by Access-Control-Allow-Origin.
+    if (path === '/pull-full-state' && request.method === 'GET') {
+      try {
+        const json = await env.SLYGHT_DATA.get('state-full-snapshot');
+        if (!json) {
+          return new Response(JSON.stringify({ error: 'no full state yet — app has never pushed' }), {
+            status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const metaRaw = await env.SLYGHT_DATA.get('state-full-meta');
+        const meta = metaRaw ? JSON.parse(metaRaw) : null;
+        return new Response(json, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'X-Slyght-Last-Pushed-At': meta ? meta.lastPushedAt : 'unknown',
+            'X-Slyght-Byte-Size': meta ? String(meta.byteSize) : 'unknown',
+          },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500, headers: corsHeaders,
+        });
+      }
+    }
+
+    // GET /pull-full-state-meta — diagnostic. Returns just the meta
+    // record (timestamp, byteSize, counts) without the full blob.
+    // Useful for fixture-age checks without downloading 200kB.
+    if (path === '/pull-full-state-meta' && request.method === 'GET') {
+      const metaRaw = await env.SLYGHT_DATA.get('state-full-meta');
+      const meta = metaRaw ? JSON.parse(metaRaw) : { lastPushedAt: null, byteSize: 0 };
+      return new Response(JSON.stringify(meta), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // POST /subscribe — browser sends Web Push subscription object
     if (path === '/subscribe' && request.method === 'POST') {
       try {

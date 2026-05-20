@@ -10,6 +10,59 @@
 
 ---
 
+## Bundle 32a — SHIPPED (2026-05-20 · push-on-save → worker-KV + auto-pull smoke)
+
+**Theme:** Interstitial substrate that prevents `state-snapshot.json` from compounding staleness. App debounce-pushes full localStorage blob to worker-KV after every `save()`; dev side auto-pulls before every smoke run. CLAUDE.md §8 codifies state-aware ship messages so fixture age is always visible.
+
+**Worker (`slyght-worker/src/index.js`) — 3 new endpoints:**
+- `POST /push-full-state` — accepts `{S, BILLS}` blob; writes `state-full-snapshot` + meta key in KV.
+- `GET /pull-full-state` — returns blob with `X-Slyght-Last-Pushed-At` + `X-Slyght-Byte-Size` headers.
+- `GET /pull-full-state-meta` — diagnostic (timestamp + size without 200kB payload).
+- Auth posture: CORS-only (matches existing `/sync`). Proper device-token auth tracked as follow-up.
+
+**App (`index.html`) — push-on-save scaffold + boot wiring (no UI):**
+- `PUSH.pushFullState()` — reads `localStorage['slyght_v5']` directly, POSTs to /push-full-state; silent-fail (returns `{ok:false}`, doesn't throw).
+- `_schedulePushFullState()` called from `save()`. 30s debounce; rapid saves consolidate via `clearTimeout`. Gated by `S.pushOnSaveEnabled !== false` (default true; console-toggle).
+- `_flushPushFullState()` wired to `pagehide` + `beforeunload` — uses `navigator.sendBeacon` for fire-and-forget POST that survives tab close.
+- Boot self-test +4 checks (reachability of new methods + default-enabled behaviour).
+
+**Dev script — `scripts/recon/pull-from-kv.js`:**
+- Node fetch GET /pull-full-state; validates `{S, BILLS}` shape; atomic write to `state-snapshot.json` (.tmp + rename).
+- Prints diff vs prior (txn count, balance, intent count, last-push age).
+- **Graceful degradation**: network error / 404 / bad shape → WARN + keep existing fixture; smoke continues. Only EXIT 2 if no existing fixture AND pull fails. Override via `SKIP_FRESH_FIXTURE=1`.
+
+**`package.json`:**
+- `npm run fixture:fresh` → pull script.
+- `npm run smoke` → now chains `fixture:fresh && playwright test`.
+- `npm run smoke:offline` → direct Playwright, skips pull (offline dev / pre-deploy).
+
+**CLAUDE.md §8 — two rule updates:**
+- **Fixture currency** extended to name `npm run fixture:fresh` as canonical refresh mechanism.
+- **State-aware ship messages** added — every ship message must state fixture date used + whether fresh-pull ran + impact-estimate caveat when numeric paths touched.
+
+**Smoke spec — `tests/smoke/push-on-save.smoke.js` (8 cases):**
+1. PUSH.pushFullState callable + full {S, BILLS} payload shape
+2. save() schedules debounced push
+3. Rapid saves consolidate to 1 pending timer
+4. S.pushOnSaveEnabled = false suppresses scheduling
+5. _flushPushFullState clears pending + uses sendBeacon
+6. Boot self-tests for push-on-save pass
+7. **Silent-fail contract** — network error doesn't throw out of save()
+8. Payload distinct from /sync (full blob vs curated subset)
+
+Worker calls intercepted via Playwright route — no deployed worker required for smoke.
+
+**Verification:**
+- 112/112 smoke (was 104; +8)
+- 12/12 scenario-walk
+- 4-layer Guardian PASS
+
+**ADR:** `docs/adr/ADR-bundle-32a-push-on-save-and-fixture-freshness.md`
+
+**⚠️ Action required (John):** `cd slyght-worker && npx wrangler deploy` to activate the new endpoints. Until then: app push silently 404s (localStorage authoritative — no regression); dev `fixture:fresh` falls back to existing state-snapshot.json (smoke unchanged). Net effect of pre-deploy state: nothing breaks.
+
+---
+
 ## Bundle 32.3 Pass 2 — SHIPPED (2026-05-20 · trip-aware survival forecast)
 
 **Theme:** First column-4 forecast consumer of the planIntents canonical store. `getSurvivalForecast` becomes trip-aware via `BRAIN.plan.intent.getUpliftPerDay` + `isActiveOn(date)` per-day readers. No UI change — number-on-existing-surfaces shifts only.

@@ -2338,11 +2338,74 @@ function save() {
   try {
     if (!S.txns) S.txns = []; // guard: never let txns become undefined
     localStorage.setItem(STORAGE_KEY, JSON.stringify({S, BILLS}));
+    // Bundle 32a — debounced KV push for fixture freshness. Silent-fail
+    // by design: localStorage write above is authoritative; KV is the
+    // dev-side mirror used to refresh state-snapshot.json before smoke.
+    // Hook is no-op when PUSH is not loaded yet (early boot saves) or
+    // when S.pushOnSaveEnabled === false (explicit opt-out).
+    try { _schedulePushFullState(); } catch (_) {}
   } catch(e) {
     if (e.name === 'QuotaExceededError') {
       try { showToast('⚠️ Storage full — export your data now'); } catch(_) {}
     }
   }
+}
+
+// Bundle 32a — debounced push-on-save scaffold.
+// Every save() call resets a 30s timer; when it fires, PUSH.pushFullState
+// uploads the full {S, BILLS} localStorage blob to the worker's
+// /push-full-state endpoint. The dev side then pulls via
+// `npm run fixture:fresh` (scripts/recon/pull-from-kv.js) before any
+// smoke run so the fixture matches John's live phone state.
+// On pagehide/beforeunload, any pending push is flushed via
+// navigator.sendBeacon (fire-and-forget, doesn't block tab close).
+// See ADR-bundle-32a-push-on-save-and-fixture-freshness.md.
+let _pushFullStateTimer = null;
+let _pushFullStatePending = false;
+const _PUSH_FULL_STATE_DEBOUNCE_MS = 30000;
+
+function _schedulePushFullState() {
+  // Explicit opt-out via S.pushOnSaveEnabled === false (default true)
+  if (typeof S !== 'undefined' && S && S.pushOnSaveEnabled === false) return;
+  // PUSH not loaded yet (early-boot saves) — silently skip
+  if (typeof PUSH === 'undefined' || typeof PUSH.pushFullState !== 'function') return;
+  _pushFullStatePending = true;
+  if (_pushFullStateTimer) clearTimeout(_pushFullStateTimer);
+  _pushFullStateTimer = setTimeout(() => {
+    _pushFullStateTimer = null;
+    _pushFullStatePending = false;
+    PUSH.pushFullState().catch(() => {});  // silent-fail; localStorage is authoritative
+  }, _PUSH_FULL_STATE_DEBOUNCE_MS);
+}
+
+// Bundle 32a — pagehide flush. If the user exits the app within the
+// debounce window, the pending push would be lost. sendBeacon is the
+// browser API for fire-and-forget POSTs during unload — doesn't await,
+// doesn't block tab close, doesn't surface errors. Best-effort delivery.
+function _flushPushFullState() {
+  if (!_pushFullStatePending) return;
+  if (_pushFullStateTimer) { clearTimeout(_pushFullStateTimer); _pushFullStateTimer = null; }
+  _pushFullStatePending = false;
+  if (typeof S !== 'undefined' && S && S.pushOnSaveEnabled === false) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw || typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+    const url = (typeof PUSH !== 'undefined' && PUSH.workerUrl)
+      ? PUSH.workerUrl + '/push-full-state'
+      : 'https://slyght-worker.johndounas.workers.dev/push-full-state';
+    const blob = new Blob([raw], { type: 'application/json' });
+    navigator.sendBeacon(url, blob);
+  } catch (_) {}
+}
+
+// Bundle 32a — wire pagehide + beforeunload to flush any pending push.
+// pagehide is the modern event (fires on bfcache too); beforeunload is
+// the legacy fallback for browsers that don't support pagehide flush.
+if (typeof window !== 'undefined') {
+  try {
+    window.addEventListener('pagehide', _flushPushFullState);
+    window.addEventListener('beforeunload', _flushPushFullState);
+  } catch (_) {}
 }
 function load() {
   try {
@@ -18532,6 +18595,35 @@ const PUSH = {
     }
   },
 
+  // Bundle 32a — full-state push to worker KV. Distinct from syncState
+  // (curated 20-field notification context). This sends the entire
+  // {S, BILLS} localStorage blob so the dev side can pull canonical
+  // state and refresh state-snapshot.json before smoke.
+  //
+  // Called by the debounced save() hook _schedulePushFullState. Also
+  // available for manual invocation from console (e.g. before reboot).
+  // Silent-fail by design — localStorage save is authoritative; KV
+  // mirror is non-critical. Errors only logged when SLYGHT_DEBUG=true.
+  async pushFullState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { ok: false, reason: 'no-state-in-localStorage' };
+      const res = await fetch(this.workerUrl + '/push-full-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: raw,  // localStorage already JSON-stringified — pass through
+      });
+      if (!res.ok) {
+        if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState non-ok:', res.status);
+        return { ok: false, status: res.status };
+      }
+      return { ok: true };
+    } catch (e) {
+      if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState failed:', e);
+      return { ok: false, error: e.message };
+    }
+  },
+
   renderSubscribeButton() {
     const el = document.getElementById('push-settings');
     if (!el) return;
@@ -20282,6 +20374,11 @@ const BRAIN = {
       ['BRAIN.SOURCES.MIGRATION_COVERED_V2 defined', () => typeof BRAIN.SOURCES.MIGRATION_COVERED_V2 === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.MIGRATION_COVERED_V2)],
       ['BRAIN.plan.intent.getUpliftPerDay reachable', () => typeof BRAIN.plan.intent.getUpliftPerDay === 'function'],
       ['BRAIN.plan.intent.isActiveOn reachable', () => typeof BRAIN.plan.intent.isActiveOn === 'function'],
+      // Bundle 32a — push-on-save fixture-freshness substrate
+      ['PUSH.pushFullState reachable', () => typeof PUSH !== 'undefined' && typeof PUSH.pushFullState === 'function'],
+      ['_schedulePushFullState reachable (save() hook)', () => typeof _schedulePushFullState === 'function'],
+      ['_flushPushFullState reachable (pagehide handler)', () => typeof _flushPushFullState === 'function'],
+      ['push-on-save default: enabled unless explicitly off', () => S && S.pushOnSaveEnabled !== false],
       ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
       ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
       ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],

@@ -170,7 +170,8 @@ INV-33-shape  always-allow-improvements                                  KILLED 
 ### Awaiting John's input
 - ~~**Phone-verify items A + B**~~ — both PASS 2026-05-20
 - ~~**32.3 Pass 2 forecast values call**~~ — RESOLVED + SHIPPED 2026-05-20
-- **Fixture-staleness workflow choice** — see §16 for 4 proposed options to prevent stale-fixture compounding
+- ~~**Fixture-staleness workflow choice**~~ — RESOLVED 2026-05-20 (Bundle 32a, options 1+2+4)
+- **Worker deploy** — `cd slyght-worker && npx wrangler deploy` to activate `/push-full-state` + `/pull-full-state` endpoints. App + dev script gracefully degrade until then; no regression.
 
 ### Mechanical (CC can drive autonomously)
 - **Phase G remaining migrations** — ~12 inline-filter sites in lower-traffic surfaces (cumulative drift, low individual impact). Pattern locked; per-commit migration shape established.
@@ -424,7 +425,8 @@ If at any point the substrate work stops compounding into the AI layer thesis, s
 
 - **Render-truth invariant numbering.** Pattern is live in 3 surfaces. Should it be INV-33 or INV-34 or something else? Document body needs drafting. Guardian rule could flag receipt surfaces without smoke spec.
 - ~~**32.3 trip uplift formula.**~~ RESOLVED 2026-05-20. Net-of-covered uplift `max(0, (target − Σcovered) / days)`. See ADR.
-- **Fixture-staleness sustainability.** State-snapshot.json drifts from John's live phone state every day he uses the app. Current workflow can produce smoke wins that don't survive his next reload. 4 proposed mitigations (CC to recommend sequencing): (1) push-on-save from app → worker-KV ~1.5hr; (2) `npm run smoke` auto-pulls from KV first ~30 min after #1; (3) Guardian rule blocking commits when fixture > 24h old AND touched-files cross numeric paths ~20 min; (4) state-aware morning-surface contract codified in CLAUDE.md §8.
+- ~~**Fixture-staleness sustainability.**~~ RESOLVED 2026-05-20. Bundle 32a shipped options 1+2+4 (push-on-save → worker-KV · `npm run smoke` auto-pulls · CLAUDE.md §8 state-aware ship-message rule). Option 3 (Guardian fixture-age rule) deferred as belt-and-braces.
+- **Worker auth posture.** Both `/push-full-state` and existing `/sync` use CORS-only. Adequate for current single-user threat model but spoofable via curl. Device-issued tokens via subscribe flow tracked as Bundle 33-ish substrate (~3-4hr).
 - **Phase G remaining 12 sites.** Mechanical migration; could batch in one session. Each surface changes user-visible numbers slightly (drops drift). Values call on whether to batch or trickle.
 - **Bundle 23 cloud sync via GitHub Gist.** Locked architectural decision; ~2-3hr work. Bundle 33-ish.
 - **City2Surf training-plan vertical.** Scope not yet specced. Likely Bundle 33-34.
