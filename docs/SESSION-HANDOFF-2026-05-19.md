@@ -27,9 +27,9 @@ City2Surf is **9 August 2026**. slyght should be a trusted app for both finance 
 | **1. Write substrate** | 30 | Every `S.X` mutation routes through `BRAIN.<domain>.<verb>` with source-tagged audit log. `recordWithAllocation` envelope covers all 9 transaction write sites. | ✓ shipped |
 | **2. Allocation substrate (reads)** | 32.1 | `snap.derived` canonical allocation reader. Conservation law `remainder === allocatedTotal + stillToAllocate`. Cross-surface drift class closed. | ✓ shipped |
 | **3. Lock-state substrate** | 32.7 Pass 1 | `BRAIN.plan.lock` / `unlock` / `isLocked` canonical writers + 5 call site migrations. Three lock stores no longer diverge. | ✓ shipped (Pass 1 complete) |
-| **4. Render-truth substrate** | 32.3/32.4/32.5/32.6/G/8 | Display-tier truth aligns with logic-tier truth. Trip-aware survival forecast · essentials drilldown · hero cycle-spend breakdown · canonical reset · filter unification. | ~90% (see §4) |
+| **4. Render-truth substrate** | 32.3 Pass 1+2+3 · 32.4 · 32.5 · 32.6 · Phase G | Display-tier truth aligns with logic-tier truth. Trip-aware survival forecast · essentials drilldown · hero cycle-spend breakdown · canonical reset · filter unification · canonical intent consumer migration · Trip edit $-per-covered · Property Deposit hybrid reader · Rainy Day Fund rename. | **✓ 100% shipped 2026-05-20** |
 
-When all four columns ✓ → substrate complete → INV-27..32 enforceable → architecture diagnostic from `e153d54` can be marked closed.
+**Substrate complete 2026-05-20 (Pass 3 ship).** All four columns ✓. INV-27..32 enforceable. Architecture diagnostic from `e153d54` marked closed. Bundle 33 (AI layer) and Bundle 23 (cloud sync via Phase A namespacing) become the next compounding investments.
 
 ---
 
@@ -58,6 +58,7 @@ This is the "render-truth invariant" — column 4's defining property. NOT YET F
 |---|---|---|
 | 32.3 conditional spend source — Pass 1 (additions) | ✓ shipped `bd1c9f1` | autoActivate + manualActivation + isActive + getActiveSpendingTrips on intent schema |
 | 32.3 Pass 2 (forecast trip-awareness) | ✓ shipped 2026-05-20 | Values call resolved (net-of-covered uplift · REPLACES floor · bucket coupling deferred). seedV27 covered-shape migration · BRAIN.plan.intent canonical readers · forecast wiring · 12-case smoke · ADR-bundle-32-3-forecast-trip-uplift.md |
+| 32.3 Pass 3 (consumer migration · Darwin link · PD hybrid · RDF rename) | ✓ shipped 2026-05-20 | 3 values calls resolved (PD dual-store + hybrid reader · PD data complementary not merged · RDF ID + label both renamed). 58 reader call sites migrated to canonical · _tripLegacyView / _goalLegacyView transition helpers · seedV28 RDF rename · seedV29 Darwin bucket link · Trip edit form $-per-covered field · BRAIN.plan.intent.getHybridPropertyDeposit · 19-case smoke across 6 categories · 146/146 smoke total · ADR-bundle-32-3-pass-3-consumer-migration.md · **closes substrate column 4** |
 | 32.3 Pass 3 (consumer migration + data fixes) | not started | Section-structure correction logged in audit addendum — keep PLAN dashboard sections SEPARATE per intent kind |
 | 32.3 Pass 4 (phase out old stores) | not started | Deferrable indefinitely |
 | **32.4 essentials substrate + drilldown** | ✓ shipped `b551f46` + `b49bf66` | Substrate + sub-screen + receipt; works end-to-end |

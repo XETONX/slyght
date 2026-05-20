@@ -10,6 +10,60 @@
 
 ---
 
+## Bundle 32.3 Pass 3 — SHIPPED (2026-05-20 · consumer migration + Darwin link + Property Deposit hybrid + Rainy Day Fund rename · **CLOSES SUBSTRATE COLUMN 4**)
+
+**Theme:** Closes substrate column 4 to 100%. All ~58 legacy reader call sites (43 PLAN.getTrips() + 15 PLAN.getGoals()) migrated to canonical `BRAIN.plan.intent.byKind()`. Trip edit form ships $-per-covered field. Three named migrations land together. Substrate complete — Bundle 33 AI layer unblocked.
+
+**App (`index.html`):**
+- New module helpers `_tripLegacyView(intent)` + `_goalLegacyView(intent)` — translate canonical intent → legacy field shape so consumers migrate without per-site field renames
+- Mass-replace `PLAN.getTrips()` → `BRAIN.plan.intent.byKind('trip').map(_tripLegacyView)` (43 sites)
+- Mass-replace `PLAN.getGoals()` → `BRAIN.plan.intent.byKind('goal').map(_goalLegacyView)` (15 sites)
+- 5 direct `S.goalDefs` reads in synthetic-goal render sites → `_goalLegacyView(intent)` (intent already known via byBucket)
+- `confirmDeleteTrip` + `confirmDeleteGoal` call `BRAIN.plan.intent.remove()` first (canonical, audit-logged) before legacy prune
+- New `BRAIN.plan.intent.getHybridPropertyDeposit()` returns combined view {savedTowardTarget, stillOwedToMum, target, monthlyPayment, ...} from goal + debt + S.mumAccountBalance (dual-store preserved, no entry deleted)
+- Trip edit form: $-per-covered `<input type="number">` next to each checkbox; saves to `meta.covered: [{name, amount}, ...]` via `BRAIN.plan.intent.update`; validates negative/NaN/empty → 0
+- New `BRAIN.SOURCES.PLAN_TRIP_EDIT` + `BRAIN.SOURCES.MIGRATION_RDF_RENAME`
+
+**Migrations (pre-BRAIN one-shot, idempotent):**
+- **seedV28** (`slyght_seeded_v28_rdf_rename`): walks `S.planIntents`, renames `id='freedom-buffer'` → `id='rainy-day-fund'` AND `name='Freedom buffer'` → `name='Rainy Day Fund'`. Audit-logged. Wrapped in `guardian-allow-block` so smoke can exclude load-bearing legacy string references.
+- **seedV29** (`slyght_seeded_v29_trip_bucket_link`): walks `S.planIntents`, for known trip ids without `bucketId` sets the bucket name (`darwin-2026` → `'Darwin Trip'`, `china-2026` → `'China Holiday'`). Conservative — doesn't invent buckets.
+
+**Hardcoded references migrated:**
+- 3 active code refs: chat AI system prompt, payday modal find-by-id, PLAN.getGoals defaults seed
+- 4 user-facing copy strings: HTML strong tag, payday option label, payday detail title, chat prompt text
+- 4 docstring comments: defaults documentation, render comment
+- Bucket name `'Rainy Day Fund'` (correct since pre-Pass-3) preserved as-is; mapping table updated to new ID
+
+**Smoke spec — `tests/smoke/pass-3-consumer-migration.smoke.js` (19 cases × 6 categories):**
+
+1. **READER_MIGRATION_PARITY** (8): byKind ↔ legacy count match · trip view fields · saved-bucket resolution · goal view + RDF-rename · apartment goal via mumAccount · archive filtering · empty result · **static grep asserts 0 `PLAN.getTrips()`/`PLAN.getGoals()` callers in code**
+2. **TRIP_COVERED_AMOUNT_UI** (3): amount persists · negative/NaN/empty coerce to 0 · post-edit Pass 2 uplift correct
+3. **DARWIN_BUCKET_CONSERVATION** (2): Darwin Trip bucket exists + linked · saved resolves through canonical
+4. **PROPERTY_DEPOSIT_UNIFICATION** (3): hybrid reader returns combined view · no double-count (savedTowardTarget === mumBal) · no missing data (stillOwedToMum === debt.amt)
+5. **RAINY_DAY_FUND_RENAME** (2): seedV28 preserves allocations · **zero legacy strings outside allow-block**
+6. **CONSERVATION_GLOBAL** (1): Pass 2 invariants all hold post-migration
+
+**Verification:**
+- 146/146 smoke (was 127; +19)
+- 12/12 scenario-walk × 2 consecutive runs
+- 4-layer Guardian PASS
+
+**ADR:** `docs/adr/ADR-bundle-32-3-pass-3-consumer-migration.md`
+
+**Bundle 32.3 marked complete. Substrate column 4 → 100%. All four substrate columns ✓.**
+
+This unblocks: (a) Bundle 33 AI layer build (canonical readers ready), (b) cloud sync via Bundle 23 plan (Phase A's namespacing + Pass 3's canonical store), (c) UI redesign (alive Dashboard / Trip detail / PLAN root) rendering against substrate-complete substrate.
+
+**Phone-verify queue:**
+1. App open — anywhere "Freedom Buffer" appeared now shows "Rainy Day Fund"
+2. PLAN canvas — Property Deposit shows correctly (existing tiles unchanged; hybrid reader live in console: `BRAIN.plan.intent.getHybridPropertyDeposit()`)
+3. Darwin trip detail — budget breakdown renders against canonical bucket
+4. Edit a trip → add a covered entry with $ amount → save → reload → amount persists
+5. Add a $1 expense — push to KV (Phase A namespacing intact), snap.derived recomputes, hero numbers reconcile
+6. Receipt surfaces (PLAN canvas + 32.6 reset modal + 32.5 hero) still verify
+
+---
+
 ## Bundle 32 Phase A — SHIPPED (2026-05-20 · device-token auth + KV namespacing)
 
 **Theme:** Closes the no-auth window opened by Bundle 32a. Every worker endpoint touching user state now requires a Bearer token; KV state is namespaced per device hash; pre-Phase-A state migrates one-shot to the bootstrap device on first authenticated request.

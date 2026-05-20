@@ -2380,6 +2380,83 @@ function getAuthHeader() {
   return 'Bearer ' + getDeviceToken();
 }
 
+// Bundle 32.3 Pass 3 — legacy-shape views for the canonical intent
+// reader migration. Translates a canonical S.planIntents entry into
+// the pre-Pass-3 shape that legacy consumers (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) / PLAN.
+// getGoals() readers, ~32 sites) expect. After Pass 3 ships these
+// helpers are the ONLY place legacy field names live; canonical store
+// is authoritative. Phase G / Pass 4 deletes legacy field aliases when
+// consumers organically migrate to canonical field names.
+//
+// Field translations:
+//   targetAmount → budget                 (trip + goal)
+//   bucketId     → bucketHint             (both)
+//   meta.covered → covered                (trip)
+//   meta.gfSplitting → gfSplitting        (trip)
+//   meta.days    → days                   (trip)
+//   meta.monthly → monthly                (goal)
+//   meta.colour  → colour                 (goal)
+//   meta.description → description        (goal)
+//   endDate      → targetDate             (goal)
+//
+//   `saved` is computed: for trips/most-goals it's a bucket lookup by
+//   bucketId; for the 'apartment' goal it's S.mumAccountBalance per the
+//   pre-Pass-3 convention (Property Deposit hybrid uses BRAIN.plan.intent.
+//   getHybridPropertyDeposit() for canonical render).
+function _tripLegacyView(intent) {
+  if (!intent) return null;
+  const buckets = (typeof S !== 'undefined' && Array.isArray(S.savingsBuckets)) ? S.savingsBuckets : [];
+  const bucket = buckets.find(b => b && (b.id === intent.bucketId || b.name === intent.bucketId));
+  const m = intent.meta || {};
+  return {
+    id: intent.id,
+    name: intent.name,
+    emoji: intent.emoji,
+    startDate: intent.startDate,
+    endDate: intent.endDate,
+    budget: intent.targetAmount,
+    saved: bucket ? (bucket.saved || 0) : 0,
+    bucketHint: intent.bucketId || '',
+    covered: Array.isArray(m.covered) ? m.covered : [],
+    gfSplitting: !!m.gfSplitting,
+    stayingWithFamily: !!m.stayingWithFamily,
+    days: m.days,
+    notes: intent.notes || '',
+    meta: m,
+  };
+}
+function _goalLegacyView(intent) {
+  if (!intent) return null;
+  const buckets = (typeof S !== 'undefined' && Array.isArray(S.savingsBuckets)) ? S.savingsBuckets : [];
+  const bucket = buckets.find(b => b && (b.id === intent.bucketId || b.name === intent.bucketId));
+  const m = intent.meta || {};
+  // Special: 'apartment' goal reads saved from S.mumAccountBalance — pre-
+  // Pass-3 convention. Hybrid reader (getHybridPropertyDeposit) is the
+  // canonical render path; this view is for consumers that haven't
+  // migrated yet.
+  let saved;
+  if (intent.id === 'apartment') {
+    saved = (typeof S !== 'undefined' && typeof S.mumAccountBalance === 'number') ? S.mumAccountBalance : 0;
+  } else {
+    saved = bucket ? (bucket.saved || 0) : 0;
+  }
+  return {
+    id: intent.id,
+    name: intent.name,
+    emoji: intent.emoji,
+    target: intent.targetAmount,
+    saved,
+    bucketHint: intent.bucketId || '',
+    monthly: m.monthly || 0,
+    targetDate: intent.endDate || m.targetDate || null,
+    colour: m.colour || '',
+    priority: intent.priority || 3,
+    description: m.description || '',
+    notes: intent.notes || '',
+    meta: m,
+  };
+}
+
 function save() {
   try {
     if (!S.txns) S.txns = []; // guard: never let txns become undefined
@@ -4652,8 +4729,8 @@ function computeFinancialModel(state, now) {
     try { return fn(); }
     catch (_) { return fallback; }
   };
-  const trips         = _safePlan(() => PLAN.getTrips(), []);
-  const goals         = _safePlan(() => PLAN.getGoals(), []);
+  const trips         = _safePlan(() => BRAIN.plan.intent.byKind('trip').map(_tripLegacyView), []);
+  const goals         = _safePlan(() => BRAIN.plan.intent.byKind('goal').map(_goalLegacyView), []);
   const provisions    = _safePlan(() => PLAN.getAnnualProvisions(), []);
   const wrxImpact     = _safePlan(() => PLAN.getWrxImpact(), null);
   const postWrxSurplus = _safePlan(() => PLAN.getPostWrxSurplus(), 0);
@@ -6242,7 +6319,7 @@ function renderAnalysisTab() {
 
   // #28 — Emergency Fund tile removed from Analysis. Settings's `emergency-fund-status`
   // (rendered by renderEmergencyFundStatus) remains as the single home for the dynamic
-  // 90-day calc. Plan Mode's Freedom Buffer goal is left untouched (different target).
+  // 90-day calc. Plan Mode's Rainy Day Fund goal is left untouched (different target).
 
   // --- FA6: Net worth trend (Bundle 24 Phase 1+24.1 — liquid first) ---
   // Bundle 24.1 (John 2026-05-12 feedback): super is locked-away retirement,
@@ -7175,13 +7252,13 @@ function _toggleDetailPane(btn) {
 function renderEmergencyFundStatus() {
   const el = $('emergency-fund-status'); if (!el) return;
   // Bundle 17.y: per John's 2026-05-12 feedback, this Settings section is
-  // redundant with PLAN mode's Freedom Buffer goal. Removed the duplicate
+  // redundant with PLAN mode's Rainy Day Fund goal. Removed the duplicate
   // data display; show a single redirect prompt instead. Any future
-  // emergency-fund logic lives under PLAN's Freedom Buffer.
+  // emergency-fund logic lives under PLAN's Rainy Day Fund.
   el.innerHTML = '<div style="background:var(--bg3);border-radius:var(--r-sm);padding:10px;margin-bottom:10px">' +
     '<div style="font-size:13px;font-weight:600;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Emergency Fund</div>' +
     '<div style="font-size:14px;color:var(--text2)">' +
-      'Managed under your <strong style="color:#4ECDC4">Freedom Buffer</strong> goal in PLAN mode.' +
+      'Managed under your <strong style="color:#4ECDC4">Rainy Day Fund</strong> goal in PLAN mode.' +
       '<button onclick="openPlanMode()" style="display:block;margin-top:8px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-xs);color:#4ECDC4;padding:6px 12px;font-size:13px;cursor:pointer;width:100%">→ Open PLAN mode</button>' +
     '</div></div>';
 }
@@ -10332,13 +10409,13 @@ function populateRoundupDestinationDropdown() {
   });
   // Source 2: active PLAN trips (by id).
   if (typeof PLAN !== 'undefined') {
-    const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+    const trips = (PLAN.getTrips && BRAIN.plan.intent.byKind('trip').map(_tripLegacyView)) || [];
     trips.filter(t => !t.completed).forEach(t => {
       const opt = new Option('Trip: ' + (t.name || t.id), t.id);
       sel.appendChild(opt);
     });
     // Source 3: active PLAN goals.
-    const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
+    const goals = (PLAN.getGoals && BRAIN.plan.intent.byKind('goal').map(_goalLegacyView)) || [];
     goals.filter(g => !g.completed).forEach(g => {
       const opt = new Option('Goal: ' + (g.name || g.id), g.id);
       sel.appendChild(opt);
@@ -11435,7 +11512,7 @@ function openPaydayPostLockStatus(category, itemId) {
     if (itemId.indexOf('trip-') === 0) {
       const tripId = itemId.slice('trip-'.length);
       try {
-        const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+        const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
         const trip = trips.find(t => t.id === tripId);
         if (trip) { displayName = trip.name; displayEmoji = trip.emoji || '✈️'; }
       } catch (_) {}
@@ -11444,7 +11521,7 @@ function openPaydayPostLockStatus(category, itemId) {
       try {
         if (BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
           const intent = (BRAIN.plan.intent.byBucket(itemId) || []).find(i => i.kind === 'goal');
-          const goalDef = intent ? (S.goalDefs || []).find(g => g.id === intent.id) : null;
+          const goalDef = intent ? _goalLegacyView(intent) : null;
           if (goalDef) { displayName = goalDef.name; displayEmoji = goalDef.emoji || '🎯'; }
         }
       } catch (_) {}
@@ -11594,7 +11671,7 @@ function openEditPaydaySavings(bucketName) {
   try {
     if (BRAIN.plan.intent && BRAIN.plan.intent.byBucket) {
       const _intent = (BRAIN.plan.intent.byBucket(bucketName) || []).find(i => i && i.kind === 'goal');
-      if (_intent) _goalDef = (S.goalDefs || []).find(g => g.id === _intent.id);
+      if (_intent) _goalDef = _goalLegacyView(_intent);
     }
   } catch (_) {}
   const _modalTitle = (_goalDef && _goalDef.name && _goalDef.name !== bucketName)
@@ -11753,7 +11830,7 @@ function openEditPaydayKiaExtra() {
 // root's "Allocated so far" subtotal.
 function openEditPaydayTripAlloc(tripId) {
   // guardian-allow-block-start: tdz-safe-engine-access — invoked from canvas row tap, post-boot user-event call path; PLAN is fully initialized. The `typeof PLAN !== 'undefined'` is a defensive null-check, not a TDZ guard (permanent — see Settings sub-screen call paths convention)
-  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
   // guardian-allow-block-end: tdz-safe-engine-access
   const trip = trips.find(t => t && t.id === tripId);
   if (!trip) return;
@@ -12014,7 +12091,7 @@ function _createBucketForTrip(tripName) {
   if (!tripName) return;
   try {
     // Look up the trip for its budget so the new bucket has a sensible goal
-    const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+    const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
     const trip = trips.find(t => t && t.name === tripName);
     const goal = trip ? (+trip.budget || 0) : 0;
     // Check if a bucket with this name already exists — bail with a toast
@@ -12091,7 +12168,7 @@ function openPaydayAutoAllocate() {
   // so John knows which lines will create a bucket on Apply.
   // Bundle 29 demon-time: also surface the CANONICAL goal name (from
   // S.goalDefs via intent linkage) instead of the stale bucket name when
-  // they differ — closes John's "Rainy Day Fund" vs "Freedom Buffer"
+  // they differ — closes John's prior "Rainy Day Fund" vs "Rainy Day Fund (goal)"
   // recurring confusion. Bucket name shown as subtitle for traceability.
   const _synthSet = new Set(rec.syntheticBucketNames || []);
   const _resolveDisplayName = (bucketName) => {
@@ -12101,7 +12178,7 @@ function openPaydayAutoAllocate() {
       // Prefer goal-intent's name, then trip-intent's name
       const goal = intents.find(i => i && i.kind === 'goal');
       if (goal) {
-        const goalDef = (S.goalDefs || []).find(g => g.id === goal.id);
+        const goalDef = _goalLegacyView(goal);
         if (goalDef && goalDef.name && goalDef.name !== bucketName) {
           return { name: (goalDef.emoji || '🎯') + ' ' + goalDef.name, subtitle: 'in "' + bucketName + '" bucket' };
         }
@@ -12354,8 +12431,8 @@ function _buildPaydayAskAIPrompt() {
     const paydayReceived = !!S.paydayReceived;
 
     // Trip + goal data — focus on dates so AI can reason about urgency
-    const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
-    const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? (PLAN.getGoals() || []) : [];
+    const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
+    const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? (BRAIN.plan.intent.byKind('goal').map(_goalLegacyView) || []) : [];
     const provisions = (typeof PLAN !== 'undefined' && PLAN.getAnnualProvisions)
       ? (PLAN.getAnnualProvisions() || []) : [];
     const buckets = (S.savingsBuckets || []);
@@ -13322,7 +13399,7 @@ function renderPaydaySavings() {
   // covers it. Closes John 2026-05-14 finding: Darwin appearing in BOTH
   // Upcoming Trips AND Savings Goals after Apply created a bucket.
   // guardian-allow-block-start: tdz-safe-engine-access — renderPaydaySavings is invoked at user-action time (sub-screen open or post-edit re-render), post-boot; PLAN is initialised. Defensive null check, not a TDZ guard (permanent — see openPaydayCategory call path)
-  const _allTrips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+  const _allTrips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
   // guardian-allow-block-end: tdz-safe-engine-access
   const _tokenize = (s) => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3);
   const _bucketNamesLowerS = new Set(buckets.map(b => (b.name || '').toLowerCase()));
@@ -13375,7 +13452,7 @@ function renderPaydaySavings() {
   }
   // Bundle 28 round 72+ (R1): reverse-lookup intent linkage so goal NAMES
   // surface here instead of bucket names. Closes John's morning gap where
-  // "Freedom Buffer" rendered as "Rainy Day Fund" and "Property Deposit"
+  // pre-Pass-3 "Rainy Day Fund" goal rendered with bucket name and "Property Deposit"
   // didn't render at all (its bucket is the synthetic __mum-account__ token).
   // Full intent-driven redesign queued Bundle 29; this is the R1 quick-fix.
   // SDD-2026-05-14-intent-driven-goal-subtitle.
@@ -13398,7 +13475,7 @@ function renderPaydaySavings() {
       const saved = (+b.saved || 0);
       const bucketTarget = (+b.goal || 0);
       const intent = _intentForBucket(b.name);
-      const goalDef = intent ? (S.goalDefs || []).find(g => g.id === intent.id) : null;
+      const goalDef = intent ? _goalLegacyView(intent) : null;
       const displayName = goalDef ? goalDef.name : b.name;
       const displayTarget = goalDef && (+goalDef.target || 0) > 0 ? +goalDef.target : bucketTarget;
       const subParts = [];
@@ -13409,7 +13486,7 @@ function renderPaydaySavings() {
         subParts.push('$' + Math.round(saved).toLocaleString() + ' saved');
       }
       // When goal name and bucket name differ, surface the bucket context
-      // so user knows "Freedom Buffer is stored in your Rainy Day Fund bucket"
+      // so user knows the goal name + bucket name are aligned post-Pass-3
       if (goalDef && b.name !== goalDef.name) {
         subParts.push('stored in ' + b.name);
       }
@@ -13453,7 +13530,7 @@ function renderPaydaySavings() {
       html += '<div class="settings-section-hint" style="font-size:12px;margin-top:-2px;margin-bottom:6px">These goals don\'t have a per-cycle slider here — money flows in via the linked bill or account.</div>';
       html += '<div class="pd-row-group">';
       syntheticGoals.forEach(intent => {
-        const goalDef = (S.goalDefs || []).find(g => g.id === intent.id);
+        const goalDef = _goalLegacyView(intent);
         if (!goalDef) return;
         const saved = +goalDef.saved || 0;
         const target = +goalDef.target || 0;
@@ -14648,8 +14725,8 @@ const RESET_FLOW = {
       snapshots: (typeof SNAPSHOTS !== 'undefined') ? (SNAPSHOTS.load() || []).length : 0,
       bills: (typeof BILLS !== 'undefined' && Array.isArray(BILLS)) ? BILLS.length : 0,
       debts: (S.debts || []).filter(d => !d.paid).length,
-      trips: ((typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : []).length,
-      goals: ((typeof PLAN !== 'undefined' && PLAN.getGoals) ? (PLAN.getGoals() || []) : []).length,
+      trips: ((typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : []).length,
+      goals: ((typeof PLAN !== 'undefined' && PLAN.getGoals) ? (BRAIN.plan.intent.byKind('goal').map(_goalLegacyView) || []) : []).length,
     };
     // guardian-allow-block-end: tdz-safe-engine-access
     card.innerHTML =
@@ -15403,12 +15480,12 @@ async function sendChatMessage(userMessage) {
     .join(', ');
 
   // guardian-allow-block-start: tdz-safe-engine-access — sendChatMessage system-prompt builder runs only when user sends a chat message (post-boot); the `typeof PLAN !== 'undefined' && PLAN.X` checks are defensive null-guards, not TDZ guards (permanent — chat is user-initiated, never called during boot)
-  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
-  const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? PLAN.getGoals() : [];
+  const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) : [];
+  const goals = (typeof PLAN !== 'undefined' && PLAN.getGoals) ? BRAIN.plan.intent.byKind('goal').map(_goalLegacyView) : [];
   // guardian-allow-block-end: tdz-safe-engine-access
   const darwinTrip = trips.find(t => t.id === 'darwin-2026');
   const chinaTrip = trips.find(t => t.id === 'china-2026');
-  const freedomGoal = goals.find(g => g.id === 'freedom-buffer');
+  const freedomGoal = goals.find(g => g.id === 'rainy-day-fund');
   const upcomingBills = getBillsDue()
     .sort((a,b) => a.day - b.day)
     .slice(0,5)
@@ -15451,7 +15528,7 @@ ${activeDebts}
 ━━ SAVINGS & GOALS ━━
 China Holiday fund: $${S.savingsBuckets?.find(b => b.name==='China Holiday')?.saved?.toFixed(2)||'0'} of $${chinaTrip?.budget||5000} target
 Property deposit (Mum managing): $${(S.mumAccountBalance||0).toLocaleString()} of $50,000 target
-Freedom buffer: $${freedomGoal?.saved?.toFixed(0)||'0'} of $${freedomGoal?.target?.toLocaleString()||'9,000'}
+Rainy Day Fund: $${freedomGoal?.saved?.toFixed(0)||'0'} of $${freedomGoal?.target?.toLocaleString()||'9,000'}
 KIA Loan (Firstmac): $${(S.carloan||0).toLocaleString()} at ${S.carLoanRate||9.87}% — $${kiaInterestDaily}/day interest
 
 ━━ LONG-TERM ━━
@@ -15659,7 +15736,7 @@ function executeChatAction(action) {
     case 'add_trip_savings':
       // guardian-allow-block-start: tdz-safe-engine-access — executeChatAction runs only after the AI returns a structured action from a user-initiated chat message; PLAN is fully initialized by then (permanent — chat-action call path is user-initiated, never during boot)
       if (action.tripId && action.amt > 0 && typeof PLAN !== 'undefined') {
-        const trips = PLAN.getTrips();
+        const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
         const trip = trips.find(t => t.id === action.tripId);
         if (trip) {
           // Bundle 11 dead-flow fix: pre-Bundle-11 this only mutated
@@ -16491,8 +16568,8 @@ const REAL_STATE_V17 = {
 //
 // Algorithm:
 //   1. Snapshot pre-state (recovery point)
-//   2. Read PLAN.getTrips() — each becomes kind='trip' intent
-//   3. Read PLAN.getGoals() — each becomes kind='goal' intent
+//   2. Read BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) — each becomes kind='trip' intent
+//   3. Read BRAIN.plan.intent.byKind('goal').map(_goalLegacyView) — each becomes kind='goal' intent
 //   4. Read PLAN.getAnnualProvisions() — each becomes kind='provision' intent
 //   5. Bucket-link mapping by name (or special tokens for mum-account)
 //   6. All extras (gfSplitting, monthly, frequency, etc.) preserved in
@@ -16545,7 +16622,7 @@ const REAL_STATE_V17 = {
         meta: { description: 'Building toward your own place. Inner West, Meadowbank, Kogarah or Wolli Creek area. $50,000 deposit target. Account managed by Mum.',
           monthly: 2500, targetDate: null, colour: '#4ECDC4', priority: 1,
           notes: '$50k demonstrates genuine savings history. Budget $550-700k property.' } },
-      { id: 'freedom-buffer', name: 'Freedom buffer', emoji: '🛡️', target: 9000,
+      { id: 'rainy-day-fund', name: 'Rainy Day Fund', emoji: '🛡️', target: 9000,
         bucketHint: 'Rainy Day Fund',
         meta: { description: '3 months expenses if everything goes wrong',
           monthly: 0, targetDate: null, colour: '#FF6B35', priority: 2,
@@ -16749,6 +16826,125 @@ const REAL_STATE_V17 = {
       localStorage.setItem('slyght_v5', JSON.stringify(d));
     }
   } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV27 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+
+// guardian-allow-block-start: rdf-legacy-string — seedV28 migration body
+// must reference the legacy id ('freedom-buffer') and name ('Freedom buffer')
+// to perform the rename. The smoke spec RAINY_DAY_FUND_RENAME excludes this
+// block. Permanent until Pass 4 deletes the migration when 0 legacy installs
+// remain (likely never — this migration is one-shot per device and stays
+// for new-device bootstrap from old exports).
+// Seed v28 (Bundle 32.3 Pass 3): Freedom Buffer → Rainy Day Fund rename.
+//
+// Per John's 2026-05-20 values call (vocabulary alignment principle, doc:
+// docs/design/2026-05-19-vocabulary-alignment-principle.md): rename BOTH
+// the intent id ('freedom-buffer' → 'rainy-day-fund') AND the intent name
+// ('Freedom buffer' → 'Rainy Day Fund') to match the canonical bucket
+// name 'Rainy Day Fund' (already correct since pre-Pass-3).
+//
+// Three internal references (chat system prompt at ~15488, payday modal
+// find-by-id at ~26616, and PLAN.getGoals default seed) are migrated to
+// 'rainy-day-fund' in the same commit. The smoke spec RAINY_DAY_FUND_
+// RENAME asserts zero remaining 'freedom-buffer'/'Freedom buffer'/
+// 'Freedom Buffer' strings in index.html (case-insensitive).
+//
+// Idempotent via slyght_seeded_v28_rdf_rename flag + per-entry check
+// (if id already === 'rainy-day-fund', skip).
+(function seedV28() {
+  const flag = 'slyght_seeded_v28_rdf_rename';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    const intents = Array.isArray(S.planIntents) ? S.planIntents : [];
+    let renamed = false;
+    for (const intent of intents) {
+      if (!intent) continue;
+      if (intent.id === 'freedom-buffer') {
+        intent.id = 'rainy-day-fund';
+        intent.name = 'Rainy Day Fund';
+        intent.updatedAt = Date.now();
+        renamed = true;
+      } else if (intent.id === 'rainy-day-fund' && intent.name !== 'Rainy Day Fund') {
+        // Defensive: id already migrated but name lagging — fix name only
+        intent.name = 'Rainy Day Fund';
+        intent.updatedAt = Date.now();
+        renamed = true;
+      }
+    }
+    if (renamed) {
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV28-rdf-rename',
+        source: 'migration-rdf-rename',
+        bundle: '32.3-pass-3',
+        from: { id: 'freedom-buffer', name: 'Freedom buffer' },
+        to:   { id: 'rainy-day-fund', name: 'Rainy Day Fund' },
+        ts: Date.now(),
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV28 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+// guardian-allow-block-end: rdf-legacy-string
+
+// Seed v29 (Bundle 32.3 Pass 3): link trip intents to their canonical
+// buckets via bucketId.
+//
+// Pre-Pass-3 state: trip intents (darwin-2026, china-2026) have
+// bucketId='' but corresponding buckets exist in S.savingsBuckets
+// (e.g. 'Darwin Trip', 'China Holiday'). The link was implicit via
+// name-matching in render code. Pass 3's canonical readers and the
+// hybrid Property Deposit reader need an explicit bucketId so the
+// canonical reader can resolve 'saved' without scanning all buckets.
+//
+// Migration matches known trip ids to known bucket names. Conservative
+// — does not invent buckets, does not write if the link already exists.
+// Idempotent via slyght_seeded_v29_trip_bucket_link flag.
+(function seedV29() {
+  const flag = 'slyght_seeded_v29_trip_bucket_link';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    const intents = Array.isArray(S.planIntents) ? S.planIntents : [];
+    const buckets = Array.isArray(S.savingsBuckets) ? S.savingsBuckets : [];
+    const knownLinks = {
+      'darwin-2026': 'Darwin Trip',
+      'china-2026':  'China Holiday',
+    };
+    let linked = 0; const details = [];
+    for (const intent of intents) {
+      if (!intent || intent.archived) continue;
+      const target = knownLinks[intent.id];
+      if (!target || intent.bucketId) continue;
+      const bucket = buckets.find(b => b && b.name === target);
+      if (!bucket) continue;
+      intent.bucketId = target;
+      intent.updatedAt = Date.now();
+      linked++;
+      details.push({ id: intent.id, bucketId: target });
+    }
+    if (linked > 0) {
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV29-trip-bucket-link',
+        source: 'migration-trip-bucket-link',
+        bundle: '32.3-pass-3',
+        linked, details,
+        ts: Date.now(),
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV29 error', e); }
   localStorage.setItem(flag, '1');
 })();
 
@@ -18592,7 +18788,7 @@ const PUSH = {
       const todaySpent  = BRAIN.dashboard.todaySpend();
 
       // Plan-mode awareness for worker notifications
-      const _trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? PLAN.getTrips() : [];
+      const _trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) : [];
       const _darwin = _trips.find(t => t.id === 'darwin-2026');
       const _china = _trips.find(t => t.id === 'china-2026');
       const _now = new Date();
@@ -19950,6 +20146,9 @@ const BRAIN = {
     MIGRATION_INTENTS_V1:      'migration-intents-v1',
     // Bundle 32.3 Pass 2 — covered-amount schema upgrade
     MIGRATION_COVERED_V2:      'migration-covered-v2',
+    // Bundle 32.3 Pass 3 — Trip edit form canonical write + RDF rename
+    PLAN_TRIP_EDIT:            'plan-trip-edit',
+    MIGRATION_RDF_RENAME:      'migration-rdf-rename',
     // Bundle 28 forward-architecture — txn reclassification + bucket lifecycle
     TXN_RECLASSIFY:            'txn-reclassify',
     BUCKET_CREATE:             'bucket-create',
@@ -20032,6 +20231,8 @@ const BRAIN = {
     'plan-intent-link-bucket', 'migration-intents-v1',
     // Bundle 32.3 Pass 2 — covered-amount schema upgrade
     'migration-covered-v2',
+    // Bundle 32.3 Pass 3 — Trip edit canonical write + RDF rename
+    'plan-trip-edit', 'migration-rdf-rename',
     // Bundle 28 forward-architecture
     'txn-reclassify',
     'bucket-create', 'bucket-update', 'bucket-delete',
@@ -21087,7 +21288,7 @@ const BRAIN = {
       // guardian-allow-block-start: tdz-safe-engine-access — BRAIN.plan.queryAffordability is invoked from user-action paths (chat handler, canvas tap) post-boot. PLAN is fully initialized by then. typeof guard is defensive null-check, not a TDZ guard (permanent — user-event call path)
       if (typeof PLAN !== 'undefined' && PLAN.getTrips) {
         try {
-          const trips = PLAN.getTrips() || [];
+          const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || [];
           const cycleEndMs = snap.cycleEndDate ? new Date(snap.cycleEndDate).getTime() : 0;
           const activeNear = trips.find(t => {
             if (!t || !t.startDate || !t.endDate) return false;
@@ -21354,7 +21555,7 @@ const BRAIN = {
             // Resolve the trip + its linked bucket (if any)
             let trip = null, linkedBucket = null;
             try {
-              const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (PLAN.getTrips() || []) : [];
+              const trips = (typeof PLAN !== 'undefined' && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : [];
               trip = trips.find(t => t && t.id === tripId);
             } catch (_) {}
             if (trip && trip.bucketHint) {
@@ -21828,12 +22029,12 @@ const BRAIN = {
       // when the canonical intent linkage isn't set (John's Darwin trip
       // had bucketHint=''; pre-r51 _bucketWeight returned 1 for it →
       // Darwin never got prioritized even though it's the most urgent
-      // trip). Now we also walk PLAN.getTrips() looking for a name match
+      // trip). Now we also walk BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) looking for a name match
       // (case-insensitive substring either direction) when intents don't
       // link.
       const nowMs = Date.now();
       let _allTripsForWeight = [];
-      try { _allTripsForWeight = (PLAN && PLAN.getTrips) ? (PLAN.getTrips() || []) : []; } catch (_) {}
+      try { _allTripsForWeight = (PLAN && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : []; } catch (_) {}
       const _bucketWeight = (b) => {
         try {
           // Path 1: canonical intent linkage (preferred when bucketHint is set)
@@ -22102,7 +22303,7 @@ const BRAIN = {
         const existing = (BRAIN.savings.getBuckets && BRAIN.savings.getBuckets()) || [];
         const existingNames = new Set(existing.map(b => b && b.name));
         let trips = [];
-        try { trips = (PLAN && PLAN.getTrips) ? (PLAN.getTrips() || []) : []; } catch (_) {}
+        try { trips = (PLAN && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : []; } catch (_) {}
         syntheticNames.forEach(name => {
           if (existingNames.has(name)) return; // already created in a prior run
           const trip = trips.find(t => t && t.name === name);
@@ -22131,7 +22332,7 @@ const BRAIN = {
       // (via PLAN.getTrips name match or bucketHint reverse-lookup). If so,
       // clear that trip's savings:trip-<id> override.
       let _tripsForCleanup = [];
-      try { _tripsForCleanup = (PLAN && PLAN.getTrips) ? (PLAN.getTrips() || []) : []; } catch (_) {}
+      try { _tripsForCleanup = (PLAN && PLAN.getTrips) ? (BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || []) : []; } catch (_) {}
       const _stripStaleTripOverrides = (bucketName) => {
         const bN = (bucketName || '').toLowerCase();
         // Find trip whose name word-matches the bucket, OR whose bucketHint matches.
@@ -22561,6 +22762,51 @@ const BRAIN = {
       // when coverage meets/exceeds target (fully prepaid). REPLACES the
       // survival forecast's per-day minDailyNeeded during trip days per
       // John's values call (ADR-bundle-32-3-forecast-trip-uplift.md).
+      // Bundle 32.3 Pass 3 — Property Deposit hybrid view reader.
+      // Combines the goal-intent ('apartment') + the debt-entry
+      // (S.debts where redirectGoal:'apartment') + the savings balance
+      // (S.mumAccountBalance) into a single canonical view for Plan
+      // canvas and Debts tab to render uniformly.
+      //
+      // Per John's 2026-05-20 values call: dual-store preserved, no
+      // entries deleted, hybrid reader is the new layer. Future bundles
+      // delete legacy after 0-reader verification.
+      //
+      // Returns:
+      //   {
+      //     id, name, emoji, target,
+      //     savedTowardTarget,    // = S.mumAccountBalance (deposit progress)
+      //     stillOwedToMum,       // = debt.amt (outstanding balance)
+      //     monthlyPayment,       // = debt.monthlyPayment
+      //     rentComponent, debtComponent, viaRent, delayDate,
+      //     _goalIntentId, _debtId, _hybrid: true
+      //   }
+      getHybridPropertyDeposit() {
+        const goal = this.get('apartment');
+        const debts = (typeof S !== 'undefined' && Array.isArray(S.debts)) ? S.debts : [];
+        const debt = debts.find(d => d && (d.redirectGoal === 'apartment' || (d.name && d.name.indexOf('Property Deposit') === 0)));
+        const mumBalance = (typeof S !== 'undefined' && typeof S.mumAccountBalance === 'number') ? S.mumAccountBalance : 0;
+        return {
+          id: 'apartment',
+          name: (goal && goal.name) || 'Property Deposit',
+          emoji: (goal && goal.emoji) || '🏠',
+          target: (goal && goal.targetAmount) || (debt && debt.accountTarget) || 50000,
+          // Savings trajectory (deposit progress)
+          savedTowardTarget: mumBalance,
+          // Debt trajectory (still owed to Mum)
+          stillOwedToMum: (debt && typeof debt.amt === 'number') ? debt.amt : 0,
+          monthlyPayment: (debt && debt.monthlyPayment) || 0,
+          rentComponent: (debt && debt.rentComponent) || 0,
+          debtComponent: (debt && debt.debtComponent) || 0,
+          viaRent: !!(debt && debt.viaRent),
+          delayDate: (debt && debt.delayDate) || null,
+          // Provenance — consumers can navigate back to either source
+          _goalIntentId: goal ? goal.id : null,
+          _debtId: debt ? debt.id : null,
+          _hybrid: true,
+        };
+      },
+
       getUpliftPerDay(intent) {
         if (!intent || intent.kind !== 'trip') return 0;
         if (!intent.startDate || !intent.endDate) return 0;
@@ -22752,7 +22998,7 @@ const BRAIN = {
       // guardian-allow-block-start: tdz-safe-engine-access — BRAIN.assets.setMumAccount is invoked from EDIT_MODAL save handlers which only fire post-boot (user taps a Settings row); PLAN is fully initialized by then. The `typeof PLAN !== 'undefined'` guard is defensive null-check, not a TDZ guard (permanent — see Settings edit-modal save call path)
       if (typeof PLAN !== 'undefined') {
         try {
-          const goals = PLAN.getGoals();
+          const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
           const apGoal = goals.find(g => g.id === 'apartment');
           if (apGoal) PLAN.saveGoal(apGoal);
         } catch (_) {}
@@ -23302,10 +23548,10 @@ const BRAIN = {
       if (b) return b.name;
       // Could be a PLAN goal/trip id — try resolving via PLAN.
       if (typeof PLAN !== 'undefined') {
-        const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
+        const goals = (PLAN.getGoals && BRAIN.plan.intent.byKind('goal').map(_goalLegacyView)) || [];
         const goal = goals.find(g => g.id === dest);
         if (goal) return goal.name || goal.label || dest;
-        const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+        const trips = (PLAN.getTrips && BRAIN.plan.intent.byKind('trip').map(_tripLegacyView)) || [];
         const trip = trips.find(t => t.id === dest);
         if (trip) return trip.name || trip.label || dest;
       }
@@ -23323,8 +23569,8 @@ const BRAIN = {
       const validBucket = !!this.getBucket(target);
       let validPlanEntry = false;
       if (!validBucket && typeof PLAN !== 'undefined') {
-        const goals = (PLAN.getGoals && PLAN.getGoals()) || [];
-        const trips = (PLAN.getTrips && PLAN.getTrips()) || [];
+        const goals = (PLAN.getGoals && BRAIN.plan.intent.byKind('goal').map(_goalLegacyView)) || [];
+        const trips = (PLAN.getTrips && BRAIN.plan.intent.byKind('trip').map(_tripLegacyView)) || [];
         validPlanEntry = goals.some(g => g.id === target) || trips.some(t => t.id === target);
       }
       if (!validBucket && !validPlanEntry) {
@@ -25310,7 +25556,7 @@ const PLAN = {
     const map = {
       'china': { type: 'bucket', name: 'China Holiday' },
       'china-2026': { type: 'bucket', name: 'China Holiday' },
-      'freedom-buffer': { type: 'bucket', name: 'Rainy Day Fund' },
+      'rainy-day-fund': { type: 'bucket', name: 'Rainy Day Fund' },
       'apartment': { type: 'mumAccount' },
       'darwin-2026': { type: 'bucket', name: 'Darwin Trip' },
     };
@@ -25488,7 +25734,7 @@ const PLAN = {
         notes: '$50k demonstrates genuine savings history. Budget $550-700k property.'
       },
       {
-        id: 'freedom-buffer', name: 'Freedom buffer', emoji: '🛡️',
+        id: 'rainy-day-fund', name: 'Rainy Day Fund', emoji: '🛡️',
         description: '3 months expenses if everything goes wrong',
         target: 9000,
         saved: S.savingsBuckets?.find(b => b.name === 'Rainy Day Fund')?.saved || 0,
@@ -26014,8 +26260,8 @@ function renderPlanMode() {
   const nw = typeof calculateNetWorth === 'function' ? calculateNetWorth() : { net: -7305, liquidNet: -7305 };
   const wrxImpact = PLAN.getWrxImpact();
   const surplus = PLAN.getPostWrxSurplus();
-  const trips = PLAN.getTrips();
-  const goals = PLAN.getGoals();
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const provisions = PLAN.getAnnualProvisions();
 
   let html = '';
@@ -26422,7 +26668,7 @@ function renderSmartCoaching() {
 // to save per week to hit each trip's budget by its start date.
 function renderUpcomingTripsNudges() {
   if (typeof PLAN === 'undefined' || !PLAN.getTrips) return '';
-  const trips = PLAN.getTrips() || [];
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView) || [];
   const now = Date.now();
   const upcoming = trips
     .filter(t => t && t.startDate && (new Date(t.startDate).getTime() > now))
@@ -26484,10 +26730,10 @@ function renderPaydayAllocation() {
 
   const stored = JSON.parse(localStorage.getItem('slyght_payday_plan') || '{}');
 
-  const chinaGoal = PLAN.getGoals().find(g => g.id === 'china');
-  const apartments = PLAN.getGoals().find(g => g.id === 'apartment');
-  const freedomBuf = PLAN.getGoals().find(g => g.id === 'freedom-buffer');
-  const darwinTrip = PLAN.getTrips().find(t => t.id === 'darwin-2026');
+  const chinaGoal = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === 'china');
+  const apartments = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === 'apartment');
+  const freedomBuf = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === 'rainy-day-fund');
+  const darwinTrip = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView).find(t => t.id === 'darwin-2026');
 
   const defaults = {
     china: stored.china ?? 300,
@@ -26600,7 +26846,7 @@ function renderPaydayAllocation() {
       ${[
         { id:'china',     label:'🇨🇳 China Holiday',          colour:'#E74C3C', current: defaults.china,     goal: chinaGoal },
         { id:'apartment', label:'🏠 Deposit Savings (Extra)', colour:'#4ECDC4', current: defaults.apartment, goal: apartments },
-        { id:'freedom',   label:'🛡️ Freedom Buffer',          colour:'#FF6B35', current: defaults.freedom,   goal: freedomBuf },
+        { id:'freedom',   label:'🛡️ Rainy Day Fund',          colour:'#FF6B35', current: defaults.freedom,   goal: freedomBuf },
         { id:'darwin',    label:'🐊 Darwin Trip',             colour:'#9B59B6', current: defaults.darwin,    goal: darwinTrip }
       ].map(item => {
         const saved = item.goal?.saved || 0;
@@ -26765,7 +27011,7 @@ function confirmLockPaydayPlan() {
   reread.payday = S.payday;
   localStorage.setItem('slyght_payday_plan', JSON.stringify(reread));
 
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   if (stored.china) {
     const chinaGoal = goals.find(g => g.id === 'china');
     if (chinaGoal) { chinaGoal.monthly = stored.china; PLAN.saveGoal(chinaGoal); }
@@ -26829,7 +27075,7 @@ function showSliderInfo(id) {
       tip: 'Once the KIA is paid off post-WRX sale, redirect the $780/month here.'
     },
     freedom: {
-      title: '🛡️ Freedom Buffer',
+      title: '🛡️ Rainy Day Fund',
       body: 'Your safety net if something goes wrong. Target: $9,000 ' +
         '(3 months expenses). First milestone: $1,000. Once you have this ' +
         'you never need to borrow again.',
@@ -26897,8 +27143,8 @@ function renderBonusPreview(bonus, totalFixed, daysUntil) {
   const baseDaily = daysUntil > 0 ? baseDiscretionary / daysUntil : 0;
   const newDaily  = daysUntil > 0 ? newDiscretionary / daysUntil : 0;
 
-  const goals = PLAN.getGoals();
-  const trips = PLAN.getTrips();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
   const china = goals.find(g => g.id === 'china') || trips.find(t => t.id === 'china-2026');
   const chinaTarget = china?.target || china?.budget || 5000;
   const chinaSaved = china?.saved || 0;
@@ -26911,7 +27157,7 @@ function renderBonusPreview(bonus, totalFixed, daysUntil) {
   const kiaMonthsSaved = monthlyInterest > 0 ? Math.max(1, Math.round(bonus / 780)) : 0;
   const kiaInterestSaved = parseFloat((monthlyInterest * kiaMonthsSaved).toFixed(2));
 
-  // Suggested split: 50% China, 30% deposit, 20% freedom buffer
+  // Suggested split: 50% China, 30% deposit, 20% Rainy Day Fund
   const splitChina   = Math.round(bonus * 0.5);
   const splitDeposit = Math.round(bonus * 0.3);
   const splitFreedom = bonus - splitChina - splitDeposit;
@@ -27079,7 +27325,7 @@ function renderTrips(trips) {
 }
 
 function editTrip(tripId) {
-  const trip = PLAN.getTrips().find(t => t.id === tripId);
+  const trip = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView).find(t => t.id === tripId);
   if (!trip) return;
 
   const coveredItems = ['Flights','Accommodation','Car Hire','Food','Activities'];
@@ -27099,15 +27345,37 @@ function editTrip(tripId) {
       'Anything to remember — what\'s covered, who you\'re going with, activities planned'
     ) +
     `<div style="margin-bottom:16px">
-      <div style="color:rgba(255,255,255,0.5);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">What\'s Already Covered</div>
+      <div style="color:rgba(255,255,255,0.5);font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">What\'s Already Covered</div>
+      <div style="color:rgba(255,255,255,0.35);font-size:11px;margin-bottom:10px">Tick what's prepaid; enter $ if known so the survival forecast subtracts it from your trip uplift.</div>
       ${coveredItems.map(item => {
         const key = item.toLowerCase().replace(' ', '-');
-        const checked = (trip.covered||[])
-          .some(c => c.toLowerCase().includes(item.toLowerCase().split(' ')[0]));
+        // Bundle 32.3 Pass 3 — read covered as objects from canonical
+        // meta.covered first (post-seedV27 shape); fall back to the
+        // legacy string shape for any pre-migration entries.
+        const _canonicalIntent = BRAIN.plan.intent.get(tripId);
+        const _coveredCanonical = (_canonicalIntent && _canonicalIntent.meta && Array.isArray(_canonicalIntent.meta.covered))
+          ? _canonicalIntent.meta.covered : null;
+        const _matchKey = item.toLowerCase().split(' ')[0];
+        let coverEntry = null;
+        if (_coveredCanonical) {
+          coverEntry = _coveredCanonical.find(c => {
+            const n = (c && typeof c === 'object') ? c.name : String(c || '');
+            return n && n.toLowerCase().includes(_matchKey);
+          });
+        }
+        if (!coverEntry) {
+          // legacy fall-through (no canonical entry yet)
+          const legacyMatch = (trip.covered||[]).find(c => String(c || '').toLowerCase().includes(_matchKey));
+          if (legacyMatch) coverEntry = (typeof legacyMatch === 'object') ? legacyMatch : { name: legacyMatch, amount: 0 };
+        }
+        const checked = !!coverEntry;
+        const amount = (coverEntry && typeof coverEntry === 'object' && typeof coverEntry.amount === 'number') ? coverEntry.amount : 0;
         return `
         <label style="display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04)">
           <input type="checkbox" ` + ('id=' + JSON.stringify('cover-' + key)) + ` ${checked ? 'checked' : ''} style="width:20px;height:20px;accent-color:#4ECDC4;flex-shrink:0">
-          <span style="color:#fff;font-size:15px">${item}</span>
+          <span style="color:#fff;font-size:15px;flex:1">${item}</span>
+          <span style="color:rgba(255,255,255,0.5);font-size:14px;margin-right:2px">$</span>
+          <input type="number" min="0" step="any" ` + ('id=' + JSON.stringify('cover-amt-' + key)) + ` value="${amount || ''}" placeholder="0" inputmode="decimal" style="width:80px;padding:6px 8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:#fff;font-size:14px;text-align:right;font-family:var(--mono,monospace)">
         </label>`;
       }).join('')}
     </div>` +
@@ -27117,7 +27385,7 @@ function editTrip(tripId) {
 }
 
 function confirmEditTrip(tripId) {
-  const trips = PLAN.getTrips();
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
 
@@ -27125,18 +27393,50 @@ function confirmEditTrip(tripId) {
   const start = document.getElementById('trip-start')?.value || trip.startDate;
   const end = document.getElementById('trip-end')?.value || trip.endDate;
   const notes = document.getElementById('trip-notes')?.value || '';
-  const covered = ['flights','accommodation','car-hire','food','activities']
+
+  // Bundle 32.3 Pass 3 — build covered as [{name, amount}, ...] objects.
+  // The amount drives BRAIN.plan.intent.getUpliftPerDay subtraction
+  // (Pass 2's formula: max(0, (target - Σcovered) / days)). Validation:
+  // negative or non-number → 0 (matches seedV27 conservative default).
+  const coveredCanonical = ['flights','accommodation','car-hire','food','activities']
     .filter(id => document.getElementById('cover-' + id)?.checked)
-    .map(id => id.replace('-', ' '));
+    .map(id => {
+      const name = id.replace('-', ' ');
+      const raw = document.getElementById('cover-amt-' + id)?.value;
+      let amount = parseFloat(raw);
+      if (!isFinite(amount) || amount < 0) amount = 0;
+      return { name, amount };
+    });
+  // Legacy string-array for any pre-Pass-3 consumer still reading from
+  // S.tripDefs (the legacy shim). After Pass 4 deletes legacy stores
+  // this line goes away.
+  const coveredLegacy = coveredCanonical.map(c => c.name);
 
   if (!isNaN(budget)) trip.budget = budget;
   trip.startDate = start;
   trip.endDate = end;
   trip.notes = notes;
-  trip.covered = covered;
+  trip.covered = coveredLegacy;
   if (start && end) {
     trip.days = Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1;
   }
+
+  // Bundle 32.3 Pass 3 — write canonical intent first (the post-Pass-3
+  // canonical source). Legacy S.tripDefs write follows for back-compat.
+  try {
+    BRAIN.plan.intent.update(tripId, {
+      name: trip.name,
+      emoji: trip.emoji,
+      targetAmount: trip.budget,
+      startDate: trip.startDate,
+      endDate: trip.endDate,
+      notes: trip.notes,
+      meta: Object.assign({}, (BRAIN.plan.intent.get(tripId) || {}).meta || {}, {
+        covered: coveredCanonical,
+        days: trip.days,
+      }),
+    }, BRAIN.SOURCES.PLAN_TRIP_EDIT);
+  } catch (_) {}
 
   PLAN.saveTrip(trip);
   // Bundle 16.6: scroll restore moved to PLAN_MODAL.close() — universal
@@ -27224,7 +27524,7 @@ function confirmNewTrip() {
 // from S.tripDefs + cascades auto-bucket cleanup + cascades linked
 // PLAN.intents removal + refreshes both PLAN mode and canvas.
 function confirmDeleteTrip(tripId) {
-  const trips = PLAN.getTrips();
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   const saved = +trip.saved || 0;
@@ -27235,7 +27535,17 @@ function confirmDeleteTrip(tripId) {
     : 'Delete "' + trip.name + '"?\n\nThe trip + any PLAN.intents link will be removed.';
   if (!confirm(warn)) return;
 
-  // Remove from S.tripDefs (canonical store for legacy trips).
+  // Bundle 32.3 Pass 3 — archive via canonical writer first (audit-logged).
+  // Legacy stores still pruned below for back-compat during transition.
+  try {
+    if (BRAIN.plan.intent.get(tripId)) {
+      BRAIN.plan.intent.remove(tripId, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
+    }
+  } catch (_) {}
+
+  // Legacy fallback: remove from S.tripDefs (Bundle 8 store) for users on
+  // pre-Pass-3 shape. After Pass 4 (deferrable) deletes the legacy store
+  // this block goes away.
   if (Array.isArray(S.tripDefs)) {
     S.tripDefs = S.tripDefs.filter(t => t.id !== tripId);
   } else {
@@ -27275,7 +27585,7 @@ function confirmDeleteTrip(tripId) {
 }
 
 function addTripSavings(tripId) {
-  const trip = PLAN.getTrips().find(t => t.id === tripId);
+  const trip = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView).find(t => t.id === tripId);
   if (!trip) return;
   const saved = trip.saved || 0;
   const remaining = Math.max(0, trip.budget - saved);
@@ -27306,7 +27616,7 @@ function confirmTripSavings(tripId) {
     showToast('Please Enter A Valid Amount');
     return;
   }
-  const trips = PLAN.getTrips();
+  const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
   const trip = trips.find(t => t.id === tripId);
   if (!trip) return;
   const newSaved = (trip.saved || 0) + amt;
@@ -27416,7 +27726,7 @@ function renderGoalCards(goals, surplus) {
 }
 
 function editGoal(goalId) {
-  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  const goal = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === goalId);
   if (!goal) return;
 
   PLAN_MODAL.open(
@@ -27436,7 +27746,7 @@ function editGoal(goalId) {
 }
 
 function confirmEditGoal(goalId) {
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
   const name = document.getElementById('goal-name')?.value?.trim() || goal.name;
@@ -27457,12 +27767,12 @@ function confirmEditGoal(goalId) {
 
 function confirmDeleteGoal(goalId) {
   // Bundle 6.5: allow user to delete user-added goals (or any goal).
-  // Default goals (china, freedom-buffer, apartment) can also be
+  // Default goals (china, rainy-day-fund, apartment) can also be
   // deleted from the visible list — they'll regenerate from defaults
   // on next render UNLESS user explicitly creates a stored override.
   // We only delete from slyght_goals localStorage + clean up auto-
   // created bucket if it was created for this goal specifically.
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
 
@@ -27472,9 +27782,17 @@ function confirmDeleteGoal(goalId) {
     return;
   }
 
-  // Bundle 8: remove from S.goalDefs (canonical). Defaults regenerate on
-  // next render from PLAN.getGoals merging. Legacy localStorage fallback
-  // still cleaned for users on the old shape.
+  // Bundle 32.3 Pass 3 — archive via canonical writer first (audit-logged).
+  try {
+    if (BRAIN.plan.intent.get(goalId)) {
+      BRAIN.plan.intent.remove(goalId, BRAIN.SOURCES.PLAN_INTENT_REMOVE);
+    }
+  } catch (_) {}
+
+  // Legacy fallback: remove from S.goalDefs (Bundle 8 store) for users on
+  // pre-Pass-3 shape. Defaults regenerate on next render from PLAN.getGoals
+  // merging. After Pass 4 (deferrable) deletes the legacy store this block
+  // goes away.
   if (Array.isArray(S.goalDefs)) {
     S.goalDefs = S.goalDefs.filter(g => g.id !== goalId);
   } else {
@@ -27500,7 +27818,7 @@ function confirmDeleteGoal(goalId) {
   // canonical PLAN.intents entry (created in confirmNewGoal round 5).
   // Without this the intent orphans, causing the goal to keep appearing
   // in any future surface that reads BRAIN.plan.intent.byKind('goal').
-  // Default-goal IDs (china, freedom-buffer, apartment) are seeded by
+  // Default-goal IDs (china, rainy-day-fund, apartment) are seeded by
   // seedV25 and regenerate from PLAN defaults — we only remove
   // user-added intents (id pattern 'goal-*').
   if (goalId.startsWith('goal-') && BRAIN.plan && BRAIN.plan.intent) {
@@ -27524,7 +27842,7 @@ function confirmDeleteGoal(goalId) {
 }
 
 function addGoalSavings(goalId) {
-  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  const goal = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === goalId);
   if (!goal) return;
   const saved = goal.saved || 0;
   const remaining = Math.max(0, goal.target - saved);
@@ -27555,7 +27873,7 @@ function confirmGoalSavings(goalId) {
     showToast('Please Enter A Valid Amount');
     return;
   }
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const goal = goals.find(g => g.id === goalId);
   if (!goal) return;
   const newSaved = (goal.saved || 0) + amt;
@@ -27648,7 +27966,7 @@ function confirmNewGoal() {
 // AND the new BRAIN.plan.intent.add canonical writer fire together.
 
 function markGoalComplete(goalId) {
-  const goal = PLAN.getGoals().find(g => g.id === goalId);
+  const goal = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView).find(g => g.id === goalId);
   if (!goal) return;
   PLAN_MODAL.open(
     PLAN_MODAL.header('🎉 Mark ' + goal.name + ' Complete?',
@@ -27660,7 +27978,7 @@ function markGoalComplete(goalId) {
 }
 
 function confirmGoalComplete(goalId) {
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const goal = goals.find(g => g.id === goalId);
   if (goal) {
     goal.completed = true;
@@ -27864,7 +28182,7 @@ function updateIncomeSim(annualSalary) {
   if (sd) sd.textContent = '$' + annual.toLocaleString();
   if (md) md.textContent = '$' + newMonthly.toLocaleString() + '/mo';
 
-  const goals = PLAN.getGoals();
+  const goals = BRAIN.plan.intent.byKind('goal').map(_goalLegacyView);
   const chinaGoal = goals.find(g => g.id === 'china');
   const apGoal = goals.find(g => g.id === 'apartment');
 

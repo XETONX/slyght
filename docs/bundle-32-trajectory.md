@@ -1,7 +1,7 @@
 # Bundle 32 trajectory
 
-**Status:** Living doc. Opens every Bundle 32 session for orientation.
-**Last updated:** 2026-05-19 (session-close — scenario-walker landed, ADR-32.7 drafted)
+**Status:** SUBSTRATE COMPLETE — all four columns ✓. Doc retained for archaeology; new trajectory moves to Bundle 33 (AI layer build on top of the closed substrate).
+**Last updated:** 2026-05-20 (Pass 3 ship — column 4 closed, Bundle 32.3 complete)
 
 ---
 
@@ -15,10 +15,10 @@ The substrate has four columns. Each is a "canonical-X" migration: one writer, o
 |---|---|---|---|
 | **Write substrate** | 30 | Every `S.X` mutation routes through `BRAIN.<domain>.<verb>` with source-tagged audit log. `recordWithAllocation` envelope covers all 9 transaction write sites. | ✓ shipped |
 | **Allocation substrate** (read) | 32.1 | `snap.derived` canonical allocation reader. Conservation law `remainder === allocatedTotal + stillToAllocate`. Cross-surface drift class closed. | ✓ shipped |
-| **Lock-state substrate** | 32.7 | `BRAIN.plan.lock` / `unlock` / `isLocked` canonical writers + readers. Three lock stores collapse to one (or get hidden behind one). Prerequisite for INV-29. | ADR drafted, awaiting Pass 1 |
-| **Render-truth substrate** | 32.3-32.6 (Layer 7) | Survival forecast trip-awareness · essentialsVsDiscretionary drilldown · hero cycle-spend visibility · `BRAIN.plan.resetCycle`. Display-tier truth aligns with logic-tier truth. | partial — 32.4/32.5/32.6 scoped, 32.3 needs ADR |
+| **Lock-state substrate** | 32.7 Pass 1 | `BRAIN.plan.lock` / `unlock` / `isLocked` canonical writers + 5 call site migrations. Three lock stores hidden behind canonical. | ✓ shipped (Pass 1) |
+| **Render-truth substrate** | 32.3 Pass 1+2+3 · 32.4 · 32.5 · 32.6 · Phase G | Forecast trip-awareness · essentials/hero drilldowns · receipt-pattern reset · Phase G strict-discretionary canonical · canonical intent consumer migration · Trip edit form $-per-covered field · Property Deposit hybrid reader · Freedom Buffer → Rainy Day Fund rename. Display-tier truth aligns with logic-tier truth. | ✓ **shipped 2026-05-20** (all 32.3 passes complete) |
 
-**Substrate complete** = all four columns ✓. After that, INV-27/29/30/31/33 sign off enforceable, the ~19 remaining OPEN-BUGS triage cleanly into "old behavior surfaced by substrate" vs "new work," and the architecture diagnostic from `e153d54` can be marked closed.
+**Substrate complete** = all four columns ✓. **Achieved 2026-05-20** with Pass 3 ship. INV-27/29/30/31/32 enforceable. ~19 remaining OPEN-BUGS triage cleanly into "old behavior surfaced by substrate" vs "new work." Architecture diagnostic from `e153d54` marked closed. Bundle 33 (AI layer build) and Bundle 23 (cloud sync via Phase A's auth + namespacing) become the next compounding investments.
 
 ---
 
