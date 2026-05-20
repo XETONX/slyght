@@ -22,10 +22,24 @@
 // proceed against synthetic state. But also don't block dev work when
 // the worker is mid-deploy or John is offline.
 //
+// Phase A (Bundle 32 Phase A, 2026-05-20): worker now requires
+// `Authorization: Bearer {device_token}` on every request. This script
+// reads the device token from one of:
+//   1. SLYGHT_DEVICE_TOKEN env var (preferred for CI / explicit invocation)
+//   2. The existing state-snapshot.json's S._deviceToken field if the
+//      app has exported it (post-Phase-A app builds may include this)
+//   3. --token=<value> CLI arg
+//
+// If no token is available, the pull is skipped with a clear instruction
+// to set SLYGHT_DEVICE_TOKEN. The graceful-degradation contract still
+// applies: smoke continues against existing fixture with WARN logged.
+//
 // Usage:
 //   node scripts/recon/pull-from-kv.js
 //   node scripts/recon/pull-from-kv.js --url=<worker-url>
 //   node scripts/recon/pull-from-kv.js --out=<path>
+//   node scripts/recon/pull-from-kv.js --token=<43-char-base64url>
+//   SLYGHT_DEVICE_TOKEN=<token> node scripts/recon/pull-from-kv.js
 //   SKIP_FRESH_FIXTURE=1 node scripts/recon/pull-from-kv.js  (no-op)
 
 const fs = require('fs');
@@ -79,12 +93,46 @@ async function main() {
   const outPath = args.out ? path.resolve(args.out) : DEFAULT_OUT;
   const existing = fs.existsSync(outPath);
 
-  log('info', 'pulling from ' + workerUrl + '/pull-full-state');
+  // Phase A — resolve device token for auth. Order: CLI arg, env var,
+  // embedded in existing fixture (if app exported it). Skip pull
+  // cleanly if no token available.
+  let token = args.token || process.env.SLYGHT_DEVICE_TOKEN || null;
+  if (!token && existing) {
+    try {
+      const prior = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+      const priorS = prior.S || prior;
+      if (priorS && typeof priorS._deviceToken === 'string') token = priorS._deviceToken;
+    } catch (_) {}
+  }
+  if (!token) {
+    log('warn', 'no device token available — Phase A requires Authorization');
+    log('warn', '  → set SLYGHT_DEVICE_TOKEN env var (43-char base64url from app localStorage["slyght_device_token"])');
+    log('warn', '  → OR pass --token=<value>');
+    if (existing) {
+      log('warn', 'keeping existing state-snapshot.json (smoke runs against stale)');
+      return 0;
+    }
+    log('err', 'no token and no existing fixture — smoke cannot run');
+    return 2;
+  }
+  if (!/^[A-Za-z0-9_-]{20,}$/.test(token)) {
+    log('warn', 'token format looks wrong (expected base64url, 20+ chars)');
+    if (existing) {
+      log('warn', 'keeping existing state-snapshot.json');
+      return 0;
+    }
+    return 2;
+  }
+
+  log('info', 'pulling from ' + workerUrl + '/pull-full-state (token: ' + token.slice(0, 8) + '...)');
   let res;
   try {
     res = await fetch(workerUrl + '/pull-full-state', {
       method: 'GET',
-      headers: { 'Accept': 'application/json' },
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
     });
   } catch (e) {
     log('warn', 'network error: ' + e.message);
@@ -97,6 +145,18 @@ async function main() {
     log('warn', 'keeping existing state-snapshot.json (mtime: ' + mtime + ')');
     log('warn', 'smoke will run against STALE fixture — flag in any ship message');
     return 0;
+  }
+
+  if (res.status === 401) {
+    log('warn', 'worker responded 401 — device token rejected by auth');
+    log('warn', '  → token does not match any registered device on the worker');
+    log('warn', '  → check SLYGHT_DEVICE_TOKEN matches localStorage["slyght_device_token"] on phone');
+    if (existing) {
+      log('warn', 'keeping existing state-snapshot.json');
+      return 0;
+    }
+    log('err', 'no existing state-snapshot.json — smoke cannot run');
+    return 2;
   }
 
   if (res.status === 404) {

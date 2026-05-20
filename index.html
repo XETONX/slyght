@@ -2334,6 +2334,52 @@ function fmtAuDate(d, opts) {
 }
 const $ = id => document.getElementById(id);
 
+// Bundle 32 Phase A — device-token auth substrate.
+// 256-bit random token (32 bytes → base64url, 43 chars, no padding)
+// generated on first need, persisted to localStorage. Sent as
+// `Authorization: Bearer {token}` on every worker request. sha256(token)
+// becomes the KV namespace prefix on the worker side, isolating this
+// device's state from any other device that may register in the future.
+// See SECURITY.md Phase A + ADR-bundle-32-phase-a-device-tokens.md.
+//
+// Lazy generation: token is created on the first call to getDeviceToken,
+// not at boot. This avoids blocking the splash with crypto work and
+// keeps early-boot save() calls (which run before PUSH is loaded)
+// from doing extra work.
+//
+// Corruption recovery: if the stored token fails the base64url-43-char
+// validation regex, a fresh token is generated silently. Pre-existing
+// localStorage data stays intact; the next push migrates it into the
+// new device namespace on the worker side (one-shot per device hash).
+const DEVICE_TOKEN_KEY = 'slyght_device_token';
+const DEVICE_TOKEN_REGEX = /^[A-Za-z0-9_-]{43}$/;
+
+function _generateDeviceToken() {
+  const bytes = new Uint8Array(32);  // 256 bits
+  crypto.getRandomValues(bytes);
+  // base64url, no padding: btoa output is base64 with +/=, swap and strip.
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function getDeviceToken() {
+  let token = null;
+  try { token = localStorage.getItem(DEVICE_TOKEN_KEY); } catch (_) {}
+  if (!token || !DEVICE_TOKEN_REGEX.test(token)) {
+    token = _generateDeviceToken();
+    try {
+      localStorage.setItem(DEVICE_TOKEN_KEY, token);
+      localStorage.setItem(DEVICE_TOKEN_KEY + '_generated_at', String(Date.now()));
+    } catch (_) {}
+  }
+  return token;
+}
+
+function getAuthHeader() {
+  return 'Bearer ' + getDeviceToken();
+}
+
 function save() {
   try {
     if (!S.txns) S.txns = []; // guard: never let txns become undefined
@@ -2379,22 +2425,24 @@ function _schedulePushFullState() {
 }
 
 // Bundle 32a — pagehide flush. If the user exits the app within the
-// debounce window, the pending push would be lost. sendBeacon is the
-// browser API for fire-and-forget POSTs during unload — doesn't await,
-// doesn't block tab close, doesn't surface errors. Best-effort delivery.
+// debounce window, the pending push would be lost.
+//
+// Phase A update (2026-05-20): switched from navigator.sendBeacon to
+// PUSH.pushFullState({keepalive:true}). sendBeacon can't carry custom
+// headers — including Phase A's required Authorization header — so it
+// would 401 against the auth'd worker. fetch + keepalive:true is the
+// modern equivalent that supports headers and survives tab close
+// (browser policy limits cumulative keepalive bodies to ~64kB which
+// matches sendBeacon's typical size limit, so the failure mode is
+// unchanged for large states — graceful skip + next session catches up).
 function _flushPushFullState() {
   if (!_pushFullStatePending) return;
   if (_pushFullStateTimer) { clearTimeout(_pushFullStateTimer); _pushFullStateTimer = null; }
   _pushFullStatePending = false;
   if (typeof S !== 'undefined' && S && S.pushOnSaveEnabled === false) return;
+  if (typeof PUSH === 'undefined' || typeof PUSH.pushFullState !== 'function') return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw || typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
-    const url = (typeof PUSH !== 'undefined' && PUSH.workerUrl)
-      ? PUSH.workerUrl + '/push-full-state'
-      : 'https://slyght-worker.johndounas.workers.dev/push-full-state';
-    const blob = new Blob([raw], { type: 'application/json' });
-    navigator.sendBeacon(url, blob);
+    PUSH.pushFullState({ keepalive: true }).catch(() => {});  // fire-and-forget
   } catch (_) {}
 }
 
@@ -18517,7 +18565,7 @@ const PUSH = {
       console.log('[PUSH] Sending subscription to worker...');
       const res = await fetch(this.workerUrl + '/subscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
         body: JSON.stringify(subJson),
       });
       const data = await res.json();
@@ -18587,7 +18635,7 @@ const PUSH = {
 
       await fetch(this.workerUrl + '/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
         body: JSON.stringify(state),
       });
     } catch (e) {
@@ -18604,15 +18652,23 @@ const PUSH = {
   // available for manual invocation from console (e.g. before reboot).
   // Silent-fail by design — localStorage save is authoritative; KV
   // mirror is non-critical. Errors only logged when SLYGHT_DEBUG=true.
-  async pushFullState() {
+  async pushFullState(opts) {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return { ok: false, reason: 'no-state-in-localStorage' };
-      const res = await fetch(this.workerUrl + '/push-full-state', {
+      const init = {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
         body: raw,  // localStorage already JSON-stringified — pass through
-      });
+      };
+      // Phase A — `keepalive: true` lets the request survive pagehide
+      // for best-effort flush. Replaces the Bundle 32a sendBeacon path
+      // (which couldn't carry the Authorization header). Browser policy
+      // limits keepalive bodies to ~64kB cumulative; large state pushes
+      // may be rejected — that's the same failure mode as sendBeacon
+      // had on >64kB bodies. Next session's save() catches up.
+      if (opts && opts.keepalive) init.keepalive = true;
+      const res = await fetch(this.workerUrl + '/push-full-state', init);
       if (!res.ok) {
         if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState non-ok:', res.status);
         return { ok: false, status: res.status };
@@ -18709,7 +18765,7 @@ const PUSH = {
 
       const res = await fetch(this.workerUrl + '/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
         body: JSON.stringify({ subscription: subJson }),
       });
 
@@ -18754,7 +18810,10 @@ const PUSH = {
     localStorage.removeItem('slyght_push_sub');
     localStorage.removeItem('slyght_push_endpoint');
     try {
-      await fetch(this.workerUrl + '/unsubscribe', { method: 'POST' });
+      await fetch(this.workerUrl + '/unsubscribe', {
+        method: 'POST',
+        headers: { 'Authorization': getAuthHeader() },
+      });
     } catch(e) {
       console.warn('[PUSH] worker unsubscribe error:', e);
     }
@@ -20379,6 +20438,24 @@ const BRAIN = {
       ['_schedulePushFullState reachable (save() hook)', () => typeof _schedulePushFullState === 'function'],
       ['_flushPushFullState reachable (pagehide handler)', () => typeof _flushPushFullState === 'function'],
       ['push-on-save default: enabled unless explicitly off', () => S && S.pushOnSaveEnabled !== false],
+      // Bundle 32 Phase A — device-token auth substrate
+      ['getDeviceToken reachable', () => typeof getDeviceToken === 'function'],
+      ['getAuthHeader returns Bearer prefix', () => {
+        const h = getAuthHeader();
+        return typeof h === 'string' && h.startsWith('Bearer ');
+      }],
+      ['device token persisted to localStorage', () => {
+        getDeviceToken();  // lazy-init on first call
+        return !!localStorage.getItem('slyght_device_token');
+      }],
+      ['device token format valid (base64url 43 chars)', () => {
+        const t = localStorage.getItem('slyght_device_token');
+        return typeof t === 'string' && /^[A-Za-z0-9_-]{43}$/.test(t);
+      }],
+      ['device token stable across calls (no regenerate-on-read)', () => {
+        const a = getDeviceToken(); const b = getDeviceToken();
+        return a === b && a.length === 43;
+      }],
       ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
       ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
       ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],

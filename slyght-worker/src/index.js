@@ -1,5 +1,107 @@
 // SLYGHT Cloudflare Worker — Smart Push Notifications
 // Handles state sync from app + scheduled push via Web Push API (VAPID)
+//
+// Phase A (Bundle 32 Phase A, 2026-05-20): device-token auth + per-device
+// KV namespacing. Every endpoint touching user state requires a valid
+// Bearer token. KV keys live under `device:{sha256(token)}:`. Migration
+// copies pre-Phase-A keys to bootstrap device's namespace on first auth.
+// See SECURITY.md "Phase A — Device identity & isolation" + ADR
+// docs/adr/ADR-bundle-32-phase-a-device-tokens.md.
+
+// ─── Phase A — auth + migration helpers ───────────────────────────────
+
+// sha256 hex digest of an input string. Used to derive KV namespace
+// from the device token without exposing the raw token to KV inspection.
+async function sha256Hex(input) {
+  const buf = new TextEncoder().encode(input);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// requireDevice — extract + validate Bearer token from Authorization
+// header. Returns `{hash, token}` on success or `{error: Response}` on
+// failure (missing, malformed, or empty). Endpoints early-return the
+// error Response to short-circuit handling.
+//
+// Token format: 256-bit (32 byte) base64url, 43 chars, no padding
+// (matches app-side _generateDeviceToken in index.html). We accept
+// >= 20 chars for forward compat (Phase B may extend token format),
+// rejecting only the cases that "look valid but aren't" (empty, too
+// short, wrong charset, missing Bearer prefix).
+async function requireDevice(request, env, corsHeaders) {
+  const authHeader = request.headers.get('Authorization') || '';
+  const m = authHeader.match(/^Bearer\s+([A-Za-z0-9_-]{20,})$/);
+  if (!m) {
+    return {
+      error: new Response(JSON.stringify({ error: 'auth: missing or malformed Bearer token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }),
+    };
+  }
+  const token = m[1];
+  const hash = await sha256Hex(token);
+  return { hash, token };
+}
+
+// ensureMigrated — one-shot per-device migration of pre-Phase-A KV state.
+// Called from every authenticated request. Short-circuits if the device's
+// `phase_a_migrated_v1` flag is set.
+//
+// First device to authenticate AFTER Phase A deploys is the "bootstrap"
+// device — receives a copy of all pre-Phase-A KV keys (state, full-state,
+// subscription, dismissed, push_logs) into its `device:{hash}:` namespace.
+// Subsequent new devices register in `devices:registered` but do NOT
+// inherit the bootstrap state.
+//
+// Per Phase A scope (SECURITY.md), legacy keys are NOT deleted. Future
+// bundles handle cleanup after migration is confirmed working.
+//
+// Returns { migrated: bool, isBootstrap: bool, copiedKeys: string[] }.
+async function ensureMigrated(hash, env) {
+  const flagKey = `device:${hash}:phase_a_migrated_v1`;
+  const flagged = await env.SLYGHT_DATA.get(flagKey);
+  if (flagged) {
+    return { migrated: true, alreadyDone: true };
+  }
+
+  // Add to devices:registered index (idempotent)
+  const idxRaw = await env.SLYGHT_DATA.get('devices:registered');
+  let idx = [];
+  try { idx = idxRaw ? JSON.parse(idxRaw) : []; } catch (_) { idx = []; }
+  const isBootstrap = idx.length === 0;  // first device ever
+  if (!idx.includes(hash)) {
+    idx.push(hash);
+    await env.SLYGHT_DATA.put('devices:registered', JSON.stringify(idx));
+  }
+
+  // Bootstrap device: copy legacy keys to device namespace.
+  // Note: push_logs is NOT migrated — it's global worker diagnostic
+  // data (writeLog + /logs both target the bare key), not user state.
+  const legacyKeys = ['state', 'state-full-snapshot', 'state-full-meta', 'push_subscription', 'dismissed'];
+  const copiedKeys = [];
+  if (isBootstrap) {
+    for (const k of legacyKeys) {
+      const v = await env.SLYGHT_DATA.get(k);
+      if (v !== null) {
+        await env.SLYGHT_DATA.put(`device:${hash}:${k}`, v);
+        copiedKeys.push(k);
+      }
+    }
+  }
+
+  // Set flag LAST so a partial migration retries cleanly on next request
+  await env.SLYGHT_DATA.put(flagKey, JSON.stringify({
+    migratedAt: new Date().toISOString(),
+    isBootstrap,
+    copiedKeys,
+  }));
+
+  return { migrated: true, isBootstrap, copiedKeys };
+}
+
+// ─── Fetch handler ─────────────────────────────────────────────────────
 
 export default {
   async fetch(request, env, ctx) {
@@ -18,6 +120,10 @@ export default {
 
     // POST /sync — SLYGHT sends current financial + lifestyle state
     if (path === '/sync' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
         const body = await request.json();
         const state = {
@@ -48,7 +154,7 @@ export default {
           depositGoalProgress: body.depositGoalProgress || 0,
           lastSync:         new Date().toISOString(),
         };
-        await env.SLYGHT_DATA.put('state', JSON.stringify(state));
+        await env.SLYGHT_DATA.put(ns + 'state', JSON.stringify(state));
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -75,6 +181,10 @@ export default {
     // can write to KV. Proper auth (device-issued tokens via subscribe
     // flow) tracked as follow-up in ADR-bundle-32a.
     if (path === '/push-full-state' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
         const body = await request.json();
         if (!body || typeof body !== 'object' || !body.S || !Array.isArray(body.BILLS)) {
@@ -91,8 +201,8 @@ export default {
           balance: typeof body.S.bal === 'number' ? parseFloat(body.S.bal.toFixed(2)) : null,
           billsCount: body.BILLS.length,
         };
-        await env.SLYGHT_DATA.put('state-full-snapshot', json);
-        await env.SLYGHT_DATA.put('state-full-meta', JSON.stringify(meta));
+        await env.SLYGHT_DATA.put(ns + 'state-full-snapshot', json);
+        await env.SLYGHT_DATA.put(ns + 'state-full-meta', JSON.stringify(meta));
         return new Response(JSON.stringify({ ok: true, meta }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -113,14 +223,18 @@ export default {
     // browser CORS enforcement). Browsers from other origins blocked
     // by Access-Control-Allow-Origin.
     if (path === '/pull-full-state' && request.method === 'GET') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
-        const json = await env.SLYGHT_DATA.get('state-full-snapshot');
+        const json = await env.SLYGHT_DATA.get(ns + 'state-full-snapshot');
         if (!json) {
           return new Response(JSON.stringify({ error: 'no full state yet — app has never pushed' }), {
             status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        const metaRaw = await env.SLYGHT_DATA.get('state-full-meta');
+        const metaRaw = await env.SLYGHT_DATA.get(ns + 'state-full-meta');
         const meta = metaRaw ? JSON.parse(metaRaw) : null;
         return new Response(json, {
           headers: {
@@ -142,7 +256,11 @@ export default {
     // record (timestamp, byteSize, counts) without the full blob.
     // Useful for fixture-age checks without downloading 200kB.
     if (path === '/pull-full-state-meta' && request.method === 'GET') {
-      const metaRaw = await env.SLYGHT_DATA.get('state-full-meta');
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
+      const metaRaw = await env.SLYGHT_DATA.get(ns + 'state-full-meta');
       const meta = metaRaw ? JSON.parse(metaRaw) : { lastPushedAt: null, byteSize: 0 };
       return new Response(JSON.stringify(meta), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -151,6 +269,10 @@ export default {
 
     // POST /subscribe — browser sends Web Push subscription object
     if (path === '/subscribe' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
         const sub = await request.json();
         if (!sub.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
@@ -158,7 +280,7 @@ export default {
             status: 400, headers: corsHeaders,
           });
         }
-        await env.SLYGHT_DATA.put('push_subscription', JSON.stringify(sub));
+        await env.SLYGHT_DATA.put(ns + 'push_subscription', JSON.stringify(sub));
         return new Response(JSON.stringify({ ok: true, message: 'Subscribed' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -171,11 +293,15 @@ export default {
 
     // POST /dismiss — mark a notification type dismissed for today
     if (path === '/dismiss' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
         const { type } = await request.json();
-        const dismissed = JSON.parse(await env.SLYGHT_DATA.get('dismissed') || '{}');
+        const dismissed = JSON.parse(await env.SLYGHT_DATA.get(ns + 'dismissed') || '{}');
         dismissed[type] = new Date().toISOString();
-        await env.SLYGHT_DATA.put('dismissed', JSON.stringify(dismissed));
+        await env.SLYGHT_DATA.put(ns + 'dismissed', JSON.stringify(dismissed));
         return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), {
@@ -186,10 +312,14 @@ export default {
 
     // GET /status — debug endpoint
     if (path === '/status' && request.method === 'GET') {
-      const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
-      const subRaw = await env.SLYGHT_DATA.get('push_subscription');
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
+      const state = JSON.parse(await env.SLYGHT_DATA.get(ns + 'state') || '{}');
+      const subRaw = await env.SLYGHT_DATA.get(ns + 'push_subscription');
       const sub = subRaw ? JSON.parse(subRaw) : null;
-      const logs = JSON.parse(await env.SLYGHT_DATA.get('push_logs') || '[]');
+      const logs = JSON.parse(await env.SLYGHT_DATA.get(ns + 'push_logs') || '[]');
 
       return new Response(JSON.stringify({
         state,
@@ -216,7 +346,11 @@ export default {
 
     // GET /snapshot — compressed readable state for Claude sync
     if (path === '/snapshot' && request.method === 'GET') {
-      const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
+      const state = JSON.parse(await env.SLYGHT_DATA.get(ns + 'state') || '{}');
       const text = [
         'SLYGHT-WORKER-SNAP',
         new Date().toISOString().substring(0,10),
@@ -234,11 +368,15 @@ export default {
 
     // POST /test — send a test push notification immediately
     if (path === '/test' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
         const body = await request.json().catch(() => ({}));
         // Accept subscription from request body, or fall back to KV
         const sub = body.subscription ||
-          JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
+          JSON.parse(await env.SLYGHT_DATA.get(ns + 'push_subscription') || 'null');
         if (!sub) {
           return new Response(JSON.stringify({ error: 'No subscription found' }), {
             status: 400, headers: corsHeaders,
@@ -260,8 +398,15 @@ export default {
       }
     }
 
-    // GET /logs — retrieve recent push attempt logs
+    // GET /logs — retrieve recent push attempt logs. Auth-required for
+    // access control but logs themselves are global worker diagnostics
+    // (writeLog writes to bare 'push_logs' regardless of device — this
+    // is intentional: logs are about worker behaviour, not user state).
+    // Multi-device push_logs scoping is a Phase B concern.
     if (path === '/logs' && request.method === 'GET') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
       try {
         const logs = JSON.parse(await env.SLYGHT_DATA.get('push_logs') || '[]');
         return new Response(JSON.stringify(logs, null, 2), {
@@ -305,8 +450,12 @@ export default {
 
     // POST /unsubscribe — clear push subscription from KV
     if (path === '/unsubscribe' && request.method === 'POST') {
+      const auth = await requireDevice(request, env, corsHeaders);
+      if (auth.error) return auth.error;
+      await ensureMigrated(auth.hash, env);
+      const ns = `device:${auth.hash}:`;
       try {
-        await env.SLYGHT_DATA.delete('push_subscription');
+        await env.SLYGHT_DATA.delete(ns + 'push_subscription');
         return new Response(JSON.stringify({ ok: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -342,9 +491,35 @@ function getSydneyTime() {
   };
 }
 
+// Phase A — iterate registered devices and run the schedule for each.
+// During the bootstrap window (post-deploy but before any device has
+// authenticated), no devices are registered; fall back to the legacy
+// bare KV keys so notifications keep working until the first auth push
+// migrates state into the device namespace.
 async function handleSchedule(cron, env) {
-  const state = JSON.parse(await env.SLYGHT_DATA.get('state') || '{}');
-  const sub   = JSON.parse(await env.SLYGHT_DATA.get('push_subscription') || 'null');
+  const idxRaw = await env.SLYGHT_DATA.get('devices:registered');
+  let devices = [];
+  try { devices = idxRaw ? JSON.parse(idxRaw) : []; } catch (_) { devices = []; }
+
+  if (devices.length === 0) {
+    // Bootstrap window — pre-Phase-A keys still in use
+    return _runScheduleFor(cron, env, 'state', 'push_subscription');
+  }
+
+  for (const hash of devices) {
+    const ns = `device:${hash}:`;
+    try {
+      await _runScheduleFor(cron, env, ns + 'state', ns + 'push_subscription');
+    } catch (e) {
+      // Per-device failure doesn't block other devices
+      console.error('handleSchedule device', hash.slice(0, 12), 'error:', e && e.message);
+    }
+  }
+}
+
+async function _runScheduleFor(cron, env, stateKey, subKey) {
+  const state = JSON.parse(await env.SLYGHT_DATA.get(stateKey) || '{}');
+  const sub   = JSON.parse(await env.SLYGHT_DATA.get(subKey) || 'null');
   if (!sub) return;
 
   // Staleness check — flag if app hasn't synced recently

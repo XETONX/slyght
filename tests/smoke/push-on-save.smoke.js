@@ -145,29 +145,42 @@ test.describe('Bundle 32a — push-on-save fixture-freshness substrate', () => {
     expect(r.pending).toBe(false);
   });
 
-  test('Case 5: _flushPushFullState clears pending synchronously + uses sendBeacon', async ({ page }) => {
-    // Spy on sendBeacon
+  test('Case 5: _flushPushFullState clears pending synchronously + uses fetch+keepalive with auth header', async ({ page }) => {
+    // Phase A update: flush switched from sendBeacon to fetch+keepalive
+    // so the Authorization header can be carried. Spy on fetch (PUSH
+    // route already intercepted in beforeEach, but here we verify the
+    // fetch init shape that pushFullState passed to it).
     await page.evaluate(() => {
-      window._beaconCalls = [];
-      const origSendBeacon = navigator.sendBeacon.bind(navigator);
-      navigator.sendBeacon = function(url, data) {
-        window._beaconCalls.push({ url, size: data && data.size });
-        return true;  // simulate success
+      window._flushFetches = [];
+      const origFetch = window.fetch.bind(window);
+      window.fetch = function(url, init) {
+        if (typeof url === 'string' && url.includes('/push-full-state')) {
+          window._flushFetches.push({
+            url,
+            keepalive: !!(init && init.keepalive),
+            method: init && init.method,
+            hasAuth: !!(init && init.headers && (init.headers.Authorization || init.headers.authorization)),
+            bodyLen: init && typeof init.body === 'string' ? init.body.length : 0,
+          });
+        }
+        return origFetch(url, init);
       };
-      // Schedule a push, then flush
-      _flushPushFullState();  // clean
+      _flushPushFullState();  // clean any prior pending
       save();  // schedule
     });
     const before = await page.evaluate(() => _pushFullStatePending);
     expect(before).toBe(true);
     const r = await page.evaluate(() => {
       _flushPushFullState();
-      return { pending: _pushFullStatePending, beaconCalls: window._beaconCalls };
+      return { pending: _pushFullStatePending, fetches: window._flushFetches };
     });
     expect(r.pending).toBe(false);
-    expect(r.beaconCalls.length).toBeGreaterThanOrEqual(1);
-    expect(r.beaconCalls[0].url).toContain('/push-full-state');
-    expect(r.beaconCalls[0].size).toBeGreaterThan(100);  // non-trivial payload
+    expect(r.fetches.length).toBeGreaterThanOrEqual(1);
+    const flushCall = r.fetches[r.fetches.length - 1];
+    expect(flushCall.keepalive).toBe(true);     // browser policy lets it survive tab close
+    expect(flushCall.method).toBe('POST');
+    expect(flushCall.hasAuth).toBe(true);       // Phase A — Authorization header required
+    expect(flushCall.bodyLen).toBeGreaterThan(100);  // non-trivial payload
   });
 
   test('Case 6: boot self-tests for push-on-save pass', async ({ page }) => {

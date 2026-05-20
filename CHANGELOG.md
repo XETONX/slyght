@@ -10,6 +10,58 @@
 
 ---
 
+## Bundle 32 Phase A — SHIPPED (2026-05-20 · device-token auth + KV namespacing)
+
+**Theme:** Closes the no-auth window opened by Bundle 32a. Every worker endpoint touching user state now requires a Bearer token; KV state is namespaced per device hash; pre-Phase-A state migrates one-shot to the bootstrap device on first authenticated request.
+
+**Authoritative spec:** `SECURITY.md` § "Phase A — Device identity & isolation". All boundaries (no E2E encryption, no OAuth, no login UI, no rotation/revocation/rate-limiting) preserved.
+
+**App (`index.html`):**
+- `_generateDeviceToken()` — 32-byte `crypto.getRandomValues` → base64url (43 chars, no padding)
+- `getDeviceToken()` — lazy lookup + regex validation + silent regen on corruption
+- `getAuthHeader()` — single source of truth, returns `'Bearer ' + getDeviceToken()`
+- All 5 worker fetches (`/subscribe`, `/sync`, `/push-full-state`, `/test`, `/unsubscribe`) inject the auth header
+- `_flushPushFullState` switched from `navigator.sendBeacon` to `PUSH.pushFullState({keepalive:true})` so the Authorization header can be carried on pagehide
+- Boot self-test +5 checks (token reachable · format valid · persistent · stable across calls · header builds with Bearer prefix)
+
+**Worker (`slyght-worker/src/index.js`):**
+- `requireDevice(req, env, corsHeaders)` — extracts Bearer token from header, returns `{hash, token}` or `{error: Response(401)}`. Regex `^Bearer\s+([A-Za-z0-9_-]{20,})$` (20+ chars for forward compat)
+- `ensureMigrated(hash, env)` — idempotent one-shot migration; only the FIRST device to authenticate inherits pre-Phase-A bare-key state; flag `device:{hash}:phase_a_migrated_v1` set LAST so partial migration retries cleanly
+- `devices:registered` JSON array of all known device hashes; cron handler iterates this list
+- 10 endpoints protected (/sync, /push-full-state, /pull-full-state, /pull-full-state-meta, /subscribe, /dismiss, /status, /snapshot, /test, /unsubscribe, /logs auth-required but logs remain global)
+- `/recon-payload` keeps its legacy query-param token (ADR-E deprecation pending)
+- `/` root unprotected (health check, returns `SLYGHT Worker OK`)
+- Cron handler refactored: iterates `devices:registered`, falls back to bare keys during bootstrap window (post-deploy but pre-first-auth)
+
+**Dev script (`scripts/recon/pull-from-kv.js`):**
+- Sends `Authorization: Bearer {token}` on `/pull-full-state` request
+- Token resolution order: `--token=` CLI arg → `SLYGHT_DEVICE_TOKEN` env var → embedded in existing state-snapshot.json's `S._deviceToken` field
+- 401 response handled with clear instruction; graceful-degradation contract preserved (keeps existing fixture on auth failure)
+
+**Smoke spec — `tests/smoke/phase-a-auth.smoke.js` (15 cases across 5 SECURITY.md categories):**
+1. **TOKEN_GEN_CORRECTNESS** — generation correctness (1a-1d): format/persistence/corruption-recovery/length-validation
+2. **AUTH_ENFORCEMENT** (2a-2c): missing → 401 / malformed (5 variants) → 401 / valid → 200
+3. **NAMESPACE_ISOLATION** (3a-3b): two-device cross-read returns 404 / no bare KV writes from auth'd app
+4. **MIGRATION_ONE_SHOT** (4a-4c): bootstrap copies legacy + sets flag + preserves originals / re-run no-op / second device does NOT inherit
+5. **GRACEFUL_DEGRADATION** (5a-5c): worker unreachable doesn't throw / 401 returns ok:false / token corruption preserves S
+
+Tests via stateful mock worker (Playwright `page.route`) that mirrors real worker auth + KV behaviour one-for-one.
+
+**Bundle 32a smoke modified:** Case 5 updated to verify `fetch + keepalive: true + Authorization header` instead of `navigator.sendBeacon`. Test intent preserved.
+
+**Verification:**
+- 127/127 smoke (was 112; +15 Phase A cases)
+- 12/12 scenario-walk
+- 4-layer Guardian PASS — "safe to push"
+
+**ADR:** `docs/adr/ADR-bundle-32-phase-a-device-tokens.md` — full architecture, values calls, known Phase B gaps.
+
+**SECURITY.md decision log:** Entry added 2026-05-20 documenting Phase A ship.
+
+**⚠️ Action required (John):** `cd slyght-worker && npx wrangler deploy` to activate auth enforcement. App ships auth headers immediately; deployed worker enforces them only after wrangler deploy. Pre-deploy: app + worker compatible (header ignored). Post-deploy: first authenticated push from John's phone triggers bootstrap migration.
+
+---
+
 ## Bundle 32a — SHIPPED (2026-05-20 · push-on-save → worker-KV + auto-pull smoke)
 
 **Theme:** Interstitial substrate that prevents `state-snapshot.json` from compounding staleness. App debounce-pushes full localStorage blob to worker-KV after every `save()`; dev side auto-pulls before every smoke run. CLAUDE.md §8 codifies state-aware ship messages so fixture age is always visible.
