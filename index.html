@@ -5604,13 +5604,55 @@ function getSurvivalForecast() {
   const upcomingDebtsTotal = upcomingDebts.reduce((s,d) => s+d.amt, 0);
 
   // Minimum needed to survive to payday
-  // = bills + debts + (days × minimum daily spend $15 for food/transport)
+  // = bills + debts + per-day living costs (trip-aware — see below)
   const minDailyNeeded = getMinDailySpend();
-  const minLivingCosts = days * minDailyNeeded;
+
+  // Bundle 32.3 Pass 2 — trip-aware per-day living cost arrays.
+  // For each day in the forecast horizon, ask BRAIN.plan.intent which
+  // trips are active on that calendar date. Inside any active trip's
+  // spendWindow, daily living cost = max(Σtrip uplifts, 0), which
+  // REPLACES minDailyNeeded (rationale: at-home baseline doesn't accrue
+  // while travelling; trip uplift IS the trip's full daily cost). Outside
+  // every active window, minDailyNeeded as before. Same trip-day branch
+  // applied to the comfortable curve, max'd against dailyMax so the
+  // comfortable budget never undercounts the trip plan.
+  // Per-day arrays are also used by the runOut loop (single source of
+  // truth — guarantees the conservation invariant: cycle deduction
+  // shown to the user equals the per-day deductions the loop actually
+  // applied).
+  const perDayLivingCost = new Array(days);
+  const perDayComfortCost = new Array(days);
+  let tripUpliftTotal = 0;
+  let tripActiveDays = 0;
+  for (let i = 0; i < days; i++) {
+    const dayDate = new Date(today);
+    dayDate.setDate(today.getDate() + i + 1);  // day i+1 from today (matches i=1..days loop below)
+    let uplift = 0;
+    try {
+      if (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.intent &&
+          typeof BRAIN.plan.intent.getActiveSpendingTrips === 'function') {
+        const activeTrips = BRAIN.plan.intent.getActiveSpendingTrips(dayDate);
+        for (const t of activeTrips) {
+          uplift += BRAIN.plan.intent.getUpliftPerDay(t);
+        }
+      }
+    } catch (_) { uplift = 0; }
+    if (uplift > 0) {
+      perDayLivingCost[i] = uplift;
+      perDayComfortCost[i] = Math.max(uplift, dailyMax);
+      tripUpliftTotal += uplift;
+      tripActiveDays++;
+    } else {
+      perDayLivingCost[i] = minDailyNeeded;
+      perDayComfortCost[i] = dailyMax;
+    }
+  }
+  const minLivingCosts = perDayLivingCost.reduce((s, v) => s + v, 0);
+  const comfortableLivingCosts = perDayComfortCost.reduce((s, v) => s + v, 0);
   const totalNeeded = upcomingBillsTotal + upcomingDebtsTotal + minLivingCosts;
 
-  // Comfortable amount (using actual max/day)
-  const comfortableNeeded = upcomingBillsTotal + upcomingDebtsTotal + (days * dailyMax);
+  // Comfortable amount (trip-aware — see comment above)
+  const comfortableNeeded = upcomingBillsTotal + upcomingDebtsTotal + comfortableLivingCosts;
 
   // How much short are we?
   const survivalShortfall = Math.max(0, parseFloat((totalNeeded - bal).toFixed(2)));
@@ -5639,8 +5681,8 @@ function getSurvivalForecast() {
       if (due.toDateString() === checkDate.toDateString()) tempBal -= d.amt;
     });
 
-    // Deduct minimum daily spend
-    tempBal -= minDailyNeeded;
+    // Deduct per-day living cost (trip-aware — see perDayLivingCost build above)
+    tempBal -= perDayLivingCost[i - 1];
 
     if (tempBal < 0 && !runOutDate) {
       runOutDate = checkDate;
@@ -5676,7 +5718,14 @@ function getSurvivalForecast() {
     willSurvive: survivalShortfall === 0,
     recommendBorrow,
     dailyWithBorrow: parseFloat(dailyWithBorrow.toFixed(2)),
-    dailyMax: parseFloat(dailyMax.toFixed(2))
+    dailyMax: parseFloat(dailyMax.toFixed(2)),
+    // Bundle 32.3 Pass 2 — trip-uplift transparency. Forecast consumers
+    // can detect whether trip-awareness affected the calc without
+    // re-walking the day loop. UI surfacing (banner row, hero summary)
+    // belongs in the alive-dashboard redesign, not Pass 2.
+    tripUpliftTotal: parseFloat(tripUpliftTotal.toFixed(2)),
+    tripActiveDays,
+    comfortableLivingCosts: parseFloat(comfortableLivingCosts.toFixed(2)),
   };
 }
 
@@ -16542,6 +16591,56 @@ const REAL_STATE_V17 = {
 })();
 // guardian-allow-block-end: no-direct-paidbills-access
 
+// Seed v27 (Bundle 32.3 Pass 2): planIntents.meta.covered shape upgrade.
+//   Before: ['flights', 'accommodation', 'car hire']  (string array)
+//   After:  [{name:'flights', amount:0}, {name:'accommodation', amount:0}, ...]
+// Backward-compat: missing amount defaults to 0 (conservative — treats item
+// as not-yet-paid; uplift formula counts full target/days). Future UI lets
+// John attach $ amounts to record what's prepaid; the trip-aware survival
+// forecast then subtracts coverage from the per-day uplift.
+// Idempotent via slyght_seeded_v27_covered_v2 flag + per-entry shape check.
+(function seedV27() {
+  const flag = 'slyght_seeded_v27_covered_v2';
+  if (localStorage.getItem(flag)) return;
+  try {
+    const raw = localStorage.getItem('slyght_v5');
+    if (!raw) { localStorage.setItem(flag, '1'); return; }
+    const d = JSON.parse(raw);
+    const S = d.S || {};
+    const intents = Array.isArray(S.planIntents) ? S.planIntents : [];
+    let upgraded = 0; const details = [];
+    for (const intent of intents) {
+      if (!intent || intent.kind !== 'trip') continue;
+      if (!intent.meta || !Array.isArray(intent.meta.covered)) continue;
+      const next = intent.meta.covered.map(e => {
+        if (e && typeof e === 'object' && 'amount' in e) return e;  // already upgraded
+        if (typeof e === 'string') return { name: e, amount: 0 };
+        return { name: String(e && e.name || e || ''), amount: 0 };
+      });
+      // Only write back when something changed (string → object)
+      const changed = next.some((e, i) => e !== intent.meta.covered[i]);
+      if (changed) {
+        intent.meta.covered = next;
+        upgraded++;
+        details.push({ id: intent.id, count: next.length });
+      }
+    }
+    if (upgraded > 0) {
+      if (!S.auditLog) S.auditLog = [];
+      S.auditLog.push({
+        type: 'seedV27-covered-v2-upgrade',
+        source: 'migration-covered-v2',
+        bundle: '32.3-pass-2',
+        upgraded, details,
+        ts: Date.now(),
+      });
+      d.S = S;
+      localStorage.setItem('slyght_v5', JSON.stringify(d));
+    }
+  } catch(e) { if (typeof SLYGHT_DEBUG !== 'undefined' && SLYGHT_DEBUG) console.warn('seedV27 error', e); }
+  localStorage.setItem(flag, '1');
+})();
+
 // Shared helper used by multiple systems
 function getBucketTotal() {
   return (S.savingsBuckets||[]).reduce((s,b) => s+(b.saved||0), 0);
@@ -19698,6 +19797,8 @@ const BRAIN = {
     PLAN_INTENT_REMOVE:        'plan-intent-remove',
     PLAN_INTENT_LINK_BUCKET:   'plan-intent-link-bucket',
     MIGRATION_INTENTS_V1:      'migration-intents-v1',
+    // Bundle 32.3 Pass 2 — covered-amount schema upgrade
+    MIGRATION_COVERED_V2:      'migration-covered-v2',
     // Bundle 28 forward-architecture — txn reclassification + bucket lifecycle
     TXN_RECLASSIFY:            'txn-reclassify',
     BUCKET_CREATE:             'bucket-create',
@@ -19778,6 +19879,8 @@ const BRAIN = {
     // Bundle 28 Phase 0 — PLAN.intents canonical entity
     'plan-intent-add', 'plan-intent-update', 'plan-intent-remove',
     'plan-intent-link-bucket', 'migration-intents-v1',
+    // Bundle 32.3 Pass 2 — covered-amount schema upgrade
+    'migration-covered-v2',
     // Bundle 28 forward-architecture
     'txn-reclassify',
     'bucket-create', 'bucket-update', 'bucket-delete',
@@ -20171,6 +20274,14 @@ const BRAIN = {
       ['markPaydayLandedToday wrapper reachable', () => typeof markPaydayLandedToday === 'function'],
       ['BRAIN.SOURCES.PAYDAY_MANUAL_LANDED defined', () => typeof BRAIN.SOURCES.PAYDAY_MANUAL_LANDED === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.PAYDAY_MANUAL_LANDED)],
       ['seedV25 ran (S.planIntents populated)', () => Array.isArray(S.planIntents) && S.planIntents.length > 0],
+      ['seedV27 ran (covered shape upgraded)', () => {
+        const trips = (S.planIntents||[]).filter(i => i && i.kind==='trip' && !i.archived && i.meta && Array.isArray(i.meta.covered));
+        // PASS if no trips have covered, OR every covered entry is an object with amount field
+        return trips.every(t => t.meta.covered.every(e => e && typeof e === 'object' && 'amount' in e));
+      }],
+      ['BRAIN.SOURCES.MIGRATION_COVERED_V2 defined', () => typeof BRAIN.SOURCES.MIGRATION_COVERED_V2 === 'string' && BRAIN._SOURCE_SET.has(BRAIN.SOURCES.MIGRATION_COVERED_V2)],
+      ['BRAIN.plan.intent.getUpliftPerDay reachable', () => typeof BRAIN.plan.intent.getUpliftPerDay === 'function'],
+      ['BRAIN.plan.intent.isActiveOn reachable', () => typeof BRAIN.plan.intent.isActiveOn === 'function'],
       ['_paydayExitToTab reachable', () => typeof _paydayExitToTab === 'function'],
       ['_paydayProgressBar reachable', () => typeof _paydayProgressBar === 'function'],
       ['openEditPaydayKiaExtra reachable', () => typeof openEditPaydayKiaExtra === 'function'],
@@ -22207,9 +22318,28 @@ const BRAIN = {
       //                                  without a window)
       //     kind === 'trip' + dates    → ACTIVE iff today ∈ [start, end]
       //
-      // Bundle 32.3 Pass 2 (forecast) will read isActive on trip intents
-      // to apply per-day spend uplift during trip days.
+      // Bundle 32.3 Pass 2 (forecast) reads isActiveOn(id, date) per
+      // forecast day to apply per-day spend uplift during trip days.
       isActive(id) {
+        return this.isActiveOn(id, new Date());
+      },
+      // Bundle 32.3 Pass 2 — parse 'YYYY-MM-DD' as LOCAL midnight (not UTC).
+      // The forecast iterates per-day at local midnight; the trip
+      // spendWindow must align with the user's local calendar — Jun 7 in
+      // Sydney is the day John lands in Darwin, not the +10h UTC offset.
+      // Fallback to default Date parsing for full ISO strings (with time).
+      _parseDateLocal(s) {
+        const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+        const d = new Date(s);
+        return isFinite(d.getTime()) ? d : new Date(NaN);
+      },
+      // Bundle 32.3 Pass 2: date-parameterised activation check. The forecast
+      // loop calls this for each future day in the survival horizon to
+      // determine whether trip-uplift applies that day. Manual override
+      // ('on'/'off') always wins regardless of date. Auto path checks
+      // whether `date` falls inside the trip's spendWindow.
+      isActiveOn(id, date) {
         const intent = this.get(id);
         if (!intent) return false;
         // Manual override always wins
@@ -22220,17 +22350,55 @@ const BRAIN = {
         if (intent.kind !== 'trip') return true;  // non-trip = always active
         // Trip: needs a spendWindow
         if (!intent.startDate || !intent.endDate) return false;
-        const now = Date.now();
-        const start = new Date(intent.startDate).getTime();
+        const target = (date instanceof Date) ? date.getTime() : new Date(date).getTime();
+        const start = this._parseDateLocal(intent.startDate).getTime();
         // endDate is inclusive (cover the full last day)
-        const end = new Date(intent.endDate).getTime() + 86400000 - 1;
-        if (!isFinite(start) || !isFinite(end)) return false;
-        return now >= start && now <= end;
+        const end = this._parseDateLocal(intent.endDate).getTime() + 86400000 - 1;
+        if (!isFinite(start) || !isFinite(end) || !isFinite(target)) return false;
+        return target >= start && target <= end;
       },
-      // Derived: all trip intents that are currently active. Pass 2
-      // forecast consumer reads this to compute trip-aware survival.
-      getActiveSpendingTrips() {
-        return this.byKind('trip').filter(t => this.isActive(t.id));
+      // Derived: all trip intents active on `date` (defaults to today).
+      // Pass 2 forecast consumer reads this per forecast day to compute
+      // trip-aware survival. No-arg call preserves pre-Pass-2 semantics.
+      getActiveSpendingTrips(date) {
+        const d = date || new Date();
+        return this.byKind('trip').filter(t => this.isActiveOn(t.id, d));
+      },
+      // Bundle 32.3 Pass 2: sum of `meta.covered[].amount` for an intent.
+      // String entries (pre-seedV27 shape) contribute 0 — conservative
+      // default that treats unmigrated items as not-yet-paid. Returns 0
+      // for non-trip kinds, missing meta, or non-array covered.
+      _coveredAmount(intent) {
+        if (!intent || intent.kind !== 'trip') return 0;
+        if (!intent.meta || !Array.isArray(intent.meta.covered)) return 0;
+        let sum = 0;
+        for (const e of intent.meta.covered) {
+          if (e && typeof e === 'object' && typeof e.amount === 'number' && isFinite(e.amount)) {
+            sum += Math.max(0, e.amount);
+          }
+          // String entries (pre-migration) contribute 0
+        }
+        return sum;
+      },
+      // Bundle 32.3 Pass 2: per-day spend uplift for a trip intent during
+      // its spendWindow. Formula:
+      //   uplift = max(0, (targetAmount - Σcovered) / days)
+      // Returns 0 for non-trips, intents without a valid spendWindow, or
+      // when coverage meets/exceeds target (fully prepaid). REPLACES the
+      // survival forecast's per-day minDailyNeeded during trip days per
+      // John's values call (ADR-bundle-32-3-forecast-trip-uplift.md).
+      getUpliftPerDay(intent) {
+        if (!intent || intent.kind !== 'trip') return 0;
+        if (!intent.startDate || !intent.endDate) return 0;
+        const start = this._parseDateLocal(intent.startDate).getTime();
+        const end = this._parseDateLocal(intent.endDate).getTime();
+        if (!isFinite(start) || !isFinite(end) || end < start) return 0;
+        const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+        const target = +intent.targetAmount || 0;
+        const covered = this._coveredAmount(intent);
+        const net = target - covered;
+        if (net <= 0) return 0;  // fully prepaid → no uplift
+        return net / days;
       },
       // Manual-activation writer. activation: 'on' | 'off' | null
       //   null clears the manual override → reverts to auto behavior.

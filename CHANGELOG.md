@@ -10,6 +10,49 @@
 
 ---
 
+## Bundle 32.3 Pass 2 — SHIPPED (2026-05-20 · trip-aware survival forecast)
+
+**Theme:** First column-4 forecast consumer of the planIntents canonical store. `getSurvivalForecast` becomes trip-aware via `BRAIN.plan.intent.getUpliftPerDay` + `isActiveOn(date)` per-day readers. No UI change — number-on-existing-surfaces shifts only.
+
+**Substrate (1 commit, 1 ADR, 1 smoke spec):**
+- New canonical readers on `BRAIN.plan.intent`: `_parseDateLocal`, `_coveredAmount`, `getUpliftPerDay(intent)`, `isActiveOn(id, date)`. `isActive(id)` refactored to delegate to `isActiveOn(id, new Date())` — single source of truth. `getActiveSpendingTrips(date)` extended with optional date arg (backwards compat — no-arg = today).
+- `getSurvivalForecast` pre-computes per-day living cost arrays (`perDayLivingCost`, `perDayComfortCost`) read by both the totals and the run-out loop → conservation invariant: shown total === sum the loop applied.
+- Returns 3 new transparency fields: `tripUpliftTotal`, `tripActiveDays`, `comfortableLivingCosts`.
+- **seedV27** boot migration upgrades `meta.covered` string entries (`'flights'`) to objects (`{name:'flights', amount:0}`). Idempotent per-entry via `'amount' in e` check. Audit-logged via `BRAIN.SOURCES.MIGRATION_COVERED_V2`.
+- **Latent bug fixed in passing:** Pass 1 `isActive()` parsed `'YYYY-MM-DD'` as UTC midnight; for Sydney users this made trips activate 10 hours late on their first day. Caught by Case 10 smoke (`tripActiveDays=8` instead of 9). Fixed via `_parseDateLocal()` parsing date-only strings as local-midnight.
+
+**Smoke spec — `tests/smoke/trip-forecast-uplift.smoke.js` (12 cases):**
+1. seedV27 migration (string → object, idempotent)
+2-4. `getUpliftPerDay` — full / partial / zero coverage
+5-6. `getUpliftPerDay` — non-trip / missing window → 0
+7. `isActiveOn` — boundary inclusivity
+8. `getActiveSpendingTrips(date)` — back-to-back overlapping trips
+9-10. Forecast — fully prepaid baseline preservation / uncovered uplift application
+11. **CONSERVATION** — `minLivingCosts === Σ perDayLivingCost`; `totalNeeded === bills + debts + minLivingCosts`
+12. Day-boundary — endDate inclusive, endDate+1 exits
+
+**ADR:** `docs/adr/ADR-bundle-32-3-forecast-trip-uplift.md` — documents the 4-part values call from John's 2026-05-20 batched directive (formula · vs floor · bucket deferral · scope).
+
+**Verification:**
+- 104/104 smoke (was 92/92; +12 Pass 2 cases)
+- 12/12 scenario-walk on 2 consecutive runs (1 flake on a 3rd run not reproducible)
+- 4-layer Guardian PASS (46 pre-existing WARN findings unchanged: hardcoded survival-mode + debt-strategy strings — future-proofing, no shipped bug)
+- Boot self-test extended by 4 checks (seedV27 ran, `MIGRATION_COVERED_V2` source, `getUpliftPerDay` reachable, `isActiveOn` reachable)
+
+**Numerical impact on John's live forecast (today 2026-05-20 → next payday 2026-06-15):**
+- Forecast horizon 21 days; Darwin (Jun 7-15) covers last 9 days of the horizon
+- With seedV27 defaulting Darwin's 3 covered entries to `amount: 0`, uplift = $900/9 = $100/day during the trip window
+- `minLivingCosts` increases by ≈ 9 × ($100 − $25 baseline) = ≈ +$675
+- `survivalShortfall` and `comfortableShortfall` tighten by the same magnitude
+- This is a **conservative pessimistic shift** until John attaches actual prepaid $ to `meta.covered` entries (Pass 3 UI / Pass 4 console fallback)
+
+**Open work tracked:**
+- Pass 3: PLAN dashboard consumer migration (per the audit addendum, sections stay separate per kind) + Trip edit form schema upgrade ($ per covered entry) + bucket-creation gap (Darwin)
+- Pass 4: phase out legacy `S.tripDefs` once 0 readers remain
+- Future: UI surfacing of trip-uplift contribution (banner row) — deferred to "alive Dashboard redesign"
+
+---
+
 ## Bundle 31 — SHIPPED (2026-05-19 single session · 14 commits 818d63a..c53e0c8)
 
 **Theme:** Phase 1A user gut-audit + Phase 1B vision-paired walkthrough → math/UX fixes + Guardian rule debt close-out + fixture refresh + methodology amendments.
