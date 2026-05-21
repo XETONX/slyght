@@ -228,6 +228,16 @@ test.describe('Bundle 32.3 Pass 2 — trip-aware survival forecast', () => {
           { name: 'car hire', amount: 0 },
         ] },
       }, BRAIN.SOURCES.PLAN_INTENT_UPDATE);
+      // Sub-bundle 1 Commit 2: forecast now uses {netOfBucket:true} in
+      // getUpliftPerDay. To test the "uncovered trip raises minLivingCosts"
+      // semantic in isolation, zero the linked Darwin Trip bucket so the
+      // net-of-bucket calc reduces to net-of-covered (the pre-Commit-2
+      // semantic this case originally locked).
+      const _darwin = BRAIN.plan.intent.get('darwin-2026');
+      if (_darwin && _darwin.bucketId) {
+        const _bucket = (S.savingsBuckets || []).find(b => b.name === _darwin.bucketId || b.id === _darwin.bucketId);
+        if (_bucket) _bucket.saved = 0;
+      }
       // Cancel any other trips so only Darwin contributes
       BRAIN.plan.intent.list({ kind: 'trip' }).forEach(t => {
         if (t.id !== 'darwin-2026') {
@@ -262,6 +272,14 @@ test.describe('Bundle 32.3 Pass 2 — trip-aware survival forecast', () => {
       BRAIN.plan.intent.update('darwin-2026', {
         meta: { days: 9, covered: [{ name: 'flights', amount: 180 }] },  // net = $720, $80/day
       }, BRAIN.SOURCES.PLAN_INTENT_UPDATE);
+      // Sub-bundle 1 Commit 2: zero the linked bucket so this case tests
+      // partial-coverage conservation in isolation (forecast's day-loop
+      // now consumes netOfBucket; sum-walk below must match).
+      const _darwin = BRAIN.plan.intent.get('darwin-2026');
+      if (_darwin && _darwin.bucketId) {
+        const _bucket = (S.savingsBuckets || []).find(b => b.name === _darwin.bucketId || b.id === _darwin.bucketId);
+        if (_bucket) _bucket.saved = 0;
+      }
       BRAIN.plan.intent.list({ kind: 'trip' }).forEach(t => {
         if (t.id !== 'darwin-2026') {
           BRAIN.plan.intent.setActivation(t.id, 'off', BRAIN.SOURCES.PLAN_INTENT_UPDATE);
@@ -271,14 +289,16 @@ test.describe('Bundle 32.3 Pass 2 — trip-aware survival forecast', () => {
         try { Object.assign(MODEL, computeFinancialModel()); } catch (_) {}
       }
       const f = getSurvivalForecast();
-      // Recompute per-day sum from the public API to assert conservation
+      // Recompute per-day sum from the public API to assert conservation.
+      // Match the forecast's {netOfBucket:true} call shape so the walk
+      // mirrors the production formula.
       const today = new Date(); today.setHours(0,0,0,0);
       let computedSum = 0;
       for (let i = 1; i <= f.days; i++) {
         const d = new Date(today); d.setDate(today.getDate() + i);
         const trips = BRAIN.plan.intent.getActiveSpendingTrips(d);
         let uplift = 0;
-        for (const t of trips) uplift += BRAIN.plan.intent.getUpliftPerDay(t);
+        for (const t of trips) uplift += BRAIN.plan.intent.getUpliftPerDay(t, { netOfBucket: true });
         computedSum += uplift > 0 ? uplift : f.minDailyNeeded;
       }
       return {

@@ -251,6 +251,129 @@ test.describe('Sub-bundle 1 — Cashflow Truth (Commit 1: isPaidInCycle substrat
     expect(r.detected).toBe(false);
   });
 
+  // ── Commit 2 cases: trip-aware daily-living substrate (Option C) ──
+
+  // Case 6a — Snapshot livingTotal under Option C with Darwin fully covered.
+  // Live state: Darwin Jun 7-15 ($800 target) fully covered by Darwin Trip
+  // bucket ($800 saved). cycleStartDate 2026-05-14, cycleEndDate 2026-06-14,
+  // daysInCycle 31. Trip days Jun 7-14 (8 days) overlap cycle. Under Option C,
+  // bucket fully covers → uplift = 0 on every trip day → livingTotal stays
+  // at floor × daysInCycle = $30 × 31 = $930. PROVES the substrate doesn't
+  // false-fire when bucket is funded.
+  test('Case 6a: snapshot dailyLiving.plannedTotal = floor × daysInCycle when trip is fully bucket-covered', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      return {
+        plannedTotal: snap.dailyLiving.plannedTotal,
+        floor: snap.dailyLiving.floor,
+        daysInCycle: snap.daysInCycle,
+        tripUpliftTotal: snap.dailyLiving.tripUpliftTotal,
+        tripActiveDays: snap.dailyLiving.tripActiveDays,
+      };
+    });
+    expect(r.floor).toBe(30);
+    expect(r.daysInCycle).toBe(31);
+    // Darwin fully bucket-covered → ZERO uplift, ZERO active trip days
+    expect(r.tripUpliftTotal).toBe(0);
+    expect(r.tripActiveDays).toBe(0);
+    // livingTotal exactly floor × daysInCycle
+    expect(r.plannedTotal).toBeCloseTo(r.floor * r.daysInCycle, 1);
+    expect(r.plannedTotal).toBeCloseTo(930, 1);
+  });
+
+  // Case 6b — Forecast Option C: Darwin bucket-covered → zero trip uplift.
+  // The forecast's daily-cost basis is getMinDailySpend() (dynamic, derived
+  // from 30-day spend pace, clamped [20, 40]), NOT snap's static floor.
+  // The hand-reconciliation's $720 number maps to snap.dailyLiving.floor ×
+  // daysRemaining and lives in Commit 3's safeToSpendHeadroom field.
+  // Here we assert what THIS commit's substrate change actually proves:
+  // forecast no longer adds bucket-funded uplift on trip days.
+  test('Case 6b: forecast Option C — bucket-covered trip contributes zero uplift', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      if (typeof getSurvivalForecast !== 'function') return { skip: true, reason: 'no-forecast-fn' };
+      const f = getSurvivalForecast();
+      return {
+        skip: false,
+        minLivingCosts: f.minLivingCosts,
+        minDailyNeeded: f.minDailyNeeded,
+        tripUpliftTotal: f.tripUpliftTotal,
+        tripActiveDays: f.tripActiveDays,
+        days: f.days,
+      };
+    });
+    if (r.skip) test.skip(true, r.reason);
+    // Darwin fully covered (Option C netOfBucket): zero trip uplift in forecast
+    expect(r.tripUpliftTotal).toBe(0);
+    expect(r.tripActiveDays).toBe(0);
+    // With zero trip uplift, minLivingCosts === days × minDailyNeeded
+    // (no trip extras). Asserts the relationship, not an absolute number,
+    // so dynamic minDailyNeeded variance doesn't break the test.
+    expect(r.minLivingCosts).toBeCloseTo(r.days * r.minDailyNeeded, 1);
+  });
+
+  // Case 7 — Synthetic underfund: zero out Darwin bucket → uplift fires.
+  // Validates the substrate actually responds to bucket state.
+  test('Case 7: zeroing Darwin bucket triggers trip uplift in snapshot + forecast', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      // Snapshot Darwin's current state, then zero its bucket
+      const darwin = (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.intent)
+        ? BRAIN.plan.intent.get('darwin-2026') : null;
+      if (!darwin) return { skip: true, reason: 'no-darwin-intent' };
+      const bucket = (S.savingsBuckets || []).find(b => b.name === darwin.bucketId || b.id === darwin.bucketId);
+      if (!bucket) return { skip: true, reason: 'no-darwin-bucket' };
+
+      const beforeSnap = BRAIN.plan.getSnapshot();
+      const beforeFc = (typeof getSurvivalForecast === 'function') ? getSurvivalForecast() : null;
+
+      const origSaved = bucket.saved;
+      bucket.saved = 0;
+      const afterSnap = BRAIN.plan.getSnapshot();
+      const afterFc = (typeof getSurvivalForecast === 'function') ? getSurvivalForecast() : null;
+      bucket.saved = origSaved;  // restore
+
+      return {
+        skip: false,
+        target: darwin.targetAmount,
+        bucketOriginal: origSaved,
+        snapLivingBefore: beforeSnap.dailyLiving.plannedTotal,
+        snapLivingAfter: afterSnap.dailyLiving.plannedTotal,
+        snapTripUpliftBefore: beforeSnap.dailyLiving.tripUpliftTotal,
+        snapTripUpliftAfter: afterSnap.dailyLiving.tripUpliftTotal,
+        forecastLivingBefore: beforeFc && beforeFc.minLivingCosts,
+        forecastLivingAfter: afterFc && afterFc.minLivingCosts,
+      };
+    });
+    if (r.skip) test.skip(true, r.reason);
+    // Substrate must actually respond: zero bucket → uplift fires
+    expect(r.snapTripUpliftBefore).toBe(0);
+    expect(r.snapTripUpliftAfter).toBeGreaterThan(0);
+    // Snap livingTotal grew by trip-days × residual_per_day
+    expect(r.snapLivingAfter).toBeGreaterThan(r.snapLivingBefore);
+    // Forecast also responds (proves the migrated L5828 call wired correctly)
+    expect(r.forecastLivingAfter).toBeGreaterThan(r.forecastLivingBefore);
+  });
+
+  // INV-uplift A — perDayLivingCost is the source-of-truth; plannedTotal sums it.
+  test('INV-uplift A: snap.dailyLiving.plannedTotal === Σ perDayLivingCost', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const arr = snap.dailyLiving.perDayLivingCost || [];
+      const sum = arr.reduce((s, v) => s + (+v || 0), 0);
+      return { plannedTotal: snap.dailyLiving.plannedTotal, sum, len: arr.length, daysInCycle: snap.daysInCycle };
+    });
+    expect(r.len).toBe(r.daysInCycle);
+    expect(Math.abs(r.plannedTotal - r.sum)).toBeLessThan(TOL);
+  });
+
+  // INV-uplift C — fully-covered trip contributes zero uplift days.
+  test('INV-uplift C: fully bucket-covered trip → tripUpliftTotal === 0', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      return { uplift: snap.dailyLiving.tripUpliftTotal };
+    });
+    expect(r.uplift).toBe(0);
+  });
+
   // Case 1f — Reconciliation oracle headline assertion.
   // The whole point of Commit 1: app reports the bill-paid truth that
   // matches today's hand-reconciliation. snap.bills.unpaidTotal pre-fix

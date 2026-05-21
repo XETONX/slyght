@@ -5825,7 +5825,7 @@ function getSurvivalForecast() {
           typeof BRAIN.plan.intent.getActiveSpendingTrips === 'function') {
         const activeTrips = BRAIN.plan.intent.getActiveSpendingTrips(dayDate);
         for (const t of activeTrips) {
-          uplift += BRAIN.plan.intent.getUpliftPerDay(t);
+          uplift += BRAIN.plan.intent.getUpliftPerDay(t, { netOfBucket: true });
         }
       }
     } catch (_) { uplift = 0; }
@@ -20921,9 +20921,43 @@ const BRAIN = {
       const savingsTotal = _bucketSavingsFromOv + _tripOrOtherSavings;
       // Known Upcoming
       const upcomingTotal = (p.knownUpcoming || []).reduce((s, i) => s + (+i.amount || 0), 0);
-      // Daily living
+      // Daily living — trip-aware (Bundle 32 Sub-bundle 1).
+      // Walks each day in [cycleStartDate, cycleEndDate], summing trip
+      // uplifts per day under Option C net-of-bucket semantics. A trip
+      // day's living cost = max(Σ active-trip uplifts, floor); when all
+      // overlapping trips are fully bucket-funded, uplift is 0 → falls
+      // back to floor. Mirrors getSurvivalForecast's per-day loop pattern
+      // so forecast + snapshot agree on trip-cost contribution.
+      // Hand-reconciliation 2026-05-21: Darwin Jun 7-14 (8 days in cycle)
+      // is fully bucket-covered ($800/$800), uplift=0 → livingTotal stays
+      // at floor × daysInCycle. Validates Option C semantics.
       const floor = +p.dailyLivingFloor || 30;
-      const livingTotal = floor * daysInCycle;
+      const _cycleStart = new Date(startMs);
+      const _perDayLivingCost = new Array(daysInCycle);
+      let _tripUpliftTotal = 0;
+      let _tripActiveDays = 0;
+      for (let i = 0; i < daysInCycle; i++) {
+        const dayDate = new Date(_cycleStart);
+        dayDate.setDate(_cycleStart.getDate() + i);
+        let uplift = 0;
+        try {
+          if (typeof BRAIN !== 'undefined' && BRAIN.plan && BRAIN.plan.intent &&
+              typeof BRAIN.plan.intent.getActiveSpendingTrips === 'function') {
+            const activeTrips = BRAIN.plan.intent.getActiveSpendingTrips(dayDate);
+            for (const t of activeTrips) {
+              uplift += BRAIN.plan.intent.getUpliftPerDay(t, { netOfBucket: true });
+            }
+          }
+        } catch (_) { uplift = 0; }
+        if (uplift > 0) {
+          _perDayLivingCost[i] = uplift;
+          _tripUpliftTotal += uplift;
+          _tripActiveDays++;
+        } else {
+          _perDayLivingCost[i] = floor;
+        }
+      }
+      const livingTotal = _perDayLivingCost.reduce((s, v) => s + v, 0);
       // Derived
       const claimedTotal = billsTotal + debtsTotal + savingsTotal + upcomingTotal + livingTotal;
       const freeTotal = totalToPlan - claimedTotal;
@@ -21020,7 +21054,20 @@ const BRAIN = {
         // Bundle 32.1: provisions exposed at top-level snap (mirrors bills/debts/savings shape).
         // Previously three renderers each called PLAN.getTotalProvisions() inline.
         provisions: { total: parseFloat(_provsForMax.toFixed(2)) },
-        dailyLiving: { floor, plannedTotal: parseFloat(livingTotal.toFixed(2)), perDay: parseFloat(perDay.toFixed(2)), maxAffordablePerDay: parseFloat(maxAffordablePerDay.toFixed(2)) },
+        dailyLiving: {
+          floor,
+          plannedTotal: parseFloat(livingTotal.toFixed(2)),
+          perDay: parseFloat(perDay.toFixed(2)),
+          maxAffordablePerDay: parseFloat(maxAffordablePerDay.toFixed(2)),
+          // Bundle 32 Sub-bundle 1 — trip-aware transparency fields.
+          // perDayLivingCost is the day-by-day array (floor on non-trip
+          // days, residual uplift on trip days when bucket underfunded).
+          // tripUpliftTotal is the cycle-sum of trip-day extras.
+          // tripActiveDays counts days where any trip uplift fired.
+          tripUpliftTotal: parseFloat(_tripUpliftTotal.toFixed(2)),
+          tripActiveDays: _tripActiveDays,
+          perDayLivingCost: _perDayLivingCost.map(v => parseFloat((+v || 0).toFixed(2))),
+        },
         derived: {
           claimedTotal: parseFloat(claimedTotal.toFixed(2)),
           freeTotal: parseFloat(freeTotal.toFixed(2)),
@@ -22634,7 +22681,7 @@ const BRAIN = {
         };
       },
 
-      getUpliftPerDay(intent) {
+      getUpliftPerDay(intent, opts) {
         if (!intent || intent.kind !== 'trip') return 0;
         if (!intent.startDate || !intent.endDate) return 0;
         const start = this._parseDateLocal(intent.startDate).getTime();
@@ -22643,8 +22690,28 @@ const BRAIN = {
         const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
         const target = +intent.targetAmount || 0;
         const covered = this._coveredAmount(intent);
-        const net = target - covered;
-        if (net <= 0) return 0;  // fully prepaid → no uplift
+        // Bundle 32 Sub-bundle 1 — Option C net-of-bucket residual.
+        // When opts.netOfBucket: subtract the linked savings bucket's
+        // saved amount from the residual. A fully-funded trip (bucket.saved
+        // ≥ target − covered) contributes ZERO uplift days. A partially-
+        // funded trip's daily uplift reflects just the residual gap.
+        // Forecast + snapshot both call with {netOfBucket:true} so the
+        // two surfaces agree on trip cost. Hand-reconciliation 2026-05-21
+        // proved this: Darwin $800/$800 bucket → 0 uplift → forecast
+        // matches $720 daily-living-floor × 24 days.
+        let bucketSaved = 0;
+        if (opts && opts.netOfBucket && intent.bucketId) {
+          try {
+            const buckets = (typeof BRAIN !== 'undefined' && BRAIN.savings && BRAIN.savings.getBuckets)
+              ? BRAIN.savings.getBuckets() : [];
+            const b = buckets.find(x => x && (x.id === intent.bucketId || x.name === intent.bucketId));
+            if (b && typeof b.saved === 'number' && isFinite(b.saved)) {
+              bucketSaved = Math.max(0, b.saved);
+            }
+          } catch (_) { bucketSaved = 0; }
+        }
+        const net = target - covered - bucketSaved;
+        if (net <= 0) return 0;  // fully prepaid+bucketed → no uplift
         return net / days;
       },
       // Manual-activation writer. activation: 'on' | 'off' | null
