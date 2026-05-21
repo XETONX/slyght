@@ -4442,8 +4442,17 @@ function getBillsDue() {
   const payday = S.payday || 15;
   const bills = getExpandedBills();
   const now = new Date();
-  // C2: exclude bills already marked paid this month
+  // C2: exclude bills already marked paid this cycle.
+  // Bundle 32 Sub-bundle 1: canonical reader BRAIN.bills.isPaidInCycle adds
+  // txn-match fallback (heals the F2/F5/H1 cluster — 22 downstream surfaces
+  // transitively read this helper). Fallback to legacy isThisMonthlyBillPaid
+  // if BRAIN.bills isn't initialized (boot order edge case).
   function isPaid(b) {
+    if (typeof BRAIN !== 'undefined' && BRAIN.bills && typeof BRAIN.bills.isPaidInCycle === 'function') {
+      const cycleStart = (typeof S !== 'undefined' && S.activePlan && S.activePlan.cycleStartDate)
+        ? new Date(S.activePlan.cycleStartDate) : new Date();
+      return BRAIN.bills.isPaidInCycle(b, cycleStart);
+    }
     return isThisMonthlyBillPaid(b.name, b.day);
   }
   if (today < payday) {
@@ -7650,10 +7659,17 @@ function renderDebtTiles() {
               const linkedBill = (typeof BILLS !== 'undefined' ? BILLS : []).find(b => b && b.name === linkName);
               const depositPortion = linkedBill && linkedBill.breakdown && +linkedBill.breakdown.depositSavings;
               if (linkedBill && depositPortion > 0) {
-                const now = new Date();
-                const y = now.getFullYear(), m = now.getMonth() + 1;
-                const isPaid = typeof isThisMonthlyBillPaid === 'function'
-                  ? isThisMonthlyBillPaid(linkedBill.name, linkedBill.day, m, y)
+                // Bundle 32 Sub-bundle 1: migrate to BRAIN.bills.isPaidInCycle.
+                // Pre-fix passed `now.getMonth() + 1` (1-indexed) to
+                // isThisMonthlyBillPaid which expects 0-indexed — latent
+                // off-by-one (auditor caveat C4). Canonical reader takes a
+                // Date so the indexing class evaporates; also picks up
+                // txn-match fallback (rent-paid via bank but unticked
+                // would now render correctly).
+                const cycleStart = (typeof S !== 'undefined' && S.activePlan && S.activePlan.cycleStartDate)
+                  ? new Date(S.activePlan.cycleStartDate) : new Date();
+                const isPaid = (typeof BRAIN !== 'undefined' && BRAIN.bills && typeof BRAIN.bills.isPaidInCycle === 'function')
+                  ? BRAIN.bills.isPaidInCycle(linkedBill, cycleStart)
                   : false;
                 cycleNote = isPaid
                   ? '<div style="font-size:11px;color:var(--green);font-family:var(--mono);margin-top:2px">✓ ' + fmt(depositPortion) + ' paid this cycle</div>'
@@ -20456,6 +20472,7 @@ const BRAIN = {
       ['convertEditedTransactionToLoan reachable', () => typeof convertEditedTransactionToLoan === 'function'],
       ['_buildPaydayAskAIPrompt reachable', () => typeof _buildPaydayAskAIPrompt === 'function'],
       ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
+      ['BRAIN.bills.isPaidInCycle reachable', () => typeof BRAIN.bills.isPaidInCycle === 'function'],
       ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
       ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
       ['BRAIN.assets.netWorth callable', () => { BRAIN.assets.netWorth(); return true; }],
@@ -24498,12 +24515,34 @@ const BRAIN = {
         return { ok: false, reason: 'invalid-bill' };
       }
       const opts = options || {};
-      // Bundle 31 Item 16: accept optional cycle-relative month/year for
-      // bills whose debit-day falls in a different calendar month than
-      // today (e.g. day=15 bills in a payday-15 cycle start in the
-      // cycle-start month, not today's month). Defaults to today via
-      // paidBillKey's argless behaviour — existing callers unaffected.
-      const key = paidBillKey(bill.name, bill.day, opts.month, opts.year);
+      // Bundle 32 Sub-bundle 1: when caller doesn't pass opts.month/year,
+      // derive cycle-relative month/year from S.activePlan.cycleStartDate +
+      // bill.day vs payday. Pre-fix manual markPaid callers defaulted to
+      // today's month/year, which collided with prior-cycle keys for
+      // day<payday bills (e.g. a day-6 bill paid in current cycle's
+      // June 6 occurrence vs prior cycle's May 6 occurrence). Now
+      // canonical: writers and readers (BRAIN.bills.isPaidInCycle) use
+      // the same cycle-relative convention.
+      // Bundle 31 Item 16 path: explicit opts.month/opts.year still honoured
+      // (processAutoDebits already does this correctly).
+      let resolvedMonth = opts.month;
+      let resolvedYear = opts.year;
+      if (resolvedMonth === undefined || resolvedYear === undefined) {
+        const cs = (typeof S !== 'undefined' && S.activePlan && S.activePlan.cycleStartDate)
+          ? new Date(S.activePlan.cycleStartDate) : new Date();
+        if (isFinite(cs.getTime())) {
+          const payday = +S.payday || 15;
+          let m = cs.getMonth();
+          let y = cs.getFullYear();
+          if (typeof bill.day === 'number' && bill.day < payday) {
+            m += 1;
+            if (m > 11) { m = 0; y += 1; }
+          }
+          if (resolvedMonth === undefined) resolvedMonth = m;
+          if (resolvedYear === undefined) resolvedYear = y;
+        }
+      }
+      const key = paidBillKey(bill.name, bill.day, resolvedMonth, resolvedYear);
       let txnTs;
       let autoDebit = !!opts.autoDebit;
       if (typeof opts.txnTs === 'number') {
@@ -24868,10 +24907,86 @@ const BRAIN = {
       const list = (typeof BILLS !== 'undefined' && Array.isArray(BILLS))
         ? BILLS.filter(b => b && b.recurring !== false && (typeof isBillDueThisMonth === 'function' ? isBillDueThisMonth(b) : true))
         : [];
-      // Annotate with paid status (legacy isThisMonthlyBillPaid)
+      // Bundle 32 Sub-bundle 1 — paid annotation via canonical isPaidInCycle
+      // (cycle-bound + OR-shape: explicit flag OR txn-match fallback). Pre-fix
+      // used isThisMonthlyBillPaid (flag-only) → billsUnpaidTotal inflated by
+      // ~$5,479 against bank reality (2026-05-21 reconciliation).
+      const cycleStart = (typeof S !== 'undefined' && S.activePlan && S.activePlan.cycleStartDate)
+        ? new Date(S.activePlan.cycleStartDate) : new Date();
       return list.map(b => Object.assign({}, b, {
-        paid: (typeof isThisMonthlyBillPaid === 'function') ? isThisMonthlyBillPaid(b.name, b.day) : false,
+        paid: this.isPaidInCycle(b, cycleStart),
       }));
+    },
+
+    // Bundle 32 Sub-bundle 1 — cashflow truth canonical reader.
+    // "Is this bill paid this cycle?" — single OR-shape reader that fuses:
+    //   Path 1: explicit S.paidBills[key] truthy entry (set by markPaid /
+    //           processAutoDebits / autoMatch / autoDetect / chat AI)
+    //   Path 2: matching txn within ±5 days, ±$2 amount, name-keyword fuzzy
+    //           (forensic fallback for bank-side autodebits user never ticked)
+    //
+    // Replaces ~22 surfaces previously calling isThisMonthlyBillPaid
+    // flag-only via getBillsDue + getThisCycle. 2026-05-21 reconciliation
+    // proved the gap: 10 paid bills had matching txns but no paidBills
+    // entry → billsUnpaidTotal $5,638 (wrong) vs $188 (truth).
+    //
+    // cycleStartDate is the canonical anchor — bill's effective billDate is
+    // computed cycle-relative (mirrors processAutoDebits' month math), and
+    // the ±5d window is clamped to [cycleStartDate, today] so prior-cycle
+    // txns can't satisfy current-cycle paid-state.
+    isPaidInCycle(bill, cycleStartDate) {
+      if (!bill || typeof bill.name !== 'string') return false;
+      const cs = (cycleStartDate instanceof Date && isFinite(cycleStartDate.getTime()))
+        ? cycleStartDate : new Date();
+      const csMs = cs.getTime();
+      const csMonth = cs.getMonth();
+      const csYear = cs.getFullYear();
+      const payday = +S.payday || 15;
+
+      // Cycle-relative bill date — mirror processAutoDebits cycle math.
+      // Bills with day >= payday land in cycle's start month;
+      // bills with day < payday roll into cycle's end month.
+      let billMonth = csMonth;
+      let billYear = csYear;
+      if (typeof bill.day === 'number' && bill.day < payday) {
+        billMonth += 1;
+        if (billMonth > 11) { billMonth = 0; billYear += 1; }
+      }
+
+      // Path 1: explicit paidBills key for the cycle-resolved month/year.
+      // markPaid is responsible for writing the cycle-relative key (see
+      // markPaid's cycle-derive block — pre-fix manual callers defaulted
+      // to today's-month, which collided with prior-cycle keys for
+      // day<payday bills; cycle-derive makes the convention uniform).
+      if (typeof isThisMonthlyBillPaid === 'function' &&
+          isThisMonthlyBillPaid(bill.name, bill.day, billMonth, billYear)) {
+        return true;
+      }
+
+      // Path 2: txn-match fallback. Future bills can't be paid yet.
+      if (typeof bill.day !== 'number') return false;
+      const billDate = new Date(billYear, billMonth, bill.day);
+      const billTs = billDate.getTime();
+      const nowTs = Date.now();
+      if (billTs > nowTs) return false;
+      if (billTs < csMs) return false;  // defensive: bill outside this cycle
+
+      const txns = (typeof S !== 'undefined' && Array.isArray(S.txns)) ? S.txns : [];
+      if (!txns.length) return false;
+      const targetAmt = +bill.amt || 0;
+      const billKeyword = (bill.name || '').toLowerCase()
+        .split(/[\s\-—]+/).find(w => w.length >= 4) || '';
+      if (!billKeyword) return false;
+      const windowMs = 5 * 86400000;
+      return txns.some(t => {
+        if (!t || t.income || t._isRoundup || t._isCorrection) return false;
+        const tTs = +t.ts || 0;
+        if (tTs < csMs) return false;          // clamp: only this cycle's txns
+        if (Math.abs(tTs - billTs) > windowMs) return false;
+        if (Math.abs((+t.amt || 0) - targetAmt) > 2) return false;
+        const note = (t.note || '').toLowerCase();
+        return note.indexOf(billKeyword) >= 0;
+      });
     },
 
     // ─── Auto-detect / Auto-match (relocated, not unified) ──────────────
