@@ -439,6 +439,160 @@ test.describe('Sub-bundle 1 — Cashflow Truth (Commit 1: isPaidInCycle substrat
     expect(recovered).toBeCloseTo(r.cash, 1);
   });
 
+  // ── Commit 4a cases: hero render + receipt + cash-now footer ──
+
+  // Case 10 — Hero displays the safeToSpendHeadroom, NOT S.bal.
+  // Negative against oracle → coral class applied.
+  test('Case 10: hero element displays safeToSpendHeadroom and applies coral when negative', async ({ page }) => {
+    // Wait for full render — the new hero render runs inside renderAll
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#h-bal');
+      return el && el.textContent && el.textContent.length > 0;
+    }, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const hbal = document.querySelector('#h-bal');
+      const ctx = document.querySelector('.hero-section .hero-ctx');
+      return {
+        heroText: hbal && hbal.textContent,
+        heroClass: hbal && hbal.className,
+        heroLabel: ctx && ctx.textContent,
+        headroom: snap.derived.safeToSpendHeadroom,
+        bal: S.bal,
+      };
+    });
+    // Hero displays the headroom value, not S.bal. parseFloat preserves
+    // sign so signed-vs-signed comparison.
+    const heroNum = parseFloat(String(r.heroText).replace(/[^\d.-]/g, ''));
+    expect(heroNum).toBeCloseTo(r.headroom, 0);
+    // And NOT S.bal (the pre-Commit-4 hero value)
+    expect(Math.abs(heroNum - r.bal)).toBeGreaterThan(50);
+    // Against oracle (negative headroom) → coral class applied
+    expect(r.heroClass).toContain('coral');
+    // Hero label switched to safe-to-spend framing
+    expect(r.heroLabel).toContain('SAFE TO SPEND');
+    expect(r.heroLabel).toContain('DAYS TO PAYDAY');
+  });
+
+  // Case 11 — Receipt sub-line renders the math literally.
+  test('Case 11: receipt sub-line renders cash − bills − living = headroom', async ({ page }) => {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#cashflow-receipt');
+      return el && el.style.display !== 'none' && el.innerHTML && el.innerHTML.length > 0;
+    }, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const receipt = document.querySelector('#cashflow-receipt');
+      const snap = BRAIN.plan.getSnapshot();
+      return {
+        receiptHTML: receipt && receipt.innerHTML,
+        receiptVisible: receipt && receipt.style.display !== 'none',
+        cash: snap.derived.cashflowReceipt.cash,
+        billsStillDue: snap.derived.cashflowReceipt.billsStillDue,
+        livingRemaining: snap.derived.cashflowReceipt.livingRemaining,
+        headroom: snap.derived.cashflowReceipt.headroom,
+      };
+    });
+    expect(r.receiptVisible).toBe(true);
+    // Receipt contains each term as text
+    expect(r.receiptHTML).toContain('bills');
+    expect(r.receiptHTML).toContain('living');
+    // Coral result class when negative
+    if (r.headroom < 0) expect(r.receiptHTML).toContain('rcpt-result-neg');
+  });
+
+  // Case 12 — Failure line surfaces "over by $X" with run-dry date when negative.
+  test('Case 12: failure line shows "over by $X · runs dry" when negative', async ({ page }) => {
+    await page.waitForFunction(() => typeof BRAIN !== 'undefined' && BRAIN.dashboard
+      && typeof BRAIN.dashboard.getBurn7d === 'function', { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const failLine = document.querySelector('#cashflow-failure-line');
+      const snap = BRAIN.plan.getSnapshot();
+      return {
+        failText: failLine && failLine.textContent,
+        failVisible: failLine && failLine.style.display !== 'none',
+        headroom: snap.derived.safeToSpendHeadroom,
+      };
+    });
+    if (r.headroom < 0) {
+      expect(r.failVisible).toBe(true);
+      expect(r.failText).toContain('over by');
+    } else {
+      expect(r.failVisible).toBe(false);
+    }
+  });
+
+  // Case 13 — Cash-now footer displays S.bal as verified anchor.
+  test('Case 13: cash-now footer renders S.bal with verified indicator', async ({ page }) => {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#cash-now-footer');
+      return el && el.style.display !== 'none';
+    }, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const cnf = document.querySelector('#cash-now-footer');
+      return {
+        footerHTML: cnf && cnf.innerHTML,
+        footerVisible: cnf && cnf.style.display !== 'none',
+        bal: S.bal,
+      };
+    });
+    expect(r.footerVisible).toBe(true);
+    expect(r.footerHTML).toContain('in account now');
+    expect(r.footerHTML).toContain('verified');
+    // Footer shows S.bal value
+    expect(r.footerHTML).toContain(r.bal.toFixed(2));
+  });
+
+  // Case 14 — getTopDiscretionaryCategory reader returns a structured result.
+  test('Case 14: getTopDiscretionaryCategory ranks discretionary spend and returns biggest', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const cycleStart = new Date(S.activePlan.cycleStartDate);
+      return BRAIN.dashboard.getTopDiscretionaryCategory(cycleStart);
+    });
+    // Shape verified — name may be null if no discretionary activity
+    expect(r).toBeTruthy();
+    expect('name' in r).toBe(true);
+    expect('amount' in r).toBe(true);
+    expect('projectedSaving7d' in r).toBe(true);
+    // Against live oracle, John has heavy gaming/weed activity — should
+    // surface one of the cuttable buckets.
+    if (r.amount > 0) {
+      expect(['gaming', 'takeaway', 'weed', 'coffee', 'food-out']).toContain(r.name);
+    }
+  });
+
+  // Case 15 — getBurn7d returns 7-day discretionary burn with floor multiple.
+  test('Case 15: getBurn7d computes 7-day burn + multiple of floor', async ({ page }) => {
+    const r = await page.evaluate(() => BRAIN.dashboard.getBurn7d());
+    expect(typeof r.total).toBe('number');
+    expect(typeof r.perDay).toBe('number');
+    expect(typeof r.multiple).toBe('number');
+    expect(r.floor).toBe(30);
+    // Live state has heavy recent spending — perDay should be > floor
+    if (r.txnCount > 0) {
+      expect(r.perDay).toBeGreaterThan(0);
+      expect(r.multiple).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  // Case 16 — computeHeadroomAtFloor simulates recovery levers.
+  test('Case 16: computeHeadroomAtFloor returns headroom at alternative floor inputs', async ({ page }) => {
+    const r = await page.evaluate(() => ({
+      at30: BRAIN.dashboard.computeHeadroomAtFloor(30),
+      at25: BRAIN.dashboard.computeHeadroomAtFloor(25),
+      at20: BRAIN.dashboard.computeHeadroomAtFloor(20),
+      current: BRAIN.plan.getSnapshot().derived.safeToSpendHeadroom,
+    }));
+    // All three should be numbers
+    expect(typeof r.at30).toBe('number');
+    expect(typeof r.at25).toBe('number');
+    expect(typeof r.at20).toBe('number');
+    // Lower floor → higher headroom (saving on daily living)
+    expect(r.at25).toBeGreaterThan(r.at30 - 0.5);
+    expect(r.at20).toBeGreaterThan(r.at25 - 0.5);
+    // At current floor (oracle has $30), should match current headroom
+    expect(r.at30).toBeCloseTo(r.current, 1);
+  });
+
   // Case 1f — Reconciliation oracle headline assertion.
   // The whole point of Commit 1: app reports the bill-paid truth that
   // matches today's hand-reconciliation. snap.bills.unpaidTotal pre-fix

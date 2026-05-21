@@ -420,6 +420,18 @@ select.payday-dropdown-select option{background:var(--bg2);color:var(--text);pad
 .hero-ctx{font-size:13px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
 .hero-bal{font-family:var(--mono);font-size:58px;font-weight:700;letter-spacing:-4px;line-height:1;margin-bottom:4px;transition:color .3s}
 .hero-bal.ok{color:var(--green)}.hero-bal.warn{color:var(--amber)}.hero-bal.bad{color:var(--red)}
+/* Bundle 32 Sub-bundle 1 Commit 4 — coral state for negative safe-to-spend headroom. */
+.hero-bal.coral{color:#ED93B1}
+.hero-bal.coral-amount-warn{color:#ED93B1}
+.cashflow-failure-line{font-size:13px;color:#ED93B1;margin:2px 0 4px;font-weight:600}
+.cashflow-safe-label{font-size:11px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase;font-weight:600;margin-bottom:4px}
+.cashflow-receipt{font-family:var(--mono);font-size:13px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:6px 0 4px;white-space:nowrap;overflow-x:auto}
+.cashflow-receipt .rcpt-bills{color:#ED93B1}
+.cashflow-receipt .rcpt-living{color:var(--amber)}
+.cashflow-receipt .rcpt-result-neg{color:#ED93B1;font-weight:700}
+.cashflow-receipt .rcpt-result-pos{color:var(--green);font-weight:700}
+.cash-now-footer{font-size:12px;color:var(--text3);text-align:center;padding:10px 0 4px;font-family:var(--mono)}
+.cash-now-footer .verified{color:var(--green);margin-left:6px}
 .hero-note{font-size:14px;color:var(--text2);margin-bottom:2px}
 /* PAYDAY BAR */
 .pd-row{display:flex;align-items:center;gap:12px;margin:14px 0 18px}
@@ -860,6 +872,9 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
       <div class="hero-ctx">Virgin Money</div>
       <div class="hero-bal" id="h-bal" onclick="openHeroBalEdit()" title="Tap to update balance" style="cursor:pointer">$0.00</div>
       <div id="h-bal-edit" style="display:none;margin-bottom:4px"><input id="h-bal-input" type="number" inputmode="decimal" style="font-size:22px;font-family:var(--mono);font-weight:700;background:var(--bg3);border:1px solid var(--green);border-radius:var(--r-sm);padding:8px 12px;color:var(--text);width:160px;text-align:center" placeholder="New balance"><button onclick="confirmHeroBalEdit()" style="margin-left:8px;background:var(--green-dim);border:1px solid var(--green-border);color:var(--green);border-radius:var(--r-sm);padding:8px 14px;font-weight:700;font-size:14px;cursor:pointer">Save</button><button onclick="cancelHeroBalEdit()" style="margin-left:6px;background:var(--bg3);border:1px solid var(--border);color:var(--text3);border-radius:var(--r-sm);padding:8px 12px;font-size:14px;cursor:pointer">✕</button></div>
+      <!-- Bundle 32 Sub-bundle 1 Commit 4 — cashflow-truth hero presentation -->
+      <div id="cashflow-failure-line" class="cashflow-failure-line" style="display:none"></div>
+      <div id="cashflow-receipt" class="cashflow-receipt" style="display:none"></div>
       <div class="hero-note" id="h-note"></div>
       <div class="nw-line" onclick="openNetWorthModal()">
         <span style="font-size:13px;color:var(--text3);font-weight:500">Liquid net worth <span style="font-size:10px;color:var(--text3);opacity:.6">· tap for full picture</span></span>
@@ -909,6 +924,8 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
         <button class="add-btn" onclick="openQuickLogModal()" style="margin-top:4px">+ Log a transaction</button>
       </div>
       <!-- Long-term liabilities, WRX tracker, mum card, affordability check moved to Plan Mode -->
+      <!-- Bundle 32 Sub-bundle 1 Commit 4 — cash-now footer (the verified anchor below the hero number). -->
+      <div id="cash-now-footer" class="cash-now-footer" style="display:none"></div>
     </div>
   </div>
 
@@ -6750,33 +6767,107 @@ function renderAll() {
   const today = new Date().getDate();
   const isPayday = today === (S.payday || 15);
 
+  // Bundle 32 Sub-bundle 1 Commit 4 — cashflow truth hero presentation.
+  // Hero shows snap.derived.safeToSpendHeadroom (the answer the app
+  // exists to produce), receipt sub-line shows the math, coral state when
+  // negative. Pre-Commit-4 displayed S.bal — a false-positive comfort
+  // number that hid the cycle obligations. The 2026-05-21 hand-recon
+  // proved the gap ($802.66 in account vs −$137 actual headroom).
+  //
+  // Falls back to S.bal display when snap.derived isn't yet computed
+  // (boot order edge case — preserved prior behaviour so a partial-init
+  // page doesn't crash). After full settle, always shows headroom.
+  let _heroNumber = +liveBal;          // fallback
+  let _heroLabel = '';
+  let _heroIsHeadroom = false;
+  let _cashflow = null;
+  try {
+    const _snap = BRAIN.plan.getSnapshot();
+    if (_snap && _snap.derived && typeof _snap.derived.safeToSpendHeadroom === 'number') {
+      _heroNumber = _snap.derived.safeToSpendHeadroom;
+      _heroIsHeadroom = true;
+      _cashflow = _snap.derived.cashflowReceipt;
+      _heroLabel = 'SAFE TO SPEND · ' + (_snap.daysRemaining || 0) + ' DAYS TO PAYDAY';
+    }
+  } catch (_) { /* substrate not ready; fall back below */ }
+
   const _hbal = $('h-bal');
   if (_hbal) {
-    // r76 (John 2026-05-14 ask: "pulsing and shading and transition"):
-    // animate the hero balance value when it changes — counter rolls
-    // from previous to current, then the element pulses green (balance
-    // up) or red (balance down). Skip on first render (no previous).
+    // r76 animation behavior preserved (counter-roll + pulse on change).
+    // State class swap: 'coral' when negative headroom, 'ok' when positive
+    // headroom or positive cash fallback, 'warn' for low-cash fallback.
     const _prev = parseFloat(_hbal.dataset.lastVal);
-    const _next = +liveBal;
+    const _next = +_heroNumber;
     if (typeof _animateCounter === 'function' && !isNaN(_prev) && Math.abs(_next - _prev) >= 0.5) {
       _animateCounter({ el: _hbal, from: _prev, to: _next, durationMs: 380, format: (n) => fmtC(n) });
       if (typeof _pulseEl === 'function') _pulseEl(_hbal, _next > _prev ? 'pos' : 'neg');
     } else {
-      _hbal.textContent = fmtC(liveBal);
+      _hbal.textContent = fmtC(_heroNumber);
     }
     _hbal.dataset.lastVal = String(_next);
-    _hbal.className = 'hero-bal ' + (liveBal < 0 ? 'bad' : liveBal < 300 ? 'warn' : 'ok');
+    // Coral when headroom is negative; otherwise use legacy cash-tier
+    // class (ok/warn/bad) so fallback behaviour mirrors pre-Commit-4.
+    if (_heroIsHeadroom && _heroNumber < 0) {
+      _hbal.className = 'hero-bal coral';
+    } else {
+      _hbal.className = 'hero-bal ' + (_heroNumber < 0 ? 'bad' : _heroNumber < 300 ? 'warn' : 'ok');
+    }
   }
+
+  // Hero context label — "SAFE TO SPEND · 24 DAYS TO PAYDAY" when
+  // headroom available; falls back to the legacy "Virgin Money" label
+  // when substrate not yet computed.
+  const _heroCtx = document.querySelector('.hero-section .hero-ctx');
+  if (_heroCtx) {
+    _heroCtx.textContent = _heroIsHeadroom ? _heroLabel : 'Virgin Money';
+    if (_heroIsHeadroom) {
+      _heroCtx.style.letterSpacing = '0.08em';
+      _heroCtx.style.fontWeight = '600';
+    }
+  }
+
+  // Failure line — only when headroom is negative. "you're over by $X ·
+  // runs dry MMM dd" computed from current burn pace (not floor pace —
+  // shows the real trajectory).
+  const _failLine = $('cashflow-failure-line');
+  if (_failLine) {
+    if (_heroIsHeadroom && _heroNumber < 0) {
+      const _over = Math.abs(_heroNumber);
+      let _runDryStr = '';
+      try {
+        const _b7d = BRAIN.dashboard.getBurn7d();
+        if (_b7d.perDay > 0 && S.bal > 0) {
+          const _daysToZero = Math.floor(S.bal / _b7d.perDay);
+          const _dryDate = new Date(Date.now() + _daysToZero * 86400000);
+          _runDryStr = ' · runs dry ' + _dryDate.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
+        }
+      } catch (_) {}
+      _failLine.textContent = '⚠️ you\'re over by ' + fmt(_over) + _runDryStr;
+      _failLine.style.display = '';
+    } else {
+      _failLine.style.display = 'none';
+    }
+  }
+
+  // Receipt sub-line — visible math. The trust mechanism.
+  const _receipt = $('cashflow-receipt');
+  if (_receipt && _cashflow && _heroIsHeadroom) {
+    const _resultClass = (_cashflow.headroom < 0) ? 'rcpt-result-neg' : 'rcpt-result-pos';
+    _receipt.innerHTML =
+      fmt(_cashflow.cash) +
+      ' <span class="rcpt-bills">− ' + fmt(_cashflow.billsStillDue) + ' bills</span>' +
+      ' <span class="rcpt-living">− ' + fmt(_cashflow.livingRemaining) + ' living</span>' +
+      ' = <span class="' + _resultClass + '">' + fmt(_cashflow.headroom) + '</span>';
+    _receipt.style.display = '';
+  } else if (_receipt) {
+    _receipt.style.display = 'none';
+  }
+
+  // Legacy h-note now serves as supplementary today-outflows summary
+  // (small, under the receipt). Suppressed when headroom render is
+  // active and there's no meaningful today-activity to surface.
   const hn = $('h-note');
   if (hn) {
-    // Bundle 28 round 24: surface every outflow class explicitly so any
-    // meaningful cash movement is visible. Pre-round-24 the debt subline
-    // string-matched 'Debt repayment' only (1 of 4 debt cats); a $780 KIA
-    // Loan payment (cat 'Loan' or 'Bills') was invisible. Now reads from
-    // canonical BRAIN.dashboard.todayOutflows() (superset of todayTxns —
-    // includes debt + bills + savings + loan + CC payment) and splits the
-    // result via _DEBT_CATEGORIES_SET for the debt subline plus a Bills
-    // filter for the bills subline.
     const _todayOutflows = BRAIN.dashboard.todayOutflows();
     const _todayDebtTotal = _todayOutflows
       .filter(t => _DEBT_CATEGORIES_SET.has(t.cat))
@@ -6789,13 +6880,30 @@ function renderAll() {
     if (_todayDiscSpent > 0) _parts.push(fmt(_todayDiscSpent) + ' spent today');
     if (_todayDebtTotal > 0) _parts.push(fmt(_todayDebtTotal) + ' in debt payments');
     if (_todayBillTotal > 0) _parts.push(fmt(_todayBillTotal) + ' bills paid');
-
     if (_parts.length > 0) {
       hn.textContent = _parts.join(' · ');
-    } else if (cycleSpent > 0) {
+      hn.style.display = '';
+    } else if (!_heroIsHeadroom && cycleSpent > 0) {
       hn.textContent = 'Nothing spent today · ' + fmt(cycleSpent) + ' this cycle';
-    } else {
+      hn.style.display = '';
+    } else if (!_heroIsHeadroom) {
       hn.textContent = 'Enter your Virgin Money balance to start';
+      hn.style.display = '';
+    } else {
+      hn.style.display = 'none';
+    }
+  }
+
+  // Cash-now footer — the verified anchor below the dashboard. "$X in
+  // account now · ✓ verified" — distinct from the hero (which shows
+  // safe-to-spend headroom). Stays visible so user always knows real cash.
+  const _cnf = $('cash-now-footer');
+  if (_cnf) {
+    if (_heroIsHeadroom) {
+      _cnf.innerHTML = fmtC(+liveBal) + ' in account now<span class="verified">· ✓ verified</span>';
+      _cnf.style.display = '';
+    } else {
+      _cnf.style.display = 'none';
     }
   }
 
@@ -20473,6 +20581,9 @@ const BRAIN = {
       ['_buildPaydayAskAIPrompt reachable', () => typeof _buildPaydayAskAIPrompt === 'function'],
       ['BRAIN.bills.getThisCycle callable', () => { BRAIN.bills.getThisCycle(); return true; }],
       ['BRAIN.bills.isPaidInCycle reachable', () => typeof BRAIN.bills.isPaidInCycle === 'function'],
+      ['BRAIN.dashboard.getBurn7d reachable', () => typeof BRAIN.dashboard.getBurn7d === 'function'],
+      ['BRAIN.dashboard.getTopDiscretionaryCategory reachable', () => typeof BRAIN.dashboard.getTopDiscretionaryCategory === 'function'],
+      ['BRAIN.dashboard.computeHeadroomAtFloor reachable', () => typeof BRAIN.dashboard.computeHeadroomAtFloor === 'function'],
       ['BRAIN.savings.getBuckets callable', () => { BRAIN.savings.getBuckets(); return true; }],
       ['BRAIN.summary.surplus callable', () => { BRAIN.summary.surplus(); return true; }],
       ['BRAIN.assets.netWorth callable', () => { BRAIN.assets.netWorth(); return true; }],
@@ -23973,6 +24084,105 @@ const BRAIN = {
       return (typeof MODEL !== 'undefined' && MODEL && typeof MODEL.weekSpent === 'number')
         ? MODEL.weekSpent
         : 0;
+    },
+
+    // Bundle 32 Sub-bundle 1 Commit 4 — cashflow truth dashboard readers.
+    // The 7-day burn lookback + dynamic biggest-cuttable-leak ranker +
+    // recovery-lever simulator. All three feed the harsh hero's content.
+
+    // 7-day discretionary burn — feeds the dashboard burn card.
+    // Mirrors getMinDailySpend's NON_DISC filter so the floor reference
+    // is coherent (multiple = perDay / floor).
+    getBurn7d() {
+      const sevenDaysAgo = Date.now() - 7 * 86400000;
+      const NON_DISC = ['Bills', 'Savings', 'Transfer', 'Loan', 'CC Payment', 'Debt repayment', 'Income'];
+      const txns = (typeof S !== 'undefined' && Array.isArray(S.txns) ? S.txns : []).filter(t =>
+        t && (+t.ts || 0) >= sevenDaysAgo && !t.income && !t._isCorrection && !t._isRoundup
+        && !NON_DISC.includes(t.cat)
+      );
+      const total = txns.reduce((s, t) => s + (+t.amt || 0), 0);
+      const perDay = total / 7;
+      const floor = (typeof S !== 'undefined' && S.activePlan && +S.activePlan.dailyLivingFloor) || 30;
+      const multiple = floor > 0 ? perDay / floor : 0;
+      return {
+        total: parseFloat(total.toFixed(2)),
+        perDay: parseFloat(perDay.toFixed(2)),
+        multiple: parseFloat(multiple.toFixed(2)),
+        floor,
+        txnCount: txns.length,
+      };
+    },
+
+    // Dynamic biggest-cuttable category — feeds the "No {category} N days
+    // → +$saved" TO RECOVER lever. Spec set (per Commit 4 brief §6):
+    // gaming, takeaway, weed, coffee, food-out. Ranked by cycle-spend.
+    // Returns null name when no discretionary activity registered.
+    // The accountability bite is naming the OPTIONAL drain, not the
+    // necessary spend — BUCKETS list is the cuttable set.
+    getTopDiscretionaryCategory(cycleStart) {
+      const cs = (cycleStart instanceof Date && isFinite(cycleStart.getTime()))
+        ? cycleStart.getTime() : 0;
+      const BUCKETS = [
+        { name: 'gaming',     catRe: /entertainment|gaming/i,  noteRe: /(fifa|steam|nintendo|playstation|xbox|gaming|game\b)/i },
+        { name: 'takeaway',   catRe: /food.*coffee|takeaway/i, noteRe: /(uber\s*eats|deliveroo|menulog|doordash|takeaway|takeout|fast\s*food)/i },
+        { name: 'weed',       catRe: /health|entertainment/i,  noteRe: /(\bweed\b|cannabis|\bgrass\b|vape|dispensary)/i },
+        { name: 'coffee',     catRe: /food.*coffee/i,          noteRe: /(coffee|latte|flat\s*white|espresso|cappuccino|\bcafe\b|café)/i },
+        { name: 'food-out',   catRe: /food.*coffee/i,          noteRe: /(restaurant|dinner|lunch|sushi|han\s*sang|breakfast|brunch|pub|bar\b)/i },
+      ];
+      const txns = (typeof S !== 'undefined' && Array.isArray(S.txns) ? S.txns : []).filter(t =>
+        t && (+t.ts || 0) >= cs && !t.income && !t._isCorrection && !t._isRoundup
+      );
+      const tallies = BUCKETS.map(b => ({ name: b.name, amount: 0, count: 0, bucket: b }));
+      for (const t of txns) {
+        const cat = String(t.cat || '');
+        const note = String(t.note || '');
+        for (const tally of tallies) {
+          // First match wins — BUCKETS order = priority on ambiguous classifications
+          if (tally.bucket.noteRe.test(note) || tally.bucket.catRe.test(cat)) {
+            tally.amount += (+t.amt || 0);
+            tally.count += 1;
+            break;
+          }
+        }
+      }
+      tallies.sort((a, b) => b.amount - a.amount);
+      const top = tallies[0];
+      if (!top || top.amount <= 0) {
+        return { name: null, amount: 0, count: 0, projectedSaving7d: 0 };
+      }
+      // 7-day projected saving at this cycle's pace
+      const cycleDays = Math.max(1, (Date.now() - cs) / 86400000);
+      const projectedSaving7d = (top.amount / cycleDays) * 7;
+      return {
+        name: top.name,
+        amount: parseFloat(top.amount.toFixed(2)),
+        count: top.count,
+        projectedSaving7d: parseFloat(projectedSaving7d.toFixed(2)),
+      };
+    },
+
+    // Recovery-lever simulator — what would headroom become if user holds
+    // daily living at `floor` for the remaining cycle days? Reuses snap
+    // arithmetic (bills, trip uplifts, daysRemaining) — only the per-day
+    // floor changes. Per-day trip uplift (above floor) is preserved on
+    // trip days; underfunded trip residual isn't a "spend less" lever.
+    computeHeadroomAtFloor(newFloor) {
+      if (typeof newFloor !== 'number' || !isFinite(newFloor) || newFloor < 0) return null;
+      try {
+        const snap = BRAIN.plan.getSnapshot();
+        const arr = snap.dailyLiving && snap.dailyLiving.perDayLivingCost;
+        if (!Array.isArray(arr)) return null;
+        const currentFloor = (snap.dailyLiving && +snap.dailyLiving.floor) || 30;
+        const todayIdx = Math.max(0, snap.daysInCycle - snap.daysRemaining);
+        let livingRemaining = 0;
+        for (let i = todayIdx; i < arr.length; i++) {
+          const v = +arr[i] || 0;
+          livingRemaining += (v > currentFloor) ? v : newFloor;
+        }
+        const cash = (typeof S !== 'undefined' && +S.bal) || 0;
+        const billsDue = (snap.bills && +snap.bills.unpaidTotal) || 0;
+        return parseFloat((cash - billsDue - livingRemaining).toFixed(2));
+      } catch (_) { return null; }
     }
   },
 
