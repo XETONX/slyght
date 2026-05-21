@@ -432,6 +432,33 @@ select.payday-dropdown-select option{background:var(--bg2);color:var(--text);pad
 .cashflow-receipt .rcpt-result-pos{color:var(--green);font-weight:700}
 .cash-now-footer{font-size:12px;color:var(--text3);text-align:center;padding:10px 0 4px;font-family:var(--mono)}
 .cash-now-footer .verified{color:var(--green);margin-left:6px}
+/* TO RECOVER block — only rendered when headroom < 0 */
+.to-recover-block{background:rgba(0,232,122,0.04);border:1px solid rgba(0,232,122,0.20);border-radius:12px;padding:14px;margin:12px 0}
+.to-recover-block .tr-hdr{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--green);font-weight:700;margin-bottom:10px}
+.to-recover-block .tr-hdr .tr-arrow{margin-right:6px}
+.to-recover-lever{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-top:1px solid var(--border)}
+.to-recover-lever:first-of-type{border-top:none}
+.to-recover-lever .lever-label{font-size:14px;color:var(--text)}
+.to-recover-lever .lever-result{font-family:var(--mono);font-size:14px;font-weight:700}
+.to-recover-lever .lever-result.pos{color:var(--green)}
+.to-recover-lever .lever-result.neg{color:#ED93B1}
+/* 7-day burn card — passive dashboard alarm naming biggest cuttable leak */
+.burn-7d-card{background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.20);border-radius:12px;padding:14px;margin:12px 0}
+.burn-7d-card .b7-hdr{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--amber);font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.burn-7d-card .b7-amt{font-family:var(--mono);font-size:24px;font-weight:700;color:var(--text);margin-bottom:4px}
+.burn-7d-card .b7-sub{font-size:12px;color:var(--text2);font-family:var(--mono)}
+.burn-7d-card .b7-sub .b7-mult{color:#ED93B1;font-weight:700}
+.burn-7d-card .b7-leak{font-size:12px;color:var(--text2);margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
+.burn-7d-card .b7-leak .b7-leak-name{color:var(--amber);font-weight:700}
+.burn-7d-card .b7-leak .b7-leak-amt{font-family:var(--mono);color:var(--text);font-weight:700}
+/* One-shot bills correction reveal — first load post-Commit-1 substrate */
+.bills-correction-reveal{background:linear-gradient(135deg,rgba(0,232,122,0.10),rgba(0,232,122,0.02));border:1px solid rgba(0,232,122,0.40);border-radius:12px;padding:14px;margin:12px 0}
+.bills-correction-reveal .bcr-hdr{font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--green);font-weight:700;margin-bottom:6px}
+.bills-correction-reveal .bcr-math{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px}
+.bills-correction-reveal .bcr-math .bcr-old{color:var(--text3);text-decoration:line-through}
+.bills-correction-reveal .bcr-math .bcr-new{color:var(--green)}
+.bills-correction-reveal .bcr-explain{font-size:12px;color:var(--text2);line-height:1.4}
+.bills-correction-reveal .bcr-dismiss{background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;float:right;padding:4px 6px;margin:-4px -6px 0 0}
 .hero-note{font-size:14px;color:var(--text2);margin-bottom:2px}
 /* PAYDAY BAR */
 .pd-row{display:flex;align-items:center;gap:12px;margin:14px 0 18px}
@@ -888,6 +915,11 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
       </div>
       <div id="dash-survival-banner"></div>
       <div id="dash-alerts"></div>
+      <!-- Bundle 32 Sub-bundle 1 Commit 4b — TO RECOVER block (only renders
+           when headroom is negative; populated by renderToRecover() inside
+           renderAll). Floor-drop levers + dynamic discretionary lever from
+           BRAIN.dashboard.{computeHeadroomAtFloor, getTopDiscretionaryCategory}. -->
+      <div id="to-recover-block" class="to-recover-block" style="display:none"></div>
       <!-- r76 (John 2026-05-14 ask: "feel like ive paid money for it, not an
            Excel sheet"): lift MAX PER DAY card to the pd-remainder-card
            premium gradient hero. Same data (max-day-display, max-day-context,
@@ -899,6 +931,12 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
         <div id="max-day-context" style="font-size:12px;color:var(--text2);margin-top:8px;line-height:1.5;font-weight:500;position:relative"></div>
         <div id="pace-display" onclick="event.stopPropagation();explainWeekProjection()" role="button" aria-label="Tap to see the math behind pace" style="font-size:11px;color:var(--text3);margin-top:6px;cursor:pointer;text-decoration:underline dotted var(--text3);text-underline-offset:3px;position:relative"></div>
       </div>
+      <!-- Bundle 32 Sub-bundle 1 Commit 4b — 7-day burn card (passive dashboard
+           alarm); names biggest cuttable leak via getTopDiscretionaryCategory. -->
+      <div id="burn-7d-card" class="burn-7d-card" style="display:none"></div>
+      <!-- One-shot bills correction reveal — first load post-Commit-1
+           substrate, shows the "$X phantom → $Y real" trust moment. -->
+      <div id="bills-correction-reveal" class="bills-correction-reveal" style="display:none"></div>
       <div id="reconciler-banner" style="display:none;background:var(--amber-dim);border:1px solid var(--amber-border);color:var(--amber);padding:8px 12px;border-radius:8px;font-size:14px;margin:8px 0"></div>
 
       <!-- FIX 1: REORDERED — Immediate Debts first -->
@@ -6907,6 +6945,139 @@ function renderAll() {
     }
   }
 
+  // Bundle 32 Sub-bundle 1 Commit 4b — TO RECOVER block. Only when headroom
+  // is negative. Shows 3 levers each with the resulting headroom computed
+  // live: hold $25/day, hold $20/day, and a dynamic category lever
+  // ("No {top} 7 days → +${saved}") naming the biggest cuttable leak.
+  const _trBlock = $('to-recover-block');
+  if (_trBlock) {
+    if (_heroIsHeadroom && _heroNumber < 0) {
+      try {
+        const _at25 = BRAIN.dashboard.computeHeadroomAtFloor(25);
+        const _at20 = BRAIN.dashboard.computeHeadroomAtFloor(20);
+        const _cycleStart = S.activePlan && S.activePlan.cycleStartDate
+          ? new Date(S.activePlan.cycleStartDate) : new Date();
+        const _topCat = BRAIN.dashboard.getTopDiscretionaryCategory(_cycleStart);
+        // Build lever rows. Each lever shows the resulting headroom in
+        // signed-color (green if it closes the gap, coral if still over).
+        const _leverRow = (label, result) => {
+          if (result === null || typeof result !== 'number') return '';
+          const _cls = result >= 0 ? 'pos' : 'neg';
+          const _val = (result >= 0 ? '+' : '') + fmt(result);
+          return '<div class="to-recover-lever">' +
+            '<span class="lever-label">' + label + '</span>' +
+            '<span class="lever-result ' + _cls + '">→ ' + _val + '</span>' +
+          '</div>';
+        };
+        let _levers = '';
+        _levers += _leverRow('Hold $25/day', _at25);
+        _levers += _leverRow('Hold $20/day', _at20);
+        if (_topCat && _topCat.name && _topCat.projectedSaving7d > 0) {
+          // Dynamic discretionary lever — names John's biggest cuttable
+          // leak by category, with the projected 7-day saving as the result.
+          const _emoji = {
+            gaming: '🎮', takeaway: '🍔', weed: '🌿', coffee: '☕', 'food-out': '🍽',
+          }[_topCat.name] || '·';
+          const _label = 'No ' + _topCat.name.charAt(0).toUpperCase() + _topCat.name.slice(1) + ' 7 days';
+          const _saved = _topCat.projectedSaving7d;
+          const _result = (_heroNumber + _saved);
+          _levers += '<div class="to-recover-lever">' +
+            '<span class="lever-label">' + _emoji + ' ' + _label + '</span>' +
+            '<span class="lever-result ' + (_result >= 0 ? 'pos' : 'neg') + '">→ +' + fmt(_saved) + '</span>' +
+          '</div>';
+        }
+        _trBlock.innerHTML =
+          '<div class="tr-hdr"><span class="tr-arrow">↗</span>TO RECOVER — PICK ONE</div>' +
+          _levers;
+        _trBlock.style.display = '';
+      } catch (_) {
+        _trBlock.style.display = 'none';
+      }
+    } else {
+      _trBlock.style.display = 'none';
+    }
+  }
+
+  // Bundle 32 Sub-bundle 1 Commit 4b — 7-day burn card (passive alarm).
+  // Shows last-7d discretionary burn, per-day rate, multiple-of-floor, and
+  // the biggest cuttable category leak by name + cycle-spend.
+  const _b7c = $('burn-7d-card');
+  if (_b7c) {
+    try {
+      const _b7d = BRAIN.dashboard.getBurn7d();
+      const _cycleStart = S.activePlan && S.activePlan.cycleStartDate
+        ? new Date(S.activePlan.cycleStartDate) : new Date();
+      const _topCat = BRAIN.dashboard.getTopDiscretionaryCategory(_cycleStart);
+      // Only render if there's any recent activity (avoids "$0 · 0/day · 0× floor"
+      // empty-state clutter for fresh-state fixtures).
+      if (_b7d.total > 0 || _b7d.txnCount > 0) {
+        const _multClass = _b7d.multiple >= 2 ? 'b7-mult' : '';
+        let _leakHtml = '';
+        if (_topCat && _topCat.name && _topCat.amount > 0) {
+          const _emoji = {
+            gaming: '🎮', takeaway: '🍔', weed: '🌿', coffee: '☕', 'food-out': '🍽',
+          }[_topCat.name] || '·';
+          const _catLabel = _topCat.name.charAt(0).toUpperCase() + _topCat.name.slice(1);
+          _leakHtml =
+            '<div class="b7-leak">Biggest cuttable: ' +
+            '<span class="b7-leak-name">' + _emoji + ' ' + _catLabel + '</span> · ' +
+            '<span class="b7-leak-amt">' + fmt(_topCat.amount) + '</span> this cycle</div>';
+        }
+        _b7c.innerHTML =
+          '<div class="b7-hdr">🔥 7-day burn</div>' +
+          '<div class="b7-amt">' + fmt(_b7d.total) + '</div>' +
+          '<div class="b7-sub">' + fmt(_b7d.perDay) + '/day · <span class="' + _multClass + '">' + _b7d.multiple.toFixed(1) + '× floor</span></div>' +
+          _leakHtml;
+        _b7c.style.display = '';
+      } else {
+        _b7c.style.display = 'none';
+      }
+    } catch (_) {
+      _b7c.style.display = 'none';
+    }
+  }
+
+  // Bundle 32 Sub-bundle 1 Commit 4b — one-shot bills correction reveal.
+  // First load after Commit 1 substrate lands: shows the "$X phantom → $Y
+  // real" trust moment proving the app fixed its own bills lie. Flag pattern
+  // mirrors seedV* — set once, never re-fire.
+  const _bcr = $('bills-correction-reveal');
+  if (_bcr) {
+    const _shown = (function () {
+      try { return localStorage.getItem('slyght_bills_correction_revealed_v1') === '1'; }
+      catch (_) { return true;  /* defensive: if localStorage broken, suppress */ }
+    })();
+    if (!_shown && _heroIsHeadroom) {
+      try {
+        const _snap = BRAIN.plan.getSnapshot();
+        const _total = _snap.bills && +_snap.bills.total || 0;
+        const _unpaid = _snap.bills && +_snap.bills.unpaidTotal || 0;
+        // Only reveal when there's a meaningful correction to surface
+        // (substrate detected >$500 of bills as paid via txn-match).
+        const _correctionDelta = _total - _unpaid;
+        if (_correctionDelta > 500) {
+          _bcr.innerHTML =
+            '<button class="bcr-dismiss" onclick="dismissBillsCorrection()">dismiss</button>' +
+            '<div class="bcr-hdr">📐 BILLS CORRECTION</div>' +
+            '<div class="bcr-math">' +
+              '<span class="bcr-old">' + fmt(_total) + '</span> → ' +
+              '<span class="bcr-new">' + fmt(_unpaid) + ' real</span>' +
+            '</div>' +
+            '<div class="bcr-explain">' +
+              fmt(_correctionDelta) + ' of bills detected paid via bank match — the rest are future subscriptions auto-debiting before payday.' +
+            '</div>';
+          _bcr.style.display = '';
+        } else {
+          _bcr.style.display = 'none';
+        }
+      } catch (_) {
+        _bcr.style.display = 'none';
+      }
+    } else {
+      _bcr.style.display = 'none';
+    }
+  }
+
   // Net worth tile update
   const nwEl = $('nw-val');
   if (nwEl) {
@@ -7545,6 +7716,16 @@ function applyBalanceCorrection(newBal, reason) {
   );
   onStateChange('balance-correction');
   showToast('Balance updated — logged as transaction');
+}
+
+// Bundle 32 Sub-bundle 1 Commit 4b — dismiss the one-shot bills correction
+// reveal. Sets the seedV* style flag so the reveal never re-fires for this
+// user. The substrate change itself is permanent — the trust moment is
+// surfaced once, then the corrected numbers stand on their own.
+function dismissBillsCorrection() {
+  try { localStorage.setItem('slyght_bills_correction_revealed_v1', '1'); } catch (_) {}
+  const el = document.getElementById('bills-correction-reveal');
+  if (el) el.style.display = 'none';
 }
 
 // Balance edit — balance update from hero tile or settings both trigger the reconciliation modal

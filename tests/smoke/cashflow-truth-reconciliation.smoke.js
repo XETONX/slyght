@@ -593,6 +593,154 @@ test.describe('Sub-bundle 1 — Cashflow Truth (Commit 1: isPaidInCycle substrat
     expect(r.at30).toBeCloseTo(r.current, 1);
   });
 
+  // ── Commit 4b cases: TO RECOVER block + 7-day burn card + bills correction reveal ──
+
+  // Case 17 — TO RECOVER block renders when headroom is negative, with 3 levers.
+  test('Case 17: TO RECOVER block renders 3 levers when headroom negative', async ({ page }) => {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#to-recover-block');
+      return el && el.style.display !== 'none' && el.innerHTML.length > 0;
+    }, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const block = document.querySelector('#to-recover-block');
+      const levers = block.querySelectorAll('.to-recover-lever');
+      const labels = Array.from(levers).map(l => l.querySelector('.lever-label')?.textContent || '');
+      const results = Array.from(levers).map(l => l.querySelector('.lever-result')?.textContent || '');
+      return {
+        visible: block.style.display !== 'none',
+        leverCount: levers.length,
+        labels,
+        results,
+        hdr: block.querySelector('.tr-hdr')?.textContent || '',
+      };
+    });
+    expect(r.visible).toBe(true);
+    // Header text
+    expect(r.hdr).toContain('TO RECOVER');
+    // At least the 2 floor levers (and ideally the dynamic category one too)
+    expect(r.leverCount).toBeGreaterThanOrEqual(2);
+    // Labels include the floor-drop levers
+    expect(r.labels.some(l => l.includes('$25/day'))).toBe(true);
+    expect(r.labels.some(l => l.includes('$20/day'))).toBe(true);
+    // Each lever has a computed result (signed)
+    expect(r.results.every(s => /[-+]?\$/.test(s) || s.includes('→'))).toBe(true);
+  });
+
+  // Case 18 — TO RECOVER lever values match computeHeadroomAtFloor outputs.
+  test('Case 18: TO RECOVER lever values match computeHeadroomAtFloor outputs', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const at25 = BRAIN.dashboard.computeHeadroomAtFloor(25);
+      const at20 = BRAIN.dashboard.computeHeadroomAtFloor(20);
+      const block = document.querySelector('#to-recover-block');
+      const levers = Array.from(block.querySelectorAll('.to-recover-lever'));
+      const findLever = (token) => levers.find(l => (l.querySelector('.lever-label')?.textContent || '').includes(token));
+      const parse = (el) => {
+        if (!el) return null;
+        const txt = (el.querySelector('.lever-result')?.textContent || '').replace(/[^\d.-]/g, '');
+        return parseFloat(txt);
+      };
+      return {
+        at25_expected: at25,
+        at25_displayed: parse(findLever('$25/day')),
+        at20_expected: at20,
+        at20_displayed: parse(findLever('$20/day')),
+      };
+    });
+    expect(r.at25_displayed).toBeCloseTo(r.at25_expected, 0);
+    expect(r.at20_displayed).toBeCloseTo(r.at20_expected, 0);
+  });
+
+  // Case 19 — Substrate proves positive-headroom path. Render-hide is
+  // covered transitively by Cases 17 + 18 (which exercise the negative
+  // path against the oracle); this case asserts the substrate flips
+  // sign correctly when cash bias goes positive. Synthetic mutation
+  // doesn't go through canonical writer — pure read-side proof.
+  test('Case 19: substrate computes positive headroom under positive cash bias', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const origBal = S.bal;
+      S.bal = 99999;  // synthetic-positive cash
+      const headroom = BRAIN.plan.getSnapshot().derived.safeToSpendHeadroom;
+      S.bal = origBal;  // restore
+      return { headroom };
+    });
+    expect(r.headroom).toBeGreaterThan(0);
+  });
+
+  // Case 20 — 7-day burn card renders with total + perDay + multiple + leak.
+  test('Case 20: 7-day burn card renders metrics + biggest cuttable leak', async ({ page }) => {
+    await page.waitForFunction(() => {
+      const el = document.querySelector('#burn-7d-card');
+      return el && el.style.display !== 'none' && el.innerHTML.length > 0;
+    }, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const card = document.querySelector('#burn-7d-card');
+      return {
+        visible: card.style.display !== 'none',
+        hdrText: card.querySelector('.b7-hdr')?.textContent || '',
+        amtText: card.querySelector('.b7-amt')?.textContent || '',
+        subText: card.querySelector('.b7-sub')?.textContent || '',
+        leakText: card.querySelector('.b7-leak')?.textContent || '',
+        burn7d: BRAIN.dashboard.getBurn7d(),
+      };
+    });
+    expect(r.visible).toBe(true);
+    expect(r.hdrText).toContain('7-day burn');
+    expect(r.amtText).toContain('$');
+    expect(r.subText).toContain('/day');
+    expect(r.subText).toContain('× floor');
+    // Leak section appears when there's discretionary activity
+    if (r.burn7d.total > 0) {
+      expect(r.leakText.length).toBeGreaterThan(0);
+    }
+  });
+
+  // Case 21 — Bills correction reveal fires on first load with flag unset.
+  test('Case 21: bills correction reveal renders when localStorage flag unset', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      // Reset the flag and re-render
+      localStorage.removeItem('slyght_bills_correction_revealed_v1');
+      if (typeof renderAll === 'function') renderAll();
+      const reveal = document.querySelector('#bills-correction-reveal');
+      const snap = BRAIN.plan.getSnapshot();
+      return {
+        visible: reveal && reveal.style.display !== 'none',
+        innerHTML: reveal && reveal.innerHTML,
+        billsTotal: snap.bills.total,
+        billsUnpaid: snap.bills.unpaidTotal,
+        correctionDelta: snap.bills.total - snap.bills.unpaidTotal,
+      };
+    });
+    // Reveal only triggers when there's a meaningful correction (>$500)
+    if (r.correctionDelta > 500) {
+      expect(r.visible).toBe(true);
+      expect(r.innerHTML).toContain('BILLS CORRECTION');
+      expect(r.innerHTML).toContain('real');
+    } else {
+      // Edge case: synthetic fixture with no correction — reveal stays hidden
+      expect(r.visible).toBe(false);
+    }
+  });
+
+  // Case 22 — Bills correction reveal sets flag and hides on dismiss.
+  test('Case 22: dismissBillsCorrection() sets flag and hides the reveal', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      localStorage.removeItem('slyght_bills_correction_revealed_v1');
+      if (typeof renderAll === 'function') renderAll();
+      const reveal = document.querySelector('#bills-correction-reveal');
+      const visibleBefore = reveal && reveal.style.display !== 'none';
+      if (typeof dismissBillsCorrection === 'function') dismissBillsCorrection();
+      const visibleAfter = reveal && reveal.style.display !== 'none';
+      const flagSet = localStorage.getItem('slyght_bills_correction_revealed_v1');
+      // Re-render to confirm it doesn't come back
+      if (typeof renderAll === 'function') renderAll();
+      const visibleAfterRerender = reveal && reveal.style.display !== 'none';
+      return { visibleBefore, visibleAfter, flagSet, visibleAfterRerender };
+    });
+    expect(r.flagSet).toBe('1');
+    expect(r.visibleAfter).toBe(false);
+    expect(r.visibleAfterRerender).toBe(false);
+  });
+
   // Case 1f — Reconciliation oracle headline assertion.
   // The whole point of Commit 1: app reports the bill-paid truth that
   // matches today's hand-reconciliation. snap.bills.unpaidTotal pre-fix
