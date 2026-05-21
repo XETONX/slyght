@@ -156,6 +156,55 @@ test.describe('Pass 3 — READER_MIGRATION_PARITY', () => {
     expect(tripCalls.length).toBe(0);
     expect(goalCalls.length).toBe(0);
   });
+
+  // Bug 1 hotfix (2026-05-21) — Pass 3 phone-verify caught upcoming-trips
+  // list rendering "[object Object]". Root cause: seedV27 upgraded
+  // meta.covered from string[] to {name,amount}[]; _tripLegacyView
+  // passed objects through; renderTrips L27282 + editTrip hint L27338
+  // stringify entries with `${c}` / .join(', ') → "[object Object]".
+  // Fix at single point in _tripLegacyView (covered → entry.name strings).
+  // These two cases lock the regression: data-shape AND render output.
+
+  test('1i: _tripLegacyView.covered entries are strings (not raw {name,amount} objects)', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      // Force the post-seedV27 shape on a trip and check the legacy view
+      const upd = BRAIN.plan.intent.update('darwin-2026', {
+        meta: { covered: [{ name: 'flights', amount: 50 }, { name: 'accommodation', amount: 0 }] }
+      }, BRAIN.SOURCES.PLAN_TRIP_EDIT);
+      const view = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView).find(t => t.id === 'darwin-2026');
+      return {
+        updOk: upd.ok,
+        coveredIsArray: Array.isArray(view.covered),
+        everyEntryIsString: view.covered.every(e => typeof e === 'string'),
+        coveredValues: view.covered,
+      };
+    });
+    expect(r.updOk).toBe(true);
+    expect(r.coveredIsArray).toBe(true);
+    expect(r.everyEntryIsString).toBe(true);
+    expect(r.coveredValues).toContain('flights');
+    expect(r.coveredValues).toContain('accommodation');
+  });
+
+  test('1j: renderTrips() HTML does not contain "[object Object]"', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      // Ensure object-shaped covered (the regression-triggering shape)
+      BRAIN.plan.intent.update('darwin-2026', {
+        meta: { covered: [{ name: 'flights', amount: 0 }, { name: 'accommodation', amount: 0 }, { name: 'car hire', amount: 0 }] }
+      }, BRAIN.SOURCES.PLAN_TRIP_EDIT);
+      const trips = BRAIN.plan.intent.byKind('trip').map(_tripLegacyView);
+      const html = (typeof renderTrips === 'function') ? renderTrips(trips) : '';
+      return {
+        htmlLen: html.length,
+        hasBugString: html.includes('[object Object]'),
+        // Positive assertion: at least one of the covered names appears in render
+        hasFlights: /flights/i.test(html),
+      };
+    });
+    expect(r.htmlLen).toBeGreaterThan(0);
+    expect(r.hasBugString).toBe(false);
+    expect(r.hasFlights).toBe(true);
+  });
 });
 
 // ── 2. TRIP_COVERED_AMOUNT_UI ──────────────────────────────────────────

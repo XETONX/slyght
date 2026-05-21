@@ -2417,7 +2417,17 @@ function _tripLegacyView(intent) {
     budget: intent.targetAmount,
     saved: bucket ? (bucket.saved || 0) : 0,
     bucketHint: intent.bucketId || '',
-    covered: Array.isArray(m.covered) ? m.covered : [],
+    // Bug 1 hotfix (2026-05-21): Pass 2's seedV27 upgraded meta.covered
+    // from string[] to {name, amount}[]. Legacy renderers (renderTrips
+    // L27282, editTrip hint L27338) stringify entries with `${c}` /
+    // .join(', ') and expect strings — passing objects through made the
+    // upcoming-trips list render "[object Object]". Map to .name strings
+    // here so the legacy display contract is preserved at the single
+    // translation point. Pre-migration string entries pass through
+    // unchanged (defensive — empty fixtures, partial migrations).
+    covered: Array.isArray(m.covered)
+      ? m.covered.map(e => (e && typeof e === 'object') ? (e.name || '') : e)
+      : [],
     gfSplitting: !!m.gfSplitting,
     stayingWithFamily: !!m.stayingWithFamily,
     days: m.days,
