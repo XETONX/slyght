@@ -20859,17 +20859,23 @@ const BRAIN = {
       // Unpaid-only total — used by projectedEndBalance to avoid double-
       // counting bills that have already left the account.
       const billsUnpaidTotal = billsList.filter(b => !b.paid).reduce((s, b) => s + _billAmt(b), 0);
-      // Debts + overrides
-      const debtsList = (S.debts || []).filter(d => !d.paid && !d.viaRent);
+      // Debts + overrides.
+      // Bug-1.5 fix (2026-05-21): debtsList includes paid debts so the
+      // essentials lifecycle split conserves (paid + upcoming === total).
+      // Pre-fix `!d.paid && !d.viaRent` excluded paid debts from debtsTotal
+      // while paidDebtsTotal below included them — `essentialsUpcomingTotal`
+      // under-counted by exactly `paidDebtsTotal` the moment any non-viaRent
+      // debt got paid. Live state had Teachers Health $259.41 paid →
+      // exposed the gap; May 19 fixture had no paid non-viaRent debts → hid it.
+      // Now mirrors the bills pattern (billsTotal=paid+unpaid · billsUnpaidTotal=filter).
+      const debtsList = (S.debts || []).filter(d => !d.viaRent);
       const _debtAmt = (d) => {
         const k = 'debt:' + (d.id || d.name);
         const ov = (p.overrides || {})[k];
         return ov ? ov.thisCycleAmount : (+d.amt || 0);
       };
       const debtsTotal = debtsList.reduce((s, d) => s + _debtAmt(d), 0);
-      // S.debts.paid filter already excludes paid ones so debtsTotal IS
-      // the unpaid-only total. Keep separate alias for symmetry.
-      const debtsUnpaidTotal = debtsTotal;
+      const debtsUnpaidTotal = debtsList.filter(d => !d.paid).reduce((s, d) => s + _debtAmt(d), 0);
       // Savings — Bundle 27 P6.2: iterate all real buckets (BRAIN.savings)
       // and read from overrides primarily, p.savings legacy mirror as
       // fallback. Pre-fix iterated only p.savings keys, so undo (which
@@ -20972,10 +20978,12 @@ const BRAIN = {
       // Conservation:
       //   essentialsPaidTotal + essentialsUpcomingTotal === essentialsTotal
       //   (smoke-asserted; locks the lifecycle split against drift)
-      const billsPaidTotal = billsTotal - billsUnpaidTotal;  // both fields already exist above
-      const paidDebtsTotal = (S.debts || [])
-        .filter(d => d && d.paid && !d.viaRent)
-        .reduce((s, d) => s + _debtAmt(d), 0);
+      // Both derived from the same {bills,debts}List + {bills,debts}UnpaidTotal
+      // pair so paid/unpaid sums conserve against the inclusive total.
+      // Pre-Bug-1.5, paidDebtsTotal filtered S.debts independently of debtsList
+      // and pulled in pre-cycle-cleared debts that debtsTotal excluded.
+      const billsPaidTotal = billsTotal - billsUnpaidTotal;
+      const paidDebtsTotal = debtsTotal - debtsUnpaidTotal;
       const essentialsPaidTotal = billsPaidTotal + paidDebtsTotal;
       const essentialsUpcomingTotal = essentialsTotal - essentialsPaidTotal;
       const surplusVal = Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax);

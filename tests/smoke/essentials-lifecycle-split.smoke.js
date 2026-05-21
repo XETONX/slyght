@@ -160,4 +160,64 @@ test.describe('Bundle 32.5 Pass 1.a — essentials lifecycle split conservation'
     const billsPlusDebts = r.eb.bills + r.eb.debts;
     expect(r.paid).toBeLessThanOrEqual(billsPlusDebts + 0.5);
   });
+
+  // Bug-1.5 hotfix (2026-05-21) — paid non-viaRent debt conservation.
+  // Pre-fix, `debtsList = S.debts.filter(!d.paid && !d.viaRent)` excluded
+  // paid debts from debtsTotal, but `paidDebtsTotal` independently filtered
+  // `d.paid && !d.viaRent` and was added to essentialsPaidTotal. The two
+  // filters were asymmetric: a paid non-viaRent debt sat in essentialsPaidTotal
+  // without a matching contribution in essentialsTotal. The arithmetic
+  // conservation (paid + upcoming === total) still held by construction
+  // (upcoming = total − paid), but the SEMANTICS broke — essentialsTotal
+  // under-counted by exactly paidDebtsTotal whenever paid non-viaRent debts
+  // existed. Hero "where the money sits" panel mis-attributed.
+  // Baseline fixture's Teachers Health (paid, amt $259.41) was masked by
+  // bills $5,684 dominating the totals; live state with smaller bill set
+  // exposed it. Fix: debtsList includes paid (mirrors bills pattern),
+  // debtsUnpaidTotal filtered separately, paidDebtsTotal derived.
+  // This case injects a $500 paid non-viaRent debt and asserts:
+  //   - essentialsTotal grows by exactly the injected amount
+  //   - essentialsPaidTotal grows by exactly the injected amount
+  //   - essentialsUpcomingTotal stays put (paid debts don't go to upcoming)
+  //   - arithmetic conservation still holds
+  test('Case 4: Bug-1.5 regression — paid non-viaRent debt grows essentialsTotal + essentialsPaidTotal symmetrically', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const before = BRAIN.plan.getSnapshot().derived;
+      // Inject a paid non-viaRent debt with non-zero amount.
+      S.debts = S.debts || [];
+      S.debts.push({
+        id: 'test-bug-1-5-paid-debt',
+        name: 'Test Paid Debt (Bug 1.5 regression)',
+        amt: 500,
+        paid: true,
+        viaRent: false,
+      });
+      const after = BRAIN.plan.getSnapshot().derived;
+      return {
+        before: {
+          paid: before.essentialsPaidTotal,
+          upcoming: before.essentialsUpcomingTotal,
+          total: before.essentialsTotal,
+          debtsBreakdown: before.essentialsBreakdown.debts,
+        },
+        after: {
+          paid: after.essentialsPaidTotal,
+          upcoming: after.essentialsUpcomingTotal,
+          total: after.essentialsTotal,
+          debtsBreakdown: after.essentialsBreakdown.debts,
+        },
+      };
+    });
+    // Conservation holds before AND after the injection.
+    expect(Math.abs((r.before.paid + r.before.upcoming) - r.before.total)).toBeLessThan(TOL);
+    expect(Math.abs((r.after.paid + r.after.upcoming) - r.after.total)).toBeLessThan(TOL);
+    // essentialsTotal grew by exactly the injected paid-debt amount.
+    expect(r.after.total - r.before.total).toBeCloseTo(500, 1);
+    // essentialsBreakdown.debts grew by the same amount (debts subfield mirrors debtsTotal).
+    expect(r.after.debtsBreakdown - r.before.debtsBreakdown).toBeCloseTo(500, 1);
+    // essentialsPaidTotal grew by exactly the injected paid-debt amount.
+    expect(r.after.paid - r.before.paid).toBeCloseTo(500, 1);
+    // Upcoming did NOT change — paid debt doesn't shift upcoming.
+    expect(Math.abs(r.after.upcoming - r.before.upcoming)).toBeLessThan(TOL);
+  });
 });
