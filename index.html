@@ -21039,6 +21039,37 @@ const BRAIN = {
       const essentialsUpcomingTotal = essentialsTotal - essentialsPaidTotal;
       const surplusVal = Math.max(0, totalToPlan - billsTotal - debtsTotal - upcomingTotal - livingTotal - _provsForMax - bufferForMax);
       const savingsOverAllocated = Math.max(0, savingsTotal - surplusVal);
+
+      // Bundle 32 Sub-bundle 1 Commit 3 — cashflow truth: safeToSpendHeadroom.
+      // The hand-reconciliation 2026-05-21 single answer slyght exists to
+      // produce. Cash-on-hand minus what's actually still owed before
+      // payday, minus the daily-living budget for the remaining days
+      // (trip-aware via the per-day cost array). Negative means the user
+      // can't hold the daily floor through to payday without finding more
+      // cash. Hero UI consumes this field in Commit 4.
+      //
+      // livingRemaining slices the perDayLivingCost array to today→end
+      // (vs plannedTotal which is full-cycle floor×daysInCycle). Trip-day
+      // residuals fall through naturally — if Darwin Jun 7-14 is
+      // bucket-covered (Option C → uplift=0), trip days in remaining
+      // window stay at floor; if underfunded, residual contributes.
+      const _todayIdx = Math.max(0, daysInCycle - daysRemaining);
+      const _livingRemaining = _perDayLivingCost.slice(_todayIdx).reduce((s, v) => s + (+v || 0), 0);
+      const _tripUpliftRemaining = _perDayLivingCost.slice(_todayIdx).reduce((s, v) => {
+        const extra = (+v || 0) - floor;
+        return s + (extra > 0 ? extra : 0);
+      }, 0);
+      const _safeToSpendHeadroom = currentBalance - billsUnpaidTotal - _livingRemaining;
+      const _cashflowReceipt = {
+        cash: parseFloat(currentBalance.toFixed(2)),
+        billsStillDue: parseFloat(billsUnpaidTotal.toFixed(2)),
+        livingRemaining: parseFloat(_livingRemaining.toFixed(2)),
+        tripUpliftRemaining: parseFloat(_tripUpliftRemaining.toFixed(2)),
+        daysRemaining,
+        floor,
+        headroom: parseFloat(_safeToSpendHeadroom.toFixed(2)),
+      };
+
       return {
         cycleId: p.cycleId,
         cycleStartDate: p.cycleStartDate,
@@ -21116,6 +21147,13 @@ const BRAIN = {
           // computation block above.
           essentialsPaidTotal: parseFloat(essentialsPaidTotal.toFixed(2)),
           essentialsUpcomingTotal: parseFloat(essentialsUpcomingTotal.toFixed(2)),
+          // Bundle 32 Sub-bundle 1 Commit 3 — cashflow truth derived state.
+          // safeToSpendHeadroom is THE hero number — what the app exists to
+          // produce. Receipt object exposes the math for the hero sub-line.
+          // Negative = user is short. Commit 4 wires hero UI to consume
+          // these; THIS commit just lands them in state.
+          safeToSpendHeadroom: parseFloat(_safeToSpendHeadroom.toFixed(2)),
+          cashflowReceipt: _cashflowReceipt,
         },
         bufferFloor: +p.bufferFloor || 0,
         driftSensitivity: +p.driftSensitivity || 0.15,

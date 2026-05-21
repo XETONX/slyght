@@ -374,6 +374,71 @@ test.describe('Sub-bundle 1 — Cashflow Truth (Commit 1: isPaidInCycle substrat
     expect(r.uplift).toBe(0);
   });
 
+  // ── Commit 3 cases: safeToSpendHeadroom derivation in state ──
+
+  // Case 8 — THE hero number. Hand-reconciliation 2026-05-21:
+  //   cash $802.66 − bills still due − living remaining = headroom
+  // For the frozen oracle: 8 bills still-due totalling $219.36, 24 days
+  // remaining × $30 floor = $720, Darwin fully bucket-covered so no trip
+  // uplift in remaining window. Expected headroom ≈ -$136.70.
+  // (Hand-recon's -$105.51 figure excludes Moshtix on its endDate Jun 11
+  // past the Jun 14 bill date; isPaidInCycle doesn't filter endDate-past
+  // — separate finding, not Sub-bundle 1 scope.)
+  test('Case 8: snap.derived.safeToSpendHeadroom = cash − billsStillDue − livingRemaining', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const d = snap.derived;
+      return {
+        headroom: d.safeToSpendHeadroom,
+        receipt: d.cashflowReceipt,
+        bal: S.bal,
+        billsUnpaid: snap.bills.unpaidTotal,
+        floor: snap.dailyLiving.floor,
+        daysRemaining: snap.daysRemaining,
+      };
+    });
+    // Receipt fields exposed
+    expect(typeof r.headroom).toBe('number');
+    expect(r.receipt).toBeTruthy();
+    expect(r.receipt.cash).toBeCloseTo(r.bal, 1);
+    expect(r.receipt.billsStillDue).toBeCloseTo(r.billsUnpaid, 1);
+    expect(r.receipt.headroom).toBeCloseTo(r.headroom, 1);
+    // Conservation: headroom === cash − billsStillDue − livingRemaining
+    const expected = r.bal - r.billsUnpaid - r.receipt.livingRemaining;
+    expect(r.headroom).toBeCloseTo(expected, 1);
+    // Living-remaining bound: floor × daysRemaining ≤ livingRemaining
+    // (equality when no trip uplift fires in remaining window)
+    expect(r.receipt.livingRemaining).toBeGreaterThanOrEqual(r.floor * r.daysRemaining - 0.5);
+    // For Darwin-bucket-covered oracle: tripUpliftRemaining = 0
+    expect(r.receipt.tripUpliftRemaining).toBe(0);
+    // Headroom against oracle should be in negative-or-slightly-positive
+    // territory (cash $802 vs ~$219 bills + $720 living = roughly -$137)
+    expect(r.headroom).toBeLessThan(0);
+    expect(r.headroom).toBeGreaterThan(-200);
+  });
+
+  // Case 9 — Conservation across the full safeToSpendHeadroom derivation.
+  // Cash + (income still to come) − all-obligations-in-cycle should equal
+  // projectedEndBalance. Headroom and projectedEndBalance both project
+  // cycle-end cash; they differ in scope (headroom is "spend room over
+  // remaining days at floor"; projectedEndBalance is "cash if nothing
+  // else happens"). Both should be in same ballpark when no income left.
+  test('Case 9: headroom + livingRemaining recovers cash for the remaining window', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const snap = BRAIN.plan.getSnapshot();
+      const d = snap.derived;
+      return {
+        cash: S.bal,
+        headroom: d.safeToSpendHeadroom,
+        livingRemaining: d.cashflowReceipt.livingRemaining,
+        billsStillDue: d.cashflowReceipt.billsStillDue,
+      };
+    });
+    // Algebraic check: cash = headroom + livingRemaining + billsStillDue
+    const recovered = r.headroom + r.livingRemaining + r.billsStillDue;
+    expect(recovered).toBeCloseTo(r.cash, 1);
+  });
+
   // Case 1f — Reconciliation oracle headline assertion.
   // The whole point of Commit 1: app reports the bill-paid truth that
   // matches today's hand-reconciliation. snap.bills.unpaidTotal pre-fix
