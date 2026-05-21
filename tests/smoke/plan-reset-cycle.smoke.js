@@ -226,4 +226,70 @@ test.describe('Bundle 32.6 substrate — BRAIN.plan.resetCycle canonical writer'
     expect(result.overridesAfter).toBe(0);
     expect(result.preStateWasLocked).toBe(true);
   });
+
+  // Bug-1.6 hotfix (2026-05-21) — resetCycle falsy-coalesce eats user-set zero.
+  // Pre-fix: `bufferFloor: +p.bufferFloor || 300` (and same pattern for
+  // dailyLivingFloor || 30, driftSensitivity || 0.15) silently replaced an
+  // explicit zero with the default. 0 is a legitimate user value for all
+  // three fields (buffer-off · pantry-day spending · zero drift tolerance).
+  // Caught when live state (bufferFloor=0 after John dropped it) made
+  // Case 2's after===before check fail. Baseline fixture had bufferFloor=100
+  // so the bug stayed hidden. Fix: Number.isFinite guards on all 3 fields
+  // in both the dryRun preState path (receipt-modal display) AND the
+  // preserved write path (the actual mutation).
+  //
+  // Two cases: write-path preservation + receipt-path preservation. Both
+  // matter — the receipt-vs-reality smoke (reset-cycle-ui.smoke.js Case 6)
+  // walks the receipt's WILL KEEP rows and compares against the post-reset
+  // state. If either path falsy-coalesces, the receipt lies.
+
+  test('Case 6: Bug-1.6 regression — user-set zero preserves across resetCycle (write path)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      // Set all three toxic-pattern fields to 0 — the exact input that
+      // pre-fix would silently revert to defaults.
+      S.activePlan = S.activePlan || {};
+      S.activePlan.bufferFloor = 0;
+      S.activePlan.dailyLivingFloor = 0;
+      S.activePlan.driftSensitivity = 0;
+      const before = {
+        bufferFloor: S.activePlan.bufferFloor,
+        dailyLivingFloor: S.activePlan.dailyLivingFloor,
+        driftSensitivity: S.activePlan.driftSensitivity,
+      };
+      BRAIN.plan.resetCycle(BRAIN.SOURCES.PLAN_CYCLE_RESET);
+      const after = {
+        bufferFloor: S.activePlan.bufferFloor,
+        dailyLivingFloor: S.activePlan.dailyLivingFloor,
+        driftSensitivity: S.activePlan.driftSensitivity,
+      };
+      return { before, after };
+    });
+    expect(result.before.bufferFloor).toBe(0);
+    expect(result.after.bufferFloor).toBe(0);              // pre-fix: 300
+    expect(result.before.dailyLivingFloor).toBe(0);
+    expect(result.after.dailyLivingFloor).toBe(0);         // pre-fix: 30
+    expect(result.before.driftSensitivity).toBe(0);
+    expect(result.after.driftSensitivity).toBe(0);         // pre-fix: 0.15
+  });
+
+  test('Case 7: Bug-1.6 regression — dryRun preState reports user-set zero (receipt-vs-reality)', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      S.activePlan = S.activePlan || {};
+      S.activePlan.bufferFloor = 0;
+      S.activePlan.dailyLivingFloor = 0;
+      // dryRun feeds the receipt modal's WILL KEEP rows. Must reflect the
+      // actual user-set values, not the defaults.
+      const r = BRAIN.plan.resetCycle(BRAIN.SOURCES.PLAN_CYCLE_RESET, { dryRun: true });
+      return {
+        ok: r.ok,
+        dryRun: r.dryRun,
+        bufferFloor: r.preState && r.preState.bufferFloor,
+        dailyLivingFloor: r.preState && r.preState.dailyLivingFloor,
+      };
+    });
+    expect(result.ok).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.bufferFloor).toBe(0);                   // pre-fix: 0 (|| 0 was identity) — still asserts contract
+    expect(result.dailyLivingFloor).toBe(0);              // pre-fix: 30 (|| 30 ate the zero)
+  });
 });

@@ -21677,8 +21677,12 @@ const BRAIN = {
         cycleStartDate: p.cycleStartDate,
         cycleEndDate: p.cycleEndDate,
         netPay: (p.income && +p.income.netPay) || +S.income || 0,
-        dailyLivingFloor: +p.dailyLivingFloor || 30,
-        bufferFloor: +p.bufferFloor || 0,
+        // Bug-1.6 (2026-05-21): preserve user-set zero. `|| N` silently
+        // replaces an explicit 0 with the default, breaking the receipt-vs-
+        // reality contract (WILL KEEP promised preserve; writer changes it).
+        // Number.isFinite check distinguishes "user set 0" from "field missing".
+        dailyLivingFloor: Number.isFinite(+p.dailyLivingFloor) ? +p.dailyLivingFloor : 30,
+        bufferFloor: Number.isFinite(+p.bufferFloor) ? +p.bufferFloor : 0,
         // Bundle 32.6 modal-receipt fields — preserved-data totals that the
         // "WILL KEEP" section displays so the receipt is a complete trust
         // artifact: every category of user data appears in either WILL CLEAR
@@ -21706,9 +21710,15 @@ const BRAIN = {
             status: (p.income && p.income.bonus && p.income.bonus.status) || 'expected',
           },
         },
-        dailyLivingFloor: +p.dailyLivingFloor || 30,
-        bufferFloor: +p.bufferFloor || 300,
-        driftSensitivity: +p.driftSensitivity || 0.15,
+        // Bug-1.6 (2026-05-21): preserve user-set zero across resetCycle.
+        // Pre-fix `|| N` defaults clobbered explicit zero values, violating
+        // the Bundle 32.6 receipt-vs-reality contract. 0 is a legitimate user
+        // value for all three fields (buffer-off · pantry-day spending ·
+        // tight drift detection). Number.isFinite guards distinguish
+        // "user explicitly set 0" from "field missing or NaN".
+        dailyLivingFloor: Number.isFinite(+p.dailyLivingFloor) ? +p.dailyLivingFloor : 30,
+        bufferFloor: Number.isFinite(+p.bufferFloor) ? +p.bufferFloor : 300,
+        driftSensitivity: Number.isFinite(+p.driftSensitivity) ? +p.driftSensitivity : 0.15,
         // Preserve actualPaydayTs if set (user manually marked landed — that's a
         // real event, not part of plan-shape state).
         actualPaydayTs: p.actualPaydayTs || null,
