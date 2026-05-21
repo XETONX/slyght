@@ -419,33 +419,66 @@ export default {
       }
     }
 
-    // GET /recon-payload — one-shot reconciliation delivery endpoint.
-    // Added 2026-05-19 for bank-reconciliation workflow. Token-gated to
-    // prevent accidental public fetch. KV key + this handler should be
-    // removed in Bundle 31 ADR-E ("Weekly bank reconciliation workflow")
-    // unless promoted to permanent infra.
-    if (path === '/recon-payload' && request.method === 'GET') {
-      const RECON_TOKEN = '427169922a24fe022647e3463834e2f77c20cc160033c955';
-      const KV_KEY = 'recon-payload-2026-05-19';
-      const token = url.searchParams.get('token');
-      if (token !== RECON_TOKEN) {
-        return new Response(JSON.stringify({ error: 'unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // GET /weather?lat=&lon= — public weather proxy.
+    // Bundle 32 Theme G (2026-05-21): replaces direct client → OWM calls so
+    // the OWM API key lives in worker secret env.OWM_API_KEY (set via
+    // `wrangler secret put OWM_API_KEY`) rather than committed client JS.
+    //
+    // KV cache: 10-min TTL, key rounds lat/lon to 1dp so "Sydney-ish"
+    // requests share a cache entry (keeps OWM call rate ~6/hr per cell,
+    // well inside free-tier limits even across multi-device usage).
+    //
+    // Auth: none. /weather returns generic forecast data, no user state.
+    // CORS already restricts to xetonx.github.io for browser callers.
+    if (path === '/weather' && request.method === 'GET') {
+      const lat = parseFloat(url.searchParams.get('lat') || '-33.8688');
+      const lon = parseFloat(url.searchParams.get('lon') || '151.2093');
+      if (!isFinite(lat) || !isFinite(lon)) {
+        return new Response(JSON.stringify({ error: 'invalid-lat-lon' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const payload = await env.SLYGHT_DATA.get(KV_KEY);
-      if (!payload) {
-        return new Response(JSON.stringify({ error: 'not-found', key: KV_KEY }), {
-          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      if (!env.OWM_API_KEY) {
+        return new Response(JSON.stringify({ error: 'owm-key-not-configured' }), {
+          status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      return new Response(payload, {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-          'Cache-Control': 'no-store',
-        },
-      });
+      const cacheKey = `weather:cache:${lat.toFixed(1)},${lon.toFixed(1)}`;
+      try {
+        const cached = await env.SLYGHT_DATA.get(cacheKey);
+        if (cached) {
+          return new Response(cached, {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Slyght-Weather-Cache': 'hit' },
+          });
+        }
+        const owmUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${env.OWM_API_KEY}&units=metric`;
+        const owmRes = await fetch(owmUrl);
+        if (!owmRes.ok) {
+          return new Response(JSON.stringify({ error: 'owm-fetch-failed', status: owmRes.status }), {
+            status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        const data = await owmRes.json();
+        // Trim to the fields the client uses. Minimal-surface proxy: the
+        // worker never returns more data than the client consumed pre-G.
+        const trimmed = {
+          temp: data.main && data.main.temp,
+          feels_like: data.main && data.main.feels_like,
+          condition: (data.weather && data.weather[0] && data.weather[0].main) || 'Clear',
+          description: (data.weather && data.weather[0] && data.weather[0].description) || 'clear sky',
+          wind_speed: (data.wind && data.wind.speed) || 0,
+          ts: Date.now(),
+        };
+        const payload = JSON.stringify(trimmed);
+        await env.SLYGHT_DATA.put(cacheKey, payload, { expirationTtl: 600 });
+        return new Response(payload, {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Slyght-Weather-Cache': 'miss' },
+        });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // POST /unsubscribe — clear push subscription from KV

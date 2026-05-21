@@ -261,6 +261,27 @@ Implementation per the phase spec above. Single commit; worker source committed 
 
 ADR: `docs/adr/ADR-bundle-32-phase-a-device-tokens.md`.
 
+### 2026-05-21 — Theme G secret migration (F7 OWM + F8 RECON_TOKEN)
+
+Beast-mode sweep flagged two genuine secrets in committed code. Both shipped today.
+
+**F7 — OpenWeatherMap API key** (`7fb97ad9...` previously at `index.html:18409`):
+- Rotated at OWM dashboard. New key stored as worker secret via `wrangler secret put OWM_API_KEY`.
+- New worker endpoint `GET /weather?lat=&lon=` reads `env.OWM_API_KEY`, fetches OWM, caches trimmed response in `SLYGHT_DATA` with 10-min TTL (key shape `weather:cache:{lat-1dp},{lon-1dp}`). No auth required — endpoint returns generic forecast data, no user state. CORS-restricted to `xetonx.github.io`.
+- Client `WEATHER.fetch()` now calls the proxy. `WEATHER.apiKey` field removed. Response shape changed from raw OWM JSON to trimmed `{temp, feels_like, condition, description, wind_speed, ts}`.
+- Old key revocation deferred until phone-verify confirms new flow works (OWM has ~10-min propagation; concurrent active keys during the transition is intentional).
+
+**F8 — RECON_TOKEN** (`427169922a...` previously at `slyght-worker/src/index.js:428` + `index.html:13964`):
+- Endpoint deleted entirely rather than rotated. `/recon-payload` was a one-shot Bundle 30.6 reconciliation import path (May 19 bank reconciliation). Functionally redundant with the Phase A device-token-authenticated `/pull-full-state`. Deletion beats rotation.
+- Worker handler removed.
+- Client `_emergencyImportFromWorker` + `_showCurrentReconState` + `_rollbackReconImport` + boot-check handler + Settings UI block all removed (206 lines of one-shot reconciliation infrastructure).
+
+**Smoke coverage:** `tests/smoke/weather-proxy.smoke.js` (6 cases) — no `apiKey` field on WEATHER; client hits proxy not OWM direct; no `appid=` in any request URL; trimmed response parses correctly; network-error falls back to cache; 503 falls back gracefully.
+
+**Git history scrub deferred** — both rotated values are inert post-rotation. Recommend BFG or `git filter-repo` as a single force-push event when convenient. CC does not autonomously rewrite history.
+
+**Action remaining (John):** `cd slyght-worker && npx wrangler deploy` to activate the new worker. Pre-deploy: client calls 404 on `/weather` (graceful fallback to cached weather). Post-deploy: weather chip works through the proxy. Phone-verify on 380px.
+
 ### YYYY-MM-DD — [next decision goes here]
 
 ---

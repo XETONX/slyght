@@ -1538,21 +1538,6 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
           🔒 All data stays on this device. Nothing is sent to any server.
         </div>
 
-        <!-- BUNDLE-30-RECON-IMPORT START — temporary one-shot button for 2026-05-19 bank reconciliation. Remove this entire block after John confirms import landed. Tracked in TODO #30. -->
-        <div class="settings-group-title" style="margin-top:24px">🚨 Emergency import (one-shot)</div>
-        <div class="settings-group-card" style="padding:12px 14px;background:var(--amber-dim, #3a2a0a);border:1px solid var(--amber-border, #8a6a1a)">
-          <div style="font-size:13px;color:var(--text);margin-bottom:8px">
-            Bank reconciliation 2026-05-19 — fetches reconciled state from worker and replaces local state.
-            <strong>Will replace all txns/debts/buckets with the reconciled snapshot.</strong>
-            apiKey, PIN, and chat history are preserved. Current state is backed up to <code>slyght_v5_PRE_RECON_BACKUP_2026-05-19</code>.
-          </div>
-          <button onclick="_emergencyImportFromWorker()" style="width:100%;padding:12px;background:var(--amber, #d97706);border:none;border-radius:8px;color:#000;font-size:14px;font-weight:700;min-height:48px;cursor:pointer">🚨 Import reconciled state from worker</button>
-          <div id="recon-import-msg" style="font-size:13px;margin-top:8px;min-height:18px;color:var(--text)"></div>
-          <button onclick="_showCurrentReconState()" style="width:100%;margin-top:8px;padding:10px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:14px;min-height:44px;cursor:pointer">🔎 Show current state (diagnostic)</button>
-          <button onclick="_rollbackReconImport()" style="width:100%;margin-top:8px;padding:10px;background:var(--bg3);border:1px solid var(--red, #ef4444);border-radius:8px;color:var(--red, #ef4444);font-size:14px;min-height:44px;cursor:pointer">↩️ Rollback to pre-import backup</button>
-        </div>
-        <!-- BUNDLE-30-RECON-IMPORT END -->
-
       </div>
     </div>
 
@@ -13924,212 +13909,7 @@ function _emptyActivePlan() {
   };
 }
 
-// BUNDLE-30-RECON-IMPORT START — one-shot reconciliation import.
-// Landed 2026-05-19 ($2,304.16 → $1,113.61 bank-matched, 40 new txns).
-// To be formalized as Bundle 31 ADR-E "Weekly bank reconciliation workflow."
-//
-// Design (final, v5-atomic — landed after diagnosing a save() race in v3):
-// - User taps button → confirm → fetch from token-gated worker endpoint
-// - SYNCHRONOUSLY: backup current state → set _recon_expecting flag →
-//   write reconciled state → location.replace() — all in same JS tick
-// - save() is monkey-patched to no-op immediately before writes, belt-and-
-//   braces against any setItem-triggered observer firing save() with the
-//   stale in-memory S during the write window
-// - Pairs with the window.load handler below — fires post-reload, reads
-//   _recon_expecting, alerts whether reconciled state survived boot
-//
-// The save() race (v3 failure mode):
-// v3 had alert() + setTimeout(reload, 5000) between localStorage.setItem
-// and reload. During that ~5s window, any save() call (from render cycle,
-// observer, setInterval, focus event) wrote the IN-MEMORY S (still at the
-// pre-import value because we only mutated localStorage) back over our
-// fresh write. By the time location.reload() fired, localStorage was
-// reverted. The post-boot popup ALSO didn't fire because v3 had a 60s
-// stale-flag silent-cleanup branch — flag age exceeded 60s during the
-// pre-reload window so the check bailed silently. Both bugs fixed in v5.
-function _emergencyImportFromWorker() {
-  var msgEl = document.getElementById('recon-import-msg');
-  var setMsg = function(text, color) {
-    if (msgEl) { msgEl.textContent = text; msgEl.style.color = color || 'var(--text)'; }
-  };
-  if (!confirm('Reconciliation import\n\n' +
-               'Replace local state with the reconciled snapshot from worker?\n' +
-               'Current state will be backed up automatically.\n\n' +
-               'You will see one fetch-confirmation popup, then the page reloads.\n' +
-               'After reload, a single post-boot popup confirms whether the import landed.')) {
-    setMsg('Cancelled.', 'var(--text2)');
-    return;
-  }
-  setMsg('⏳ Fetching…', 'var(--text)');
-  var URL_RECON = 'https://slyght-worker.johndounas.workers.dev/recon-payload?token=427169922a24fe022647e3463834e2f77c20cc160033c955';
-  fetch(URL_RECON)
-    .then(function(r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' from worker');
-      return r.json();
-    })
-    .then(function(data) {
-      if (!data.S || !data.BILLS) throw new Error('Invalid payload: missing S or BILLS');
-      if (Math.abs((data.S.bal || 0) - 1113.61) > 0.01) {
-        throw new Error('Payload bal mismatch: $' + data.S.bal + ' (expected $1113.61) — KV may be wrong');
-      }
-      var payloadTxns = (data.S.txns || []).length;
-      if (payloadTxns !== 212) {
-        throw new Error('Payload txns mismatch: ' + payloadTxns + ' (expected 212)');
-      }
 
-      // ─── Final confirmation alert — last alert before atomic write ───
-      // After this dismisses, write+reload run in the same JS tick with
-      // no opportunity for any save() call to overwrite our localStorage
-      // write with the stale in-memory S (the bug v3 had).
-      alert('Fetch OK.\nPayload bal: $' + data.S.bal.toFixed(2) + ' ✓\nPayload txns: ' + payloadTxns + ' ✓\n\nTap OK to write + reload.');
-
-      // ─── ATOMIC WRITE + RELOAD ───
-      // Everything from here runs synchronously. The browser does not get
-      // to dispatch any event-loop tasks (including queued microtasks from
-      // BRAIN/MODEL/RECONCILER) until location.reload() unloads the page.
-
-      // 1. Disable save() so any synchronous call from inside any setItem
-      // observer can't write the stale in-memory S back over our write.
-      var _origSave = null;
-      try {
-        if (typeof save === 'function') {
-          _origSave = save;
-          save = function _noOpSaveDuringReconImport() { /* blocked */ };
-        }
-      } catch (_) {}
-
-      // 2. Preserve sensitive fields from existing state.
-      var existing = null;
-      try { existing = JSON.parse(localStorage.getItem('slyght_v5') || '{}'); } catch (_) {}
-      var newS = data.S;
-      if (existing && existing.S) {
-        if (existing.S.apiKey)      newS.apiKey      = existing.S.apiKey;
-        if (existing.S.chatHistory) newS.chatHistory = existing.S.chatHistory;
-        if (existing.S.pin)         newS.pin         = existing.S.pin;
-        if (existing.S.pinHash)     newS.pinHash     = existing.S.pinHash;
-      }
-
-      // 3. Backup current state.
-      var oldRaw = localStorage.getItem('slyght_v5');
-      if (oldRaw) localStorage.setItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19', oldRaw);
-
-      // 4. Seed bills-reset-month so paidBills survives boot's monthly check.
-      var t = new Date();
-      localStorage.setItem('slyght_bills_reset_month', t.getFullYear() + '-' + (t.getMonth() + 1));
-
-      // 5. Set verification flag BEFORE main write so even if save()
-      // somehow slips through, the flag persists (save() only touches
-      // slyght_v5, not _recon_expecting).
-      localStorage.setItem('_recon_expecting', JSON.stringify({bal: 1113.61, txns: 212, ts: Date.now()}));
-
-      // 6. Write reconciled state.
-      localStorage.setItem('slyght_v5', JSON.stringify({S: newS, BILLS: data.BILLS}));
-
-      // 7. Reload IMMEDIATELY — same tick, no opportunity for save() to fire.
-      // Use replace() with a cache-bust to bypass SW serving cached HTML.
-      location.replace(location.pathname + '?cb=recon-' + Date.now());
-    })
-    .catch(function(e) {
-      // Restore save() if we'd disabled it (defensive — at this point in
-      // the chain the monkey-patch hasn't run yet, but safe).
-      try { if (typeof window._origSave === 'function') save = window._origSave; } catch (_) {}
-      alert('✗ Import failed: ' + (e.message || e) + '\n\nYour state is untouched (no write was attempted).');
-      setMsg('✗ Import failed: ' + (e.message || e), 'var(--red)');
-    });
-}
-
-// BUNDLE-30-RECON-IMPORT DIAGNOSTIC — single-alert dump of post-boot state.
-// John taps "🔎 Show current state" after a reload (or anytime) to see what
-// actually landed in localStorage and what BRAIN.balance reports.
-function _showCurrentReconState() {
-  var raw = localStorage.getItem('slyght_v5') || '';
-  var p = null;
-  try { p = JSON.parse(raw); } catch (_) {}
-  var lsBal = p && p.S && p.S.bal;
-  var lsTxns = p && p.S && p.S.txns && p.S.txns.length;
-  var sKeys = p && p.S ? Object.keys(p.S).length : 0;
-  var brainBal = 'BRAIN-unavailable';
-  try { brainBal = (typeof BRAIN !== 'undefined' && BRAIN.balance) ? BRAIN.balance.get() : 'BRAIN-unavailable'; } catch (_) {}
-  var hasBackup = !!localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19');
-  var backupLen = (localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19') || '').length;
-  var expecting = localStorage.getItem('_recon_expecting') || 'null';
-  // Read the actual hero-rendered balance from DOM if visible.
-  var heroEl = document.querySelector('[data-hero-bal], #hero-balance, .hero-balance, .bal-hero');
-  var heroText = heroEl ? heroEl.textContent : '(hero element not found in DOM)';
-  alert('🔎 Reconciliation diagnostic\n\n' +
-        'localStorage slyght_v5: ' + raw.length + ' bytes\n' +
-        '  S.bal: $' + lsBal + '\n' +
-        '  S.txns count: ' + lsTxns + '\n' +
-        '  S top-level keys: ' + sKeys + '\n' +
-        '\nIn-memory BRAIN.balance: $' + brainBal + '\n' +
-        '\nHero DOM text (best match): ' + heroText + '\n' +
-        '\nBackup key present: ' + hasBackup + ' (' + backupLen + ' bytes)\n' +
-        '_recon_expecting flag: ' + expecting + '\n\n' +
-        'SCREENSHOT this and send to Claude.');
-}
-
-// BUNDLE-30-RECON-IMPORT ROLLBACK — restore pre-import backup if import was wrong.
-function _rollbackReconImport() {
-  var backup = localStorage.getItem('slyght_v5_PRE_RECON_BACKUP_2026-05-19');
-  if (!backup) {
-    alert('No backup key found. Cannot rollback.\n\n(Backup is created automatically when "🚨 Import" runs. If you never tapped it, there is nothing to restore.)');
-    return;
-  }
-  if (!confirm('Restore pre-import backup?\n\nThis will replace your current slyght_v5 with the version saved BEFORE the import attempt.\nBackup is ' + backup.length + ' bytes.\nAfter restore, the page will reload.')) return;
-  localStorage.setItem('slyght_v5', backup);
-  // Clear the diagnostic flag so post-boot popup doesn\'t fire.
-  localStorage.removeItem('_recon_expecting');
-  alert('✓ Backup restored. Reloading.');
-  location.reload();
-}
-
-// BUNDLE-30-RECON-IMPORT BOOT CHECK — fires after reload to verify the
-// reconciled state survived the boot lifecycle (monthly-reset, boot
-// self-test, MODEL.refresh, etc could potentially overwrite). Reads the
-// _recon_expecting flag set by _emergencyImportFromWorker; alerts whether
-// the post-boot state matches the expected reconciled snapshot.
-window.addEventListener('load', function() {
-  setTimeout(function() {
-    var flag = null;
-    try { flag = JSON.parse(localStorage.getItem('_recon_expecting') || 'null'); } catch (_) {}
-    if (!flag) return;
-    // v5 fix: removed the 60s stale-flag silent-cleanup. v3 had it which is
-    // why John's first attempt never fired a popup — the 5s pre-reload
-    // delay + boot time pushed flag age past 60s, branch silently bailed.
-    // Now we ALWAYS surface the result. Flag age is included so we can
-    // distinguish "import I just did" from "stale flag from a prior run."
-    var ageSec = ((Date.now() - flag.ts) / 1000).toFixed(1);
-    var raw = localStorage.getItem('slyght_v5') || '';
-    var lsBal = null, lsTxns = null;
-    try {
-      var p = JSON.parse(raw);
-      lsBal = p && p.S && p.S.bal;
-      lsTxns = p && p.S && p.S.txns && p.S.txns.length;
-    } catch (_) {}
-    var memBal = 'BRAIN-unavailable';
-    try { memBal = (typeof BRAIN !== 'undefined' && BRAIN.balance && typeof BRAIN.balance.get === 'function')
-      ? BRAIN.balance.get() : 'BRAIN-unavailable'; } catch (_) {}
-    var balMatch = (Math.abs((lsBal || 0) - flag.bal) < 0.01);
-    var txnMatch = (lsTxns === flag.txns);
-    if (balMatch && txnMatch) {
-      alert('✓ Reconciliation complete\n\n' +
-            'localStorage bal: $' + lsBal + '\n' +
-            'localStorage txns: ' + lsTxns + '\n' +
-            'In-memory BRAIN.balance: $' + memBal + '\n' +
-            'Flag age: ' + ageSec + 's\n\n' +
-            'Hero should show $' + flag.bal + '.');
-    } else {
-      alert('⚠️ Reconciled state did NOT survive boot\n\n' +
-            'Expected:  bal=$' + flag.bal + ' txns=' + flag.txns + '\n' +
-            'localStorage: bal=$' + lsBal + ' txns=' + lsTxns + ' (len ' + raw.length + ')\n' +
-            'In-memory BRAIN.balance: $' + memBal + '\n' +
-            'Flag age: ' + ageSec + 's\n\n' +
-            'Use the "↩️ Rollback" button to restore the pre-import backup, then investigate.');
-    }
-    localStorage.removeItem('_recon_expecting');
-  }, 1500);
-});
-// BUNDLE-30-RECON-IMPORT END
 
 function doImportFromSub() {
   const subArea = document.getElementById('sub-import-area');
@@ -18404,35 +18184,37 @@ function getDaysToCity2Surf() {
 
 
 // ─── WEATHER ───────────────────────────────────────────────────
-// To activate: get free API key at openweathermap.org/api → replace OPENWEATHER_API_KEY below
+// Bundle 32 Theme G (2026-05-21): OWM API key migrated to worker secret.
+// Client fetches via worker proxy /weather endpoint; trimmed payload
+// arrives with the fields below. See SECURITY.md decision log.
 const WEATHER = {
-  apiKey: '7fb97ad9a88a00311f37516f8712075d',
   sydneyLat: -33.8688,
   sydneyLng: 151.2093,
+  workerUrl: 'https://slyght-worker.johndounas.workers.dev',
   current: null,
 
   async fetch() {
     try {
-      if (this.apiKey === 'OPENWEATHER_API_KEY') return this.current; // not yet configured
-      const url = 'https://api.openweathermap.org/data/2.5/weather?' +
-        'lat=' + this.sydneyLat + '&lon=' + this.sydneyLng +
-        '&appid=' + this.apiKey + '&units=metric';
+      const url = this.workerUrl + '/weather?lat=' + this.sydneyLat + '&lon=' + this.sydneyLng;
       const res = await window.fetch(url);
       if (!res.ok) return this.current;
       const data = await res.json();
-      const cond = data.weather?.[0]?.main || 'Clear';
+      // Trimmed shape from /weather proxy: temp / feels_like / condition /
+      // description / wind_speed / ts. Pre-G this read raw OWM data.main.temp.
+      const cond = data.condition || 'Clear';
+      const tempRaw = typeof data.temp === 'number' ? data.temp : 20;
       this.current = {
-        temp:         Math.round(data.main?.temp || 20),
-        feels:        Math.round(data.main?.feels_like || 20),
+        temp:         Math.round(tempRaw),
+        feels:        Math.round(typeof data.feels_like === 'number' ? data.feels_like : tempRaw),
         condition:    cond,
-        description:  data.weather?.[0]?.description || 'clear sky',
+        description:  data.description || 'clear sky',
         isRaining:    ['Rain','Drizzle','Thunderstorm'].includes(cond),
-        isHot:        (data.main?.temp || 20) > 28,
-        isCold:       (data.main?.temp || 20) < 15,
-        isPerfectRun: (data.main?.temp || 20) >= 14 && (data.main?.temp || 20) <= 22 &&
+        isHot:        tempRaw > 28,
+        isCold:       tempRaw < 15,
+        isPerfectRun: tempRaw >= 14 && tempRaw <= 22 &&
                       !['Rain','Drizzle','Thunderstorm'].includes(cond),
-        wind:         Math.round(data.wind?.speed || 0),
-        ts:           Date.now(),
+        wind:         Math.round(data.wind_speed || 0),
+        ts:           data.ts || Date.now(),
       };
       localStorage.setItem('slyght_weather', JSON.stringify(this.current));
       return this.current;
