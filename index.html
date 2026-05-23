@@ -25511,9 +25511,30 @@ const BRAIN = {
       // markPaid's cycle-derive block — pre-fix manual callers defaulted
       // to today's-month, which collided with prior-cycle keys for
       // day<payday bills; cycle-derive makes the convention uniform).
+      //
+      // P0-5 (Ledger Walk session 2026-05-23): txn-anchored guard. The
+      // flag presence alone is no longer sufficient — a paidBills entry
+      // must be backed by the ledger. Object-shape entries with `_txnTs`
+      // are legitimate (written by canonical markPaid / processAutoDebits
+      // / autoMatch / autoDetect with txn back-ref). Bare-`true` entries
+      // (older shape, hand-written, or cancelled-subscription orphans like
+      // the 2026-5-Stan-7 case caught during the maiden walk) fall through
+      // to Path 2's ledger-match verification. Per John's standing rule:
+      // "paid:true + matching debit txn → LEGITIMATE; paid:true + NO
+      // matching debit txn → SUSPECT (treat as unpaid)".
       if (typeof isThisMonthlyBillPaid === 'function' &&
           isThisMonthlyBillPaid(bill.name, bill.day, billMonth, billYear)) {
-        return true;
+        const _paidKey = (typeof paidBillKey === 'function')
+          ? paidBillKey(bill.name, bill.day, billMonth, billYear)
+          : billYear + '-' + (billMonth + 1) + '-' + bill.name + '-' + bill.day;
+        const _flag = (typeof S !== 'undefined' && S.paidBills) ? S.paidBills[_paidKey] : null;
+        // Fast path: object-shape with _txnTs anchor → legitimate.
+        if (_flag && typeof _flag === 'object' && _flag._txnTs) {
+          return true;
+        }
+        // Bare-true (or object without _txnTs): fall through to Path 2's
+        // ledger-match. If the ledger has a matching debit txn → true;
+        // otherwise the flag is treated as suspect (returns false at end).
       }
 
       // Path 2: txn-match fallback. Future bills can't be paid yet.

@@ -209,23 +209,46 @@ test.describe('Sub-bundle 1 — Cashflow Truth (Commit 1: isPaidInCycle substrat
     expect(r.detected).toBe(true);
   });
 
-  // Case 1d (edge — synthetic) — flag-only path.
-  // Bill with paidBills entry, no matching txn. Should still return true.
-  test('Case 1d: flag-only path — paidBills key set but no matching txn ⇒ paid', async ({ page }) => {
+  // Case 1d (edge — synthetic) — flag without ledger backing is SUSPECT.
+  // CONTRACT CHANGE (P0-5, Ledger Walk session 2026-05-23): the prior Sub-bundle 1
+  // Commit 1 contract treated any truthy paidBills entry as paid. P0-5 reverses
+  // this per John's standing rule: paid:true + matching debit txn = LEGITIMATE;
+  // paid:true + NO matching debit txn = SUSPECT (treated as unpaid). Object-shape
+  // entries with _txnTs anchor fast-path through; everything else must verify
+  // against the ledger.
+  test('Case 1d (post-P0-5): flag without _txnTs AND without matching txn ⇒ NOT paid (suspect)', async ({ page }) => {
     const r = await page.evaluate(() => {
       const cycleStart = new Date(S.activePlan.cycleStartDate);
+      // Use day=16: past payday (15), past the frozen-clock date (May 21),
+      // so billDate is past nowTs and Path 2's future-bill guard doesn't trip.
       const testBill = {
-        name: 'SyntheticFlagOnly', amt: 99, day: 22, recurring: true, autoDebit: true,
+        name: 'SyntheticFlagOnly', amt: 99, day: 16, recurring: true, autoDebit: true,
       };
-      // Inject paidBills entry with the cycle-resolved key
+      // Inject paidBills entry without _txnTs anchor (the orphan shape)
       const key = paidBillKey(testBill.name, testBill.day, cycleStart.getMonth(), cycleStart.getFullYear());
       S.paidBills = S.paidBills || {};
       S.paidBills[key] = { paid: true, ts: Date.now(), _scheduledAutoDebit: true };
-      const detected = BRAIN.bills.isPaidInCycle(testBill, cycleStart);
-      delete S.paidBills[key];  // clean up
-      return { detected };
+      // No matching txn injected — Path 2 ledger verification will not find one
+      const detectedNoLedger = BRAIN.bills.isPaidInCycle(testBill, cycleStart);
+
+      // Now add a matching debit txn within the window — should flip to paid via Path 2
+      const billDate = new Date(cycleStart.getFullYear(), cycleStart.getMonth(), testBill.day);
+      const matchingTxn = {
+        amt: 99, note: 'SyntheticFlagOnly — paid', cat: 'Bills',
+        ts: billDate.getTime() + 1, income: false,
+      };
+      S.txns.push(matchingTxn);
+      const detectedWithLedger = BRAIN.bills.isPaidInCycle(testBill, cycleStart);
+
+      // Cleanup
+      delete S.paidBills[key];
+      S.txns = S.txns.filter(t => t !== matchingTxn);
+      return { detectedNoLedger, detectedWithLedger };
     });
-    expect(r.detected).toBe(true);
+    // Orphan flag (no _txnTs, no matching txn) → SUSPECT → false
+    expect(r.detectedNoLedger).toBe(false);
+    // Same flag once a matching debit txn lands → LEGITIMATE → true
+    expect(r.detectedWithLedger).toBe(true);
   });
 
   // Case 1e (edge — synthetic) — cycle clamp: prior-cycle txn doesn't leak.
