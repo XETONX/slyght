@@ -19946,7 +19946,9 @@ function payBillNow(billName, billDay, billAmt) {
       showToast('⚠️ Could not mark ' + billName + ' paid — ' + r.reason);
       return;
     }
-    S.bal = parseFloat((S.bal - billAmt).toFixed(2));
+    // P0-1 (Ledger Walk session 2026-05-23): markPaid envelope already debited
+    // S.bal via recordWithAllocation. Outer raw subtract removed — matches the
+    // markBillPaidMonth reference shape at L8749.
     onStateChange('bill_paid_now');
     showToast('✅ ' + billName + ' paid — $' + billAmt + ' logged');
     const detail = document.getElementById('cal-day-detail');
