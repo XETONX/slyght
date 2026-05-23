@@ -6910,6 +6910,17 @@ function renderAll() {
     _receipt.style.display = 'none';
   }
 
+  // Net-worth tile — Option C conditional hide (Drone M / Ledger Walk session 2026-05-23).
+  // On a coral day the green "+$X liquid net worth" softens the urgency the
+  // hero is designed to convey. Hide when hero is coral; show otherwise.
+  // NW remains reachable via tap-on-hero (modal), #strip-networth footer, and
+  // Analysis tab — so this hide is non-destructive. Mirrors the conditional
+  // pattern of cash-now-footer below.
+  const _nwLine = document.querySelector('.hero-section .nw-line');
+  if (_nwLine) {
+    _nwLine.style.display = (_heroIsHeadroom && _heroNumber < 0) ? 'none' : '';
+  }
+
   // Legacy h-note now serves as supplementary today-outflows summary
   // (small, under the receipt). Suppressed when headroom render is
   // active and there's no meaningful today-activity to surface.
