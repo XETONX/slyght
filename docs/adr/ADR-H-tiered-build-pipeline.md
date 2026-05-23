@@ -190,10 +190,33 @@ Pure structural fixes (delete-the-double-debit, swap-reader-from-legacy-to-canon
 
 **Verdicts:**
 - **PASS** — none of (a)-(e) apply.
-- **FLAG (with citation)** — one or more triggers fire, BUT John has stated the relevant policy in a prior session / artifact (CDB item, ADR, memory pin). Commit message cites the policy source. Acknowledgment required.
-- **HALT** — one or more triggers fire AND no prior John-policy on record. CC may not decide; requires John's policy answer before any code is written.
+- **FLAG (with citation)** — one or more triggers fire, AND John has explicitly ratified the SPECIFIC INTERPRETATION this commit encodes (or pattern this commit propagates). Commit message cites the policy source. Acknowledgment required.
+- **HALT** — one or more triggers fire AND no prior John-policy ratification of THIS interpretation on record. CC may not decide; requires John's policy answer before any code is written.
 
 P0-5's backwards version: trigger (b) fired (paid-vs-unpaid classification), trigger (d) fired (interpretation of "future-billDate + paid flag"), trigger (e) fired (auto-debit pre-flag behavior). Three triggers, no prior policy. Verdict: HALT. The technical council would have shipped; the Human Verdict block blocks.
+
+### Citation discipline (refinement added 2026-05-23, after bonusLever catch)
+
+A FLAG-WITH-CITATION verdict requires John's prior ratification of **the specific interpretation this implementation encodes** — not just an adjacent observation about the surface. Three distinct things, only one of which ratifies a citation:
+
+| Type | Example | Ratifies a citation? |
+|---|---|---|
+| **Observation** | "the bonus is invisible on the dashboard" (Drone L Finding 5) | **NO** — names a surface as needing work; doesn't ratify any specific implementation |
+| **Policy** | "the bonus, when confirmed-but-excluded, should appear as a one-tap recovery option in TO RECOVER" | **PARTIAL** — ratifies the shape; doesn't ratify the arithmetic |
+| **Implementation interpretation** | "the lever adds `bonus.amount` to `_heroNumber` to produce the projected headroom" | **YES** — this is the citation that backs the build |
+
+**The bonusLever case (2026-05-23):**
+- Cited: Drone L Finding 5 ("bonus is invisible") — an OBSERVATION
+- Built: lever adding `bonus.amount` to `_heroNumber` — an INTERPRETATION
+- Reality: the bonus is in S.bal (per "PAYSLIP with Bonus" $8,623.33 ledger walk); the interpretation was wrong
+- The Human Verdict assigned FLAG-WITH-CITATION when it should have assigned HALT
+- John caught it mid-bundle before push
+
+**Rule:** When the build encodes an interpretation that hasn't been explicitly ratified — even if an adjacent observation is on record — the verdict is HALT, not FLAG-WITH-CITATION. The friction of one extra John-ack is cheaper than the misdiagnosis. Default to HALT when in doubt.
+
+**Test for sufficient citation:** can you point to a prior John statement (in this session, a CDB item, an ADR, or a memory pin) that says specifically "yes, the implementation should do THIS"? If you can only point to "yes, this surface needs work," that's an observation — HALT.
+
+**Domain-specific pre-build ledger walks (refinement, CDB-41):** When a Human Verdict on a state-derived UI shows FLAG-WITH-CITATION, run a quick domain walk (per `scripts/recon/ledger-walk-<domain>.js`) to verify the citation actually backs the implementation BEFORE granting the verdict. The bonusLever case is the worked example: a 30-second ledger walk surfaced "PAYSLIP with Bonus" $8,623.33 and would have flipped FLAG → HALT pre-build. The walk is cheap insurance.
 
 ### Composite verdict logic
 
