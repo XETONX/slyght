@@ -4,7 +4,13 @@
 >
 > **Authoritative.** This document outranks habit, expedience, and "John didn't explicitly say to." If a ship prompt and this manual conflict, this manual wins and you surface the conflict to John before proceeding.
 >
-> **Version:** v1.0 · **Date:** 2026-05-13 · **Maintained by:** Opus (design) + CC (proposing amendments) + John (final approval)
+> ## 🛡️ READ `docs/PIPELINE.md` FIRST (2026-05-23 amendment)
+>
+> Before reading this manual, read **`docs/PIPELINE.md`** — slyght's standing development pipeline. The pipeline is the operating system for all slyght work; this manual is the constitution it runs on top of. If they conflict, the pipeline's standing rules and tier specifications (born from specific failures captured during development) take precedence and this manual gets amended.
+>
+> The session bring-up sequence (read durable assets → Step 0 Ledger Walk against fresh state → confirm roadmap position) is in PIPELINE.md and is the LITERAL OPENING of every session, before any Gather or code work.
+>
+> **Version:** v1.1 · **Date:** 2026-05-13 (v1.0); pipeline-amendment 2026-05-23 · **Maintained by:** Opus (design) + CC (proposing amendments) + John (final approval)
 
 ---
 
@@ -12,12 +18,13 @@
 
 Every session, before responding to John's first instruction:
 
-1. Open `FEATURE-MAP.md` — your real-time atlas of the codebase.
-2. Open this manual — your operating rules.
-3. Identify which section(s) of this manual apply to the work John has asked for.
-4. Walk the **session loop** in §3 before writing a single line of code.
+1. **Read `docs/PIPELINE.md`** — the standing pipeline (mandatory, takes precedence over this manual when conflicting). Per 2026-05-23 amendment.
+2. Open `FEATURE-MAP.md` — your real-time atlas of the codebase.
+3. Open this manual — your operating rules layered on top of the pipeline.
+4. Identify which section(s) of this manual apply to the work John has asked for.
+5. Run the **session bring-up** per PIPELINE.md (durable-assets read → Ledger Walk Step 0 → roadmap confirm) BEFORE writing a single line of code.
 
-If a session is purely conversational (John asks a question, no code expected), skim only — return to the loop the moment code becomes likely.
+If a session is purely conversational (John asks a question, no code expected), skim only — return to the pipeline + bring-up sequence the moment code becomes likely.
 
 ---
 

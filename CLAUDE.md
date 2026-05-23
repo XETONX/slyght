@@ -3,12 +3,24 @@
 > **Auto-loaded by Claude Code at session start for this repo.**
 > Read top-to-bottom before responding to John's first message. This file overrides the global `~/.claude/CLAUDE.md` (RuFlo) where they conflict.
 >
+> ## 🛡️ MANDATORY SESSION-START READ — BEFORE ANY WORK
+>
+> **`docs/PIPELINE.md`** is slyght's standing development pipeline. It is the operating system for ALL slyght work — every session, every bundle, every commit runs through it unless John explicitly suspends it. Each tier was born from a specific failure; skipping a tier reintroduces that failure class.
+>
+> **Read `docs/PIPELINE.md` fully before responding to John's first instruction.** The session bring-up sequence (read durable assets → Step 0 Ledger Walk against FRESH state → confirm roadmap position) is the LITERAL OPENING of every session, before any Gather. Per John 2026-05-23.
+>
+> ---
+>
 > **Read order at session start:**
-> 1. This file (CLAUDE.md)
-> 2. CC-PRINCIPAL-ENGINEER-MANUAL.md (operating constitution)
-> 3. FINANCIAL-INVARIANTS.md (the contract slyght must satisfy)
-> 4. FEATURE-MAP.md (atlas of surfaces, writers, state)
-> 5. Conditionally: active field report, sweep, or session prompt
+> 1. **`docs/PIPELINE.md`** ← the standing pipeline (mandatory first read)
+> 2. This file (CLAUDE.md)
+> 3. `SECURITY.md` decision-log (phase order non-negotiable; current live phase + committed-next)
+> 4. `docs/adr/ADR-H-tiered-build-pipeline.md` (full tier specs + standing rules referenced by PIPELINE.md)
+> 5. CC-PRINCIPAL-ENGINEER-MANUAL.md (operating constitution)
+> 6. FINANCIAL-INVARIANTS.md (the contract slyght must satisfy)
+> 7. FEATURE-MAP.md (atlas of surfaces, writers, state)
+> 8. Most recent `docs/sessions/*.md` (where last session left off, open queue)
+> 9. Conditionally: active SDD, field report, sweep, or session prompt
 
 ---
 
