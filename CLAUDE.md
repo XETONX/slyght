@@ -15,12 +15,15 @@
 > 1. **`docs/PIPELINE.md`** ← the standing pipeline (mandatory first read)
 > 2. This file (CLAUDE.md)
 > 3. `SECURITY.md` decision-log (phase order non-negotiable; current live phase + committed-next)
-> 4. `docs/adr/ADR-H-tiered-build-pipeline.md` (full tier specs + standing rules referenced by PIPELINE.md)
-> 5. CC-PRINCIPAL-ENGINEER-MANUAL.md (operating constitution)
-> 6. FINANCIAL-INVARIANTS.md (the contract slyght must satisfy)
-> 7. FEATURE-MAP.md (atlas of surfaces, writers, state)
-> 8. Most recent `docs/sessions/*.md` (where last session left off, open queue)
-> 9. Conditionally: active SDD, field report, sweep, or session prompt
+> 4. **`OPEN-BUGS.md`** (current substrate state — what's known broken right now, priority order)
+> 5. `docs/adr/ADR-H-tiered-build-pipeline.md` (full tier specs + standing rules referenced by PIPELINE.md)
+> 6. CC-PRINCIPAL-ENGINEER-MANUAL.md (operating constitution)
+> 7. FINANCIAL-INVARIANTS.md (the contract slyght must satisfy)
+> 8. FEATURE-MAP.md (atlas of surfaces, writers, state)
+> 9. Most recent `docs/sessions/*.md` (where last session left off, open queue)
+> 10. Conditionally: active SDD, field report, sweep, or session prompt
+>
+> **John's platform context (load-bearing):** Android Chrome PWA on Samsung Galaxy S23 Ultra. Single device, single writer. NOT iOS Safari. Any "phone behavior" discussion defaults to Android Chrome PWA semantics (pagehide / SW lifecycle / keepalive / Doze + App Standby battery optimization / Samsung One UI quirks).
 
 ---
 

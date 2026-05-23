@@ -993,6 +993,67 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 
 ---
 
+## Bugs surfaced 2026-05-23 session (end of Bundle 23 scoping + apiKey leak)
+
+### 50. URGENT — Bundle 32a push silently drops blobs >64KB on pagehide
+- **Bug:** `PUSH.pushFullState` uses `keepalive: true` for the pagehide flush; browser policy caps keepalive bodies at 64KB; John's blob is ~139KB post-redaction (~292KB pre-redaction). Pagehide pushes silently fail. iOS Safari issue assumed initially — **CORRECTED 2026-05-23: confirmed on Android Chrome PWA on Samsung S23 Ultra.** When Chrome backgrounds the PWA before the 30s debounce timer fires, the only push attempt is the keepalive-pagehide one, which drops on body-size. Net: hours of localStorage activity sit unpushed until the user happens to keep the app foregrounded long enough for the regular 30s debounce path (no keepalive limit) to fire.
+- **Source:** John reported KV stale state during apiKey-leak-fix verification; confirmed live by wrangler meta check showing `lastPushedAt` frozen at 2026-05-23T07:17:57Z while phone localStorage advanced by 9+ txns and ~$66 of activity to bal $714.67. Foundational bug — every architectural bundle that depends on push (Bundle 23 sync, Phase B, Bundle 33+) assumed push works.
+- **Repro:** open slyght PWA on phone; log 1+ txns; background or close the app before 30s elapse; `npx wrangler kv key get device:{hash}:state-full-meta --remote` shows old `lastPushedAt`. Or: pull `/pull-full-state`, observe bal/txns lagging phone localStorage.
+- **Fix bundle:** URGENT — own bundle BEFORE Bundle 33-cache / Bundle 23 sync. Design options (per session memory): (a) drop keepalive on pagehide, accept fire-and-forget risk; (b) gzip the body (may still exceed 64KB but extends headroom); (c) shorter 5s debounce so more pushes complete pre-backgrounding; (d) diff/delta push (more invasive); (e) service-worker retry queue (requires Bundle 33-cache substrate). Best-current-read: combo of (a) + (c) + (b) belt-and-suspenders. ~2-3hr scope.
+- **Status:** investigating · CONFIRMED LIVE in production; foundational fix for the next bundle queue
+
+### 51. PWA cache disease — SW serves stale code, blocking fix delivery
+- **Bug:** Service worker (`sw.js`) doesn't precache anything and has no `CACHE_VERSION` discipline; updates to `index.html` deployed to GitHub Pages may not propagate to John's installed PWA until the SW happens to refresh (Chrome update-on-navigation behavior is browser-dependent; can lag by hours/days). Required workaround tonight: John deleted the PWA + reinstalled to force a fresh SW + fresh `index.html`. Drone H (Bundle 23 scoping) enumerated zero `cache.put` calls in entire codebase.
+- **Source:** John 2026-05-23 — "+Add Debt button" mirage was stale-cached code rendering pre-Sub-bundle-1 markup. Verified by Drone B: button doesn't appear twice in HEAD source. Subsequent apiKey-leak-fix verification showed phone still on pre-hotfix code until manual PWA delete + reinstall.
+- **Repro:** ship a code change to GitHub Pages; observe John's PWA continues serving the old version until manual SW refresh.
+- **Fix bundle:** **Bundle 33-cache** — Drone H spec: `sw.js` install handler precaches `index.html` + `manifest.json` + `sw.js` + icons; `CACHE_VERSION` const bumped on every deploy; `activate` event prunes prior versions; client subscribes to `controllerchange` and shows "app updated — refresh" toast. Closes the workaround need for manual reinstall.
+- **Status:** open · workaround = PWA delete + reinstall (Android: long-press app icon → uninstall; reopen `xetonx.github.io/slyght` in Chrome → install). Fix scoped, awaiting bundle execution after push-reliability fix.
+
+### 52. Stan-7 ledger-orphan paidBills flag
+- **Bug:** `S.paidBills['2026-5-Stan-7']` is bare `true` (no `_txnTs` anchor, no matching debit txn in `S.txns`). Stan subscription was cancelled; the flag is a leftover. Per the txn-anchored rule (CDB-34, ADR-H Standing Rule 2), this is a SUSPECT flag.
+- **Source:** Ledger walk maiden run 2026-05-23, `scripts/recon/ledger-walk-paidbills.js`. Stan-7 is the ONLY paidBills entry in current state that's bare-true without ledger backing.
+- **Repro:** `node scripts/recon/ledger-walk-paidbills.js` → 1 ORPHAN reported (Stan-7).
+- **Fix bundle:** **P0-5 shipped (commit `c6b1d3c`) makes `BRAIN.bills.isPaidInCycle` treat this flag as unpaid via txn-anchored guard.** No further code fix needed; the flag can be left in state OR manually deleted via Settings/console if John wants tidy state. Magnitude impact: ~$13 (Stan amount).
+- **Status:** addressed by P0-5 reader-side fix · cleanup of the stale flag is optional Settings action
+
+### 53. YouTube Premium-18 paidBills entry matches two debit txns (test artifact)
+- **Bug:** paidBills key `2026-5-YouTube Premium-18` has matching txns at both 2026-05-11T11:43 and 2026-05-18T13:26, both $16.99 "YouTube Premium — paid" [Streaming]. The ledger walk flagged this as AMBIGUOUS.
+- **Source:** John 2026-05-23: "I think that was during testing or verification so double logged once removed?" — known test artifact, not a real bug. Either a double-log during slyght dev that wasn't fully cleaned up, or a true bank double-charge that John resolved separately.
+- **Repro:** `node scripts/recon/ledger-walk-paidbills.js` → 1 AMBIGUOUS reported.
+- **Fix bundle:** wontfix (test artifact, not money-truth bug)
+- **Status:** documented · not a real failure
+
+### 54. Bundle 32a / Sub-bundle 1 half-landed substrate (CDB-26)
+- **Bug:** Sub-bundle 1 cashflow-truth substrate (BRAIN.bills.isPaidInCycle, snap.derived.safeToSpendHeadroom, cashflowReceipt, 7-day burn) landed on hero/receipt/TO RECOVER/burn card, but DID NOT propagate to:
+  - `renderAlerts` (still uses legacy `safe` formula — Drone L Finding 4)
+  - `getThisWeekProjection` pace surface (uses legacy `isThisMonthlyBillPaid` instead of `BRAIN.bills.isPaidInCycle`) — **PARTIALLY FIXED CDB-28 commit `a3165bf`**
+  - `getBurn7d` NON_DISC filter (misses Insurance/Streaming/Fixed/BNPL/Health categories — Drone L Finding 2)
+  - "Daily living" tile (uses `S.activePlan.dailyLivingFloor` vs `S.weekdayBudget`/`S.weekendBudget` — two separate stores never synced — redirect-L #9)
+  - 5 explanation-modal copy strings (redirect-L #1, #2, #3, #5)
+  - Dashboard Recent Spending filter (only excludes roundups; Drone L Finding 8)
+  - `renderMonthlyPosition`'s "Genuine surplus" label (redirect-L #3)
+- **Source:** Drone L deep dashboard walk 2026-05-23 (`docs/sessions/2026-05-22-session.md` CDB-26)
+- **Repro:** `renderAlerts` shows zero alerts when coral hero shows negative headroom (because legacy `safe` formula doesn't know about livingRemaining); pace + hero use different bill-paid readers
+- **Fix bundle:** **Sub-bundle 1.5** — substrate completion. Mechanical propagation, smoke-gated. ~6-10 commits depending on appetite. Queued post-push-reliability + Bundle 33-cache + Bundle 23 sync.
+- **Status:** open · scoped via Drone L; queued behind foundational fixes
+
+### 55. Bonus visibility on dashboard (CDB-27, deferred per John's call)
+- **Bug:** `S.activePlan.income.bonus = {amount:1341, status:'confirmed', included:false}` exists in state. Bonus has ALREADY landed in S.bal via the salary credit ("PAYSLIP with Bonus" $8,623.33 on 2026-05-14, per ledger-walk-bonus). Dashboard never surfaces this. Drone L Findings 5 + 10 + Drone M's bonusLever mockup all proposed surfacing it; attempted commit was caught by John as a double-count (the lever was going to add bonus.amount to a basis that already contained it).
+- **Source:** Drone L 2026-05-23 (findings 5, 10); ledger-walk-bonus.js confirmed bonus is in S.bal not in a separate bucket; John 2026-05-23 caught the double-count attempt before push (CDB-38, CDB-39).
+- **Repro:** check dashboard for any surface mentioning the $1,341 bonus → none. State has it; UI doesn't.
+- **Fix bundle:** unscheduled. Three options on file (CDB-39): (a) remove the visibility question entirely [John's tonight choice — bonus is in S.bal, included:false is allocation-math gating, nothing legit to surface]; (b) repurpose as informational ("$1,341 bonus landed; $X spent since"); (c) architectural — sweep bonus into dedicated bucket on landing. John picked (a) tonight; defer to Bundle 33 UI redesign if visibility becomes important later.
+- **Status:** wontfix at the lever-level (option a); architectural option (c) deferred
+
+### 56. apiKey leak — historical KV exposure (RESOLVED, recorded for posterity)
+- **Bug:** `PUSH.pushFullState` sent raw localStorage including `S.apiKey` (Anthropic sk-ant-*) to worker-KV from 2026-05-20 (Bundle 32a ship) through 2026-05-23T20:41 AEST (commit `7a1d5a8` redaction ship). Key was in CF KV plaintext for ~72 hours.
+- **Source:** Drone R5 (Bundle 23 Tier-1 Red Team) finding T6.
+- **Fix bundle:** SHIPPED commit `7a1d5a8` — NEVER_SYNC deny-list mirrors `buildFullExport`'s pattern; 500kB body size cap added.
+- **Followup action by John (completed):** Anthropic key rotated. Old key revoked at console.anthropic.com. New key entered into slyght Settings, console → settings field, by John's hand only. Verified via fresh pull 2026-05-23T22:25 AEST that no `apiKey` field remains in pushed blob.
+- **SECURITY.md decision-log entry:** 2026-05-23.
+- **Status:** **fixed** (commit `7a1d5a8`, verified live)
+
+---
+
 ## Process
 
 - Add new bugs at the bottom with monotonically increasing numbers.

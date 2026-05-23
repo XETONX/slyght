@@ -258,7 +258,7 @@ Multi-tab on same device is the ONE concurrent-write race that survives single-d
 - Other tabs receive → reload `S` and `BILLS` from localStorage before their next user-triggered action
 - On pull-apply: also broadcast `{type: 'state-synced'}` so other tabs reload from synced state immediately
 
-**Phone-verify requirement (John 2026-05-23):** BroadcastChannel is a live-tab runtime API independent of SW cache. Should work on phone Chrome / Safari PWA. Phone-verify tab-sync fires on John's actual device, not just green smoke.
+**Phone-verify requirement (John 2026-05-23):** BroadcastChannel is a live-tab runtime API independent of SW cache. Should work on Android Chrome PWA (John's S23 Ultra target). Phone-verify tab-sync fires on John's actual device, not just green smoke.
 
 ### 6.11 Force-pull manual escape hatch (Option 2 if cheap)
 
