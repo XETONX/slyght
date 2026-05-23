@@ -9664,7 +9664,18 @@ function getThisWeekProjection() {
       }
       if (!occursOn.includes(day)) return;
       if (!_isDueInMonth(b, m)) return;
-      if (isThisMonthlyBillPaid(b.name, day, m, y)) return;
+      // CDB-28 (Ledger Walk session 2026-05-23): route through canonical
+      // BRAIN.bills.isPaidInCycle so pace + hero share one bill-paid reader
+      // (closes Drone L Finding 9 + Drone C cross-tile divergence). Falls back
+      // to legacy isThisMonthlyBillPaid during boot edge case — same pattern
+      // as getBillsDue at L4506.
+      const _cycleStart = S.activePlan && S.activePlan.cycleStartDate
+        ? new Date(S.activePlan.cycleStartDate)
+        : new Date(today.getFullYear(), today.getMonth(), 1);
+      const _billPaid = (typeof BRAIN !== 'undefined' && BRAIN.bills && typeof BRAIN.bills.isPaidInCycle === 'function')
+        ? BRAIN.bills.isPaidInCycle(b, _cycleStart)
+        : isThisMonthlyBillPaid(b.name, day, m, y);
+      if (_billPaid) return;
       // Skip today's bill if today is the actual day AND user already paid earlier today via txn —
       // but the paidBills lookup above already captures that.
       billsDueThisWeek += b.amt;
