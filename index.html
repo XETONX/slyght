@@ -18996,10 +18996,28 @@ const PUSH = {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return { ok: false, reason: 'no-state-in-localStorage' };
+      // Bundle 23 pre-flight hotfix (Drone R5 finding T6, 2026-05-23):
+      // PUSH historically sent raw localStorage including S.apiKey, putting
+      // the Anthropic API key in worker-KV plaintext. Mirror buildFullExport's
+      // deny-list (index.html:15074-15078) — single source of truth for
+      // never-sync fields. NEVER_SYNC also gates the future SYNC.merge pull
+      // path so the allowlist is enforced in code, not just policy.
+      const NEVER_SYNC = ['apiKey', '_prevState', 'chatHistory', 'pin', 'pinHash'];
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch (_) { return { ok: false, reason: 'parse-fail' }; }
+      if (parsed && parsed.S && typeof parsed.S === 'object') {
+        for (const k of NEVER_SYNC) delete parsed.S[k];
+      }
+      const body = JSON.stringify(parsed);
+      // Size cap (Drone R5 finding T2) — bounds amplification + matches worker cap.
+      if (body.length > 500000) {
+        if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState too-large:', body.length);
+        return { ok: false, reason: 'too-large', size: body.length };
+      }
       const init = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
-        body: raw,  // localStorage already JSON-stringified — pass through
+        body,
       };
       // Phase A — `keepalive: true` lets the request survive pagehide
       // for best-effort flush. Replaces the Bundle 32a sendBeacon path
