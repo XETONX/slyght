@@ -10,6 +10,7 @@ The non-negotiable principle underneath everything: **flags and derived state ar
 
 1. **Read the durable assets, in order:**
    - This pipeline doc
+   - `docs/JOHN-KNOWLEDGE.md` — John's working frontier (Demonstrated vs Building). Calibrates how to pitch explanations this session — peer-level on Demonstrated, scaffolded on Building. Append to it at session close.
    - `SECURITY.md` (phase order is non-negotiable; current live phase + committed-next)
    - `docs/adr/ADR-H-tiered-build-pipeline.md` (the full tier specs + standing rules)
    - `MEMORY.md` index + any pinned memories flagged at top
@@ -111,6 +112,7 @@ Capture this reasoning, not just the shape. A future session that doesn't know W
 
 - Update `docs/sessions/{date}.md`: what shipped, what's open, values calls made + why, the verified honest number.
 - Update the roadmap doc with any re-sequencing, and SECURITY.md decision-log for any security-relevant call.
+- **Append to `docs/JOHN-KNOWLEDGE.md`.** Did John demonstrate a new concept this session (caught a bug whose existence requires it, drove a call that requires it, named a mechanism by its right name)? → add to Demonstrated, cite the incident. Did a new concept surface that John engaged with but isn't yet operational on? → add to Building, with how-to-pitch guidance. Did a Building concept graduate? → move it across. The doc is append-mostly; future sessions calibrate from it.
 - Surface to John: the commit ledger, what's contractually locked, what opens next session.
 - If a new failure was caught this session, convert it into permanent process (ADR + memory pin + this doc) — the way every tier above was born. The catch becoming infrastructure is the compounding mechanism.
 
