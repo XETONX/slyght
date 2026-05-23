@@ -14140,6 +14140,20 @@ function renderPaydayLiving() {
 // Pure-ish utilities used by BRAIN.plan. Live outside the bubble so the
 // bubble's body stays focused on canonical writes.
 
+// P0-3a (Ledger Walk session 2026-05-23): local-ISO date helpers replace
+// `.toISOString().slice(0,10)` for any field representing a calendar day.
+// In Sydney (UTC+10 / UTC+11), `new Date(year, month, day)` produces local
+// midnight; `.toISOString()` shifts to UTC, which becomes the PREVIOUS
+// calendar day. The result: cycle dates, payday dates, and similar
+// "what day is it" fields silently land off-by-one. Use these helpers
+// to encode the local calendar day directly without TZ round-trip.
+function toLocalISODate(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+function _isoToday() { return toLocalISODate(new Date()); }
+
 // Find the next payday date based on S.payday (day of month, 1–28).
 function _resolveNextPayday(fromDate) {
   const d = fromDate ? new Date(fromDate) : new Date();
@@ -14193,9 +14207,11 @@ function _emptyActivePlan() {
   const next = _resolveNextPayday(now);
   const netPay = +S.income || 0;
   return {
-    cycleId: prev.toISOString().slice(0, 10),
-    cycleStartDate: prev.toISOString().slice(0, 10),
-    cycleEndDate: next.toISOString().slice(0, 10),
+    // P0-3a (Ledger Walk session 2026-05-23): toLocalISODate replaces
+    // .toISOString().slice(0,10) to stop the Sydney-TZ off-by-one drift.
+    cycleId: toLocalISODate(prev),
+    cycleStartDate: toLocalISODate(prev),
+    cycleEndDate: toLocalISODate(next),
     lockedAt: null,
     income: {
       netPay,
