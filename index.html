@@ -21215,6 +21215,11 @@ const BRAIN = {
       const savingsTotal = _bucketSavingsFromOv + _tripOrOtherSavings;
       // Known Upcoming
       const upcomingTotal = (p.knownUpcoming || []).reduce((s, i) => s + (+i.amount || 0), 0);
+      // P0-2 (Ledger Walk session 2026-05-23): projection math must exclude
+      // status:'bought' items because tickItem already debited them via
+      // recordWithAllocation. Unfiltered upcomingTotal stays for claim/committed
+      // sums (those track plan commitments, regardless of cash status).
+      const upcomingUnboughtTotal = (p.knownUpcoming || []).filter(i => i.status !== 'bought').reduce((s, i) => s + (+i.amount || 0), 0);
       // Daily living — trip-aware (Bundle 32 Sub-bundle 1).
       // Walks each day in [cycleStartDate, cycleEndDate], summing trip
       // uplifts per day under Option C net-of-bucket semantics. A trip
@@ -21260,9 +21265,12 @@ const BRAIN = {
       const expectedSalaryStill = (S.paydayReceived ? 0 : (+inc.netPay || 0));
       // Bundle 27 P4 fix: projectedEndBalance subtracts ONLY unpaid bills /
       // debts because already-paid items have already left currentBalance.
-      // Subtracting them again would double-count. (Living + upcoming are
-      // forward-only — none of them have been spent yet at this point.)
-      const projectedEndBalance = currentBalance + expectedSalaryStill + bonusAmt - (billsUnpaidTotal + debtsUnpaidTotal + livingTotal + upcomingTotal);
+      // Subtracting them again would double-count.
+      // P0-2 (Ledger Walk session 2026-05-23): same shape extended to
+      // knownUpcoming — status:'bought' items already left currentBalance
+      // via tickItem → recordWithAllocation, so use upcomingUnboughtTotal here.
+      // (Living is forward-only — none spent yet.)
+      const projectedEndBalance = currentBalance + expectedSalaryStill + bonusAmt - (billsUnpaidTotal + debtsUnpaidTotal + livingTotal + upcomingUnboughtTotal);
       const billsPaidThisCycle = billsList.filter(b => b.paid).length;
       const perDay = daysInCycle > 0 ? livingTotal / daysInCycle : 0;
       const availableNow = Math.max(0, freeTotal);
