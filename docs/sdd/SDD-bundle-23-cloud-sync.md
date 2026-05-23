@@ -1,6 +1,8 @@
 # SDD — Bundle 23 Cloud State Sync
 
-**Status:** Draft 2026-05-23, scoped via 10-drone pipeline (Step 0 + Tier 1 Gather × 5 + Red Team × 5). Awaiting John's triage on v1-tonight vs hold-for-dedicated-session.
+**Status:** Draft 2026-05-23, scoped via 10-drone pipeline (Step 0 + Tier 1 Gather × 5 + Red Team × 5). **v1 build PAUSED mid-session per John's two corrections:**
+1. **v2 MUST NOT ship before Phase B encryption-at-rest** — multi-device merge of plaintext financial state is the failure mode tonight's apiKey leak just demonstrated. Hard dependency, no compromise.
+2. **v1's value proposition is narrower than first scoped** — overwrite-only-on-empty solves cache-wipe recovery, NOT stale-device-resume. John deciding next session whether v1 is worth building before jumping to Phase B → v2.
 
 **Tip-of-main:** `7a1d5a8` (apiKey leak hotfix shipped pre-flight)
 
@@ -84,8 +86,11 @@ R3 Scenario C confirmed independently: same multi-device migration-race produces
 |---|---|---|---|
 | **Pre-flight** | apiKey leak fix | Push-side redaction + size cap | SHIPPED `7a1d5a8` |
 | **v1 (single-device safe)** | Pull-on-open + overwrite-only-on-empty-local + freshness anchor + schema versioning + post-pull push suppression + SNAPSHOTS pre-pull + audit events + UX toast | Client-side only; worker meta extension | ~3-4 hr build + smoke |
-| **v2 (multi-device merge)** | Worker per-field merge OR operation log + Lamport `_seq` + intent-keyed dedup + per-field conflict policies + conflict modal | Worker + client; significant architecture | Dedicated multi-session bundle |
+| **(Phase B prerequisite for v2)** | Encryption at rest (passphrase-derived key, client-side AES-GCM, worker holds only ciphertext) | Per SECURITY.md Phase B spec | Required before v2 |
+| **v2 (multi-device merge) — BLOCKED ON PHASE B** | Worker per-field merge OR operation log + Lamport `_seq` + intent-keyed dedup + per-field conflict policies + conflict modal | Worker + client; significant architecture | After Phase B ships |
 | **Deferred (Bundle 24+/Phase D)** | Cross-device token-pairing flow (QR / paste / identity layer) | Identity layer | Out of Bundle 23 scope |
+
+**Hard dependency (John 2026-05-23):** v2 MUST NOT ship before Phase B encryption-at-rest. Multi-device merge of plaintext financial state in worker-KV is the exact failure pattern the apiKey leak just exposed. v2 multiplies the surface — every device's push affects every other device's pull. The honest order is: Phase B encryption substrate → v2 merge built on encrypted blobs.
 
 **v1 delivers:**
 - Lost-localStorage recovery (cache wiped, token survives via export/manual)
@@ -226,7 +231,9 @@ Cap concern: if SNAPSHOTS hits its 250-entry cap mid-eviction, ensure last-known
 
 ---
 
-## 7. v2 Specification (DEFERRED — dedicated future session)
+## 7. v2 Specification (DEFERRED — BLOCKED ON PHASE B + dedicated future session)
+
+**Hard prerequisite:** Phase B encryption-at-rest MUST ship before any v2 work begins. v2 spec below assumes Phase B is live and worker handles only ciphertext blobs; merge logic operates on client-decrypted state.
 
 ### 7.1 Server-side merge (R1 fix for S3, S5, S15, S18)
 
@@ -366,33 +373,59 @@ Each commit Council + Human Verdict per ADR-H. ~11 commits, all small + Sentinel
 
 ## 12. Security carve-outs (R5 — formal)
 
+### Phase-B-INDEPENDENT (v1 ships before Phase B IF John greenlights v1 in §13 Q4)
+
 Required for v1 ship beyond the apiKey hotfix already pushed:
 - **Worker schema validation** — beyond `body.S && Array.isArray(body.BILLS)`, validate `typeof body.S.bal === 'number'`, etc. R5 T3.
 - **Client-side prototype-pollution rejection** in `BRAIN.cloudSync.pullFullState` sanitize step. R5 T3 + T9.
 - **NEVER_SYNC allowlist gates BOTH push (done) and pull-apply (v1 todo)**. R5 enforcement-in-code-not-policy.
 
-Required for v2:
-- `_remote: true` tagging on merged audit entries (R5 T4)
-- TOCTOU `_pullInFlight` flag for conflict detection (R5 T5)
-- Lamport `_seq` + `_globalSeq` from server (R1 bonus)
+These three are safe to ship pre-Phase-B because v1's overwrite-only-on-empty-local policy means the device never MERGES plaintext data from another writer — it either hydrates from empty (cache-wipe recovery) or keeps local (everything else). The single-device-tab same-token case is the only data flow.
 
-Deferred to Phase B (per SECURITY.md non-negotiable phase order):
+═════════════════════════════════════════════════════════════════════
+PHASE B HARD-DEPENDENCY LINE — everything below requires Phase B FIRST
+═════════════════════════════════════════════════════════════════════
+
+### Phase B PREREQUISITE for v2 (John 2026-05-23, no compromise)
+
+Phase B (encryption at rest under passphrase-derived key) MUST ship before v2 work begins. Rationale: v2 introduces multi-device MERGE of plaintext state from a shared KV namespace. Every device's push affects every other device's next pull. The apiKey leak (R5 T6, shipped pre-flight `7a1d5a8`) proved that plaintext state in worker-KV is a real attack surface — v2 multiplies it across every field, not just secrets. The honest sequence:
+
+1. **Phase B ships** — passphrase-derived AES-GCM, worker becomes dumb storage of ciphertext, token rotation + revocation list, rate limiting, audit log.
+2. **Then v2 builds on encrypted substrate** — merge logic operates on client-decrypted state; worker never sees plaintext; conflict resolution happens client-side post-decrypt.
+
+### v2 security items (BLOCKED until Phase B ships)
+
+- `_remote: true` tagging on merged audit entries (R5 T4) — only meaningful inside the encrypted boundary
+- TOCTOU `_pullInFlight` flag for conflict detection (R5 T5) — gates against mid-merge concurrent local writes
+- Lamport `_seq` + `_globalSeq` from server (R1 bonus) — server-stamped requires server-trustworthy substrate
+- Worker-side per-field merge logic OR operation-log model — operates on ciphertext at rest, plaintext at compute-time inside the device
+
+### Deferred to Phase B itself (per SECURITY.md non-negotiable phase order)
+
 - Stolen-token mitigation (rotation + revocation list)
 - Encryption at rest (E2E with passphrase-derived key)
 - Replay defense (request signing with HMAC + timestamp)
 - Rate limiting
 
-`SECURITY.md` decision-log entry to be added when v1 ships.
+`SECURITY.md` decision-log entry to be added when v1 ships AND a separate entry when Phase B → v2 sequence begins.
 
 ---
 
 ## 13. Open questions / values calls for John
 
-1. **v1 tonight vs hold for dedicated session?** Drone scoping took ~2 hours; v1 build is ~3-4 hours; v1 has 11 commits all Sentinel-gated. Reasonable to ship tonight if you have appetite; legitimate to defer for a fresh session.
-2. **v2 timeline:** v2 needs worker architecture decision (Durable Object vs version counter vs operation log). When?
-3. **Pull-on-open trigger:** at DOMContentLoaded+500ms (CS-A recommendation), or also on `visibilitychange` (when tab regains focus)?
-4. **Overwrite-only-on-empty-local IS narrow** — it covers cache-wipe + multi-tab-freshness but NOT stale-device-resume (a phone that hasn't opened in 2 weeks won't overwrite with the newer remote state). Is that acceptable for v1, or do you want a "force pull" Settings option?
-5. **Cloudflare Worker storage choice for v2:** stay on KV with version counter, or move to Durable Object for native CAS? Architectural decision pending.
+**Q4 is the gating decision** — John 2026-05-23: "I'll answer that next session — it might change whether v1 is worth building before v2 at all."
+
+1. **v1 tonight vs hold:** ANSWERED 2026-05-23 — HOLD pending Q4. v1 build paused after stashing schema-versioning substrate. Resume next session IF Q4 lands "v1 worth building."
+2. **v2 timeline:** answered architecturally — v2 BLOCKED on Phase B encryption-at-rest. v2 work cannot begin until Phase B ships.
+3. **Pull-on-open trigger:** at DOMContentLoaded+500ms (CS-A recommendation), or also on `visibilitychange` (when tab regains focus)? Decision-pending if v1 lands.
+4. **🚦 GATING DECISION — does v1's overwrite-only-on-empty actually solve a problem John has?**
+   - **v1 covers:** cache-wipe recovery (browser data cleared, token survives via export-then-paste), multi-tab freshness on same device (fresh tab pulls from KV).
+   - **v1 does NOT cover:** stale-device-resume (phone hasn't opened in 2 weeks; opens; localStorage is "non-empty" but stale; v1 KEEPS local under overwrite-only-on-empty policy → user sees stale state).
+   - **v2 covers** stale-device-resume (via per-field merge of newer-remote into local).
+   - **Phase B is the prerequisite for v2.**
+   - **The decision:** is cache-wipe-recovery alone (v1) worth ~3-4hr of build before Phase B → v2 ships? Or skip v1 and prioritise Phase B → v2 as the actually-useful sync mechanism?
+   - **John's framing 2026-05-23:** "It might change whether v1 is worth building before v2 at all." Answer pending next session.
+5. **Cloudflare Worker storage choice for v2:** stay on KV with version counter, or move to Durable Object for native CAS? Architectural decision pending — but ONLY after Phase B ships.
 6. **Apple Time Machine / Chrome Sync intersection:** localStorage doesn't sync via browser features. Acknowledged as out-of-scope, but worth flagging if Settings should expose "Export-then-import" as the documented cross-device bridge.
 
 ---
@@ -417,10 +450,24 @@ The drone-only investment was substantial (~3 hours including synthesis). The co
 
 ---
 
-## 16. Closing call
+## 16. Closing call (revised 2026-05-23 mid-session)
 
-This SDD is the deliverable of tonight's Bundle 23 scoping session. The pre-flight apiKey hotfix is shipped. v1 build is scoped, sequenced, and ready to fire whenever John greenlights.
+This SDD is the deliverable of tonight's Bundle 23 scoping session. The pre-flight apiKey hotfix is shipped. v1 build was started (schema-versioning substrate, commit 1 of 11) and immediately paused after John's two corrections landed:
 
-The disciplined ship is v1 tonight if appetite + time + ack; OR v1 next session with the SDD as input. Either path keeps the substrate honest.
+1. v2 hard-blocked on Phase B encryption-at-rest (no compromise; apiKey leak proves it).
+2. v1's value proposition is narrower than first-scoped (cache-wipe recovery only, not stale-device-resume). Q4 in §13 is the gating decision — does that narrower scope justify the build effort before Phase B → v2 ships?
 
-v2 deserves its own dedicated multi-session bundle. Don't rush it.
+**Next session opens with:**
+1. John answers Q4 (does v1 solve a real problem you have, or skip to Phase B → v2?)
+2. If v1 worth building → resume from SDD §6, regenerate schema-versioning commit, ship 11 commits Sentinel-gated.
+3. If v1 not worth building → defer Bundle 23 entirely, prioritise Phase B as the next architectural bundle (Phase B substrate then unblocks v2 + closes more failure modes than v1 ever could).
+
+**The work that landed despite the pause:**
+- 10-drone pipeline output (this SDD synthesizes it durably)
+- Pre-flight apiKey hotfix (commit `7a1d5a8`) — independent value, ships regardless
+- ADR-H additional refinement (citation discipline added mid-session)
+- Schema-versioning substrate stashed/reverted ready for 5-min regen if v1 greenlights
+
+The pipeline did its job: surfaced the architectural gap before any v1 code shipped. The PAUSE itself is the most important commit pattern of the session — it's the pipeline catching scope drift before a 3-4hr build crystalizes around the wrong question.
+
+v2 will land. After Phase B. Not before.
