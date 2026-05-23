@@ -282,6 +282,47 @@ Beast-mode sweep flagged two genuine secrets in committed code. Both shipped tod
 
 **Action remaining (John):** `cd slyght-worker && npx wrangler deploy` to activate the new worker. Pre-deploy: client calls 404 on `/weather` (graceful fallback to cached weather). Post-deploy: weather chip works through the proxy. Phone-verify on 380px.
 
+### 2026-05-23 — apiKey leak in PUSH.pushFullState — patched + key-rotation action
+
+Drone R5 (Bundle 23 scoping pipeline) surfaced that `PUSH.pushFullState` at `index.html:18995` had been sending raw `localStorage.getItem('slyght_v5')` to worker-KV since Bundle 32a shipped (2026-05-20). The Anthropic `S.apiKey` field (sk-ant-*) was in worker-KV plaintext for ~72 hours.
+
+**Fix shipped (commit `7a1d5a8`):**
+- `NEVER_SYNC` deny-list `['apiKey', '_prevState', 'chatHistory', 'pin', 'pinHash']` redacted from outgoing push body. Mirrors `buildFullExport`'s existing deny-list at L15074-15078 — single source of truth.
+- 500kB body size cap on client and worker (Drone R5 T2; matches worker per below).
+- Smoke: `tests/smoke/push-fullstate-redaction.smoke.js` (3 cases).
+
+**Action taken (John, post-push):**
+- Rotated Anthropic API key at console.anthropic.com. Old key revoked.
+- New key entered into slyght Settings, console → settings field, by John's hand only. Never touched CC or repo.
+
+**Residual risk:** The leaked key was inert post-rotation. Historical KV write may still be in CF backups; not material since the key it leaked is now invalid.
+
+### 2026-05-23 — Bundle 23 single-device sync ships on plaintext-KV knowingly; Phase B committed next bundle
+
+After 10-drone scoping (Step 0 + Tier 1 Gather × 5 + Red Team × 5), Bundle 23 re-scoped from "v1/v2 split with v2 blocked on Phase B" to "single-device total sync" (John 2026-05-23). The original v1/v2 framing was rooted in multi-device merge concerns that don't apply to John's actual usage (phone PWA only, single device, single writer).
+
+**Decision: ship single-device sync on the existing plaintext-KV substrate.**
+
+**Rationale recorded:**
+- **No risk amplification.** State is ALREADY in worker-KV plaintext via Bundle 32a's push-on-save (every save → 30s debounce → push). Pull-on-open is a read in the direction the write already goes; it adds zero new exposure surface.
+- **Single-writer eliminates the Phase-B-first requirement.** The "Phase B before any multi-device merge" rule (logged 2026-05-23 during v2 scoping) was rooted in multi-device exposure amplification — every device's push affects every other device's pull, multiplying any plaintext exposure across the device fleet. With single-device usage there is no fleet; the rule doesn't bind.
+- **The apiKey leak is patched + key rotated.** The specific vector that motivated the "Phase B first" caution (secrets in pushed state) is closed via `NEVER_SYNC` enforcement above.
+
+**Defensive minimums shipping WITH single-device sync** (per Drone R5; in the same session as sync, not detached):
+- Worker schema validation beyond `body.S && Array.isArray(body.BILLS)` — validate field types of pulled state pre-apply.
+- Client-side prototype-pollution rejection on pulled JSON (`__proto__` / `constructor` / `prototype` own-keys rejected before merge target).
+- `NEVER_SYNC` allowlist enforced on BOTH push (done, this entry) AND pull-apply paths.
+
+**Phase B is the committed NEXT architectural bundle after sync ships.** Not "someday." Not "if-time." Phase B encryption-at-rest is needed for the plaintext that's ALREADY in KV regardless of sync. Currently the only attacker scenario it doesn't already protect against is "CF account / KV data subpoena / CF insider" — Phase B (encrypt at rest with passphrase-derived key, worker holds only ciphertext) closes that. Specified in this doc's Phase B section; spec is locked.
+
+**Ordering of subsequent bundles (decided 2026-05-23):**
+1. Bundle 33-cache (PWA service-worker precache + CACHE_VERSION discipline) — soft prerequisite for sync to deploy reliably to John's phone.
+2. Bundle 23 single-device sync (re-scoped, 8 commits per SDD).
+3. **Phase B encryption-at-rest.** ← Committed next architectural bundle after sync.
+4. (Phase C bank integration only after Phase B is in place per existing non-negotiable phase order.)
+
+This entry is the contract. Future-CC reading this: do NOT defer Phase B further when sync ships. Phase B follows immediately.
+
 ### YYYY-MM-DD — [next decision goes here]
 
 ---

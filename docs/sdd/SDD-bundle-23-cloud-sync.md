@@ -1,8 +1,10 @@
 # SDD — Bundle 23 Cloud State Sync
 
-**Status:** Draft 2026-05-23, scoped via 10-drone pipeline (Step 0 + Tier 1 Gather × 5 + Red Team × 5). **v1 build PAUSED mid-session per John's two corrections:**
-1. **v2 MUST NOT ship before Phase B encryption-at-rest** — multi-device merge of plaintext financial state is the failure mode tonight's apiKey leak just demonstrated. Hard dependency, no compromise.
-2. **v1's value proposition is narrower than first scoped** — overwrite-only-on-empty solves cache-wipe recovery, NOT stale-device-resume. John deciding next session whether v1 is worth building before jumping to Phase B → v2.
+**Status:** RE-SCOPED 2026-05-23 to "single-device total sync" after John's Q4 answer landed: phone PWA only, single device, one writer = no concurrent-write problem = no merge machinery needed. Drone pipeline output preserved as evidence; the v1/v2 framing it produced is superseded.
+
+**Key insight:** Most of the drone-surfaced complexity (v2 per-field merge, Lamport clocks, intent dedup, conflict modal, `_device`/`_localId`, tombstones, server-side merge, `_remote:true` audit tagging) existed to solve **concurrent-write conflicts across multiple devices**. With single-writer reality, there are no conflicts. The hard problem evaporates.
+
+**This SDD scopes:** Single-device total sync. Phone PWA pushes on save (built — Bundle 32a) + pulls on open with remote-if-newer apply (this build). About half v1's scope, fundamentally simpler. Build: own session, after Bundle 33-cache lands as soft prerequisite.
 
 **Tip-of-main:** `7a1d5a8` (apiKey leak hotfix shipped pre-flight)
 
@@ -23,15 +25,22 @@
 
 ---
 
-## 1. Mission
+## 1. Mission (re-scoped 2026-05-23)
 
-Close the dump-to-live drift and lay the substrate for multi-device state sync, building on Phase A (device-token auth + KV namespacing) and Bundle 32a (push-on-save → worker-KV).
+**Single-device total sync.** Close the dump-to-live drift; ensure John's phone PWA + worker-KV stay in lockstep across sessions, browser cache clears, and multi-tab usage on the same device.
 
 **What done looks like:**
-- App on boot pulls remote state and reconciles
-- Multi-tab + multi-session-on-same-device freshness is correct
-- (v2) Multi-device concurrent writes converge without money-truth loss
-- Audit log captures every sync event with forensic ground truth
+- App on boot pulls remote state; remote-if-newer applies, no-op otherwise
+- Cache-wipe / new-install on same device + same token: pull hydrates state from KV
+- Stale-device-resume: phone hasn't opened in weeks → opens → pulls newer KV state → state refreshes
+- Multi-tab same-device: tabs converge to last-write-wins via BroadcastChannel
+- Audit log captures every sync event
+- Sync UX: silent on no-op; toast on remote-applied; modal on schema-version refusal
+
+**Explicitly out of scope:**
+- Multi-device JOIN flow (different tokens) — deferred to Bundle 24+/Phase D
+- Concurrent-write conflict resolution — impossible scenario with single writer
+- E2E encryption (deferred to Phase B as committed-next-bundle per `SECURITY.md` decision-log 2026-05-23)
 
 ---
 
@@ -80,17 +89,22 @@ R3 Scenario C confirmed independently: same multi-device migration-race produces
 
 ---
 
-## 5. Scope split — v1 / v2 / deferred
+## 5. Scope — single-device total sync + the cleanly-bounded follow-ons
 
-| Layer | Scope | Architecture | Estimated work |
-|---|---|---|---|
-| **Pre-flight** | apiKey leak fix | Push-side redaction + size cap | SHIPPED `7a1d5a8` |
-| **v1 (single-device safe)** | Pull-on-open + overwrite-only-on-empty-local + freshness anchor + schema versioning + post-pull push suppression + SNAPSHOTS pre-pull + audit events + UX toast | Client-side only; worker meta extension | ~3-4 hr build + smoke |
-| **(Phase B prerequisite for v2)** | Encryption at rest (passphrase-derived key, client-side AES-GCM, worker holds only ciphertext) | Per SECURITY.md Phase B spec | Required before v2 |
-| **v2 (multi-device merge) — BLOCKED ON PHASE B** | Worker per-field merge OR operation log + Lamport `_seq` + intent-keyed dedup + per-field conflict policies + conflict modal | Worker + client; significant architecture | After Phase B ships |
-| **Deferred (Bundle 24+/Phase D)** | Cross-device token-pairing flow (QR / paste / identity layer) | Identity layer | Out of Bundle 23 scope |
+| Layer | Scope | Status |
+|---|---|---|
+| **Pre-flight (shipped)** | apiKey leak fix + 500kB body cap | SHIPPED `7a1d5a8` |
+| **Soft prerequisite** | Bundle 33-cache (sw.js precache + CACHE_VERSION + skipWaiting + controllerchange toast) | Lands before sync per John's order. Without it, sync logic may not propagate to phone reliably. |
+| **THIS BUNDLE — Bundle 23 single-device sync** | Pull-on-open + remote-if-newer apply + SNAPSHOTS pre-pull + schema versioning + post-pull push suppression + multi-tab BroadcastChannel + sync UX + audit events + R5 defensive minimums (worker schema validation, prototype-pollution rejection, NEVER_SYNC on pull-apply) | Scope-locked 2026-05-23; build in own fresh session |
+| **Committed next bundle** | Phase B encryption-at-rest (passphrase-derived key, AES-256-GCM, worker holds only ciphertext) per `SECURITY.md` Phase B spec | Per `SECURITY.md` 2026-05-23 decision-log entry: ships IMMEDIATELY after Bundle 23. Not "someday." |
+| **Deferred (Bundle 24+/Phase D)** | Cross-device token-pairing flow (QR / paste / identity layer) | Out of single-device-sync scope. Reopens when John's usage actually goes multi-device. |
 
-**Hard dependency (John 2026-05-23):** v2 MUST NOT ship before Phase B encryption-at-rest. Multi-device merge of plaintext financial state in worker-KV is the exact failure pattern the apiKey leak just exposed. v2 multiplies the surface — every device's push affects every other device's pull. The honest order is: Phase B encryption substrate → v2 merge built on encrypted blobs.
+**Hard ordering recorded in `SECURITY.md` 2026-05-23:**
+1. Bundle 33-cache (soft prerequisite for reliable code-delivery to phone)
+2. Bundle 23 single-device sync (this SDD, 8 commits)
+3. **Phase B encryption-at-rest** ← committed next architectural bundle
+
+The "Phase B before any sync" rule from earlier in this session was rooted in multi-device exposure amplification (every device's push affects every other device's pull, multiplying any plaintext exposure). Single-writer reality doesn't have a device fleet to amplify across — the rule doesn't bind. But Phase B is needed for the plaintext that's ALREADY in KV regardless of sync; ordering pushes it to the next bundle, not the bundle-after-next.
 
 **v1 delivers:**
 - Lost-localStorage recovery (cache wiped, token survives via export/manual)
@@ -105,7 +119,7 @@ R3 Scenario C confirmed independently: same multi-device migration-race produces
 
 ---
 
-## 6. v1 Specification
+## 6. Single-device sync specification
 
 ### 6.1 Freshness anchor (CS-B)
 
@@ -135,13 +149,13 @@ const SCHEMA_VERSION = 30;   // bump on every migration ship
 - If `remote < local` → apply remote; load()-inline migrations upgrade it
 - New Guardian rule: any commit touching seedV* / load()-inline migration MUST bump `SCHEMA_VERSION`
 
-### 6.3 `_device` + `_localId` migration (R3)
+### 6.3 `_device` + `_localId` migration — NOT NEEDED for single-device sync
 
-One-shot `_txnDeviceIdMigrationV1` in `load()`:
-- For each `S.txns[i]` lacking `_device`: stamp `_device = 'legacy:' + deviceHash`, `_localId = String(t.id ?? 'ts-' + t.ts)`
-- Per-device unique to prevent cross-device collision on legacy ids
-- New writes (after Bundle 23 v1): `_device = deviceHash`, `_localId = ++S._nextLocalId`
-- Substrate for v2's union-by-(_device, _localId) merge
+Single writer = no cross-device collision = no need for device-stamped txn ids.
+
+Deferred to multi-device JOIN bundle (24+/Phase D) if John's usage ever expands beyond single-device. For single-device-sync MVP, txn arrays replace wholesale; no merge needed.
+
+This is the most significant scope reduction vs original v1: a full migration (~25 lines + smoke + idempotency check) drops entirely.
 
 ### 6.4 Pull-on-open orchestrator
 
@@ -156,25 +170,34 @@ API:
 
 Non-blocking against splash — splash stays John's escape hatch. Pull cannot block splash dismissal.
 
-### 6.5 Apply policy — OVERWRITE-ONLY-ON-EMPTY-LOCAL (most conservative MVP)
+### 6.5 Apply policy — REMOTE-IF-NEWER (single-writer total replace)
 
 ```
-detect localStorage state:
-  if (S.txns.length > 0 OR BILLS.length > 0) → SKIP pull-apply
-  // (local has data; don't overwrite. Audit-log "remote-newer-kept-local" if applicable.)
-  
-  else → eligible for overwrite (true cold-boot case):
-    1. SNAPSHOTS.take('pre-cloud-pull-' + Date.now())
-    2. pull remote
-    3. validate schemaVersion ≤ local
-    4. sanitize against NEVER_SYNC + prototype-pollution
-    5. apply: write to localStorage, refresh S/BILLS in-memory
-    6. refreshModel + renderAll
-    7. showToast('☁️ Synced from cloud · X ago')
-    8. audit log entry
+pull-on-open at DOMContentLoaded+500ms:
+  1. GET /pull-full-state-meta (small, fast — just compare-headers)
+  2. if pull-meta fails (404, 401, network) → silent no-op + audit-log entry
+  3. if remote._schemaVersion > local SCHEMA_VERSION → refuse + modal "update slyght" + audit
+  4. compare remote.lastSavedAt vs local S._lastSavedAt:
+     - if remote ≤ local + tolerance(2s) → silent no-op + audit "remote-not-newer"
+     - if remote > local → eligible for apply:
+       a. SNAPSHOTS.take('pre-cloud-pull-' + Date.now())
+       b. if SNAPSHOTS.take throws → ABORT (R2 spec #29 — never merge without rollback)
+       c. GET /pull-full-state (full body)
+       d. parse JSON; if throw → audit + silent no-op (no state change)
+       e. validate shape: typeof body.S === 'object' && Array.isArray(body.S.txns) && Array.isArray(body.BILLS)
+       f. sanitize: strip NEVER_SYNC fields; reject __proto__ / constructor / prototype own-keys
+       g. apply (total replace): write to localStorage, hydrate S + BILLS in-memory
+       h. set window._suppressPushUntil = Date.now() + 5000; clear pending push timer
+       i. refreshModel; renderAll
+       j. showToast('☁️ Synced from cloud · X ago')
+       k. audit log entry CLOUD_SYNC_PULL_APPLIED with deltas
 ```
 
-**No merge logic in v1.** This sidesteps R1+R3's architectural gap entirely for v1. v2 is where merge lands.
+**This is TOTAL REPLACE, not merge.** Single-writer means newer-remote IS the truth — no field-level reconciliation needed. The hard problem doesn't exist with one writer.
+
+**Why this is safe:**
+- One writer (John's phone) → remote was written by THIS device's prior session. Newer remote = newer local-self. Replacing local with remote can't lose data because remote IS local's future state.
+- Multi-tab same-device handled separately via BroadcastChannel (§6.10).
 
 ### 6.6 Post-pull push suppression (R3)
 
@@ -223,17 +246,39 @@ Audit entry shape (extends existing `BRAIN.audit.appendReconLog`):
 - Worker `/push-full-state` size cap 500kB (added in apiKey hotfix)
 - Pull-apply validates schema shape before mutating `S` (R5 T22 — captive-portal HTML body must not parse as state)
 
-### 6.11 SNAPSHOTS reversibility (CS-E + R5)
+### 6.10 Multi-tab same-device safety — BroadcastChannel
 
-`SNAPSHOTS.take('pre-cloud-pull-' + ts)` MUST fire before any state mutation. If `SNAPSHOTS.take` throws or returns falsy, ABORT merge (R2 spec #29).
+Multi-tab on same device is the ONE concurrent-write race that survives single-device scope:
+- Tab A and Tab B both have slyght open. Both share localStorage but have separate in-memory `S`.
+- Tab A writes → Tab B's in-memory `S` is stale.
+- Tab B writes → overwrites Tab A's write on localStorage.
+
+**Fix:** `BroadcastChannel('slyght-sync')`. On any `save()`:
+- Broadcast `{type: 'state-saved', _lastSavedAt}`
+- Other tabs receive → reload `S` and `BILLS` from localStorage before their next user-triggered action
+- On pull-apply: also broadcast `{type: 'state-synced'}` so other tabs reload from synced state immediately
+
+**Phone-verify requirement (John 2026-05-23):** BroadcastChannel is a live-tab runtime API independent of SW cache. Should work on phone Chrome / Safari PWA. Phone-verify tab-sync fires on John's actual device, not just green smoke.
+
+### 6.11 Force-pull manual escape hatch (Option 2 if cheap)
+
+Settings option "Pull latest from cloud" — manual trigger of `BRAIN.cloudSync.pullOnOpen()`. Useful for:
+- Manual cross-device bridge during browser-data-clear scenarios
+- Debug / forensic ("did sync actually run?")
+
+Trivial to add (~15 lines: button in Settings + click handler). Bundles into the sync UX commit if it fits cleanly; drops if it bloats.
+
+### 6.12 SNAPSHOTS reversibility (CS-E + R5)
+
+`SNAPSHOTS.take('pre-cloud-pull-' + ts)` MUST fire before any state mutation. If `SNAPSHOTS.take` throws or returns falsy, ABORT apply (R2 spec #29).
 
 Cap concern: if SNAPSHOTS hits its 250-entry cap mid-eviction, ensure last-known-pre-pull preserved. R5 T14: preserve dedicated `pre-pull` slot exempt from eviction.
 
 ---
 
-## 7. v2 Specification (DEFERRED — BLOCKED ON PHASE B + dedicated future session)
+## 7. What single-device sync DOESN'T need (and why, for the record)
 
-**Hard prerequisite:** Phase B encryption-at-rest MUST ship before any v2 work begins. v2 spec below assumes Phase B is live and worker handles only ciphertext blobs; merge logic operates on client-decrypted state.
+Drone outputs anticipated multi-device scenarios. With John's single-writer clarification, all of the following EVAPORATE — kept here so future-CC / a future multi-device pivot has the analysis on file rather than re-deriving it:
 
 ### 7.1 Server-side merge (R1 fix for S3, S5, S15, S18)
 
@@ -276,51 +321,57 @@ Every txn emitted from a logical intent (bill mark-paid, tick on knownUpcoming, 
 
 Every audit entry merged from remote carries `_remote: true` + `_remoteFromHash` + `_mergedAt`. Local writers MUST NOT set `_remote`. Heal-on-read (INV-30, INV-32) trusts only `_remote !== true` entries when reconstructing canonical state. Guardian rule: any literal `_remote: true` in source code outside `SYNC.merge` is a violation.
 
+### Why all of §7 doesn't apply to single-device sync
+
+Every item in §7 above (per-field merge, Lamport clocks, intent dedup, conflict modal, `_device`/`_localId`, tombstones, `_remote:true` tagging) exists to solve **concurrent-write conflicts across multiple devices**. With single-writer reality:
+- Newer-remote always reflects same-device's most-recent state
+- Total replace is honest because remote-newer = local's future
+- No conflict can exist because there's only one party to disagree with
+
+The analysis is preserved here so a future multi-device bundle (24+/Phase D) doesn't repeat the drone scoping work. None of it ships in single-device sync.
+
 ---
 
-## 8. Smoke + property spec inventory
+## 8. Smoke + property spec inventory (trimmed for single-device scope)
 
-### v1 must-ship (P0)
+Single-writer scope deletes most adversarial coverage. Remaining ~12 P0 smoke specs + ~5 property invariants.
 
-From R2's 46 negative specs, the 17 P0s that apply to v1's overwrite-only-on-empty-local apply policy:
-- #1 cycle conservation invariant
-- #2 txn preservation
-- #3 unique-to-remote txn preservation
-- #6 paidBills object-shape supremacy
-- #12 lockedAt sticky
-- #14 _lastSavedAt monotonic
-- #15 apiKey never travels (regression guard on the hotfix)
+### P0 smoke specs (from R2)
+
+Apply directly to single-device-sync (remote-if-newer total replace):
+- #14 `_lastSavedAt` monotonic (the freshness anchor IS the comparison primitive)
+- #15 apiKey never travels (regression guard on hotfix `7a1d5a8`)
 - #16 pinHash never travels
 - #17 device token never travels
-- #19 activePlan shape required
-- #26 pull MUST NEVER push seed-state during migration-ladder
-- #27 write barrier (pull never overwrites local mid-save())
-- #29 SNAPSHOTS.take failure aborts merge
-- #32 pull failure NEVER corrupts S
+- #19 activePlan shape required post-apply
+- #20 pull MUST NEVER block splash > 5s (escape-hatch protection)
+- #21 toast MUST NEVER appear on no-op pull
+- #29 SNAPSHOTS.take failure ABORTS apply
+- #32 pull failure NEVER corrupts S (atomic apply, validate first)
+- #33 garbled JSON throws no uncaught
+- #34 401 NEVER auto-clears device token
 - #39 schemaVersion forward-incompat refusal
-- #43 OVERWRITE event MUST have preceding SNAPSHOTS entry
+- #43 every OVERWRITE event MUST have preceding SNAPSHOTS entry
+- #44 PULL_FAIL audit entry MUST have errorClass
 
-From R4's 22 properties, the 11 P0s:
-- P1.1 idempotence
-- P2.1 txn conservation
-- P2.2 cash conservation under replay
-- P2.3 paidBills key conservation
-- P2.4 debt-paid sticky
-- P3.1 lock monotonicity
-- P4.1 snapshot precedes overwrite
-- P5.1 device-local never travels
-- P6.1 output is valid (schema)
-- P7.1 deterministic under fixed inputs
+Adversarial scenarios that **DON'T** apply (because single writer): R1 S3 network reorder, S5 cross-device wipe, S7 txn migration race, S9 intent double-tick, S15 cross-tab + different-token wipe, S18 multi-tab cross-namespace race. About half R1's 22 scenarios evaporate.
 
-(P1.2 commutativity-union is v2-relevant; not P0 for v1's overwrite-only path.)
+Adversarial scenarios that **still** apply (these become the smoke catalog): S1+S2 clock skew, S4 migration ladder race, S20 schema version skew, S21 storage quota, S22 garbage response, S17 undo post-pull. + multi-tab same-device race (§6.10's BroadcastChannel addresses this).
 
-### v2 must-ship (additional P0)
+### P0 property invariants (from R4)
 
-The remaining 29 P1 from R2 + 11 P1/P2 from R4 + the per-field merge specs.
+Single-device-relevant subset:
+- P1.1 Idempotence: `apply(local, remote=local)` ≡ local (modulo audit + _lastSavedAt)
+- P2.1 + P2.2 Txn + cash conservation under replay (total-replace preserves trivially)
+- P5.1 Device-local never travels (apiKey, pinHash, device token, push subscription)
+- P6.1 Output is valid (schema validator passes on applied state)
+- P7.1 Deterministic apply (same inputs → same output, no Date.now() inside the fn)
+
+P1.2 commutativity, P1.3 associativity, P2.3-P2.5 conservation-across-merge, P3.x monotonicity-under-merge, P4.x reversibility-via-merge — all v2-only. Drop.
 
 ### Implementation framework
 
-R4 recommendation: hand-rolled in-page property checker via `page.evaluate`. No fast-check dep added. Seeded RNG + reproducible failures `{seed, counterexample}` for paste-back. ~60 lines harness.
+R4 recommendation stands: hand-rolled in-page property checker via `page.evaluate`. Trimmed to ~5 properties; harness is ~40 lines.
 
 ---
 
@@ -351,23 +402,22 @@ Disaster recovery:
 
 ---
 
-## 11. Implementation plan — v1 build sequence (~3-4 hr)
+## 11. Implementation plan — 8-commit slate (~2 hr)
 
-Order picked for minimum-blast-radius and Sentinel-gating per commit:
+Per John's lock 2026-05-23. Each Sentinel-gated, Council + Human Verdict per ADR-H. Build runs in own fresh session AFTER Bundle 33-cache lands (soft prerequisite for reliable code-delivery to phone).
 
-1. **Schema versioning substrate** — add `SCHEMA_VERSION` const + `S._schemaVersion` stamping in `save()` + Guardian rule. ~30 lines. Smoke: assert stamped + Guardian fires on touch.
-2. **Freshness anchor** — add `S._lastSavedAt = Date.now()` in `save()`. ~5 lines. Smoke: assert monotonic.
-3. **`_txnDeviceIdMigrationV1`** in `load()` — stamp legacy txns. ~25 lines. Smoke: idempotent + per-device uniqueness.
-4. **Worker meta extension** — add `lastSavedAt` + `schemaVersion` to `state-full-meta` + response headers. ~10 worker lines. Smoke: assert headers present on pull.
-5. **`BRAIN.cloudSync` bubble** — `pullMeta`, `pullFullState`, sanitize helpers. ~70 lines. Smoke: each callable, sanitize strips NEVER_SYNC + rejects prototype-pollution.
-6. **`pullOnOpen` orchestrator** — overwrite-only-on-empty-local apply policy + SNAPSHOTS pre-pull + audit. ~80 lines. Smoke: covers R2 specs #1, #2, #6, #12, #15-17, #26, #29, #32, #39, #43.
-7. **Post-pull push suppression** — `_suppressPushUntil` + clear pending timer. ~10 lines. Smoke: assert no push amplification post-pull.
-8. **Insert `pullOnOpen` call at DOMContentLoaded+500ms** — wire into boot. ~5 lines. Smoke: assert pulls fire after selfTest, before autodebit-floor.
-9. **`S.cloudSyncEnabled` rename + flag plumbing** — single flag governs push+pull. ~15 lines. Smoke: assert disable suppresses both.
-10. **Sync UX wiring** — toast on overwrite, modal on schema refusal, silent on no-op. ~30 lines. Smoke: assert per-state UX.
-11. **Property test harness** — `runProperty(name, gen, check, N=50)` ~60 lines, ~11 P0 properties. Smoke: all P0 properties green.
+1. **Freshness anchor + SCHEMA_VERSION substrate** — add `S._lastSavedAt = Date.now()` in `save()`, `const SCHEMA_VERSION = 30`, stamp on save. ~35 lines. Smoke: assert both stamped + monotonic.
+2. **Worker meta extension** — `state-full-meta` echoes `lastSavedAt` + `schemaVersion` from blob; `X-Slyght-Last-Saved-At` + `X-Slyght-Schema-Version` headers on `/pull-full-state` + `/pull-full-state-meta`. ~15 worker lines + R5's worker-side schema validation + size cap (mirror of client cap). Smoke: assert headers present + worker rejects garbled bodies.
+3. **`BRAIN.cloudSync` bubble** — `pullMeta()` + `pullFullState()` readers + `sanitize()` helper (strips `NEVER_SYNC` on apply, rejects `__proto__` / `constructor` / `prototype`). ~70 lines. Smoke: each callable, sanitize strips + rejects.
+4. **`pullOnOpen()` orchestrator + apply path** — remote-if-newer policy, SNAPSHOTS pre-pull, schema check, validate shape, sanitize, atomic apply, post-pull push suppression (`window._suppressPushUntil` + clear pending timer). ~100 lines. Smoke covers R2 specs #14-17, #29, #32-33, #39, #43-44.
+5. **Boot wiring** — insert `BRAIN.cloudSync.pullOnOpen()` call at DOMContentLoaded+500ms after `BRAIN.selfTest.run()`, before autodebit-floor init. ~10 lines. Smoke: assert pulls fire after selfTest, before autodebit; respects `cloudSyncEnabled`.
+6. **`S.cloudSyncEnabled` rename + plumbing** — rename `S.pushOnSaveEnabled`, single flag governs push+pull symmetrically. Migration shim reads old field on load. ~20 lines. Smoke: assert disable suppresses both push and pull.
+7. **Sync UX + audit events** — toast on remote-applied (`'☁️ Synced from cloud · X ago'`), silent on no-op, `EDIT_MODAL.openCustom` on schema-refusal, 6 new `BRAIN.SOURCES` for audit. + Settings "Pull latest from cloud" force-pull button IF cheap (~15 extra lines; drop if bloats). ~50 lines. Smoke: per-state UX assertions.
+8. **Multi-tab BroadcastChannel** — `BroadcastChannel('slyght-sync')` on save (`state-saved` event with `_lastSavedAt`) + on apply (`state-synced`). Other tabs reload S/BILLS from localStorage on receive. ~25 lines. Smoke: assert second tab updates after first tab's save. **Phone-verify after build** that tab-sync actually fires on John's device, not just green smoke (per John's flag — phone's stale-state history makes verification mandatory).
 
-Each commit Council + Human Verdict per ADR-H. ~11 commits, all small + Sentinel-gated.
+**Total estimate: ~2hr build + ~30min phone-verify ritual.**
+
+**Property test harness:** ~40 lines, ~5 P0 properties (idempotence, conservation, device-local-never-travels, schema-valid, deterministic). Folds into commit 4 or as a separate small commit.
 
 ---
 
@@ -411,22 +461,25 @@ Phase B (encryption at rest under passphrase-derived key) MUST ship before v2 wo
 
 ---
 
-## 13. Open questions / values calls for John
+## 13. Open questions — resolved + remaining
 
-**Q4 is the gating decision** — John 2026-05-23: "I'll answer that next session — it might change whether v1 is worth building before v2 at all."
+### Resolved this session
 
-1. **v1 tonight vs hold:** ANSWERED 2026-05-23 — HOLD pending Q4. v1 build paused after stashing schema-versioning substrate. Resume next session IF Q4 lands "v1 worth building."
-2. **v2 timeline:** answered architecturally — v2 BLOCKED on Phase B encryption-at-rest. v2 work cannot begin until Phase B ships.
-3. **Pull-on-open trigger:** at DOMContentLoaded+500ms (CS-A recommendation), or also on `visibilitychange` (when tab regains focus)? Decision-pending if v1 lands.
-4. **🚦 GATING DECISION — does v1's overwrite-only-on-empty actually solve a problem John has?**
-   - **v1 covers:** cache-wipe recovery (browser data cleared, token survives via export-then-paste), multi-tab freshness on same device (fresh tab pulls from KV).
-   - **v1 does NOT cover:** stale-device-resume (phone hasn't opened in 2 weeks; opens; localStorage is "non-empty" but stale; v1 KEEPS local under overwrite-only-on-empty policy → user sees stale state).
-   - **v2 covers** stale-device-resume (via per-field merge of newer-remote into local).
-   - **Phase B is the prerequisite for v2.**
-   - **The decision:** is cache-wipe-recovery alone (v1) worth ~3-4hr of build before Phase B → v2 ships? Or skip v1 and prioritise Phase B → v2 as the actually-useful sync mechanism?
-   - **John's framing 2026-05-23:** "It might change whether v1 is worth building before v2 at all." Answer pending next session.
-5. **Cloudflare Worker storage choice for v2:** stay on KV with version counter, or move to Durable Object for native CAS? Architectural decision pending — but ONLY after Phase B ships.
-6. **Apple Time Machine / Chrome Sync intersection:** localStorage doesn't sync via browser features. Acknowledged as out-of-scope, but worth flagging if Settings should expose "Export-then-import" as the documented cross-device bridge.
+1. **v1 vs v2 (Q4 from prior framing):** ANSWERED — neither. John's actual need is single-device total sync. v1 was too narrow (cache-wipe only), v2 too broad (multi-device merge machinery). Re-scoped to this SDD's single-device shape.
+2. **v2 timeline:** RESOLVED architecturally — single-device sync replaces v2 for John's actual usage. If usage ever expands to multi-device, that becomes Bundle 24+ on top of Phase B.
+3. **Phase B sequencing:** RESOLVED — Phase B is the committed NEXT bundle after sync ships (per `SECURITY.md` 2026-05-23 decision-log).
+4. **Bundle 33-cache prerequisite:** RESOLVED — cache lands first, sync second.
+5. **Apply policy:** RESOLVED — remote-if-newer total replace (single writer makes this honest).
+
+### Remaining (decide before/during build session)
+
+1. **Pull-on-open trigger:** at DOMContentLoaded+500ms only (CS-A baseline), or also on `visibilitychange` (when tab regains focus after Android tab-killed it)?
+   - Pro `visibilitychange`: phone returning from background gets fresh state without explicit reload
+   - Con: adds an event source to manage; cache-disease + Bundle 32a's existing pagehide flush interact
+   - **Recommendation:** boot-only for MVP; add `visibilitychange` in a follow-up if John finds the gap annoying.
+2. **Force-pull Settings button (Option 2):** include in commit 7 if it fits cleanly (~15 lines); drop if it bloats. Manual escape hatch is useful but lower priority than tab-safety.
+3. **Cache-disease soft-prerequisite confirmation:** verify Bundle 33-cache truly needs to land first. (Drone H spec is ready; soft-prereq investigation can be 15-min in the build session before committing to the order.)
+4. **Phone-verify protocol for BroadcastChannel:** Drone H confirmed `BroadcastChannel` is live-tab runtime API independent of SW cache, so should work. But John's phone has stale-state history — phone-verify ritual must include opening two tabs and confirming tab-sync fires. Add to build session's phone-verify checklist.
 
 ---
 
@@ -450,24 +503,34 @@ The drone-only investment was substantial (~3 hours including synthesis). The co
 
 ---
 
-## 16. Closing call (revised 2026-05-23 mid-session)
+## 16. Closing call (final, 2026-05-23 post-Q4-resolution)
 
-This SDD is the deliverable of tonight's Bundle 23 scoping session. The pre-flight apiKey hotfix is shipped. v1 build was started (schema-versioning substrate, commit 1 of 11) and immediately paused after John's two corrections landed:
+Bundle 23 scope is **LOCKED** as single-device total sync per John's Q4 answer 2026-05-23.
 
-1. v2 hard-blocked on Phase B encryption-at-rest (no compromise; apiKey leak proves it).
-2. v1's value proposition is narrower than first-scoped (cache-wipe recovery only, not stale-device-resume). Q4 in §13 is the gating decision — does that narrower scope justify the build effort before Phase B → v2 ships?
+**The scope-lock contract** (signed in `SECURITY.md` 2026-05-23 decision-log + this SDD):
+1. **Bundle 33-cache** ships first (soft prerequisite — reliable code-delivery to phone)
+2. **Bundle 23 single-device sync** ships next (8-commit slate per §11)
+3. **Phase B encryption-at-rest** is the committed NEXT architectural bundle after sync — not "someday," in `SECURITY.md` decision-log as the contract
+
+**Tonight's deliverables (all landed):**
+- 10-drone pipeline output synthesized into this SDD (durable analysis even though most of it doesn't apply to single-device scope; preserved in §7 for future multi-device pivot)
+- Pre-flight apiKey leak fix (commit `7a1d5a8`) + John's Anthropic key rotation
+- 12 cashflow-truth commits earlier in session (slate 1)
+- ADR-H pipeline + Human Verdict + citation discipline refinements (commits across session)
+- `SECURITY.md` decision-log entries for apiKey leak + sync-on-plaintext-KV rationale + Phase B commitment
+- This SDD rewritten to single-device-sync architecture
+
+**Tonight stops here.** Build is its own fresh session. The Q4 answer + scope-lock + rewritten SDD + Phase B commitment is the deliverable.
 
 **Next session opens with:**
-1. John answers Q4 (does v1 solve a real problem you have, or skip to Phase B → v2?)
-2. If v1 worth building → resume from SDD §6, regenerate schema-versioning commit, ship 11 commits Sentinel-gated.
-3. If v1 not worth building → defer Bundle 23 entirely, prioritise Phase B as the next architectural bundle (Phase B substrate then unblocks v2 + closes more failure modes than v1 ever could).
+1. Quick check: does Bundle 33-cache truly need to land first? 15-min investigation if John wants the order revisited.
+2. If cache-first: ship Bundle 33-cache (~1-1.5hr per Drone H spec).
+3. Then: ship single-device sync 8-commit slate per §11. ~2hr + phone-verify.
+4. Then: Phase B as the immediate next architectural bundle.
 
-**The work that landed despite the pause:**
-- 10-drone pipeline output (this SDD synthesizes it durably)
-- Pre-flight apiKey hotfix (commit `7a1d5a8`) — independent value, ships regardless
-- ADR-H additional refinement (citation discipline added mid-session)
-- Schema-versioning substrate stashed/reverted ready for 5-min regen if v1 greenlights
+**What the pipeline proved:**
+- 10 drones surfaced architectural complexity (v2 merge machinery) that, when John clarified actual usage, EVAPORATED. The drones weren't wasted — they catalogued the alternative reality that becomes relevant if usage ever multiplies.
+- The PAUSE before any build was the pipeline doing its highest-leverage job: catching scope drift before 3-4hr crystalized around the wrong question. Two pauses this session (backwards P0-5 catch + bonusLever double-count + Bundle 23 v1/v2-vs-single-device re-scope) compounded into commit `b4cedfc`'s citation discipline refinement to ADR-H.
+- Phase B was rescued from "deferred indefinitely" to "committed next" by being written into `SECURITY.md` decision-log as a contract. Future-CC reading this is bound to that ordering.
 
-The pipeline did its job: surfaced the architectural gap before any v1 code shipped. The PAUSE itself is the most important commit pattern of the session — it's the pipeline catching scope drift before a 3-4hr build crystalizes around the wrong question.
-
-v2 will land. After Phase B. Not before.
+This SDD is the locked spec. Build runs fresh next session. Sleep well.
