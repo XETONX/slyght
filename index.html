@@ -6874,8 +6874,17 @@ function renderAll() {
       let _runDryStr = '';
       try {
         const _b7d = BRAIN.dashboard.getBurn7d();
-        if (_b7d.perDay > 0 && S.bal > 0) {
-          const _daysToZero = Math.floor(S.bal / _b7d.perDay);
+        // Break #2 (Ledger Walk session 2026-05-23): use obligated-cash as the
+        // numerator, not raw S.bal. The "over by $X" amount above is computed
+        // on the obligated-cash basis (cash − billsStillDue − livingRemaining);
+        // mixing raw S.bal into the runs-dry computation produced two timelines
+        // on the same line. Now the "over by" deficit and the "runs dry" date
+        // both use the same cash base.
+        const _obligatedCash = _cashflow
+          ? Math.max(0, _cashflow.cash - _cashflow.billsStillDue)
+          : S.bal;
+        if (_b7d.perDay > 0 && _obligatedCash > 0) {
+          const _daysToZero = Math.floor(_obligatedCash / _b7d.perDay);
           const _dryDate = new Date(Date.now() + _daysToZero * 86400000);
           _runDryStr = ' · runs dry ' + _dryDate.toLocaleDateString('en-AU', { month: 'short', day: 'numeric' });
         }
