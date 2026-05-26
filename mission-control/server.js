@@ -170,7 +170,9 @@ const ACTIONS = {
     if (!['john', 'jarvis', 'cc'].includes(author)) throw new Error('bad author');
     const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
     t.thread.push({ author, text: String(text || '').slice(0, 8000), ts: new Date().toISOString() });
+    const from = t.status;                                                                              // ← capture before the earn
     if (t.status === 'Open' && author === 'john') { t.status = 'Discussing'; t.assignee = 'john'; }  // first comment earns Discussing
+    logTransition(id, from, t.status, author);                                                          // ← log Open→Discussing (no-op if unchanged)
     t.lastActivity = new Date().toISOString(); writeState(st);
     return { ok: true, status: t.status, comments: t.thread.length };
   },
@@ -181,7 +183,9 @@ const ACTIONS = {
     const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
     if (!(TRANSITIONS[t.status] || []).includes(to)) throw new Error(`illegal transition ${t.status} → ${to}`);
     if (to === 'ConfirmedLive' && !(evidence && String(evidence).trim())) throw new Error('ConfirmedLive must be EARNED — attach walk evidence, not a label');
+    const from = t.status;                                                                              // ← capture before the change
     t.status = to; t.assignee = assigneeFor(to); if (evidence) t.evidence = String(evidence).slice(0, 4000);
+    logTransition(id, from, to, 'john');                                                                // ← driven from the board dropdown (John)
     t.lastActivity = new Date().toISOString(); writeState(st);
     return { ok: true, status: to, assignee: t.assignee };
   },
@@ -194,7 +198,9 @@ const ACTIONS = {
     const abs = jail(path.join('mission-control', 'handoffs', id + '.md'));
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, collate(ticket, t, decision));
+    const from = t.status;                                                                              // ← capture before align (Open or Discussing)
     t.status = 'Aligned'; t.assignee = 'cc';
+    logTransition(id, from, 'Aligned', 'john');                                                         // ← THE GATE — log the align edge
     t.alignment = { decision: String(decision || 'agreed with the proposed fix').slice(0, 4000), ts: new Date().toISOString() };
     t.thread.push({ author: 'john', text: '✓ ALIGNED — handed to CC. ' + t.alignment.decision, ts: t.alignment.ts });
     t.lastActivity = t.alignment.ts; writeState(st);
@@ -253,7 +259,9 @@ const ACTIONS = {
     if (to) {
       if (!(TRANSITIONS[t.status] || []).includes(to)) throw new Error(`illegal transition ${t.status} → ${to}`);
       if (to === 'ConfirmedLive' && !(evidence && String(evidence).trim())) throw new Error('ConfirmedLive needs evidence');
+      const from = t.status;                                                                            // ← capture before the change
       t.status = to; t.assignee = assigneeFor(to); if (evidence) t.evidence = String(evidence).slice(0, 4000);
+      logTransition(id, from, to, 'cc');                                                                // ← CC's post-back transition
     }
     t.lastActivity = new Date().toISOString(); writeState(st);
     // PROPAGATE — Jarvis is the one place: on a terminal state, push the status to
@@ -355,6 +363,7 @@ const readState = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 
 const writeState = (s) => fs.writeFileSync(jail(path.join('mission-control', 'ticket-state.json')), JSON.stringify(s, null, 2));
 // the earned-state machine — each transition is a legal edge, not a free text set
 const TRANSITIONS = { Open: ['Discussing'], Discussing: ['Aligned', 'Open'], Aligned: ['Investigating', 'Discussing'], Investigating: ['ConfirmedLive', 'Shipped', 'Aligned'], ConfirmedLive: ['Shipped', 'Investigating'], Shipped: ['Investigating'] };
+const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const assigneeFor = (st) => (st === 'Aligned' || st === 'Investigating') ? 'cc' : 'john';
 function mergedTickets() {
   const spine = [...TICKETS(), ...MANUAL()], state = readState();
@@ -406,6 +415,51 @@ then POST BACK into ${ticket.id} (what you found / fixed / evidence). Run the fu
 `;
 }
 
+// ── Time-series history (the SERIES-metric substrate — see docs/jarvis/metrics-catalog).
+// Two append-only stores, each path-jailed to ONE fixed file:
+//   • history.jsonl   — one transition event per line {ticketId, from, to, by, ts}
+//   • snapshots.json  — one board snapshot per day {date, total, byStatus, bySeverity, gaps, ts}
+// Both are RUNTIME (gitignored). logTransition is fire-and-forget: a history-write failure must
+// never break the user-facing action it rides inside, so it swallows its own errors.
+const HISTORY_FILE   = path.join('mission-control', 'history.jsonl');
+const SNAPSHOTS_FILE = path.join('mission-control', 'snapshots.json');
+
+function logTransition(ticketId, from, to, by) {
+  if (!from || !to || from === to) return;            // only real edges
+  try {
+    const abs = jail(HISTORY_FILE);                    // RULE 3 — fixed file, jailed
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.appendFileSync(abs, JSON.stringify({ ticketId, from, to, by: by || 'system', ts: new Date().toISOString() }) + '\n');
+  } catch (_) { /* history is best-effort — never break the action it rides inside */ }
+}
+
+// Once per day, append a rolled-up board snapshot. Idempotent: if today's date is already
+// the last record, do nothing. Computed from mergedTickets() (status/severity) + flows.json (gaps).
+function snapshotToday() {
+  try {
+    const abs = jail(SNAPSHOTS_FILE);                  // RULE 3 — fixed file, jailed
+    let arr = []; try { arr = JSON.parse(fs.readFileSync(abs, 'utf8')); if (!Array.isArray(arr)) arr = []; } catch (_) {}
+    const date = new Date().toISOString().slice(0, 10);
+    if (arr.length && arr[arr.length - 1].date === date) return { ok: true, skipped: 'already snapshotted ' + date };
+
+    const tickets = mergedTickets().tickets;           // tombstoned already filtered out
+    const byStatus = {}; STATUSES.forEach(s => byStatus[s] = 0);
+    const bySeverity = { P0: 0, P1: 0, P2: 0 };
+    tickets.forEach(t => {
+      const st = (t.state && t.state.status) || 'Open';
+      byStatus[st] = (byStatus[st] || 0) + 1;
+      if (t.severity) bySeverity[t.severity] = (bySeverity[t.severity] || 0) + 1;
+    });
+    let gaps = 0;
+    try { const f = JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8')); gaps = (f.surfaces || []).reduce((a, s) => a + (s.counts ? s.counts.gaps : 0), 0); } catch (_) {}
+
+    arr.push({ date, total: tickets.length, byStatus, bySeverity, gaps, ts: new Date().toISOString() });
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, JSON.stringify(arr, null, 2));
+    return { ok: true, date, total: tickets.length };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 // ── HTTP ────────────────────────────────────────────────────────────────────
 const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -437,6 +491,15 @@ const server = http.createServer((req, res) => {
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
+    if (p === '/api/history') {
+      let events = [], snapshots = [];
+      try {                                                                       // history.jsonl — last 500 events, newest LAST (chronological)
+        const lines = fs.readFileSync(jail(HISTORY_FILE), 'utf8').split('\n').filter(Boolean);
+        events = lines.slice(-500).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      } catch (_) {}
+      try { const a = JSON.parse(fs.readFileSync(jail(SNAPSHOTS_FILE), 'utf8')); if (Array.isArray(a)) snapshots = a; } catch (_) {}
+      return send(res, 200, { events, snapshots });
+    }
     if (p === '/api/shot') {  // serve a walk screenshot for the App Map "front" view (path-jailed to the latest walk dir)
       const rel = url.searchParams.get('f') || '';
       if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+\.png$/i.test(rel)) return send(res, 400, { error: 'bad shot path' });
@@ -486,11 +549,13 @@ const server = http.createServer((req, res) => {
 
 // RULE 1 + RULE 5 — bind loopback only; runs only while John keeps it running.
 server.listen(PORT, HOST, () => {
+  const snap = snapshotToday();                                                   // ← daily board snapshot (idempotent per day)
   console.log('\n  slyght · mission control');
   console.log('  ──────────────────────────────────────────────');
   console.log('  open:   http://' + HOST + ':' + PORT + '   (localhost-only)');
   console.log('  token:  ' + TOKEN + '   (auto-injected into the page)');
   console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
+  console.log('  history:' + (snap.skipped ? ' ' + snap.skipped : snap.ok ? ' snapshot ' + snap.date + ' (' + snap.total + ' tickets)' : ' snapshot failed: ' + snap.error));
   console.log('  stop:   Ctrl-C\n');
 });

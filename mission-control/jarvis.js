@@ -1482,7 +1482,13 @@ async function viewInsights() {
         </div>
         <div class="ins-feedlist">${feedRows}</div>
       </div>
+    </section>
+
+    <section class="ins-trendsect" id="insTrends">
+      <div class="ins-panel trend-seed"><div class="trend-empty"><span class="trend-empty-ic">📈</span><div class="trend-empty-h">Loading Trends…</div></div></div>
     </section>`;
+
+  insTrends();   // ← fill the Trends section async (reads /api/history); leaves NOW-metrics instant
 }
 
 /* ── Insights helpers (kept local to the section) ─────────────────────────── */
@@ -1571,6 +1577,144 @@ function insBuildFeed(ts) {
   return events
     .filter(e => e.ts)
     .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+}
+
+/* ── Trends (the SERIES-metric section — reads /api/history) ───────────────────
+ * viewInsights() paints an empty <div id="insTrends"> placeholder; this fills it
+ * async so the existing NOW-metrics render instantly and trends stream in.
+ * Honest sparse state: <2 snapshots → a "history starts now" message, never a
+ * misleading flat/blank chart. Title Case labels throughout. */
+async function insTrends() {
+  const host = $('insTrends'); if (!host) return;
+  let h; try { h = await api('/api/history'); } catch (_) { h = { events: [], snapshots: [] }; }
+  J.history = h;
+  const snaps  = (h.snapshots || []).slice();
+  const events = (h.events || []).slice();
+
+  // sparse guard — one snapshot is just "today", you need ≥2 to draw a trend
+  if (snaps.length < 2) {
+    host.innerHTML = `
+      <div class="ins-panel trend-seed">
+        <div class="ins-panel-h"><div>
+          <h2 class="ins-title">Trends Over Time</h2>
+          <p class="ins-sub">Velocity, status trends and gaps-over-time — built from the daily history.</p>
+        </div></div>
+        <div class="trend-empty">
+          <span class="trend-empty-ic" aria-hidden="true">📈</span>
+          <div class="trend-empty-h">History Starts Now</div>
+          <div class="trend-empty-b">Trends fill in as you use Jarvis — one snapshot per day. ${snaps.length === 1 ? 'Day one is logged; come back tomorrow for the first line.' : 'Open Jarvis tomorrow to log day two.'}</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  /* ── A) tickets-by-status over time — small stacked area/line (from snapshots) ── */
+  const STK = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
+  const statusArea = trendStackedArea(snaps, STK);
+
+  /* ── B) velocity — transitions/day (from events) ── */
+  const perDay = {};
+  events.forEach(e => { const d = (e.ts || '').slice(0, 10); if (d) perDay[d] = (perDay[d] || 0) + 1; });
+  // span every day from first snapshot to today so quiet days read as 0 (honest flatlines)
+  const days = trendDateSpan(snaps[0].date, new Date().toISOString().slice(0, 10)).slice(-21);
+  const velRows = days.map(d => ({ d, n: perDay[d] || 0 }));
+  const velMax = Math.max(1, ...velRows.map(r => r.n));
+  const velBars = velRows.map(r => {
+    const hpct = Math.max(r.n ? 8 : 2, Math.round(r.n / velMax * 100));
+    return `<span class="trend-velcol" title="${esc(trendNiceDay(r.d))}: ${r.n} transition${r.n === 1 ? '' : 's'}">
+        <span class="trend-velbar" style="height:${hpct}%"></span>
+        <span class="trend-vellbl">${esc(r.d.slice(8))}</span>
+      </span>`;
+  }).join('');
+  const velTotal = velRows.reduce((a, r) => a + r.n, 0);
+
+  /* ── C) gaps over time — single tonal line (from snapshots) ── */
+  const gapsLine = trendLine(snaps.map(s => ({ x: s.date, y: s.gaps || 0 })), 'var(--accent)');
+  const gapFirst = snaps[0].gaps || 0, gapLast = snaps[snaps.length - 1].gaps || 0;
+  const gapDelta = gapLast - gapFirst;
+  const gapTone  = gapDelta < 0 ? 'green' : gapDelta > 0 ? 'red' : 'muted';
+  const gapWord  = gapDelta < 0 ? `▼ ${Math.abs(gapDelta)} closed` : gapDelta > 0 ? `▲ ${gapDelta} opened` : 'No change';
+
+  host.innerHTML = `
+    <div class="ins-panel trend-status">
+      <div class="ins-panel-h"><div>
+        <h2 class="ins-title">Tickets By Status Over Time</h2>
+        <p class="ins-sub">How the board's shape has shifted across the last ${snaps.length} snapshots — one per day.</p>
+      </div><span class="ov2-count">${snaps.length}d</span></div>
+      <div class="trend-areawrap">${statusArea}</div>
+      <div class="trend-legend">
+        ${STK.map(s => `<span class="trend-legrow"><i class="trend-legdot trend-dot-${s}"></i>${esc(STATUS_LABEL[s] || s)}</span>`).join('')}
+      </div>
+    </div>
+
+    <div class="ins-grid2 trend-grid">
+      <div class="ins-panel trend-velocity">
+        <div class="ins-panel-h"><div>
+          <h2 class="ins-title">Velocity</h2>
+          <p class="ins-sub">Status transitions per day — how fast the board is moving.</p>
+        </div><span class="ov2-count">${velTotal} / ${days.length}d</span></div>
+        <div class="trend-velchart">${velBars}</div>
+      </div>
+
+      <div class="ins-panel trend-gaps">
+        <div class="ins-panel-h"><div>
+          <h2 class="ins-title">Gaps Over Time</h2>
+          <p class="ins-sub">App-Map gaps across the series — closing beats finding.</p>
+        </div><span class="trend-delta trend-d-${gapTone}">${esc(gapWord)}</span></div>
+        <div class="trend-linewrap">${gapsLine}</div>
+        <div class="trend-gapscale"><span>${esc(snaps[0].date.slice(5))}</span><span>${gapLast} now</span><span>${esc(snaps[snaps.length - 1].date.slice(5))}</span></div>
+      </div>
+    </div>`;
+}
+
+/* ── CSS-less chart helpers (pure SVG/markup, tokens via CSS) ─────────────────── */
+
+// inclusive list of YYYY-MM-DD between two dates (cap 120 days for safety)
+function trendDateSpan(fromISO, toISO) {
+  const out = []; const d = new Date(fromISO + 'T00:00:00'); const end = new Date(toISO + 'T00:00:00');
+  for (let i = 0; i < 120 && d <= end; i++) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+  return out.length ? out : [toISO];
+}
+function trendNiceDay(iso) { try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); } catch (_) { return iso; } }
+
+// stacked area of status counts across snapshots → an SVG with one <polygon> band per status.
+// Each band is the cumulative stack, so they read as layers. Width spans the snapshot count.
+function trendStackedArea(snaps, keys) {
+  const W = 560, H = 150, PAD = 4;
+  const n = snaps.length; if (n < 2) return '';
+  const totals = snaps.map(s => keys.reduce((a, k) => a + ((s.byStatus && s.byStatus[k]) || 0), 0));
+  const maxTotal = Math.max(1, ...totals);
+  const xAt = i => PAD + i / (n - 1) * (W - 2 * PAD);
+  const yAt = v => H - PAD - (v / maxTotal) * (H - 2 * PAD);
+  // build cumulative upper edges per key, bottom→top
+  let lower = snaps.map(() => 0);
+  const bands = keys.map(k => {
+    const upper = snaps.map((s, i) => lower[i] + ((s.byStatus && s.byStatus[k]) || 0));
+    const top = upper.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`);
+    const bot = lower.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).reverse();
+    lower = upper;
+    return `<polygon class="trend-band trend-fill-${k}" points="${top.concat(bot).join(' ')}"/>`;
+  }).join('');
+  // faint vertical gridlines at each snapshot
+  const grid = snaps.map((s, i) => `<line class="trend-grid" x1="${xAt(i).toFixed(1)}" y1="${PAD}" x2="${xAt(i).toFixed(1)}" y2="${H - PAD}"/>`).join('');
+  return `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" role="img" aria-label="Tickets by status over time">${grid}${bands}</svg>`;
+}
+
+// single tonal line + soft fill for a [{x,y}] series (gaps over time).
+function trendLine(series, stroke) {
+  const W = 360, H = 120, PAD = 6;
+  const n = series.length; if (n < 2) return '';
+  const maxY = Math.max(1, ...series.map(p => p.y));
+  const xAt = i => PAD + i / (n - 1) * (W - 2 * PAD);
+  const yAt = v => H - PAD - (v / maxY) * (H - 2 * PAD);
+  const pts = series.map((p, i) => `${xAt(i).toFixed(1)},${yAt(p.y).toFixed(1)}`);
+  const area = `${PAD},${H - PAD} ${pts.join(' ')} ${(W - PAD)},${H - PAD}`;
+  const dots = series.map((p, i) => `<circle class="trend-linedot" cx="${xAt(i).toFixed(1)}" cy="${yAt(p.y).toFixed(1)}" r="2.6"/>`).join('');
+  return `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" role="img" aria-label="Gaps over time">
+      <polygon class="trend-linefill" points="${area}"/>
+      <polyline class="trend-linestroke" points="${pts.join(' ')}" style="stroke:${stroke}"/>
+      ${dots}
+    </svg>`;
 }
 
 /* ════════════════════════ ROADMAP (now · next · shipped) ════════════════

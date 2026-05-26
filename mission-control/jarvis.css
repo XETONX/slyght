@@ -1357,3 +1357,72 @@ body{ background-image:
 /* keep cards/rails reading as solid surfaces over the grid */
 .topbar,.rail,.card,.ov2panel,.ov2stat,.bd2-row,.siderail,.cal-wrap,.plan-lane,.treewrap,.hubwrap{
   position:relative; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   INSIGHTS · TRENDS — the time-series section (namespaced trend-*; tokens only)
+   Reads /api/history. Sparse-honest: <2 snapshots renders the seed card.
+   ════════════════════════════════════════════════════════════════════════ */
+.ins-trendsect{ display:flex; flex-direction:column; gap:16px; margin-top:16px; }
+.trend-grid{ /* reuses .ins-grid2's two-column layout */ }
+
+/* seed / empty state — honest "history starts now" */
+.trend-empty{ text-align:center; padding:34px 16px 38px; }
+.trend-empty-ic{ font-size:30px; display:block; margin-bottom:10px; filter:saturate(.85); }
+.trend-empty-h{ font-size:16px; font-weight:700; color:var(--head); margin-bottom:6px; letter-spacing:-.2px; }
+.trend-empty-b{ font-size:13.5px; color:var(--muted); line-height:1.6; max-width:440px; margin:0 auto; }
+
+/* shared svg chrome */
+.trend-svg{ display:block; }
+.trend-svg .trend-grid{ stroke:var(--border); stroke-width:1; opacity:.5; }
+
+/* A) stacked status area */
+.trend-areawrap{ background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:8px 8px 6px; }
+.trend-areawrap .trend-svg{ height:150px; }
+.trend-band{ opacity:.92; transition:opacity .18s var(--ease); }
+.trend-status:hover .trend-band{ opacity:1; }
+.trend-fill-Open         { fill:var(--amber);  }
+.trend-fill-Discussing   { fill:var(--blue);   }
+.trend-fill-Aligned      { fill:var(--violet); }
+.trend-fill-Investigating{ fill:var(--teal);   }
+.trend-fill-ConfirmedLive{ fill:var(--green);  }
+.trend-fill-Shipped      { fill:var(--label);  }
+
+.trend-legend{ display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:12px;
+  font-size:12.5px; color:var(--label); }
+.trend-legrow{ display:inline-flex; align-items:center; gap:7px; }
+.trend-legdot{ width:11px; height:11px; border-radius:3px; flex-shrink:0; }
+.trend-dot-Open         { background:var(--amber);  }
+.trend-dot-Discussing   { background:var(--blue);   }
+.trend-dot-Aligned      { background:var(--violet); }
+.trend-dot-Investigating{ background:var(--teal);   }
+.trend-dot-ConfirmedLive{ background:var(--green);  }
+.trend-dot-Shipped      { background:var(--label);  }
+
+/* B) velocity bars (transitions/day) */
+.trend-velchart{ display:flex; align-items:flex-end; gap:5px; height:132px;
+  background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:12px 12px 6px; }
+.trend-velcol{ flex:1; display:flex; flex-direction:column; align-items:center; gap:5px;
+  height:100%; justify-content:flex-end; min-width:0; }
+.trend-velbar{ width:100%; max-width:22px; border-radius:5px 5px 2px 2px;
+  background:linear-gradient(180deg,var(--accent-2),var(--accent)); box-shadow:var(--sh-xs);
+  transition:height .55s var(--ease); }
+.trend-velcol:hover .trend-velbar{ filter:brightness(1.06); }
+.trend-vellbl{ font-size:10px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+/* C) gaps-over-time line */
+.trend-linewrap{ background:var(--card2); border:1px solid var(--border); border-radius:10px; padding:8px; }
+.trend-linewrap .trend-svg{ height:120px; }
+.trend-linestroke{ fill:none; stroke-width:2.4; stroke-linejoin:round; stroke-linecap:round; }
+.trend-linefill{ fill:var(--accent-soft); opacity:.7; }
+.trend-linedot{ fill:var(--accent); }
+.trend-gapscale{ display:flex; justify-content:space-between; margin-top:8px;
+  font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+/* delta chip (gaps closed/opened) */
+.trend-delta{ flex-shrink:0; font-size:12.5px; font-weight:600; border-radius:999px;
+  padding:4px 11px; white-space:nowrap; }
+.trend-d-green{ color:var(--green); background:var(--green-bg); }
+.trend-d-red  { color:var(--red);   background:var(--red-bg);   }
+.trend-d-muted{ color:var(--muted); background:var(--card2); border:1px solid var(--border); }
+
+@media (max-width:1080px){ .trend-grid{ grid-template-columns:1fr; } }

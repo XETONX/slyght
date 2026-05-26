@@ -74,3 +74,7 @@ mission-control/flows.json.gz
 
 # Jarvis prompt library (runtime, seeded on read)
 mission-control/prompts.json
+
+# Jarvis time-series history (runtime, append-only — see metrics-catalog Appendix A)
+mission-control/history.jsonl
+mission-control/snapshots.json
