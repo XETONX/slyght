@@ -1,0 +1,94 @@
+{
+  "S": {
+    "_fake": true,
+    "_fakeNote": "SYNTHETIC QA FIXTURE for the Walk-and-Judge capability. NOT John's data. Persona 'Alex'. pushOnSaveEnabled is false so this can never reach KV. Author by hand against the schema in docs/sessions/2026-05-26-session.md; regenerate if the S/BILLS schema drifts.",
+    "bal": 1240.00,
+    "income": 5000,
+    "payday": 15,
+    "paydayReceived": true,
+    "paydayReceivedDate": "2026-05-15",
+    "paydayBannerDismissed": false,
+    "carloan": 8000,
+    "carloanOriginal": 20000,
+    "carLoanRate": 9.87,
+    "carloanLifetimePaid": 12000,
+    "cc": 900,
+    "ccLimit": 6000,
+    "mumAccountBalance": 0,
+    "superBalance": 25000,
+    "wrxValue": 25000,
+    "weekdayBudget": 60,
+    "weekendBudget": 120,
+    "roundUpsEnabled": true,
+    "roundUpDestination": "China Holiday",
+    "debtStrategy": "avalanche",
+    "apiKey": "",
+    "apiAlertThreshold": 15,
+    "pin": "",
+    "pinHash": "",
+    "pushOnSaveEnabled": false,
+    "seg": "1m",
+    "bid": 0,
+    "iid": 0,
+    "nextDebtId": 4,
+    "nextBucketId": 4,
+    "activePlan": null,
+    "monthlyHistory": [],
+    "income_log": [],
+    "bonuses": [],
+    "chatHistory": [],
+    "lastOpenDate": null,
+    "txns": [
+      { "id": 1, "ts": 1778803200000, "amt": 5000, "note": "Salary (fake)", "cat": "Income", "income": true },
+      { "id": 2, "ts": 1778976000000, "amt": 4.50, "note": "Test Cafe — flat white", "cat": "Food / Coffee" },
+      { "id": 3, "ts": 1779062400000, "amt": 85.00, "note": "Test Grocer", "cat": "Groceries" },
+      { "id": 4, "ts": 1779148800000, "amt": 300, "note": "Transfer → Darwin Trip", "cat": "Savings" },
+      { "id": 5, "ts": 1779148800500, "amt": 0.50, "note": "Round-up → China Holiday", "cat": "Savings", "_isRoundup": true },
+      { "id": 6, "ts": 1779235200000, "amt": 40, "note": "Test Fuel", "cat": "Transport" }
+    ],
+    "savingsBuckets": [
+      { "id": 1, "name": "Darwin Trip", "goal": 4000, "saved": 800, "account": "Westpac" },
+      { "id": 2, "name": "China Holiday", "goal": 6000, "saved": 1500, "account": "ING" },
+      { "id": 3, "name": "Rainy Day Fund", "goal": 3000, "saved": 1200, "account": "ING" }
+    ],
+    "debts": [
+      { "id": 1, "name": "Borrowed from Sam", "amt": 400, "rate": 0, "priority": 1, "paid": false },
+      { "id": 2, "name": "Borrowed from Jordan", "amt": 250, "rate": 0, "priority": 2, "paid": false },
+      { "id": 3, "name": "Test Credit Card", "amt": 900, "rate": 19.99, "priority": 3, "paid": false }
+    ],
+    "paidBills": {
+      "2026-5-Rent-1": { "paid": true, "_txnTs": 1777593600000 },
+      "2026-5-Phone Plan-10": { "paid": true, "_txnTs": 1778457600000 }
+    },
+    "planIntents": [
+      {
+        "id": "darwin-2026", "name": "Darwin Trip", "emoji": "✈️", "kind": "trip",
+        "targetAmount": 4000, "startDate": "2026-08-01", "endDate": "2026-08-10",
+        "bucketId": "Darwin Trip", "category": "travel", "notes": "", "priority": 1, "archived": false,
+        "meta": { "days": 9, "covered": [ { "name": "Flights", "amount": 1200 }, { "name": "Hotel", "amount": 1500 } ] },
+        "createdAt": 1777593600000, "updatedAt": 1778803200000
+      },
+      {
+        "id": "china-2026", "name": "China Holiday", "emoji": "🇨🇳", "kind": "trip",
+        "targetAmount": 6000, "startDate": "2026-12-01", "endDate": "2026-12-20",
+        "bucketId": "China Holiday", "category": "travel", "notes": "", "priority": 2, "archived": false,
+        "meta": { "days": 19, "covered": [ { "name": "Flights", "amount": 2000 } ] },
+        "createdAt": 1777593600000, "updatedAt": 1778803200000
+      },
+      {
+        "id": "rainy-day", "name": "Rainy Day Fund", "emoji": "🌧️", "kind": "goal",
+        "targetAmount": 3000, "startDate": null, "endDate": null,
+        "bucketId": "Rainy Day Fund", "category": "goal", "notes": "", "priority": 3, "archived": false,
+        "meta": {},
+        "createdAt": 1777593600000, "updatedAt": 1778803200000
+      }
+    ]
+  },
+  "BILLS": [
+    { "name": "Rent", "amt": 1800, "day": 1, "tag": "Fixed", "recurring": true, "freq": "monthly" },
+    { "name": "Phone Plan", "amt": 50, "day": 10, "tag": "Fixed", "recurring": true, "freq": "monthly" },
+    { "name": "Streaming Test", "amt": 15, "day": 12, "tag": "Streaming", "recurring": true, "freq": "monthly" },
+    { "name": "Gym Test", "amt": 30, "day": 20, "tag": "Health", "recurring": true, "freq": "monthly" },
+    { "name": "Insurance Test", "amt": 120, "day": 25, "tag": "Insurance", "recurring": true, "freq": "yearly", "dueMonth": 5 }
+  ]
+}

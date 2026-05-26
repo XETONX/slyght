@@ -48,3 +48,9 @@ runtime-report.json
 docs/audit/*-scenario-walk.md
 docs/audit/*-scenario-walk.jsonl
 docs/audit/_scenario_screenshots/
+
+# --- 2026-05-26 Walk-and-Judge campaign ---
+# Walker run output (per-step screenshots + walk.json). Reproducible by
+# re-running scripts/walker/run-walk.js. The coverage map + persisted specs
+# (docs/walk-and-judge/) are the durable artifacts; the screenshot bundles are not.
+tests/walker-out/

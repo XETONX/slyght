@@ -1,8 +1,8 @@
 {
   "S": {
     "_fake": true,
-    "_fakeNote": "SYNTHETIC QA FIXTURE for the Walk-and-Judge capability. NOT John's data. Persona 'Alex'. pushOnSaveEnabled is false so this can never reach KV. Author by hand against the schema in docs/sessions/2026-05-26-session.md; regenerate if the S/BILLS schema drifts.",
-    "bal": 1240.00,
+    "_fakeNote": "SYNTHETIC QA FIXTURE — on-track persona 'Sam' (POSITIVE surplus). Primary fleet fixture: bal $4800 > commitments, so headroom is positive, Plan-tick savings are NOT INV-32-refused, and personas/affordability contrasts are clean. Richer txns (Bills + Debt repayment + correction + round-up) so the Analysis filter-scatter (STRICT vs LAX vs OUTFLOW) is visible; monthlyHistory present so NW-trend renders. pushOnSaveEnabled:false → cannot reach KV. NOT John's data. The over-committed/stressed persona is state-snapshot.fake.overcommitted.json.",
+    "bal": 4800.00,
     "income": 5000,
     "payday": 15,
     "paydayReceived": true,
@@ -30,21 +30,26 @@
     "seg": "1m",
     "bid": 0,
     "iid": 0,
-    "nextDebtId": 4,
+    "nextDebtId": 3,
     "nextBucketId": 4,
     "activePlan": null,
-    "monthlyHistory": [],
     "income_log": [],
     "bonuses": [],
     "chatHistory": [],
     "lastOpenDate": null,
+    "monthlyHistory": [
+      { "month": "2026-04", "bal": 4200, "spent": 1850, "surplus": 600, "ts": 1775000000000, "nw": 17800, "liquidNet": 17800, "totalAssets": 33800, "totalLiabilities": 16000, "schemaVersion": 2 }
+    ],
     "txns": [
       { "id": 1, "ts": 1778803200000, "amt": 5000, "note": "Salary (fake)", "cat": "Income", "income": true },
-      { "id": 2, "ts": 1778976000000, "amt": 4.50, "note": "Test Cafe — flat white", "cat": "Food / Coffee" },
-      { "id": 3, "ts": 1779062400000, "amt": 85.00, "note": "Test Grocer", "cat": "Groceries" },
-      { "id": 4, "ts": 1779148800000, "amt": 300, "note": "Transfer → Darwin Trip", "cat": "Savings" },
-      { "id": 5, "ts": 1779148800500, "amt": 0.50, "note": "Round-up → China Holiday", "cat": "Savings", "_isRoundup": true },
-      { "id": 6, "ts": 1779235200000, "amt": 40, "note": "Test Fuel", "cat": "Transport" }
+      { "id": 2, "ts": 1777593600000, "amt": 1800, "note": "Rent — paid", "cat": "Bills" },
+      { "id": 3, "ts": 1778457600000, "amt": 400, "note": "Car loan repayment (test)", "cat": "Debt repayment" },
+      { "id": 4, "ts": 1778976000000, "amt": 4.50, "note": "Test Cafe — flat white", "cat": "Food / Coffee" },
+      { "id": 5, "ts": 1779062400000, "amt": 85.00, "note": "Test Grocer", "cat": "Groceries" },
+      { "id": 6, "ts": 1779148800000, "amt": 40.00, "note": "Test Fuel", "cat": "Transport" },
+      { "id": 7, "ts": 1779192000000, "amt": 60.00, "note": "Test Shop", "cat": "Shopping" },
+      { "id": 8, "ts": 1779200000000, "amt": 20.00, "note": "Balance correction", "cat": "Other", "_isCorrection": true },
+      { "id": 9, "ts": 1779062400500, "amt": 0.50, "note": "Round-up → China Holiday", "cat": "Savings", "_isRoundup": true }
     ],
     "savingsBuckets": [
       { "id": 1, "name": "Darwin Trip", "goal": 4000, "saved": 800, "account": "Westpac" },
@@ -53,35 +58,15 @@
     ],
     "debts": [
       { "id": 1, "name": "Borrowed from Sam", "amt": 400, "rate": 0, "priority": 1, "paid": false },
-      { "id": 2, "name": "Borrowed from Jordan", "amt": 250, "rate": 0, "priority": 2, "paid": false },
-      { "id": 3, "name": "Test Credit Card", "amt": 900, "rate": 19.99, "priority": 3, "paid": false }
+      { "id": 2, "name": "Borrowed from Jordan", "amt": 250, "rate": 0, "priority": 2, "paid": false }
     ],
     "paidBills": {
-      "2026-5-Rent-1": { "paid": true, "_txnTs": 1777593600000 },
-      "2026-5-Phone Plan-10": { "paid": true, "_txnTs": 1778457600000 }
+      "2026-5-Rent-1": { "paid": true, "_txnTs": 1777593600000 }
     },
     "planIntents": [
-      {
-        "id": "darwin-2026", "name": "Darwin Trip", "emoji": "✈️", "kind": "trip",
-        "targetAmount": 4000, "startDate": "2026-08-01", "endDate": "2026-08-10",
-        "bucketId": "Darwin Trip", "category": "travel", "notes": "", "priority": 1, "archived": false,
-        "meta": { "days": 9, "covered": [ { "name": "Flights", "amount": 1200 }, { "name": "Hotel", "amount": 1500 } ] },
-        "createdAt": 1777593600000, "updatedAt": 1778803200000
-      },
-      {
-        "id": "china-2026", "name": "China Holiday", "emoji": "🇨🇳", "kind": "trip",
-        "targetAmount": 6000, "startDate": "2026-12-01", "endDate": "2026-12-20",
-        "bucketId": "China Holiday", "category": "travel", "notes": "", "priority": 2, "archived": false,
-        "meta": { "days": 19, "covered": [ { "name": "Flights", "amount": 2000 } ] },
-        "createdAt": 1777593600000, "updatedAt": 1778803200000
-      },
-      {
-        "id": "rainy-day", "name": "Rainy Day Fund", "emoji": "🌧️", "kind": "goal",
-        "targetAmount": 3000, "startDate": null, "endDate": null,
-        "bucketId": "Rainy Day Fund", "category": "goal", "notes": "", "priority": 3, "archived": false,
-        "meta": {},
-        "createdAt": 1777593600000, "updatedAt": 1778803200000
-      }
+      { "id": "darwin-2026", "name": "Darwin Trip", "emoji": "✈️", "kind": "trip", "targetAmount": 4000, "startDate": "2026-08-01", "endDate": "2026-08-10", "bucketId": "Darwin Trip", "category": "travel", "notes": "", "priority": 1, "archived": false, "meta": { "days": 9, "covered": [ { "name": "Flights", "amount": 1200 }, { "name": "Hotel", "amount": 1500 } ] }, "createdAt": 1777593600000, "updatedAt": 1778803200000 },
+      { "id": "china-2026", "name": "China Holiday", "emoji": "🇨🇳", "kind": "trip", "targetAmount": 6000, "startDate": "2026-12-01", "endDate": "2026-12-20", "bucketId": "China Holiday", "category": "travel", "notes": "", "priority": 2, "archived": false, "meta": { "days": 19, "covered": [ { "name": "Flights", "amount": 2000 } ] }, "createdAt": 1777593600000, "updatedAt": 1778803200000 },
+      { "id": "rainy-day", "name": "Rainy Day Fund", "emoji": "🌧️", "kind": "goal", "targetAmount": 3000, "startDate": null, "endDate": null, "bucketId": "Rainy Day Fund", "category": "goal", "notes": "", "priority": 3, "archived": false, "meta": {}, "createdAt": 1777593600000, "updatedAt": 1778803200000 }
     ]
   },
   "BILLS": [
