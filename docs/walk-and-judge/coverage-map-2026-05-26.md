@@ -1,66 +1,53 @@
-# Walk-and-Judge — Coverage Map (2026-05-26, FIRST BATCH proof)
+# Walk-and-Judge — Coverage Map (2026-05-26, FIRST BATCH complete)
 
-> **Output 1** of the campaign. Honest markers: ✓ COVERED (walked + screenshotted + behaves) · ✗ BROKEN (walked + misbehaves, finding attached) · ⊘ NOT-COVERED (story authored, not yet walked). A ⊘ is an honest admission, not a gap to hide.
+> **Output 1** of the campaign. Honest markers: ✓ COVERED (walked + screenshotted + behaves) · ✗ BROKEN (walked + misbehaves, finding attached) · ⊘ NOT-COVERED / NOT-REACHED (authored or attempted, not visually confirmed).
 >
-> **The loop (proven):** deterministic Playwright walker (`scripts/walker/run-walk.js`) seeds the FAKE fixture (`state-snapshot.fake.json`, `pushOnSaveEnabled:false` → never reaches KV), drives a scripted flow, screenshots EVERY step, captures S-deltas + the audit-log "lands" (ground truth of each write). The JUDGE is Claude reading the screenshots — **no Anthropic API key needed** (the brief's autonomous-API-fleet is replaced by deterministic-walk + frontier-Claude verdict: cheaper, reproducible, safer).
+> **The loop (proven + audited):** deterministic Playwright walker (`scripts/walker/run-walk.js`) seeds the positive-surplus FAKE fixture (`state-snapshot.fake.json`, persona "Sam", bal $4800, `pushOnSaveEnabled:false` → never reaches KV), drives 6 scripted flows, screenshots EVERY step, captures S-deltas + audit-log **lands** (ground truth of each write) + in-page **probes**. The JUDGE is Claude reading screenshots + lands — **no Anthropic API key**.
 >
-> **Walk-data (Output 2 feed for Opus's interactive HTML):** `tests/walker-out/<stamp>/walk.json` + per-step screenshots (gitignored — reproducible by re-running the walker).
+> **Three scale-layers PROVEN this batch:**
+> - **A — Checkpointing:** per-flow `flow.json(+.gz)` + incremental `index.json`; a crash after flow N preserves flows 1..N. `walk.json` gzips 28KB→4.2KB. The 202-fleet is resumable.
+> - **B — Auditor tier:** a second Claude pass verified all 6 verdicts → confirmed 5, **upgraded 1** (bills-undo candidate → root-caused bug), and **caught the AI over-claim** (raw-balance read is structural risk, divergence 0 on this fixture; the live bites are elsewhere). Output: `audit-2026-05-26.md`.
+> - **C — UX-expert tier:** a designer pass over all 30 screenshots → `ux-recs-2026-05-26.md`. Caught the "toast lies" visual proof, a headline render-drift, no-feedback on commits, legibility debt, AND the honest AI coverage gap.
+>
+> **Walk-data (Output 2, for Opus's interactive HTML):** `tests/walker-out/2026-05-26T07-29-18/walk.json` (+ per-flow `flow.json.gz`, `index.json`, screenshots — gitignored, reproducible).
 
-## WALKED THIS RUN — `tests/walker-out/2026-05-26T06-57-07/`
+## FIRST-BATCH RESULTS — 6 flows walked
 
-### Flow: darwin-A-quicklog — Quick Log → Savings → Darwin → ✗ BROKEN
-| step | action | screenshot | result (audit "lands") | verdict |
-|---|---|---|---|---|
-| 1 | dashboard baseline | ✓ | bal 1240 · Darwin 800 · txns 6 | ✓ |
-| 2 | open Quick Log | ✓ | modal opens | ✓ |
-| 3 | select "Savings" | ✓ | **NO bucket/goal picker rendered** (visual-confirmed) | ✗ no way to pick Darwin |
-| 4 | enter $300 | ✓ | — | ✓ |
-| 5 | submit (quickLogTxn) | ✓ | bal 1240→**940** · Darwin **stays 800** · txns 6→7 · lands:[`txn_record`,`balance_apply_delta`] — **NO `bucket_saved_change`** | ✗ **cash left, goal uncredited** |
-| 6 | aftermath | ✓ | Darwin still 800; toast "−$300 · Savings · Tap to undo"; **no affordability warning** | ✗ silent |
-**Finding (✗ BROKEN, confirmed LIVE + visually):** Quick Log → Savings has no destination picker, so $300 decremented cash + logged a "Savings" txn but credited **no goal bucket** (audit shows no `bucket_saved_change`). Worse — Alex is **−$1,514 over-committed** (hero, screenshot), and the app accepted a $300 "save" with **no "you can't afford this" warning**. Same disease class as FR-02; the original Darwin finding, now proven on the running app.
-
-### Flow: darwin-B-plantick — Plan-tick path → ✓ gate-correct / ✗ UX
-| step | action | result (audit "lands") | verdict |
+| Flow | Marker | Audit-lands ground truth | Auditor ruling |
 |---|---|---|---|
-| 1 | baseline (re-seeded) | bal 1240 · Darwin 800 | ✓ |
-| 2 | open Payday canvas | activePlan lazy-inits | ✓ |
-| 3 | open Savings sub-screen | renders | ✓ |
-| 4 | set Darwin override $300 | lands:[`inv32_refusal`] — **REFUSED** | ✓ gate correct / ✗ UX |
-| 5 | lock plan | lands:[`payday_plan_locked` ×2] (dual-store mirror) | ✓ |
-| 6 | tick Darwin | bal 1240 · Darwin 800 · txns 6 — **no-op** (no override to execute) | ✗ uncredited |
-**Finding:** On Alex's over-committed state (surplus negative), INV-32 **correctly refused** the $300 savings override — the app being a proper adviser ("don't save when you can't cover bills"). BUT the refusal surfaces the raw token `inv32-over-allocation` (CLAUDE.md §8 plain-English violation), and the subsequent tick silently no-ops. So on this state **neither path credits Darwin** — Quick Log silently (the bug), Plan-tick correctly-but-cryptically. *(Whether to mark the gate ✓ or the no-op-tick ✗ is John's call; the gate firing is correct behavior, the raw token + silent no-op are the UX gaps.)*
+| **darwin-A-quicklog** | **✗ BROKEN** | submit: bal 4800→4500, Darwin **stays 800**, `[txn_record,balance_apply_delta]` — **no `bucket_saved_change`** | CONFIRM. step-03 screenshot: no goal picker exists. |
+| **darwin-B-plantick** | **✓ COVERED** | tick: bal 4800→4500, Darwin **800→1100**, `[…,bucket_saved_change,plan_tick]` | CONFIRM. "$1,100 of $4,000 ✓ allocated". |
+| **log-transaction** | **✓ COVERED** | submit: bal −$5.00 ($4.50 + $0.50 round-up), 2 txns, China 1500→**1500.50**, `[…,bucket_saved_change]` | CONFIRM. Crediting works → Darwin bug is the **missing picker**, not broken crediting. |
+| **bills-mark-paid** | mark ✓ / **undo ✗ BROKEN** | pay: bal 4800→4750, txn+1, `[…,bill_mark_paid×2,notif_add]`. undo: **lands:[], bal stays 4750, still paid** | **UPGRADED candidate→CONFIRMED.** Root cause below. |
+| **plan-lock** | **✓ COVERED** (canonical path) | lock: 3 stores set; unlock (`BRAIN.plan.unlock`): all 3 cleared cleanly (probe-confirmed) | CONFIRM canonical only — legacy 2nd unlock path **⊘ not walked** (divergence stays candidate). |
+| **ai-provenance** | finding **✗ CONFIRMED** (code+probe) / chat UI **⊘ NOT-REACHED** | probe: see #1 below | CONFIRM all 5 sub-claims; enforce the over-claim nuance. |
 
-### Boot — ✗ TDZ (caught live)
-7 `pageErrors`: `Cannot access 'BRAIN' before initialization` at boot (`load`→`refreshModel`→`getBillsDue`→`isPaid` ~index.html:4512; `getLiveBal`→`getGenuineSurplus` in snapshot). MODEL falls back to a stub. This is the `phase-2c-and-tdz-pending` branch's issue — surfaced live by the walk. ✗ (recovers via stub, but boot model fails first paint).
+**Boot (cross-cutting):** 15 `pageErrors`, all the same boot TDZ `Cannot access 'BRAIN' before initialization` at `isPaid` index.html:4512 → MODEL stub fallback. **Boot-only** (post-boot probes returned real values). One boot self-test failure `[push-on-save default: enabled unless explicitly off]` = the fixture's `pushOnSaveEnabled:false` **correctly detected** — a safety canary working, not a bug.
 
-## FULL FRAME — 7 surfaces · 202 actions (skeleton)
-All 202 actions enumerated (driver + file:line) in the feature-graph skeleton, initial marker ⊘ NOT-COVERED. Walked-this-run rows above flip the Darwin savings sub-rows. Remaining: ⊘ (stories authored — see below — not yet walked).
+## CONFIRMED FINDINGS (walked + audited — ready for the fix-priority list)
 
-| Surface | actions | walked | ⊘ remaining |
-|---|---|---|---|
-| Dashboard | 43 | 0 | 43 |
-| Bills / Calendar | 20 | 0 | 20 |
-| Plan-mode (canvas + sub) | 33 | 3 (savings override/lock/tick) | 30 |
-| Analysis | 15 | 0 | 15 |
-| Settings + Diagnostics | 57 | 0 | 57 |
-| AI-Chat | 13 | 0 | 13 |
-| Nav/chrome/onboarding | 21 | 0 | 21 |
-| (Quick Log savings) | — | ✗ BROKEN | — |
+1. **#1 — AI prompt provenance is poisoned.** `buildSystemPrompt()` (:15332 — the *correct* builder: `getLiveBal` + `getGenuineSurplus` + licensed-advice disclaimer) is **dead code (0 callers, grep-confirmed)**. The **live** prompt (inline :15665, sent at :15766) reads **raw `S.bal`** (:15672) + `getDynamicDailyBudget` (:15676), carries **no disclaimer**, and hardcodes stale facts. Live probe evidence on Sam:
+   - spend-power **`getGenuineSurplus`=0 vs `getDynamicDailyBudget`=60** → the AI's "can spend $60/day" line contradicts genuine surplus $0. *(This is the live bite.)*
+   - **`rainy-day-fund` id miss**: goals present = `['rainy-day']`, lookup = `false` → AI sees a hardcoded **$9,000** Rainy Day, not the real $1,200/$3,000.
+   - **Darwin date contradiction**: intent = Aug 1–10; prompt hardcodes **"June 7-15"** (:15704).
+   - **Over-claim corrected (auditor):** raw-`S.bal` read shows `bal_divergence=0` on *this* fixture — a **structural risk**, not a demonstrated wrong balance here. The four bites above are the demonstrated harm.
+2. **Quick-Log → Savings silently loses money (no destination picker).** `[BROKEN]` Cash leaves, no goal credited, no `bucket_saved_change`. **UX visual proof:** the success toast reads `"−$300.00 · Savings · — · Tap to undo"` — the **em-dash is where the goal name should be**. The user is told it worked. The fix already exists in-app (round-up "→ China Holiday" language + the Payday Savings allocation UI) — it's an *omission* to propagate, not missing capability.
+3. **Bills undo silently no-ops → bill stuck paid, cash unrecovered.** `[BROKEN, root-caused by auditor]` `markPaid` **cycle-bumps** a bill due before payday: day-10 < payday-15 ⇒ writes key `2026-6-Phone Plan-10` (:~25192). But the user-facing `undoBillPaid()` (:8809) AND `unmarkBillFromCal` read `paidBillKey(name,day)` = **current** month `2026-5-Phone Plan-10`. Writer-key ≠ reader-key ⇒ undo finds nothing ⇒ $50 unrecoverable via undo. Affects every pre-payday bill. (Matches the spec-03/07 + OPEN-BUGS candidate — now confirmed.)
 
-## STORIES AUTHORED, READY TO WALK (13 hierarchical walk-specs)
-First-batch (4): Darwin both-paths ✓walked · log-transaction · bills-mark-paid · plan-lock. Surface-level (9, Level 1 main → Level 2 per-button/tile → Level 3 cross-surface "updates X → verify at Y"): savings-goals+trips · daily-living+buffer+provisions · bills-full · analysis-full · dashboard-full · debts-full · AI-info-sources · settings-full · nav/chrome. Each is a deterministic flow def ready to drop into the walker's `FLOWS` array.
+## NEW CANDIDATES (surfaced this batch — NOT yet promoted; need a focused walk)
 
-## CANDIDATE FINDINGS from the spec corpus (⊘ code-read, pending LIVE walk — do NOT promote until walked)
-- **Savings goals/trips:** add-savings credits `bucket.saved` but never debits `S.bal` → **NW inflates** (FR-01/02 class) [HIGH]; goal-edit doesn't write canonical intent (reverts); mark-complete doesn't persist; `rainy-day` vs `rainy-day-fund` id mismatch; orphan buckets on delete; native confirm.
-- **AI info-sources:** `buildSystemPrompt()` is **DEAD CODE** — the live prompt reads RAW `S.bal` (not `getLiveBal`) + `getDynamicDailyBudget` (not genuine surplus → the AI advises on a number the user can't see, CDB-23); self-contradicting static persona text; `mark_bill_paid` bypasses canonical writer; FR-03 `update_balance` overshoot; action errors swallowed.
-- **Nav:** **PIN gate orphaned on boot** (splashTap never routes to pin-screen — security-or-descope flag); native alert in launchApp; goPage modal-sweep may miss EDIT_MODAL.
-- **Bills:** cycle-relative writer-key vs reader-key mismatch → undo may silently no-op; edit drops `paymentDates`; 3-way "N days away" wrong for yearly.
-- **Daily-living:** CDB-30 two-store split confirmed (Plan floor ≠ MAX-PER-DAY hero); provisions bypass canonical writer/audit.
-- **Dashboard:** explainMaxPerDay formula ≠ MAX-PER-DAY card formula; FR-06 three day-counts; WRX two writer paths; fmt vs fmtC.
-- **Debts:** no $0-archive UI; native confirm ×3; FR-07 canvas-vs-dashboard.
+- **Hero render-drift (UX):** a headline number rendered **$2,045 → $1,914 → $1,782 across consecutive frames** for a single entry. This does **not** match the clean `S.bal` ground truth (4800→4500), so it is either a **JS counter-roll animation caught mid-tween** (the walker's CSS freeze doesn't stop rAF-driven counters) or a render-vs-state divergence. **Walker improvement:** wait for the counter to settle before screenshotting. Do not promote until re-walked with the counter stable.
+- **No visible feedback on state-changing actions (UX, HIGH):** lock/unlock (6 frames) and bill-undo (3 frames) are pixel-identical — no lock badge, no frozen fields, no undo confirmation. Core trust gap for a money app.
+- **Legibility debt (UX, HIGH):** grey-on-grey calendar bill amounts; rainbow-monospace "debug-look" math lines on hero/pool breakdowns; a **malformed `$#0`** in the canvas "WHERE THE $5,000 SITS NOW" reconciliation line.
+- **`bill_mark_paid` fires twice** per pay — confirm intentional (dual-store mirror) vs double-write.
 
-## FIXTURE NOTE
-The fake fixture is over-committed (−$1,514 headroom) + thin (6 txns, no Bills/Loan txns, empty monthlyHistory). Good for the Darwin/affordability finding; for the Analysis filter-scatter + a clean Path-B-works contrast, the fixture needs augmentation (a few Bills/Loan/correction txns + a positive-surplus variant + monthlyHistory). Tracked as a build item.
+## COVERAGE GAP TO CLOSE (honest ⊘)
+
+- **AI chat visual surface NOT REACHED.** `apiKey:""` → the chat renders the *activation* screen, so both ai-provenance screenshots are the key-entry prompt, not the chat. The #1 **finding stands** (proven by code-read + in-page probe of the assembly functions, which don't need the chat UI — arguably the *stronger* evidence). **Next step:** re-walk with a Playwright **route-intercept on `api.anthropic.com`** to capture the *actual assembled `system` prompt string* (the literal text with "$60/day", "June 7-15", "$9,000", no disclaimer) — definitive, spends no tokens, needs no real key. Add this technique to the fleet.
+- **Plan-lock legacy/UI 2nd unlock path** not walked (the 3-store divergence per ADR Bundle 32.7).
+
+## FULL FRAME — ~27 surfaces · 202 actions
+First-batch flips 6 flows above. Remaining surfaces ⊘, authored as 13 walk-specs in `specs/` (Level 1 main → Level 2 per button/tile → Level 3 cross-surface). Each → a `FLOWS[]` entry for the checkpointed fleet.
 
 ## SCALED PLAN (prove → scale)
-1. ✓ Loop proven (this run). 2. Add the other 3 first-batch flows to `FLOWS` (log-txn, bills-mark-paid, plan-lock) → walk → judge → flip markers. 3. Add a positive-surplus fake-fixture variant for the clean contrasts. 4. Fan out: convert the 9 hierarchical specs into flow defs, walk per-surface (parallelizable — one walk per surface), CC/sub-agent vision-judge each, flip all 202 markers. 5. Opus renders `walk.json` → interactive HTML path map. Code FIXES the walk surfaces (e.g. the Darwin no-picker) route through the normal pipeline with John's approval; the walking itself is read-only on fake data, safe to run freely.
+1. ✓ Loop proven. 2. ✓ First batch walked (6 flows). 3. ✓ Layers A/B/C proven on the batch. 4. ✓ Output 1 (this map) + Output 2 (`walk.json`) emitted. **Next:** (a) AI route-intercept re-walk to capture the literal prompt; (b) walker counter-settle fix; then (c) convert the 9 surface specs → flow defs, fan out the checkpointed 202-action fleet (one walk per surface, auditor + UX pass each), flip all markers; (d) Opus renders `walk.json` → interactive HTML path map. Fixes route through the pipeline in John's priority order — **find everything first**.
