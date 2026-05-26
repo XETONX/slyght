@@ -323,6 +323,21 @@ After 10-drone scoping (Step 0 + Tier 1 Gather × 5 + Red Team × 5), Bundle 23 
 
 This entry is the contract. Future-CC reading this: do NOT defer Phase B further when sync ships. Phase B follows immediately.
 
+### 2026-05-26 — Mission Control local cockpit server (separate threat model)
+
+A local dev cockpit (`mission-control/`) was added: a page at `http://127.0.0.1:5050`
+backed by `mission-control/server.js` that reads repo files and writes back via a
+fixed set of allowlisted, path-jailed actions. This is **local developer tooling**,
+not part of the worker/app phase progression above — distinct threat model (one
+machine, one user, manual start/stop), so it does NOT alter the Phase A/B/C order.
+
+Built to seven hard rules, documented in `mission-control/SECURITY.md`: 127.0.0.1-only
+bind · allowlisted actions (no arbitrary exec/writeFile) · path-jailed to the repo ·
+origin-locked + per-start token on writes · manual start/stop · deploy (`git push`)
+behind explicit confirm. `scripts/serve.js` also fixed to bind 127.0.0.1 (was
+0.0.0.0). Verified: all four rejections (bad read/token/origin/action) + writes +
+deploy-without-confirm refusal. No worker/KV/auth surface touched.
+
 ### YYYY-MM-DD — [next decision goes here]
 
 ---
