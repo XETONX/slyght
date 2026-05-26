@@ -83,7 +83,9 @@ function renderTopbarStatus() {
     stat(total, 'Tickets') +
     stat(p0, 'P0', p0 ? 'sys-p0' : '') +
     (gaps != null ? stat(gaps, 'Gaps', gaps ? 'sys-amber' : '') : '') +
-    (health != null ? stat(health + '%', 'Health', health >= 60 ? 'sys-green' : 'sys-amber') : '');
+    (health != null ? stat(health + '%', 'Health', health >= 60 ? 'sys-green' : 'sys-amber') : '') +
+    `<span id="dspAgents" class="dsp-agents"></span>`;
+  dspRenderTopbar();   // paint the Agents-Running chip from the last /api/ccjobs poll (if any)
 }
 
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
@@ -585,7 +587,10 @@ function viewTicket(id) {
             <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
             ${['Open', 'Discussing'].includes(status)
               ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>`
-              : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package</button>`}
+              : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package</button>
+                 <button class="btn dsp-btn" onclick="dispatchToCC('${t.id}')" title="Spawn a real CC drone on this ticket's handoff package">
+                   <span class="dsp-btn-ic" aria-hidden="true">▶</span> Dispatch to CC
+                 </button>`}
           </div>
         </div>
       </div>
@@ -745,6 +750,133 @@ async function viewHandoff(id) {
     <pre>${esc(r.content || r.error || '(not generated — align first)')}</pre>
     <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
 }
+
+/* ════════════════════════ DISPATCH TO CC (the real drone) ═══════════════════
+ * Closes the manual copy-paste loop. The confirm modal explains exactly what this
+ * does — spawns a REAL headless Claude Code drone (costs tokens, capped $1.50 /
+ * 40 turns, NEVER pushes) — and offers the SAFE default (Investigate, plan-mode,
+ * read-only) vs the opt-in Fix-on-branch (acceptEdits). Dispatch needs an explicit
+ * typed confirm. On success we toast + poll /api/ccjobs (same shape/cadence as the
+ * walklog poll); when this ticket's job flips to done/failed we reload + re-render
+ * the ticket so the drone's posted comment shows in the thread.
+ * ──────────────────────────────────────────────────────────────────────────── */
+let dspMode = 'plan';          // module-scope toggle for the confirm modal
+let dspPoll = null;            // single active /api/ccjobs poller
+
+function dispatchToCC(id) {
+  const t = get(id);
+  if (!t) { toast('ticket not found', 'err'); return; }
+  dspMode = 'plan';            // always reset to the SAFE default on open
+  modal(`<h2>Dispatch ${esc(id)} to CC</h2>
+    <p>This spawns a <b>real headless Claude Code drone</b> on this ticket's handoff package — it
+       runs Claude Code on your machine, costs tokens (capped at <b>$1.50</b> / <b>40 turns</b>),
+       and <b>never runs git push or deploys</b>. Its result posts straight back into the ticket
+       thread when it finishes.</p>
+    <div class="dsp-modes" role="radiogroup" aria-label="Dispatch mode">
+      <button type="button" class="dsp-mode on" id="dspModePlan" role="radio" aria-checked="true"
+        onclick="dspSetMode('plan')">
+        <span class="dsp-mode-h"><span class="dsp-mode-tick" aria-hidden="true">●</span> Investigate <span class="dsp-mode-tag dsp-tag-safe">Safe · default</span></span>
+        <span class="dsp-mode-b">Read + analyse only. Proposes the precise fix with file:line + evidence. <b>Edits nothing.</b> (plan mode)</span>
+      </button>
+      <button type="button" class="dsp-mode" id="dspModeFix" role="radio" aria-checked="false"
+        onclick="dspSetMode('fix')">
+        <span class="dsp-mode-h"><span class="dsp-mode-tick" aria-hidden="true">○</span> Fix on branch <span class="dsp-mode-tag dsp-tag-write">Edits files</span></span>
+        <span class="dsp-mode-b">Investigates AND implements the fix on the current branch (acceptEdits). Still <b>never pushes</b>; review the diff before you deploy.</span>
+      </button>
+    </div>
+    <div class="dsp-confirm">
+      <div class="dsp-confirm-label">Type <code>dispatch</code> to confirm</div>
+      <input id="dspConfirm" placeholder="dispatch" autocomplete="off"
+        oninput="document.getElementById('dspGo').disabled = (this.value.trim().toLowerCase() !== 'dispatch')">
+    </div>
+    <div class="btns">
+      <button class="btn primary" id="dspGo" disabled onclick="doDispatch('${id}')">
+        <span aria-hidden="true">▶</span> Dispatch Drone
+      </button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+  setTimeout(() => { const el = $('dspConfirm'); if (el) el.focus(); }, 30);
+}
+
+// Mode toggle for the confirm modal (radio-style; updates the typed-confirm-independent state).
+function dspSetMode(mode) {
+  dspMode = mode === 'fix' ? 'fix' : 'plan';
+  const plan = $('dspModePlan'), fix = $('dspModeFix');
+  if (plan) { plan.classList.toggle('on', dspMode === 'plan'); plan.setAttribute('aria-checked', dspMode === 'plan'); plan.querySelector('.dsp-mode-tick').textContent = dspMode === 'plan' ? '●' : '○'; }
+  if (fix)  { fix.classList.toggle('on', dspMode === 'fix');   fix.setAttribute('aria-checked', dspMode === 'fix');   fix.querySelector('.dsp-mode-tick').textContent = dspMode === 'fix' ? '●' : '○'; }
+}
+
+async function doDispatch(id) {
+  const el = $('dspConfirm');
+  if (!el || el.value.trim().toLowerCase() !== 'dispatch') { toast('type “dispatch” to confirm', 'err'); return; }
+  const mode = dspMode;
+  try {
+    const r = await action('dispatchCC', { id, confirm: true, mode });
+    closeModal();
+    toast(`CC drone dispatched on ${id} — ${mode === 'fix' ? 'Fix' : 'Investigate'} mode`, 'ok');
+    await load();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);   // status flips to Investigating live
+    dspStartPoll(id);          // watch THIS ticket's job; reload+re-render on done/failed
+    dspRenderTopbar();         // light up the Agents-Running indicator immediately
+  } catch (e) { /* action() already toasted the rejection */ }
+}
+
+// Poll /api/ccjobs (same cadence as the walklog poll). Drives BOTH the topbar indicator and the
+// per-ticket reload. `watchId` (optional) is the ticket whose completion should reload the detail.
+function dspStartPoll(watchId) {
+  if (watchId) J.dspWatch = watchId;
+  if (dspPoll) return;         // single shared poller
+  let lastWatchStatus = null;
+  dspPoll = setInterval(async () => {
+    let jobs; try { jobs = await api('/api/ccjobs'); } catch (_) { return; }
+    J.ccjobs = jobs || {};
+    dspRenderTopbar();
+    // if the watched ticket's drone just finished, reload + re-render so the posted comment shows
+    const w = J.dspWatch, wj = w && jobs ? jobs[w] : null;
+    if (w && wj && wj.status !== 'running' && lastWatchStatus === 'running') {
+      toast(`CC drone on ${w} ${wj.status === 'done' ? 'finished' : 'failed'} — result posted`, wj.status === 'done' ? 'ok' : 'err');
+      await load();
+      if ((location.hash || '').includes('/ticket/' + w)) viewTicket(w);
+      J.dspWatch = null;
+    }
+    if (wj) lastWatchStatus = wj.status;
+    // stop polling once nothing is running (topbar already reflects final state)
+    const anyRunning = Object.values(jobs || {}).some(v => v.status === 'running');
+    if (!anyRunning && !J.dspWatch) { clearInterval(dspPoll); dspPoll = null; }
+  }, 1500);
+}
+
+// Paint the topbar "Agents Running" indicator from J.ccjobs (cached by the poll). Shows a pulsing
+// count + one clickable chip per running drone (→ its ticket). Empty when nothing is running, so
+// it costs zero visual weight at rest. Reuses the .sys-* / .cmd-live-dot language.
+function dspRenderTopbar() {
+  const host = $('dspAgents'); if (!host) return;
+  const jobs = J.ccjobs || {};
+  const running = Object.entries(jobs).filter(([, v]) => v.status === 'running');
+  if (!running.length) { host.innerHTML = ''; return; }
+  const chips = running.slice(0, 4).map(([id, v]) =>
+    `<button type="button" class="dsp-chip" title="${esc(id)} · ${esc(v.mode)} mode — open ticket"
+       onclick="location.hash='#/ticket/${esc(id)}'">${esc(id)}</button>`).join('');
+  const more = running.length > 4 ? `<span class="dsp-chip-more">+${running.length - 4}</span>` : '';
+  host.innerHTML =
+    `<span class="sys-sep"></span>` +
+    `<span class="dsp-agents-wrap" title="CC drones running now">
+       <span class="dsp-live-dot" aria-hidden="true"></span>
+       <b class="dsp-agents-n">${running.length}</b>
+       <span class="dsp-agents-l">Agent${running.length === 1 ? '' : 's'} Running</span>
+       <span class="dsp-chips">${chips}${more}</span>
+     </span>`;
+}
+
+// On boot, do one /api/ccjobs read so a drone started in a previous page-load still shows in the
+// topbar, and resume polling if any are still running. Cheap, read-only, fire-and-forget.
+async function dspBootPoll() {
+  let jobs; try { jobs = await api('/api/ccjobs'); } catch (_) { return; }
+  J.ccjobs = jobs || {};
+  dspRenderTopbar();
+  if (Object.values(jobs || {}).some(v => v.status === 'running')) dspStartPoll();
+}
+
 function newTicket() {
   const surfaces = [
     ['dashboard', 'Dashboard'], ['bills', 'Bills'], ['savings', 'Savings'],
@@ -2964,4 +3096,4 @@ function route() {
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
 window.addEventListener('hashchange', route);
-(async function boot() { await load(); renderTopbarStatus(); if (!location.hash) location.hash = '#/overview'; route(); setupPalette(); })();
+(async function boot() { await load(); renderTopbarStatus(); if (!location.hash) location.hash = '#/overview'; route(); setupPalette(); dspBootPoll(); })();

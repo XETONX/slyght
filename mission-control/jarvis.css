@@ -1514,3 +1514,62 @@ body{ background-image:
   .fld-releasegrid{ grid-template-columns:1fr; }
   .fld-bundle,.fld-date{ max-width:none; width:100%; }
 }
+
+/* ════════════════════════ DISPATCH TO CC ════════════════════════════════════
+ * The Dispatch button (ticket action row), the confirm modal's mode toggle, the
+ * typed-confirm field, and the topbar "Agents Running" indicator + ticket chips.
+ * All namespaced dsp-*; tokens + the existing .sys-* / .cmd-live-dot language. */
+
+/* the action-row button — premium, reads as a "live action" (teal accent like Run-for-real) */
+.dsp-btn{ display:inline-flex; align-items:center; gap:8px; border-color:var(--teal);
+  color:var(--teal); background:var(--teal-bg); box-shadow:var(--sh-xs); font-weight:600; }
+.dsp-btn:hover{ background:var(--teal); color:#fff; border-color:var(--teal);
+  box-shadow:0 4px 14px rgba(14,112,144,.32); transform:translateY(-1px); }
+.dsp-btn-ic{ font-size:11px; line-height:1; }
+
+/* confirm-modal mode toggle — two stacked radio cards (Investigate · Fix on branch) */
+.dsp-modes{ display:flex; flex-direction:column; gap:10px; margin:16px 0 18px; }
+.dsp-mode{ text-align:left; display:flex; flex-direction:column; gap:5px; width:100%;
+  padding:14px 16px; border:1.5px solid var(--border2); border-radius:var(--radius);
+  background:var(--card); transition:.14s var(--ease); }
+.dsp-mode:hover{ border-color:var(--accent-2); background:var(--accent-soft); }
+.dsp-mode.on{ border-color:var(--accent); background:var(--accent-soft); box-shadow:var(--sh-glow); }
+.dsp-mode-h{ display:flex; align-items:center; gap:9px; font-size:15px; font-weight:700; color:var(--head); }
+.dsp-mode-tick{ color:var(--accent); font-size:13px; }
+.dsp-mode-b{ font-size:13px; line-height:1.55; color:var(--label); }
+.dsp-mode-tag{ margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.2px;
+  padding:2px 9px; border-radius:999px; border:1px solid transparent; text-transform:uppercase; }
+.dsp-tag-safe{ color:var(--green); background:var(--green-bg); border-color:#a6e9c0; }
+.dsp-tag-write{ color:var(--amber); background:var(--amber-bg); border-color:#f5d390; }
+
+/* typed-confirm field (mirrors the delete-ticket .confirm-danger pattern, neutral tone) */
+.dsp-confirm{ margin:4px 0 6px; }
+.dsp-confirm-label{ font-size:13px; color:var(--label); margin-bottom:7px; }
+.dsp-confirm-label code{ font-family:ui-monospace,monospace; font-size:12.5px; background:var(--card2);
+  border:1px solid var(--border); border-radius:5px; padding:1px 6px; color:var(--head); }
+.dsp-confirm input{ width:100%; font-family:inherit; font-size:14px; padding:10px 13px;
+  border:1.5px solid var(--border2); border-radius:9px; background:var(--card); color:var(--text); }
+.dsp-confirm input:focus{ outline:none; border-color:var(--accent); box-shadow:var(--sh-glow); }
+
+/* topbar "Agents Running" indicator — only shown when ≥1 drone is running */
+.dsp-agents{ display:inline-flex; align-items:center; gap:14px; }
+.dsp-agents-wrap{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted);
+  background:var(--teal-bg); border:1px solid #a9def0; border-radius:999px; padding:4px 11px 4px 9px;
+  box-shadow:var(--sh-xs); white-space:nowrap; }
+.dsp-agents-n{ font-weight:700; color:var(--teal); font-size:13.5px; font-variant-numeric:tabular-nums; }
+.dsp-agents-l{ font-weight:600; color:var(--teal); }
+.dsp-live-dot{ width:8px; height:8px; border-radius:50%; background:var(--teal); flex-shrink:0;
+  box-shadow:0 0 0 0 rgba(14,112,144,.5); animation:dspPulse 1.4s var(--ease) infinite; }
+@keyframes dspPulse{
+  0%{ box-shadow:0 0 0 0 rgba(14,112,144,.45); }
+  70%{ box-shadow:0 0 0 6px rgba(14,112,144,0); }
+  100%{ box-shadow:0 0 0 0 rgba(14,112,144,0); }
+}
+@media (prefers-reduced-motion: reduce){ .dsp-live-dot{ animation:none; } }
+.dsp-chips{ display:inline-flex; align-items:center; gap:5px; }
+.dsp-chip{ font-size:11.5px; font-weight:700; color:var(--teal); background:var(--card);
+  border:1px solid #a9def0; border-radius:6px; padding:2px 8px; transition:.12s; }
+.dsp-chip:hover{ background:var(--teal); color:#fff; border-color:var(--teal); }
+.dsp-chip-more{ font-size:11.5px; font-weight:600; color:var(--muted); }
+/* collapse the chips (keep the count pill) on narrow screens, in line with .sys-stat behaviour */
+@media (max-width:860px){ .dsp-chips,.dsp-agents-l{ display:none; } }

@@ -58,6 +58,10 @@ function writeFull(abs, content, force) {
 // ── RULE 2: the FIXED action menu. Each is a named function with a hard-coded
 //    target. There is no generic exec or writeFile(anyPath). ──────────────────
 let walkChild = null, walkLog = [];           // for runWalk streaming (RULE 2: fixed command)
+// Dispatch-to-CC job registry. id -> {status,mode,started,out,result,exit}. RUNTIME only
+// (in-memory, never persisted, never path-derived). Mirrors the walkChild pattern: one fixed,
+// named spawn (the `claude` headless drone), nothing arbitrary. Polled read-only via /api/ccjobs.
+const ccJobs = {};
 const ACTIONS = {
   // Compose: a full brief MD lands in mission-control/briefs/<slug>.md
   writeBrief: ({ slug: s, content }) => writeFull(jail(path.join('mission-control', 'briefs', slug(s) + '.md')), String(content || ''), true),
@@ -310,6 +314,76 @@ const ACTIONS = {
       }
     }
     return { ok: true, status: t.status, propagated };
+  },
+
+  // ── Dispatch to CC — spawn a REAL headless Claude Code drone on a ticket's handoff
+  // package, then post its result back into the ticket. SECURITY SURFACE — held to the same
+  // seven rules as everything else here, plus four feature-specific guards:
+  //   • confirm-gate (RULE 6 family): needs explicit confirm:true, like deploy().
+  //   • single-flight: one running drone per ticket id (no fan-out / fork-bomb).
+  //   • allowlisted, fixed binary + fixed args: `claude` headless, spawned WITHOUT a shell
+  //     (no shell-injection surface), prompt piped via STDIN (never on argv).
+  //   • no-push + cost-cap + plan-default: git push is disallowed at the tool layer, spend is
+  //     capped (--max-budget-usd 1.5 / --max-turns 40), and the SAFE default is investigate-only
+  //     (--permission-mode plan). 'fix' mode (acceptEdits) is opt-in from the confirm modal.
+  // id is pinned to ^SLY-\d+$ like every ticket action; the handoff path is jail()'d; the only
+  // thing that varies is plan-vs-fix, which maps to a fixed pair of (directive, permission-mode).
+  dispatchCC: ({ id, confirm, mode }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'dispatch needs confirm:true' };
+    if (ccJobs[id] && ccJobs[id].status === 'running') return { ok: false, reason: 'a drone is already on ' + id };
+
+    // The drone investigates/fixes FROM the aligned handoff package — refuse if there isn't one.
+    let handoff;
+    try { handoff = fs.readFileSync(jail(path.join('mission-control', 'handoffs', id + '.md')), 'utf8'); }
+    catch { throw new Error('No handoff yet — align the ticket first.'); }
+
+    const m = mode === 'fix' ? 'fix' : 'plan';   // default SAFE = plan (investigate only)
+    const directive = m === 'fix'
+      ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. NEVER run git push or deploy. End with a concise RESULT section: what you found, what you changed (files), and the evidence.'
+      : 'You are a CC drone dispatched by Jarvis on ' + id + '. INVESTIGATE ONLY — read + analyse, propose the precise fix with file:line + evidence. Do NOT edit files. End with a concise RESULT section.';
+    const prompt = handoff + '\n\n---\n' + directive;
+
+    const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+    const args = ['-p', '--output-format', 'json', '--model', 'sonnet', '--max-turns', '40', '--max-budget-usd', '1.5', '--permission-mode', (m === 'fix' ? 'acceptEdits' : 'plan'), '--disallowedTools', 'Bash(git push:*)', 'Bash(git push)'];
+
+    // Spawn WITHOUT a shell (no shell-injection surface); feed the prompt via STDIN.
+    const child = spawn(claudeBin, args, { cwd: REPO });
+    child.stdin.write(prompt); child.stdin.end();
+
+    const job = ccJobs[id] = { status: 'running', mode: m, started: Date.now(), out: '' };
+    child.stdout.on('data', d => job.out += d);
+    child.stderr.on('data', d => job.out += d);
+
+    child.on('exit', code => {
+      job.exit = code;
+      let resultText = '';
+      try { const j = JSON.parse(job.out); resultText = j.result || j.text || ''; }
+      catch (_) { resultText = job.out.slice(-4000); }
+      job.result = resultText;
+      job.status = code === 0 ? 'done' : 'failed';
+      // post the drone's result back INTO the ticket thread (closes the loop)
+      const st = readState();
+      const t = st[id];
+      if (t) {
+        t.thread.push({ author: 'cc', text: '**CC drone — ' + m + ' mode**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
+        t.lastActivity = new Date().toISOString();
+        writeState(st);
+      }
+    });
+
+    // On dispatch, move the ticket to Investigating if that edge is legal (Aligned→Investigating,
+    // ConfirmedLive→Investigating, Shipped→Investigating per TRANSITIONS). Logged like every edge.
+    const st0 = readState();
+    if (st0[id] && (TRANSITIONS[st0[id].status] || []).includes('Investigating')) {
+      logTransition(id, st0[id].status, 'Investigating', 'jarvis');
+      st0[id].status = 'Investigating';
+      st0[id].assignee = 'cc';
+      st0[id].lastActivity = new Date().toISOString();
+      writeState(st0);
+    }
+
+    return { ok: true, dispatched: id, mode: m };
   },
 
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
@@ -565,6 +639,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/walkspecs')   return send(res, 200, { specs: listWalkSpecs() });
     if (p === '/api/walkspec')    { try { return send(res, 200, { name: url.searchParams.get('name'), content: fs.readFileSync(jail(path.join('docs','walk-and-judge','specs', path.basename(url.searchParams.get('name')||''))), 'utf8') }, ); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/walklog')     return send(res, 200, { lines: walkLog, running: !!walkChild });
+    if (p === '/api/ccjobs')      return send(res, 200, Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, { status: v.status, mode: v.mode, started: v.started, exit: v.exit }])));
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
       if (!READS[key]) return send(res, 400, { error: 'not an allowlisted read: ' + key });
@@ -602,6 +677,7 @@ server.listen(PORT, HOST, () => {
   console.log('  token:  ' + TOKEN + '   (auto-injected into the page)');
   console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
+  console.log('  dispatch: CC drone (claude headless) — confirm-gated, no-push, cost-capped $1.50/40-turn, plan-default');
   console.log('  history:' + (snap.skipped ? ' ' + snap.skipped : snap.ok ? ' snapshot ' + snap.date + ' (' + snap.total + ' tickets)' : ' snapshot failed: ' + snap.error));
   console.log('  stop:   Ctrl-C\n');
 });
