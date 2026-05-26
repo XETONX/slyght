@@ -6,7 +6,7 @@
  * ==========================================================================*/
 'use strict';
 const TOKEN = window.MC_TOKEN;
-const J = { tickets: [], filter: { surface: '', severity: '', type: '' } };
+const J = { tickets: [], filter: { surface: '', severity: '', type: '' }, flows: null };
 const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
 
@@ -221,6 +221,46 @@ async function doCreate() {
   try { const r = await action('createTicket', { title, summary: $('ntSummary').value, surface: $('ntSurface').value, severity: $('ntSev').value, type: $('ntType').value }); closeModal(); toast('created ' + r.id, 'ok'); await load(); location.hash = '#/ticket/' + r.id; } catch (e) {}
 }
 
+/* ════════════════════════ APP MAP (Phase 1 — IS vs SHOULD) ════════════ */
+async function viewMap(surfaceId) {
+  if (!J.flows) J.flows = await api('/api/flows');
+  if (surfaceId) return renderSurfaceFlow(surfaceId);
+  const f = J.flows, v = $('view'); v.className = 'view maxw';
+  v.innerHTML = `
+    <h1>App Map</h1>
+    <p class="subtitle">Every surface's complete intended journey — <b>what SHOULD happen</b> beside <b>what IS</b>, with the gap shown in position. ${f.coverage.traced || 0}/${f.coverage.total || 0} surfaces traced so far; each gap is a ticket.</p>
+    <div class="maproster">
+      ${(f.roster || []).map(r => `<div class="surfcard ${r.traced ? 'traced' : 'soon'}" ${r.traced ? `onclick="location.hash='#/map/${r.id}'"` : ''}>
+        <div class="sh">${esc(r.name)}</div>
+        <div class="srow">${r.traced ? `<span class="pill sm s-ConfirmedLive">traced</span>${r.ticket ? `<span class="pill sm k-confirmed">${r.ticket}</span>` : ''}` : `<span class="pill sm p-p2">not yet traced</span>`}</div>
+      </div>`).join('')}
+    </div>`;
+}
+async function renderSurfaceFlow(id) {
+  const s = (J.flows.surfaces || []).find(x => x.id === id), v = $('view');
+  if (!s) { v.innerHTML = `<a class="backlink" href="#/map">‹ App Map</a><div class="empty">Not traced yet.</div>`; return; }
+  const gap = s.steps.find(x => x.is === 'gap' || x.is === 'broken'), harm = s.steps.find(x => x.is === 'fires-anyway' || x.is === 'dead');
+  v.innerHTML = `
+    <a class="backlink" href="#/map">‹ App Map</a>
+    <div class="card">
+      <h1>${esc(s.name)}</h1>
+      <p class="summary">${esc(s.summary)} ${s.ticket ? `· <a href="#/ticket/${s.ticket}">${s.ticket}</a>` : ''}</p>
+      <div class="ladhead"><div>What should happen</div><div>What happens now</div></div>
+      ${s.steps.map(ladderRow).join('')}
+      <div class="plainbox"><div class="label">The whole thing, plain</div>
+        <div class="pb">This is a ${s.steps.length}-step journey.${gap ? ` Step ${gap.n} — <b>${esc(gap.title)}</b> — is the break (${gap.is === 'gap' ? 'a missing rung' : 'a broken rung'}).` : ''}${harm ? ` Because of it, <b>${esc(harm.title)}</b> ${harm.is === 'fires-anyway' ? 'fires anyway — that\'s the loss' : 'is never reached'}.` : ''} The fix is the rung — tracked as ${s.ticket ? `<a href="#/ticket/${s.ticket}">${s.ticket}</a>` : 'a ticket'}.</div></div>
+    </div>`;
+}
+function ladderRow(st) {
+  const LBL = { ok: '✓ works', gap: '✗ Missing — the gap', dead: '— never reached', 'fires-anyway': '⚠ fires anyway — the harm', broken: '✗ wrong rung' };
+  const cls = st.is === 'ok' ? 'ok' : st.is === 'dead' ? 'dead' : st.is === 'fires-anyway' ? 'fire' : 'gap';
+  const ticket = st.ticket ? ` <a href="#/ticket/${st.ticket}" class="gaplink">${st.ticket} →</a>` : '';
+  return `<div class="ladrow">
+    <div class="should"><div class="rung ${cls}">${st.n}</div><div class="rinfo"><div class="rt">${esc(st.title)}</div><div class="rsub">${esc(st.plain)}</div>${st.file && st.file !== '—' ? `<code class="fileline">${esc(st.file)}</code>` : ''}</div></div>
+    <div class="iscell is-${cls}"><div class="islbl">${LBL[st.is] || '—'}${ticket}</div>${st.wired && st.is !== 'ok' ? `<div class="rsub">${esc(st.wired)}</div>` : ''}${(st.writes || []).length ? `<div class="rsub">writes: ${st.writes.map(esc).join(', ')}</div>` : ''}</div>
+  </div>`;
+}
+
 /* ── placeholder views (sequenced next) ───────────────────────────────── */
 function viewSoon(title, body) {
   $('view').className = 'view maxw';
@@ -235,7 +275,7 @@ function route() {
   const r = parts[0] || 'board';
   document.querySelectorAll('.rail a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
   if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
-  else if (r === 'map') viewSoon('App Map', 'The whole app as IS-vs-SHOULD flow ladders — every surface\'s complete journey with the gaps shown in position, clickable. The savings ladder reference is built; the full trace is the next big phase.');
+  else if (r === 'map') viewMap(parts[1]);
   else if (r === 'calendar') viewSoon('Calendar / Planning', 'Plan features (bank integration, Opal) and bundle fixes against dates and timelines. Tickets + bundles plotted on a calendar; releases group what ships together.');
   else viewBoard();
   window.scrollTo(0, 0);

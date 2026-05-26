@@ -68,3 +68,6 @@ mission-control/briefs/
 mission-control/ticket-state.json
 mission-control/tickets-manual.json
 mission-control/handoffs/
+
+# App Map — generated compressed dup of flows.json (regenerable)
+mission-control/flows.json.gz

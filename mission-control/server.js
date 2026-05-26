@@ -318,6 +318,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/notes') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'case-notes.json'), 'utf8'))); } catch (e) { return send(res, 200, {}); } }
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
+    if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
     if (p === '/api/gitstatus') {  // read-only git info for the Deploy view (fixed args, no shell)
       const run = (a) => { try { return require('child_process').execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
       return send(res, 200, {

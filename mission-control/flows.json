@@ -1,0 +1,247 @@
+{
+  "generatedAt": "2026-05-26T11:26:10.345Z",
+  "coverage": {
+    "traced": 2,
+    "total": 9
+  },
+  "roster": [
+    {
+      "id": "dashboard",
+      "name": "Dashboard",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "bills",
+      "name": "Bills & calendar",
+      "traced": true,
+      "ticket": "SLY-2"
+    },
+    {
+      "id": "savings",
+      "name": "Savings & goals",
+      "traced": true,
+      "ticket": "SLY-1"
+    },
+    {
+      "id": "plan",
+      "name": "Payday plan",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "analysis",
+      "name": "Analysis",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "debts",
+      "name": "Debts",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "ai",
+      "name": "AI chat",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "settings",
+      "name": "Settings",
+      "traced": false,
+      "ticket": null
+    },
+    {
+      "id": "nav",
+      "name": "Nav / onboarding",
+      "traced": false,
+      "ticket": null
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "bills",
+      "name": "Bills — mark paid & undo",
+      "surface": "bills",
+      "ticket": "SLY-2",
+      "summary": "Paying a bill and being able to cleanly undo it. The break here is a broken rung, not a missing one — the keys don't match.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Bills / Calendar tab",
+          "is": "ok",
+          "does": "You open the bills view and see what's due.",
+          "wired": "goPage('pg-cal')",
+          "file": "index.html:11090",
+          "reads": [
+            "S.paidBills",
+            "BILLS"
+          ],
+          "writes": [],
+          "plain": "The list of bills + due markers. Reading the 'paid?' flags is like checking a shadow table that records which invoices were settled."
+        },
+        {
+          "n": 2,
+          "title": "Tap a due bill → Pay now",
+          "is": "ok",
+          "does": "You mark a bill paid.",
+          "wired": "payBillNow(name, day, amt)",
+          "file": "index.html:20077",
+          "reads": [],
+          "writes": [],
+          "plain": "Fires the 'mark paid' request for that bill."
+        },
+        {
+          "n": 3,
+          "title": "markPaid files the paid record (cycle key)",
+          "is": "broken",
+          "does": "Writes the paid flag AND composes the cash txn. For a bill due BEFORE payday it bumps the record to NEXT month's key (a 'cycle bump').",
+          "wired": "BRAIN.bills.markPaid → paidBills[ paidBillKey(name, day, cycleMonth, cycleYear) ]",
+          "file": "index.html:8788, key shape index.html:4268",
+          "reads": [],
+          "writes": [
+            "bill_mark_paid",
+            "balance_apply_delta"
+          ],
+          "plain": "It files the 'paid' record in a drawer labelled by month — and for a pre-payday bill it files it under NEXT month (because that's the cycle it belongs to). The cash side is correct; the FILING LOCATION is the seed of the bug. Like writing to the shadow-table row for the wrong period key."
+        },
+        {
+          "n": 4,
+          "title": "Cash debited + txn logged",
+          "is": "ok",
+          "does": "Balance drops by the bill amount; a Bills txn is recorded.",
+          "wired": "recordWithAllocation",
+          "file": "index.html:24524",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [
+            "balance_apply_delta",
+            "txn_record"
+          ],
+          "plain": "The money side works correctly — walk: bal 4800→4750, one Bills txn."
+        },
+        {
+          "n": 5,
+          "title": "Undo — read the record back",
+          "is": "broken",
+          "does": "Undo looks up the paid record to reverse it — but reads the CURRENT month's key, not the next-month key step 3 wrote.",
+          "wired": "undoBillPaid() → paidBillKey(b.name, b.day)  [defaults to current month]",
+          "file": "index.html:8809-8812",
+          "reads": [
+            "S.paidBills"
+          ],
+          "writes": [],
+          "plain": "THE BROKEN RUNG. Undo opens THIS month's drawer; step 3 filed the record in NEXT month's. The keys don't match, so undo finds nothing. Writer-key ≠ reader-key — the same class as a shadow-table read using the wrong period key."
+        },
+        {
+          "n": 6,
+          "title": "Reverse the txn + clear the flag",
+          "is": "dead",
+          "does": "SHOULD reverse the cash txn and clear the paid flag.",
+          "wired": "(reversal path — never entered)",
+          "file": "—",
+          "reads": [],
+          "writes": [],
+          "plain": "Never reached: undo found nothing at step 5, so the bill stays marked paid and the cash isn't returned. Walk evidence: undo lands [] (no-op), bal stays 4750. The loss."
+        }
+      ],
+      "counts": {
+        "total": 6,
+        "gaps": 2,
+        "dead": 1,
+        "firesAnyway": 0
+      }
+    },
+    {
+      "id": "savings",
+      "name": "Savings — putting money toward a goal",
+      "surface": "save",
+      "ticket": "SLY-1",
+      "summary": "The complete journey money should take to reach a goal — and the rung that's missing.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Dashboard",
+          "is": "ok",
+          "does": "You're on the home screen and tap + (Log a transaction).",
+          "wired": "+ FAB → openQuickLogModal()",
+          "file": "index.html:10154",
+          "reads": [],
+          "writes": [],
+          "plain": "The starting screen. In Postman terms this is opening the collection — the place you fire the request from."
+        },
+        {
+          "n": 2,
+          "title": "Quick Log modal opens",
+          "is": "ok",
+          "does": "The box for entering the transaction appears.",
+          "wired": "openQuickLogModal()",
+          "file": "index.html:10154",
+          "reads": [],
+          "writes": [],
+          "plain": "The request builder opens — amount, type, note."
+        },
+        {
+          "n": 3,
+          "title": "Choose \"Savings\"",
+          "is": "ok",
+          "does": "You pick the Savings type — telling it this money is going to a goal.",
+          "wired": "selectTxnType(el,'savings')",
+          "file": "index.html:10236",
+          "reads": [],
+          "writes": [],
+          "plain": "You set the request's intent: 'this is a transfer to a goal'. The category row hides, expecting a destination to take its place."
+        },
+        {
+          "n": 4,
+          "title": "Goal picker — \"which goal?\"",
+          "is": "gap",
+          "does": "SHOULD appear here: the screen that asks WHICH goal (Darwin? China?) the money is for.",
+          "wired": "(missing — no picker rendered for type=savings)",
+          "file": "index.html:10154-10291",
+          "reads": [],
+          "writes": [],
+          "plain": "The missing rung. Like a Postman request with the body filled but NO target URL — there's nowhere to send it. Without this, the flow has no destination, so the step that writes to a bucket has nothing to write to.",
+          "ticket": "SLY-1"
+        },
+        {
+          "n": 5,
+          "title": "Allocate to the savings bucket",
+          "is": "dead",
+          "does": "Credits the chosen bucket (the goal's saved total goes up).",
+          "wired": "recordWithAllocation(...bucket destination...)",
+          "file": "index.html:24524",
+          "reads": [],
+          "writes": [
+            "bucket_saved_change"
+          ],
+          "plain": "The plumbing that actually deposits into the goal. It WORKS — the Plan-tick path and round-ups use it and fire bucket_saved_change. Here it's greyed because step 4 never handed it a destination, so it's never reached."
+        },
+        {
+          "n": 6,
+          "title": "Cash debited −$300",
+          "is": "fires-anyway",
+          "does": "Cash leaves your balance regardless of whether a bucket was credited.",
+          "wired": "quickLogTxn() → balance writer",
+          "file": "index.html:10311",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [
+            "balance_apply_delta"
+          ],
+          "plain": "This fires no matter what — so the money leaves your cash even though it reached no goal. That's the loss. Walk evidence: bal 4800→4500, Darwin stays 800, lands [txn_record, balance_apply_delta] with NO bucket_saved_change."
+        }
+      ],
+      "counts": {
+        "total": 6,
+        "gaps": 1,
+        "dead": 1,
+        "firesAnyway": 1
+      }
+    }
+  ]
+}
