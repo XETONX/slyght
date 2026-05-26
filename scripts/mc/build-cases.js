@@ -115,11 +115,13 @@ const fmt = (v) => v === undefined ? '∅' : (typeof v === 'object' ? JSON.strin
 // ── pull active OPEN-BUGS entries as lighter "tracked" cases (fuse bugs in) ──
 function openBugCases() {
   let md; try { md = r('OPEN-BUGS.md'); } catch { return []; }
+  const linkedBugs = new Set([...SEED, ...TRACE_FINDINGS].map(c => c.openBug).filter(Boolean)); // dedupe: don't double-file a bug that's already a deep/trace finding
   const out = [], re = /^##\s+(\d+)\.\s+(.*)$/gm, idx = []; let m;
   while ((m = re.exec(md))) idx.push({ num: +m[1], title: m[2].trim(), at: m.index });
   idx.forEach((b, i) => {
     const seg = md.slice(b.at, (idx[i + 1] || { at: md.length }).at);
     const status = ((seg.match(/^- \*\*Status:\*\*\s*(.*)$/m) || [])[1] || 'open').trim();
+    if (linkedBugs.has(b.num)) return; // already covered by a deep/trace finding's openBug link
     if (!/^(open|investigating)/i.test(status)) return; // active only
     const bug = ((seg.match(/^- \*\*Bug:\*\*\s*([\s\S]*?)(?=\n- \*\*|\n##|$)/m) || [])[1] || '').replace(/\s+/g, ' ').trim();
     out.push({
@@ -141,7 +143,7 @@ function openBugCases() {
 const TRACE_FINDINGS = [
   {
     id: 'settings-reset-unrecoverable', title: 'Reset is unrecoverable — the undo backup is deleted by the reset itself',
-    group: 'settings', surface: 'settings', severity: 'P0', status: 'confirmed', flow: null, openBug: null,
+    group: 'settings', surface: 'settings', severity: 'P0', status: 'confirmed', flow: null, openBug: 57,
     plain: "If you hit Reset there's no getting your data back — the 'undo' backup is stored inside the very blob the reset wipes, so the reset destroys its own safety net. And the warning screen says it'll delete your snapshots, but the code never actually removes them — the copy doesn't match what happens.",
     mechanism: "saveUndoState() stashes the backup into S._prevState. S lives in localStorage 'slyght_v5'. _executeReset deletes slyght_v5 (+ seed flags + api key) then reloads — so the backup is gone before undoLastAction could ever read it. Separately, the Stage-2 screen lists 'Snapshots: N' as about to be lost, but _executeReset never touches the slyght_snapshots key.",
     rootCause: "saveUndoState writes the backup to S._prevState (index.html:15276), which lives inside slyght_v5 — the exact key _executeReset deletes (index.html:14937-14944). No SNAPSHOTS.take before the wipe; the restore path (index.html:15315) has nothing to read. Stage-2 copy (index.html:14899-14900) overstates the deletion.",
@@ -159,7 +161,7 @@ const TRACE_FINDINGS = [
   },
   {
     id: 'nav-pin-gate-orphaned', title: 'PIN gate orphaned — a set PIN does not actually lock the app',
-    group: 'nav', surface: 'nav', severity: 'P1', status: 'confirmed', flow: null, openBug: null,
+    group: 'nav', surface: 'nav', severity: 'P1', status: 'confirmed', flow: null, openBug: 58,
     plain: "Setting a PIN doesn't actually lock anything. When the app opens, nothing checks the PIN or shows the PIN screen — so anyone who opens it is straight in. The lock exists in Settings but the front door never asks for it.",
     mechanism: "splashTap() routes to onboarding or straight to the app but never checks S.pinHash and never shows #pin-screen. The pieces exist (verifyPIN, pinKey) but are unreachable on boot — the only references to #pin-screen are HIDE calls.",
     rootCause: "splashTap (index.html:19917-19924) has no PIN branch; #pin-screen (index.html:828) is only ever hidden (index.html:3951, 4157); verifyPIN (index.html:2218) is unreachable on the boot path.",

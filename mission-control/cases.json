@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-26T12:13:33.200Z",
+  "generatedAt": "2026-05-26T15:41:46.980Z",
   "walkDir": "2026-05-26T09-00-07",
   "counts": {
     "deep": 7,
@@ -840,7 +840,7 @@
       "severity": "P0",
       "status": "confirmed",
       "flow": null,
-      "openBug": null,
+      "openBug": 57,
       "plain": "If you hit Reset there's no getting your data back — the 'undo' backup is stored inside the very blob the reset wipes, so the reset destroys its own safety net. And the warning screen says it'll delete your snapshots, but the code never actually removes them — the copy doesn't match what happens.",
       "mechanism": "saveUndoState() stashes the backup into S._prevState. S lives in localStorage 'slyght_v5'. _executeReset deletes slyght_v5 (+ seed flags + api key) then reloads — so the backup is gone before undoLastAction could ever read it. Separately, the Stage-2 screen lists 'Snapshots: N' as about to be lost, but _executeReset never touches the slyght_snapshots key.",
       "rootCause": "saveUndoState writes the backup to S._prevState (index.html:15276), which lives inside slyght_v5 — the exact key _executeReset deletes (index.html:14937-14944). No SNAPSHOTS.take before the wipe; the restore path (index.html:15315) has nothing to read. Stage-2 copy (index.html:14899-14900) overstates the deletion.",
@@ -881,7 +881,7 @@
       "severity": "P1",
       "status": "confirmed",
       "flow": null,
-      "openBug": null,
+      "openBug": 58,
       "plain": "Setting a PIN doesn't actually lock anything. When the app opens, nothing checks the PIN or shows the PIN screen — so anyone who opens it is straight in. The lock exists in Settings but the front door never asks for it.",
       "mechanism": "splashTap() routes to onboarding or straight to the app but never checks S.pinHash and never shows #pin-screen. The pieces exist (verifyPIN, pinKey) but are unreachable on boot — the only references to #pin-screen are HIDE calls.",
       "rootCause": "splashTap (index.html:19917-19924) has no PIN branch; #pin-screen (index.html:828) is only ever hidden (index.html:3951, 4157); verifyPIN (index.html:2218) is unreachable on the boot path.",

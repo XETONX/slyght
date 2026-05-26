@@ -397,6 +397,100 @@ const ACTIONS = {
       p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000) }));
     });
   },
+
+  // ── AUTO-TICKETING — untracked App-Map gaps → tickets ───────────────────────
+  // A gap-class step (is ∈ gap/broken/dead/fires-anyway) with NO per-step ticket AND whose
+  // surface has NO top-level ticket is an UNTRACKED gap. This mints one ticket per untracked
+  // gap, the SAME way createTicket does (append to tickets-manual.json; next SLY-N = max+1
+  // across spine+manual; seed ticket-state), and records gapKey→id in a path-jailed dedupe map
+  // so re-running never duplicates. RULE 2 (allowlisted, fixed targets), RULE 3 (every write
+  // jail()'d to mission-control/), RULE 6-family (confirm-gated — it creates real tickets).
+  autoTicket: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'autoTicket needs confirm:true' };
+
+    // Title-Case surface names — server-side mirror of jarvis.js SURFACE_NAMES. Fixed map; any
+    // surface not listed falls back to its raw id (never throws, never derives a path).
+    const SURFACE_NAMES = {
+      dashboard: 'Dashboard', bills: 'Bills', savings: 'Savings', plan: 'Payday Plan',
+      analysis: 'Analysis', debts: 'Debts', ai: 'AI Chat', settings: 'Settings',
+      nav: 'Nav / Onboarding', planning: 'Planning', tracked: 'Tracked', other: 'Other',
+    };
+    const niceSurfaceSrv = (id) => SURFACE_NAMES[id] || String(id || '—');
+    const GAP_CLASS = new Set(['gap', 'broken', 'dead', 'fires-anyway']);
+
+    // READ-ONLY: the App-Map data. flows.json is the same blob the client reads via /api/flows,
+    // so server and client see the identical step list (consistent untracked-gap definition).
+    let flows; try { flows = JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8')); }
+    catch (e) { return { ok: false, reason: 'flows.json unreadable: ' + e.message }; }
+
+    // Dedupe store — path-jailed to ONE fixed JSON (like case-notes.json / auto-tickets are
+    // runtime, gitignored). gapKey → createdTicketId.
+    const dedupePath = jail(path.join('mission-control', 'auto-tickets.json'));
+    let dedupe = {}; try { dedupe = JSON.parse(fs.readFileSync(dedupePath, 'utf8')) || {}; } catch (_) {}
+
+    // Compute the next SLY-N ONCE, then increment locally as we mint (createTicket recomputes
+    // per-call, but we batch — so seed from the live max across spine+manual and step it up).
+    const all = [...TICKETS(), ...MANUAL()];
+    let nextN = Math.max(0, ...all.map(t => +(String(t.id || '').replace('SLY-', '') || 0)));
+
+    // Load the two mutable stores we append to (manual spine + ticket-state), write once at end.
+    const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
+    let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
+    if (!Array.isArray(m.tickets)) m.tickets = [];
+    const st = readState();
+    const now = new Date().toISOString();
+
+    const ids = [];
+    let created = 0, skipped = 0;
+
+    (flows.surfaces || []).forEach((surface) => {
+      // surface-level ticket covers ALL of this surface's gaps → nothing untracked here.
+      if (surface.ticket) return;
+      (surface.steps || []).forEach((step) => {
+        if (!GAP_CLASS.has(step.is)) return;     // not a gap-class step
+        if (step.ticket) return;                  // already has a per-step ticket
+        const gapKey = surface.id + ':' + step.n;
+        if (dedupe[gapKey]) { skipped++; return; } // already minted on a prior run
+
+        const id = 'SLY-' + (++nextN);
+        const file = step.file && step.file !== '—' ? step.file : null;   // '—' = em-dash placeholder
+        m.tickets.push({
+          id,
+          type: 'bug',
+          kind: 'auto',
+          caseId: null,
+          title: niceSurfaceSrv(surface.id) + ': ' + String(step.title || '').slice(0, 160),
+          surface: surface.id,
+          group: surface.id,
+          severity: (step.is === 'fires-anyway' || step.is === 'broken') ? 'P1' : 'P1',
+          summary: String(step.plain || '').slice(0, 2000),
+          rich: {
+            mechanism: '',
+            rootCause: ((step.wired || '') + ' ' + (step.file || '')).trim(),
+            fix: '',
+            files: file ? [file] : [],
+            evidence: null,
+          },
+          openBug: null,
+          links: [{ to: surface.id + ' map', why: 'auto-filed from an App-Map gap' }],
+        });
+        // Seed ticket-state exactly like createTicket (Open / john / opened now).
+        st[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now };
+        dedupe[gapKey] = id;
+        ids.push(id);
+        created++;
+      });
+    });
+
+    if (created) {
+      fs.mkdirSync(path.dirname(manualPath), { recursive: true });
+      fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
+      writeState(st);                                             // jail()'d inside writeState
+      fs.mkdirSync(path.dirname(dedupePath), { recursive: true });
+      fs.writeFileSync(dedupePath, JSON.stringify(dedupe, null, 2));
+    }
+    return { ok: true, created, ids, skipped };
+  },
 };
 
 // ── Allowlisted READS (GET). Read-only, localhost-only — no token required, but

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-26T12:13:33.255Z",
+  "generatedAt": "2026-05-26T15:41:47.023Z",
   "count": 29,
   "tickets": [
     {
@@ -1084,8 +1084,13 @@
         ],
         "evidence": null
       },
-      "openBug": null,
-      "links": []
+      "openBug": 57,
+      "links": [
+        {
+          "to": "OPEN-BUGS #57",
+          "why": "canonical bug record"
+        }
+      ]
     },
     {
       "id": "SLY-27",
@@ -1132,11 +1137,15 @@
         ],
         "evidence": null
       },
-      "openBug": null,
+      "openBug": 58,
       "links": [
         {
           "to": "SLY-29",
           "why": "same surface (nav)"
+        },
+        {
+          "to": "OPEN-BUGS #58",
+          "why": "canonical bug record"
         }
       ]
     },

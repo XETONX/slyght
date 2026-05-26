@@ -1052,6 +1052,20 @@ by a fix-bundle when scoped; until then they sit unscheduled.
 - **SECURITY.md decision-log entry:** 2026-05-23.
 - **Status:** **fixed** (commit `7a1d5a8`, verified live)
 
+## 57. Reset is unrecoverable — the undo backup is deleted by the reset itself
+- **Bug:** The Settings Reset has no working undo. `saveUndoState()` stashes the backup into `S._prevState`, but `S` lives in `localStorage['slyght_v5']` — the exact key `_executeReset` deletes (with the seed flags + apiKey) before `location.reload()`. So the safety net is destroyed by the operation it's meant to guard; `undoLastAction()` has nothing to read. Separately, the Stage-2 confirm screen lists "Snapshots: N" as about to be deleted, but `_executeReset` never touches `slyght_snapshots` — the copy overstates what's removed.
+- **Source:** App Map trace (Jarvis), 2026-05-27 — settings surface IS-vs-SHOULD walk. Jarvis ticket SLY-26 (P0).
+- **Repro needed:** no (code-read: index.html:15276 saveUndoState→S._prevState; :14937-14944 _executeReset deletes slyght_v5; :15315 restore path; :14899-14900 Stage-2 copy).
+- **Fix bundle:** unscheduled — fix: copy the backup OUT of slyght_v5 before the wipe (SNAPSHOTS.take or a separate preserved key) so undo can restore; reconcile the Stage-2 copy with what `_executeReset` actually deletes.
+- **Status:** open (P0 — data-loss / no recovery path)
+
+## 58. PIN gate orphaned — a set PIN does not actually lock the app
+- **Bug:** Setting a PIN in Settings doesn't gate entry. On boot, `splashTap()` routes to onboarding or straight into the app but never checks `S.pinHash` and never shows `#pin-screen`; the only references to the PIN screen are HIDE calls. `verifyPIN()` and `pinKey()` exist but are unreachable on the boot path — so anyone who opens the app is straight in, PIN or not.
+- **Source:** App Map trace (Jarvis), 2026-05-27 — nav/onboarding surface IS-vs-SHOULD walk. Jarvis ticket SLY-28 (P1, security).
+- **Repro needed:** no (code-read: index.html:19917-19924 splashTap has no PIN branch; :828 #pin-screen only hidden at :3951/:4157; :2218 verifyPIN unreachable on boot).
+- **Fix bundle:** unscheduled — fix: in the splash/boot path, if `S.pinHash` is set, show `#pin-screen` and gate `launchApp` behind a successful `verifyPIN`.
+- **Status:** open (P1 — security)
+
 ---
 
 ## Process

@@ -56,6 +56,20 @@ function cap(s) {
     .join(' ') || '—';
 }
 
+/* Auto-ticketing — count UNTRACKED App-Map gaps (mirror of server.js autoTicket).
+ * A step is untracked when it's gap-class (gap/broken/dead/fires-anyway) AND has no per-step
+ * `ticket` AND its surface has no top-level `ticket`. Reads the already-loaded J.flows; returns 0
+ * before flows load. The SERVER de-dupes against auto-tickets.json, so on a re-run this client
+ * number may be >= the server's `created` — that's expected and the toast shows the real count. */
+const AT_GAP_CLASS = new Set(['gap', 'broken', 'dead', 'fires-anyway']);
+function countUntrackedGaps() {
+  if (!J.flows || !J.flows.surfaces) return 0;
+  return J.flows.surfaces.reduce((n, s) => {
+    if (s.ticket) return n;                                  // surface-level ticket covers its gaps
+    return n + (s.steps || []).filter(st => AT_GAP_CLASS.has(st.is) && !st.ticket).length;
+  }, 0);
+}
+
 /* ── data ─────────────────────────────────────────────────────────────── */
 async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
 const get = id => J.tickets.find(t => t.id === id);
@@ -975,6 +989,35 @@ async function doDelete(id) {
   } catch (e) {}
 }
 
+/* ════════════════════════ AUTO-TICKETING ════════════════════════════════════
+ * One confirmed press mints one ticket per UNTRACKED App-Map gap (server de-dupes
+ * via auto-tickets.json, so re-running is safe). Confirm modal → action('autoTicket',
+ * {confirm:true}) → toast → reload + go to the Board so John sees the new tickets. */
+function autoTicketGaps() {
+  const n = countUntrackedGaps();
+  if (!n) { toast('No untracked gaps — every gap is already on a ticket', 'ok'); return; }
+  modal(`<h2>Auto-Ticket Untracked Gaps</h2>
+    <p>Create <b>${n}</b> ticket${n === 1 ? '' : 's'} from untracked App-Map gaps?
+       They’ll appear on the Board as type <b>Bug</b> (kind: Auto), opened and waiting on your
+       judgment. Already-tracked gaps and ones ticketed on a previous run are skipped.</p>
+    <div class="btns">
+      <button class="btn primary" onclick="doAutoTicket()">Create ${n} ticket${n === 1 ? '' : 's'}</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+async function doAutoTicket() {
+  try {
+    const r = await action('autoTicket', { confirm: true });
+    closeModal();
+    const made = r.created || 0;
+    toast(made ? `Created ${made} ticket${made === 1 ? '' : 's'}`
+               : (r.skipped ? `All ${r.skipped} gaps already ticketed` : 'No untracked gaps'),
+          'ok');
+    await load();                 // re-pull the board truth (new tickets now in J.tickets)
+    location.hash = '#/board';    // navigate so John sees them
+  } catch (e) { /* action() already toasted the rejection */ }
+}
+
 /* ════════════════════════ APP MAP (Phase 1 — IS vs SHOULD) ════════════ */
 /* ════════════════════════ APP-MAP RELATIONSHIP MODEL ════════════════════
  * The REAL slyght money graph (inferred from each surface's reads/writes in
@@ -1037,8 +1080,17 @@ async function viewMap(surfaceId) {
   if (surfaceId) return renderSurfaceFlow(surfaceId);   // ← UNCHANGED: per-surface detail
   const f = J.flows, v = $('view'); v.className = 'view maxw';
   const totalGaps = (f.surfaces || []).reduce((n, s) => n + (s.counts ? s.counts.gaps : 0), 0);
+  const untracked = countUntrackedGaps();
   v.innerHTML = `
-    <h1>App Map</h1>
+    <div class="at-maphead">
+      <h1>App Map</h1>
+      <button type="button" class="at-btn" ${untracked ? '' : 'disabled'}
+        onclick="autoTicketGaps()"
+        title="${untracked ? 'Create tickets for App-Map gaps that aren’t tracked yet' : 'No untracked gaps — every gap is already on a ticket'}">
+        <span class="at-btn-ic" aria-hidden="true">+</span>
+        Auto-Ticket Untracked Gaps<span class="at-btn-n">${untracked}</span>
+      </button>
+    </div>
     <p class="subtitle">How slyght actually fits together — <b>Payday Plan</b> allocates to Savings, Bills and Debts; those move money through the <b>Cash</b> hub; <b>Analysis</b> reads the ledger and <b>AI Chat</b> reads your live state. Node colour = how broken (gap count). Click any surface for its <b>what SHOULD happen</b> vs <b>what IS</b> ladder. ${f.coverage.traced || 0}/${f.coverage.total || 0} Surfaces Traced · ${totalGaps} Gaps.</p>
     <div class="treewrap"><svg id="apptree" width="100%" role="img" aria-label="slyght relationship map"></svg></div>
     <div class="treelegend">

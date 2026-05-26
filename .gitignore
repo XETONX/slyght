@@ -67,6 +67,7 @@ mission-control/briefs/
 # tickets.json + cases.json + specs.json ARE committed (generated spines).
 mission-control/ticket-state.json
 mission-control/tickets-manual.json
+mission-control/auto-tickets.json
 mission-control/handoffs/
 
 # App Map — generated compressed dup of flows.json (regenerable)
