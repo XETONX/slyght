@@ -10,7 +10,14 @@
   --blue:#175cd3; --blue-bg:#eaf1fb; --red:#b42318; --red-bg:#fdeaea;
   --amber:#b54708; --amber-bg:#fef6e7; --green:#067647; --green-bg:#e7f6ec;
   --violet:#6941c6; --violet-bg:#f4f0fe; --teal:#0e7090; --teal-bg:#e0f2fe;
-  --radius:12px;
+  --accent:#4f46e5; --accent-2:#6366f1; --accent-soft:#eef2ff;
+  --radius:14px; --radius-lg:18px;
+  --sh-xs:0 1px 2px rgba(16,24,40,.05);
+  --sh-sm:0 1px 3px rgba(16,24,40,.07), 0 1px 2px rgba(16,24,40,.04);
+  --sh-md:0 4px 12px rgba(16,24,40,.08), 0 2px 4px rgba(16,24,40,.04);
+  --sh-lg:0 12px 32px rgba(16,24,40,.12), 0 4px 8px rgba(16,24,40,.05);
+  --sh-glow:0 0 0 4px var(--accent-soft);
+  --ease:cubic-bezier(.4,0,.2,1);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -214,3 +221,85 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .charttrack{flex:1;height:18px;background:var(--card2);border-radius:5px;overflow:hidden}
 .chartbar{height:100%;border-radius:5px;transition:width .5s;min-width:3px}
 .chartnum{width:24px;text-align:right;font-size:14px;font-weight:700;color:var(--label)}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PREMIUM LAYER — motion, elevation, refined components (enterprise-grade)
+   ════════════════════════════════════════════════════════════════════════ */
+@keyframes viewIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes modalIn { from { opacity:0; transform:translateY(14px) scale(.985); } to { opacity:1; transform:none; } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+.view{ animation:viewIn .34s var(--ease); }
+@media (prefers-reduced-motion: reduce){ .view,.modal{ animation:none !important; } *{ transition:none !important; } }
+
+/* smooth interactions */
+.btn,.tk,.ovrow,.case-row,.surfcard,.rail a,.ftab,.chartrow,.statcard,.cmt .bub,.specrow,.tab,.pill,.tp-node{ transition:all .18s var(--ease); }
+
+/* depth */
+body{ background-image:radial-gradient(1200px 600px at 100% -5%, #eef1f6 0%, var(--bg) 55%); }
+.topbar{ box-shadow:var(--sh-xs); backdrop-filter:saturate(1.1); }
+.topbar .brand .logo{ box-shadow:0 2px 8px rgba(79,70,229,.35); background:linear-gradient(135deg,var(--accent),var(--accent-2)); }
+.card,.panel,.statcard,.groupcard{ box-shadow:var(--sh-sm); }
+.card:hover,.panel:hover{ box-shadow:var(--sh-md); }
+
+/* stat tiles → premium */
+.statcard{ border-radius:var(--radius); padding:18px 22px; position:relative; overflow:hidden; }
+.statcard::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent); opacity:.0; transition:opacity .2s; }
+.statcard:hover{ transform:translateY(-2px); box-shadow:var(--sh-md); }
+.statcard:hover::before{ opacity:1; }
+.statcard .n{ letter-spacing:-1px; }
+
+/* nav active → accent pill */
+.rail a{ position:relative; }
+.rail a.on{ background:var(--accent-soft); color:var(--accent); box-shadow:none; }
+.rail a.on::before{ content:""; position:absolute; left:0; top:7px; bottom:7px; width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
+
+/* buttons → refined */
+.btn{ box-shadow:var(--sh-xs); }
+.btn:hover{ transform:translateY(-1px); box-shadow:var(--sh-sm); }
+.btn.primary{ background:linear-gradient(135deg,var(--accent),var(--accent-2)); border-color:transparent; box-shadow:0 2px 8px rgba(79,70,229,.28); }
+.btn.primary:hover{ background:linear-gradient(135deg,#4338ca,#4f46e5); box-shadow:0 4px 14px rgba(79,70,229,.4); }
+.btn:focus-visible,.composer textarea:focus,.toolbar select:focus,.modal input:focus,.modal textarea:focus{ outline:none; box-shadow:var(--sh-glow); border-color:var(--accent); }
+
+/* cards / rows lift */
+.tk:hover,.case-row:hover,.surfcard.traced:hover{ box-shadow:var(--sh-md); }
+.ovrow:hover{ transform:translateX(2px); }
+
+/* kanban columns refined */
+.kanban .col{ box-shadow:var(--sh-xs); }
+.colh .ct{ box-shadow:var(--sh-xs); }
+
+/* hub glow */
+.hubnode circle{ transition:all .3s var(--ease); }
+.hubnode:hover circle{ filter:drop-shadow(0 4px 10px rgba(16,24,40,.18)); }
+.hubwrap{ box-shadow:var(--sh-sm); background:linear-gradient(180deg,#fff,#fcfdff); }
+
+/* modal entrance */
+.scrim{ animation:fadeIn .2s var(--ease); backdrop-filter:blur(4px) saturate(1.1); }
+.modal{ animation:modalIn .26s var(--ease); box-shadow:var(--sh-lg); border-radius:var(--radius-lg); }
+
+/* pills slightly softer */
+.pill{ box-shadow:var(--sh-xs); }
+
+/* ── Ticket detail → 2-column tile layout (main + right rail) ───────────── */
+.ticketgrid{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:20px; align-items:start; }
+.ticketside{ display:flex; flex-direction:column; gap:14px; position:sticky; top:80px; }
+.siderail{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--sh-sm); }
+.siderail .sh{ font-size:13px; font-weight:700; color:var(--muted); margin-bottom:10px; }
+.siderail .kv{ display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); font-size:14px; }
+.siderail .kv:last-child{ border-bottom:0; }
+.siderail .kv .k{ color:var(--muted); } .siderail .kv .v{ color:var(--head); font-weight:600; text-align:right; }
+@media (max-width:1100px){ .ticketgrid{ grid-template-columns:1fr; } .ticketside{ position:static; } }
+
+/* ── App Map → Touchpoints deep-map (the data wiring of a surface) ──────── */
+.tpgrid{ display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:20px; align-items:start; }
+.tpmapwrap{ background:linear-gradient(180deg,#fff,#fcfdff); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:var(--sh-sm); }
+#tpmap{ display:block; width:100%; }
+.tp-node text{ pointer-events:none; }
+.tp-node circle,.tp-node rect{ transition:all .3s var(--ease); }
+.tp-side .siderail{ margin-bottom:14px; }
+.tpticket{ display:flex; align-items:center; gap:9px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; cursor:pointer; transition:all .16s var(--ease); }
+.tpticket:hover{ border-color:var(--accent); box-shadow:var(--sh-sm); transform:translateX(2px); }
+.tpticket .tt{ flex:1; font-size:13.5px; color:var(--head); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tplegend{ display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--muted); margin-top:10px; }
+.tplegend i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+@media (max-width:1100px){ .tpgrid{ grid-template-columns:1fr; } }

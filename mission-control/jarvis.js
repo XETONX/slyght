@@ -132,60 +132,72 @@ function viewTicket(id) {
   v.className = 'view maxw';
   v.innerHTML = `
     <a class="backlink" href="#/board">‹ Board</a>
-    <div class="card">
-      <div class="tk-head">
-        <div>
-          <div class="pills">
-            <span class="pill ${sevCls(t.severity)}">${t.severity}${t.severity === 'P0' ? ' · Critical' : ''}</span>
-            <span class="pill s-${status}">${STATUS_LABEL[status]}${['Open', 'Discussing'].includes(status) ? ' · ' + ago(st.opened) : ''}</span>
-            <span class="pill k-${t.kind}">${t.kind}</span>
-            <span class="meta">${t.id} · ${esc(t.group)} · ${t.type} · Assignee: ${assignee === 'cc' ? 'CC (investigating)' : 'John (needs judgment)'}</span>
-          </div>
-          <h1>${esc(t.title)}</h1>
+    <div class="tk-head">
+      <div>
+        <div class="pills">
+          <span class="pill ${sevCls(t.severity)}">${t.severity}${t.severity === 'P0' ? ' · Critical' : ''}</span>
+          <span class="pill s-${status}">${STATUS_LABEL[status]}</span>
+          <span class="pill k-${t.kind}">${t.kind}</span>
+          <span class="meta">${t.id} · ${esc(t.group)}</span>
         </div>
-      </div>
-
-      ${(t.links || []).length ? `<div class="rel"><span class="i">&#9432;</span><div class="txt">${t.links.map(l => `Linked to <a href="${l.to.startsWith('SLY') ? '#/ticket/' + l.to : '#'}"><b>${esc(l.to)}</b></a> — ${esc(l.why)}.`).join('<br>')}</div></div>` : ''}
-
-      <div class="label">What's happening (your summary)</div>
-      <p class="summary">${esc(t.summary)}</p>
-
-      ${cur || aft ? `<div class="twocol">
-        <div class="mini cur"><div class="h">CURRENT</div><div class="b">${esc(cur)}${cur.length >= 180 ? '…' : ''}</div></div>
-        <div class="mini aft"><div class="h">AFTER FIX</div><div class="b">${esc(aft)}${aft.length >= 180 ? '…' : ''}</div></div>
-      </div>` : ''}
-
-      ${sync.length ? `<div class="rel" style="background:var(--green-bg)"><span class="i" style="color:var(--green)">&#8635;</span><div class="txt" style="color:var(--green)">Kept in sync: when this ships, the post-back updates <b>${sync.map(esc).join('</b>, <b>')}</b> — the full reasoning stays here on the ticket.</div></div>` : ''}
-
-      ${t.rich.rootCause ? `<details class="deep"><summary><span class="tw">▸</span> Technical depth — mechanism, root cause, walk evidence, files</summary><div class="dbody">
-        ${t.rich.mechanism ? `<p><b>Mechanism.</b> ${esc(t.rich.mechanism)}</p>` : ''}
-        <p><b>Root cause.</b> ${esc(t.rich.rootCause)}</p>
-        ${ev ? `<div class="label" style="margin-top:12px">Walk evidence — ${esc(ev.flow)} (${esc(ev.walkDir)})</div>${renderTrace(ev)}` : ''}
-        ${(t.rich.files || []).length ? `<div class="label" style="margin-top:12px">Files</div>${t.rich.files.map(f => `<code class="fileline">${esc(f)}</code>`).join('')}` : ''}
-        ${t.rich.fix ? `<p style="margin-top:12px"><b>Proposed fix.</b> ${esc(t.rich.fix)}</p>` : ''}
-      </div></details>` : ''}
-
-      <div class="label">Discuss with Jarvis (thread) — then ALIGN to hand to CC</div>
-      <div class="thread" id="thread">${renderThread(st.thread)}</div>
-      <div class="composer">
-        <textarea id="cmt" placeholder="Refine the fix, add a constraint, ask a question…"></textarea>
-        <div class="summary-bubble"><div class="h">This ticket, in short</div>${esc((t.summary || '').slice(0, 200))}…</div>
-      </div>
-      <div class="btns">
-        <button class="btn" onclick="comment('${t.id}')">Comment</button>
-        <button class="btn" onclick="jarvisTake('${t.id}')">Get Jarvis's take</button>
-        <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
-        ${['Open', 'Discussing'].includes(status)
-          ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>`
-          : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package CC received</button>`}
+        <h1>${esc(t.title)}</h1>
       </div>
     </div>
-
-    <div class="footer-meta">
-      <span>Opened ${when(st.opened)}</span>
-      ${st.alignment ? `<span>Aligned ${when(st.alignment.ts)}</span>` : ''}
-      ${ev ? `<span>Finding confirmed by walk ${esc(ev.walkDir)}</span>` : ''}
-      <span>Last activity ${when(st.lastActivity)}</span>
+    <div class="ticketgrid">
+      <div class="ticketmain">
+        <div class="card">
+          <div class="label">What's happening</div>
+          <p class="summary">${esc(t.summary)}</p>
+          ${cur || aft ? `<div class="twocol">
+            <div class="mini cur"><div class="h">Now</div><div class="b">${esc(cur)}${cur.length >= 200 ? '…' : ''}</div></div>
+            <div class="mini aft"><div class="h">After fix</div><div class="b">${esc(aft)}${aft.length >= 200 ? '…' : ''}</div></div>
+          </div>` : ''}
+          ${t.rich.rootCause ? `<details class="deep"><summary><span class="tw">▸</span> Technical depth — mechanism, root cause, walk evidence, files</summary><div class="dbody">
+            ${t.rich.mechanism ? `<p><b>Mechanism.</b> ${esc(t.rich.mechanism)}</p>` : ''}
+            <p><b>Root cause.</b> ${esc(t.rich.rootCause)}</p>
+            ${ev ? `<div class="label" style="margin-top:14px">Walk evidence — ${esc(ev.flow)} (${esc(ev.walkDir)})</div>${renderTrace(ev)}` : ''}
+            ${(t.rich.files || []).length ? `<div class="label" style="margin-top:14px">Files</div>${t.rich.files.map(f => `<code class="fileline">${esc(f)}</code>`).join('')}` : ''}
+            ${t.rich.fix ? `<p style="margin-top:12px"><b>Proposed fix.</b> ${esc(t.rich.fix)}</p>` : ''}
+          </div></details>` : ''}
+          ${t.group && t.group !== 'tracked' && t.group !== 'planning' ? `<div style="margin-top:14px"><a class="btn sm" href="#/map/${t.group}">View this surface on the App Map →</a></div>` : ''}
+        </div>
+        <div class="card">
+          <div class="label">Discuss with Jarvis — then align to hand to CC</div>
+          <div class="thread" id="thread">${renderThread(st.thread)}</div>
+          <div class="composer">
+            <textarea id="cmt" placeholder="Refine the fix, add a constraint, ask a question…"></textarea>
+            <div class="summary-bubble"><div class="h">This ticket, in short</div>${esc((t.summary || '').slice(0, 200))}…</div>
+          </div>
+          <div class="btns">
+            <button class="btn" onclick="comment('${t.id}')">Comment</button>
+            <button class="btn" onclick="jarvisTake('${t.id}')">Get Jarvis's take</button>
+            <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
+            ${['Open', 'Discussing'].includes(status)
+              ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>`
+              : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package</button>`}
+          </div>
+        </div>
+      </div>
+      <div class="ticketside">
+        <div class="siderail">
+          <div class="sh">Details</div>
+          <div class="kv"><span class="k">Status</span><span class="v"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></span></div>
+          <div class="kv"><span class="k">Assignee</span><span class="v">${assignee === 'cc' ? 'CC — investigating' : 'John — needs judgment'}</span></div>
+          <div class="kv"><span class="k">Severity</span><span class="v">${t.severity}</span></div>
+          <div class="kv"><span class="k">Type</span><span class="v">${t.type}</span></div>
+          <div class="kv"><span class="k">Surface</span><span class="v">${esc(t.group)}</span></div>
+          <div class="kv"><span class="k">Age</span><span class="v">${ago(st.opened)}</span></div>
+        </div>
+        ${(t.links || []).length ? `<div class="siderail"><div class="sh">Related</div>${t.links.map(l => `<div class="kv"><span class="k">${l.to.startsWith('SLY') ? `<a href="#/ticket/${l.to}">${esc(l.to)}</a>` : esc(l.to)}</span><span class="v" style="font-weight:400;color:var(--muted);font-size:12px;max-width:150px">${esc(l.why)}</span></div>`).join('')}</div>` : ''}
+        ${sync.length ? `<div class="siderail" style="background:var(--green-bg);border-color:#a6e9c0"><div class="sh" style="color:var(--green)">Kept in sync on ship</div><div style="font-size:13px;color:#1a1d24;line-height:1.6">${sync.map(esc).join(', ')} — the reasoning stays here on the ticket.</div></div>` : ''}
+        <div class="siderail">
+          <div class="sh">Activity</div>
+          <div class="kv"><span class="k">Opened</span><span class="v">${when(st.opened)}</span></div>
+          ${st.alignment ? `<div class="kv"><span class="k">Aligned</span><span class="v">${when(st.alignment.ts)}</span></div>` : ''}
+          ${ev ? `<div class="kv"><span class="k">Walk-confirmed</span><span class="v">yes</span></div>` : ''}
+          <div class="kv"><span class="k">Last activity</span><span class="v">${when(st.lastActivity)}</span></div>
+        </div>
+      </div>
     </div>`;
 }
 function renderThread(thread) {
@@ -327,11 +339,43 @@ async function renderSurfaceFlow(id) {
       <p class="summary">${esc(s.summary)} ${s.ticket ? `· <a href="#/ticket/${s.ticket}">${s.ticket}</a>` : ''}</p>
       <div class="facetoggle">
         <button class="ftab ${face === 'back' ? 'on' : ''}" onclick="setFace('${id}','back')">Flow — how it's wired</button>
+        <button class="ftab ${face === 'touch' ? 'on' : ''}" onclick="setFace('${id}','touch')">Touchpoints — data wiring</button>
         <button class="ftab ${face === 'front' ? 'on' : ''}" onclick="setFace('${id}','front')">Screen — now vs after fix</button>
       </div>
       <div id="faceBody"></div>
     </div>`;
-  if (face === 'front') renderFront(s); else renderBack(s);
+  if (face === 'front') renderFront(s); else if (face === 'touch') renderTouchpoints(s); else renderBack(s);
+}
+function renderTouchpoints(s) {
+  const reads = [...new Set(s.steps.flatMap(x => x.reads || []))];
+  const writes = [...new Set(s.steps.flatMap(x => x.writes || []))];
+  const handlers = [...new Set(s.steps.filter(x => x.file && x.file !== '—').map(x => x.file))];
+  const gapStep = s.steps.find(x => x.is === 'gap' || x.is === 'broken');
+  const gapData = new Set([...((gapStep || {}).reads || []), ...((gapStep || {}).writes || [])]);
+  const tickets = J.tickets.filter(t => t.group === s.id || t.surface === s.id);
+  const rows = Math.max(reads.length, writes.length, 1);
+  const H = Math.max(300, 64 + rows * 56), cx = 450, cy = H / 2;
+  const node = (x, y, label, color, bg) => `<g class="tp-node"><rect x="${x - 96}" y="${y - 17}" width="192" height="34" rx="9" fill="${bg}" stroke="${color}" stroke-width="1.5"/><text x="${x}" y="${y + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="${color}" style="font-family:ui-monospace,monospace">${esc(label.length > 27 ? label.slice(0, 25) + '…' : label)}</text></g>`;
+  let svg = '';
+  reads.forEach((r, i) => { const y = cy - ((reads.length - 1) * 56) / 2 + i * 56; const bad = gapData.has(r); const col = bad ? '#b42318' : '#175cd3', bg = bad ? '#fdeaea' : '#eaf1fb'; svg += `<line x1="216" y1="${y}" x2="${cx - 102}" y2="${cy}" stroke="${col}" stroke-width="1.5" opacity=".45"${bad ? ' stroke-dasharray="5 4"' : ''}/>` + node(120, y, r, col, bg); });
+  writes.forEach((w, i) => { const y = cy - ((writes.length - 1) * 56) / 2 + i * 56; const bad = gapData.has(w); const col = bad ? '#b42318' : '#067647', bg = bad ? '#fdeaea' : '#e7f6ec'; svg += `<line x1="${cx + 102}" y1="${cy}" x2="684" y2="${y}" stroke="${col}" stroke-width="1.5" opacity=".45"/>` + node(780, y, w, col, bg); });
+  svg += `<g><rect x="${cx - 105}" y="${cy - 28}" width="210" height="56" rx="14" fill="#0d2818" stroke="#067647" stroke-width="2"/><text x="${cx}" y="${cy - 3}" text-anchor="middle" fill="#fff" font-size="16" font-weight="700">${esc(s.name.split(' ')[0])}</text><text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#5dcaa5" font-size="11">${reads.length} reads · ${writes.length} writes</text></g>`;
+  $('faceBody').innerHTML = `
+    <div class="tpgrid">
+      <div>
+        <div class="tpmapwrap"><svg id="tpmap" viewBox="0 0 900 ${H}">
+          <text x="120" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#475467">Reads — depends on</text>
+          <text x="780" y="26" text-anchor="middle" font-size="12" font-weight="700" fill="#475467">Writes — effects</text>${svg}</svg></div>
+        <div class="tplegend"><span><i style="background:#175cd3"></i> reads</span><span><i style="background:#067647"></i> writes / effects</span><span><i style="background:#b42318"></i> involved in the gap</span></div>
+        ${handlers.length ? `<div class="siderail" style="margin-top:14px"><div class="sh">Key handlers (file:line)</div>${handlers.slice(0, 8).map(h => `<code class="fileline">${esc(h)}</code>`).join('')}</div>` : ''}
+      </div>
+      <div class="tp-side">
+        <div class="siderail"><div class="sh">Tickets on this surface (${tickets.length})</div>
+          ${tickets.length ? tickets.map(t => `<div class="tpticket" onclick="location.hash='#/ticket/${t.id}'"><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span><span class="tt">${esc(t.title)}</span><span class="meta">${t.id}</span></div>`).join('') : '<div class="empty">none on this surface</div>'}
+        </div>
+        ${s.ticket ? `<a class="btn primary" style="width:100%;justify-content:center;display:inline-flex;margin-top:4px" href="#/ticket/${s.ticket}">Open ${s.ticket} →</a>` : ''}
+      </div>
+    </div>`;
 }
 function renderBack(s) {
   const gap = s.steps.find(x => x.is === 'gap' || x.is === 'broken'), harm = s.steps.find(x => x.is === 'fires-anyway' || x.is === 'dead');
