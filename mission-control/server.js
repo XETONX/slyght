@@ -130,6 +130,39 @@ const ACTIONS = {
     return { ok: true, caseId };
   },
 
+  // ── Command Deck: the Prompt Library store. Path-jailed to ONE fixed JSON;
+  //    accepts a list of templates, validates each field's type + length, and
+  //    rewrites the whole file (small, fully client-managed list — like
+  //    case-notes.json / tickets-manual.json, NOT load-bearing prose). No path
+  //    is ever derived from input.
+  savePrompts: ({ list }) => {
+    if (!Array.isArray(list)) throw new Error('savePrompts: list array required');
+    if (list.length > 200) throw new Error('savePrompts: too many templates (max 200)');
+    const seen = new Set();
+    const clean = list.map((p, i) => {
+      const id = String(p && p.id || '').trim();
+      if (!/^[a-z0-9-]+$/i.test(id)) throw new Error('bad prompt id at index ' + i);
+      if (seen.has(id)) throw new Error('duplicate prompt id: ' + id);
+      seen.add(id);
+      const vars = Array.isArray(p.vars) ? p.vars.slice(0, 20).map(vr => ({
+        name:  String(vr && vr.name || '').replace(/[^\w]/g, '').slice(0, 40),
+        label: String(vr && vr.label || '').slice(0, 120),
+        kind:  vr && vr.kind === 'ticket' ? 'ticket' : 'text',
+        placeholder: String(vr && vr.placeholder || '').slice(0, 120),
+      })).filter(vr => vr.name) : [];
+      return {
+        id,
+        title: String(p.title || '').slice(0, 200),
+        body:  String(p.body || '').slice(0, 8000),
+        vars,
+      };
+    });
+    const abs = jail(path.join('mission-control', 'prompts.json'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, JSON.stringify({ prompts: clean }, null, 2));
+    return { ok: true, count: clean.length };
+  },
+
   // ── Jarvis loop actions — each path-jailed to ticket-state.json / handoffs/.
   // The comment thread (John ↔ Jarvis ↔ CC), persisted with timestamps.
   addComment: ({ id, author, text }) => {
@@ -250,14 +283,58 @@ const ACTIONS = {
 };
 
 // ── Allowlisted READS (GET). Read-only, localhost-only — no token required, but
-//    still a FIXED map (no read-any-file). ────────────────────────────────────
+//    still a FIXED map (no read-any-file). Every value is jail()'d at read time
+//    in the /api/read handler, so each entry is repo-root-relative and read-only. ─
 const READS = {
-  openbugs:   'OPEN-BUGS.md',
-  featuremap: 'FEATURE-MAP.md',
-  invariants: 'FINANCIAL-INVARIANTS.md',
-  rules:      'MISSION-RULES.md',
-  coverage:   'docs/walk-and-judge/coverage-map-2026-05-26.md',
+  // Security & governance
+  security:       'SECURITY.md',
+  'mc-security':  'mission-control/SECURITY.md',
+  pipeline:       'docs/PIPELINE.md',
+  rules:          'MISSION-RULES.md',
+  // The contract
+  invariants:     'FINANCIAL-INVARIANTS.md',
+  featuremap:     'FEATURE-MAP.md',
+  // Project
+  openbugs:       'OPEN-BUGS.md',
+  'john-knowledge': 'docs/JOHN-KNOWLEDGE.md',
+  coverage:       'docs/walk-and-judge/coverage-map-2026-05-26.md',
 };
+
+// Default Prompt-Library templates — returned by /api/prompts when prompts.json
+// is missing (first run). The Command Deck's "Add Template" → savePrompts writes
+// the real file, after which these are no longer used. Title Case titles.
+const PROMPT_DEFAULTS = [
+  {
+    id: 'investigate-ticket',
+    title: 'Investigate A Ticket End-To-End',
+    body: 'Investigate {ticket}: read its handoff package and run the full 6-tier pipeline. Walk the ledger first (S.txns are truth), confirm the finding is live with the strongest test, fix forward with code context, gate on full Guardian + boot self-test, then post results back into {ticket}. My approval before push.',
+    vars: [{ name: 'ticket', label: 'Ticket', kind: 'ticket' }],
+  },
+  {
+    id: 'walk-surface',
+    title: 'Walk A Surface And Report Gaps',
+    body: 'Walk the {surface} surface and report gaps. Drive the running app, capture every step, then map IS vs SHOULD: each divergence as symptom · INV-NN touched · file:line · severity. Plain English, real names. Report the gap list — do not code.',
+    vars: [{ name: 'surface', label: 'Surface', kind: 'text', placeholder: 'e.g. Savings' }],
+  },
+  {
+    id: 'opus-design-review',
+    title: 'Ask Opus — Design Review',
+    body: 'Ask Opus: design-review {topic}. Frame the problem, the constraints (single-file index.html, vanilla JS, single user John, 380px phone), the options considered, and the recommendation. Surface tradeoffs before any code. Premium-feel, plain English.',
+    vars: [{ name: 'topic', label: 'Topic', kind: 'text', placeholder: 'e.g. the lock-state divergence' }],
+  },
+  {
+    id: 'improve-cc-process',
+    title: 'Improve CC Process',
+    body: 'Improve CC process: {area}. Name the friction, the failure class it belongs to, and a concrete amendment to CLAUDE.md / the CC manual that would prevent it recurring. One rule, testable, plain English.',
+    vars: [{ name: 'area', label: 'Area', kind: 'text', placeholder: 'e.g. verification discipline' }],
+  },
+  {
+    id: 'premium-ux-review',
+    title: 'Premium UX Review Of A Surface',
+    body: 'Premium UX review of the {surface} surface on a 380×660 phone. Check contrast, info-density (4-question test), 44×44 touch targets, alive micro-motion, plain-English labels with real names. Return a prioritised punch-list (P0/P1/P2) with the concrete visible outcome for each.',
+    vars: [{ name: 'surface', label: 'Surface', kind: 'text', placeholder: 'e.g. Dashboard' }],
+  },
+];
 function latestWalk() {
   const root = jail(path.join('tests', 'walker-out'));
   if (!fs.existsSync(root)) return null;
@@ -353,6 +430,10 @@ const server = http.createServer((req, res) => {
     if (p === '/api/cases') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'cases.json'), 'utf8'))); } catch (e) { return send(res, 200, { cases: [], counts: {}, error: 'run: node scripts/mc/build-cases.js' }); } }
     if (p === '/api/specs') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8'))); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/notes') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'case-notes.json'), 'utf8'))); } catch (e) { return send(res, 200, {}); } }
+    if (p === '/api/prompts') {
+      try { return send(res, 200, JSON.parse(fs.readFileSync(jail(path.join('mission-control', 'prompts.json')), 'utf8'))); }
+      catch (e) { return send(res, 200, { prompts: PROMPT_DEFAULTS, seeded: true }); }
+    }
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }

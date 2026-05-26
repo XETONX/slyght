@@ -71,3 +71,6 @@ mission-control/handoffs/
 
 # App Map — generated compressed dup of flows.json (regenerable)
 mission-control/flows.json.gz
+
+# Jarvis prompt library (runtime, seeded on read)
+mission-control/prompts.json

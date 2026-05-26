@@ -11,18 +11,39 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><div class="logo">J</div> Jarvis <small>· slyght mission control</small></div>
-    <div class="right"><span id="srvStatus">●&nbsp; live · localhost</span></div>
+    <div class="brand">
+      <div class="logo">J</div>
+      <span class="brand-name">Jarvis</span>
+      <small>· slyght mission control</small>
+    </div>
+    <div class="right">
+      <button class="cp-hint" onclick="openPalette()" aria-label="Open command palette (Ctrl-K)" title="Search & jump (Ctrl-K)">
+        <span class="cp-hint-ic">⌕</span><kbd>⌘K</kbd>
+      </button>
+      <div id="sysStatus" class="sysstrip">
+        <span class="sys-live"><span class="sys-dot"></span> Live · localhost</span>
+      </div>
+    </div>
   </header>
   <div class="layout">
     <nav class="rail">
       <div class="sect">Project</div>
       <a href="#/overview" data-r="overview"><span class="ic">◎</span> Overview</a>
-      <a href="#/board" data-r="board"><span class="ic">▦</span> Board</a>
-      <div class="sect">Views</div>
-      <a href="#/map" data-r="map"><span class="ic">◇</span> App Map</a>
-      <a href="#/calendar" data-r="calendar"><span class="ic">▦</span> Calendar</a>
+      <a href="#/board"    data-r="board"><span class="ic">▦</span> Board</a>
       <a href="#/planning" data-r="planning"><span class="ic">◈</span> Planning</a>
+
+      <div class="sect">Views</div>
+      <a href="#/map"      data-r="map"><span class="ic">◇</span> App Map</a>
+      <a href="#/calendar" data-r="calendar"><span class="ic">▤</span> Calendar</a>
+      <a href="#/insights" data-r="insights"><span class="ic">◑</span> Insights</a>
+      <a href="#/roadmap"  data-r="roadmap"><span class="ic">⇥</span> Roadmap</a>
+
+      <div class="sect">Command</div>
+      <a href="#/command"         data-r="command"><span class="ic">⌁</span> Agents</a>
+      <a href="#/command/prompts" data-r="command"><span class="ic">⌨</span> Prompts</a>
+
+      <div class="sect">Knowledge</div>
+      <a href="#/knowledge" data-r="knowledge"><span class="ic">📖</span> Knowledge</a>
     </nav>
     <main><div id="view" class="view"></div></main>
   </div>

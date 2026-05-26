@@ -24,9 +24,67 @@ const ago = iso => { if (!iso) return '—'; const d = Math.round((Date.now() - 
 const when = iso => iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
 const sevCls = s => s === 'P0' ? 'p-p0' : s === 'P1' ? 'p-p1' : 'p-p2';
 
+/* ── label helpers ───────────────────────────────────────────────────────
+ * niceSurface(id): maps a surface/group id (the raw lowercase strings in the
+ * ticket model + flows roster) to a curated Title-Case display name. Falls back
+ * to cap() for anything not in the map (future surfaces, 'planning', 'other',
+ * 'tracked', etc.) so nothing ever renders raw-lowercase again.
+ * cap(s): first-letter-upper per word — for kind ('confirmed') + type ('bug') tags. */
+const SURFACE_NAMES = {
+  dashboard: 'Dashboard',
+  bills:     'Bills',
+  savings:   'Savings',
+  plan:      'Payday Plan',
+  analysis:  'Analysis',
+  debts:     'Debts',
+  ai:        'AI Chat',
+  settings:  'Settings',
+  nav:       'Nav / Onboarding',
+  planning:  'Planning',
+  tracked:   'Tracked',
+  other:     'Other',
+};
+function niceSurface(id) {
+  if (id == null || id === '') return '—';
+  return SURFACE_NAMES[id] || cap(String(id));
+}
+function cap(s) {
+  return String(s == null ? '' : s)
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ') || '—';
+}
+
 /* ── data ─────────────────────────────────────────────────────────────── */
 async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
 const get = id => J.tickets.find(t => t.id === id);
+
+/* Topbar system-status strip — live mini-stats from J.tickets / J.flows.
+ * Safe to call anytime: degrades gracefully before flows/tickets load. */
+function renderTopbarStatus() {
+  const el = $('sysStatus'); if (!el) return;
+  const ts = J.tickets || [];
+  const total = ts.length;
+  const p0 = ts.filter(t => t.severity === 'P0' && t.state.status !== 'Shipped').length;
+  const gaps = J.flows
+    ? (J.flows.surfaces || []).reduce((n, s) => n + (s.counts ? s.counts.gaps : 0), 0)
+    : null;
+  // Health = % of tickets either Shipped or ConfirmedLive (a soft "how green are we" read)
+  const done = ts.filter(t => ['Shipped', 'ConfirmedLive'].includes(t.state.status)).length;
+  const health = total ? Math.round(done / total * 100) : null;
+
+  const stat = (n, label, cls) =>
+    `<span class="sys-stat ${cls || ''}"><b>${n}</b> ${label}</span>`;
+
+  el.innerHTML =
+    `<span class="sys-live"><span class="sys-dot"></span> Live · localhost</span>` +
+    `<span class="sys-sep"></span>` +
+    stat(total, 'Tickets') +
+    stat(p0, 'P0', p0 ? 'sys-p0' : '') +
+    (gaps != null ? stat(gaps, 'Gaps', gaps ? 'sys-amber' : '') : '') +
+    (health != null ? stat(health + '%', 'Health', health >= 60 ? 'sys-green' : 'sys-amber') : '');
+}
 
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
 const SEVRANK = { P0: 0, P1: 1, P2: 2 };
@@ -177,7 +235,7 @@ async function viewOverview() {
 function ovRow(t, showStatus) {
   const tag = showStatus
     ? `<span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span>`
-    : `<span class="pill sm k-${t.kind}">${esc(t.group)}</span>`;
+    : `<span class="pill sm k-${t.kind}">${esc(niceSurface(t.group))}</span>`;
   return `<div class="ov2row" onclick="location.hash='#/ticket/${t.id}'">
       <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
       <span class="ov2t">${esc(t.title)}</span>
@@ -259,7 +317,7 @@ function viewBoard() {
       ${bd2Select('Status', 'status', f.status, STATUSES.map(s => [s, STATUS_LABEL[s]]))}
       ${bd2Select('Type', 'type', f.type, ['bug', 'feature', 'task'].map(x => [x, x[0].toUpperCase() + x.slice(1)]))}
       ${bd2Select('Priority', 'severity', f.severity, [['P0', 'P0 · Critical'], ['P1', 'P1 · High'], ['P2', 'P2 · Normal']])}
-      ${bd2Select('Surface', 'surface', f.surface, surfaces.map(s => [s, s]))}
+      ${bd2Select('Surface', 'surface', f.surface, surfaces.map(s => [s, niceSurface(s)]))}
       <div class="bd2-tb-spacer"></div>
       <div class="bd2-sortwrap">
         <span class="bd2-sortlbl">Sort</span>
@@ -320,13 +378,13 @@ function ticketRow(t) {
       <div class="bd2-meta">
         <span class="bd2-id">${t.id}</span>
         <span class="bd2-dot">·</span>
-        <span class="bd2-surface">${esc(t.group || t.surface || '—')}</span>
+        <span class="bd2-surface">${esc(niceSurface(t.group || t.surface))}</span>
         <span class="bd2-dot">·</span>
         <span class="bd2-age">opened ${ago(st.opened)}</span>
         <span class="bd2-dot">·</span>
         <span class="bd2-act">active ${ago(st.lastActivity)}</span>
         ${links ? `<span class="bd2-dot">·</span><span class="bd2-links">🔗 ${links} link${links === 1 ? '' : 's'}</span>` : ''}
-        ${t.kind && t.kind !== 'manual' ? `<span class="pill sm k-${t.kind}">${esc(t.kind)}</span>` : ''}
+        ${t.kind && t.kind !== 'manual' ? `<span class="pill sm k-${t.kind}">${esc(cap(t.kind))}</span>` : ''}
       </div>
     </div>
 
@@ -346,7 +404,7 @@ function ticketRow(t) {
       <!-- TYPE — quick-filter -->
       <div class="bd2-ctrl">
         <span class="bd2-ctrl-k">Type</span>
-        <button class="bd2-pillbtn pill sm k-${t.kind}" title="Filter by type: ${esc(t.type)}" onclick="setFilter('type','${t.type}')">${esc(t.type)}</button>
+        <button class="bd2-pillbtn pill sm k-${t.kind}" title="Filter by type: ${esc(cap(t.type))}" onclick="setFilter('type','${t.type}')">${esc(cap(t.type))}</button>
       </div>
 
       <!-- PRIORITY (severity) — quick-filter -->
@@ -455,7 +513,7 @@ function viewTicket(id) {
   const cur = (t.rich.mechanism || '').slice(0, 180);
   const aft = (t.rich.fix || '').slice(0, 180);
   const ev = t.rich.evidence;
-  const sync = [t.openBug ? `OPEN-BUGS #${t.openBug}` : null, ev ? 'feature map (' + t.group + ')' : null].filter(Boolean);
+  const sync = [t.openBug ? `OPEN-BUGS #${t.openBug}` : null, ev ? 'feature map (' + niceSurface(t.group) + ')' : null].filter(Boolean);
   v.className = 'view maxw';
   v.innerHTML = `
     <a class="backlink" href="#/board">‹ Board</a>
@@ -464,8 +522,8 @@ function viewTicket(id) {
         <div class="pills">
           <span class="pill ${sevCls(t.severity)}">${t.severity}${t.severity === 'P0' ? ' · Critical' : ''}</span>
           <span class="pill s-${status}">${STATUS_LABEL[status]}</span>
-          <span class="pill k-${t.kind}">${t.kind}</span>
-          <span class="meta">${t.id} · ${esc(t.group)}</span>
+          <span class="pill k-${t.kind}">${esc(cap(t.kind))}</span>
+          <span class="meta">${t.id} · ${esc(niceSurface(t.group))}</span>
         </div>
         <h1>${esc(t.title)}</h1>
       </div>
@@ -511,8 +569,8 @@ function viewTicket(id) {
           <div class="kv"><span class="k">Status</span><span class="v"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></span></div>
           <div class="kv"><span class="k">Assignee</span><span class="v">${assignee === 'cc' ? 'CC — investigating' : 'John — needs judgment'}</span></div>
           <div class="kv"><span class="k">Severity</span><span class="v">${t.severity}</span></div>
-          <div class="kv"><span class="k">Type</span><span class="v">${t.type}</span></div>
-          <div class="kv"><span class="k">Surface</span><span class="v">${esc(t.group)}</span></div>
+          <div class="kv"><span class="k">Type</span><span class="v">${esc(cap(t.type))}</span></div>
+          <div class="kv"><span class="k">Surface</span><span class="v">${esc(niceSurface(t.group))}</span></div>
           <div class="kv"><span class="k">Age</span><span class="v">${ago(st.opened)}</span></div>
         </div>
         ${(t.links || []).length ? `<div class="siderail"><div class="sh">Related</div>${t.links.map(l => `<div class="kv"><span class="k">${l.to.startsWith('SLY') ? `<a href="#/ticket/${l.to}">${esc(l.to)}</a>` : esc(l.to)}</span><span class="v" style="font-weight:400;color:var(--muted);font-size:12px;max-width:150px">${esc(l.why)}</span></div>`).join('')}</div>` : ''}
@@ -521,7 +579,7 @@ function viewTicket(id) {
           <div class="sh">Activity</div>
           <div class="kv"><span class="k">Opened</span><span class="v">${when(st.opened)}</span></div>
           ${st.alignment ? `<div class="kv"><span class="k">Aligned</span><span class="v">${when(st.alignment.ts)}</span></div>` : ''}
-          ${ev ? `<div class="kv"><span class="k">Walk-confirmed</span><span class="v">yes</span></div>` : ''}
+          ${ev ? `<div class="kv"><span class="k">Walk-confirmed</span><span class="v">Yes</span></div>` : ''}
           <div class="kv"><span class="k">Last activity</span><span class="v">${when(st.lastActivity)}</span></div>
         </div>
         <div class="siderail danger-rail">
@@ -1106,9 +1164,9 @@ function viewPlanning() {
   const hasBundles = Object.keys(bundles).length > 0;
 
   const planCard = t => `<div class="plan-card" onclick="location.hash='#/ticket/${t.id}'">
-    <div class="plan-card-top"><span class="pill sm k-${t.kind}">${t.type}</span><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span></div>
+    <div class="plan-card-top"><span class="pill sm k-${t.kind}">${esc(cap(t.type))}</span><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span></div>
     <div class="plan-card-t">${esc(t.title)}</div>
-    <div class="plan-card-foot"><span class="meta">${t.id} · ${esc(t.group)}</span><span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span></div>
+    <div class="plan-card-foot"><span class="meta">${t.id} · ${esc(niceSurface(t.group))}</span><span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span></div>
   </div>`;
 
   v.innerHTML = `
@@ -1154,17 +1212,1125 @@ function viewPlanning() {
 }
 function planGroupRelease() {
   const ts = J.tickets;
-  const candidates = ts.filter(t => t.type === 'bug' && ['P0', 'P1'].includes(t.severity) && t.state.status !== 'Shipped')
-    .sort((a, b) => SEVRANK_P[a.severity] - SEVRANK_P[b.severity]);
+  // A release groups SHIP-READY tickets only — a ticket becomes ship-ready when
+  // its fix is Confirmed Live (verified in the running app). Open/Discussing/
+  // Aligned/Investigating work isn't ready to ship; Shipped is already out.
+  // Sorted highest-severity first, then freshest activity.
+  const shipReady = ts.filter(t => t.state.status === 'ConfirmedLive')
+    .sort((a, b) => SEVRANK_P[a.severity] - SEVRANK_P[b.severity]
+      || new Date(b.state.lastActivity || 0) - new Date(a.state.lastActivity || 0));
   modal(`<h2>Group Into A Release</h2>
-    <p>Releases group tickets that ship together as a bundle — slyght's existing cadence (Bundle 30, 31, 32…). The ticket model doesn't carry a <code>bundle</code> field yet, so this is the honest next step rather than fake data.</p>
-    <div class="label" style="margin-top:8px">What a release would group right now</div>
-    <p class="meta" style="margin:0 0 6px">The ${candidates.length} highest-severity open bug${candidates.length === 1 ? '' : 's'}:</p>
+    <p>Releases group tickets that ship together as a bundle — slyght's existing cadence (Bundle 30, 31, 32…). Only <b>ship-ready</b> tickets qualify: a ticket becomes ship-ready when its fix is <b>Confirmed Live</b> (verified in the running app). The ticket model doesn't carry a <code>bundle</code> field yet, so this is the honest next step rather than fake data.</p>
+    <div class="label" style="margin-top:8px">Ship-ready tickets a release would group</div>
+    ${shipReady.length
+      ? `<p class="meta" style="margin:0 0 6px">The ${shipReady.length} ticket${shipReady.length === 1 ? '' : 's'} with a Confirmed Live fix, ready to ship:</p>
     <div class="plan-modal-list">
-      ${candidates.slice(0, 10).map(t => `<div class="plan-modal-row"><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span><span class="tt">${esc(t.title)}</span><span class="meta">${t.id}</span></div>`).join('') || '<div class="empty">No open P0/P1 bugs.</div>'}
+      ${shipReady.slice(0, 10).map(t => `<div class="plan-modal-row"><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span><span class="tt">${esc(t.title)}</span><span class="meta">${t.id}</span></div>`).join('')}
     </div>
-    <p class="meta" style="margin-top:12px">Next step: add a <code>bundle</code> field to the ticket model, then this button writes the grouping and the Releases lane fills with planned cycles.</p>
+    <p class="meta" style="margin-top:12px">Next step: add a <code>bundle</code> field to the ticket model, then this button writes the grouping and the Releases lane fills with planned cycles.</p>`
+      : `<div class="plan-empty" style="margin-top:6px"><div class="plan-empty-icon">◇</div><div class="plan-empty-t">No tickets are ship-ready yet</div><div class="plan-empty-b">A ticket becomes ship-ready when its fix is Confirmed Live — verified in the running app. Move a ticket to Confirmed Live on the Board (it's earned: it needs walk evidence), and it'll show here as part of the next release.</div></div>`}
     <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
+
+/* ════════════════════════ INSIGHTS (command-centre telemetry) ═══════════
+ * A real analytics dashboard computed purely from J.tickets + J.flows — an
+ * App Health Score gauge, severity / status-funnel / type / surface charts, a
+ * walk-coverage gauge, an aging list, and a live activity feed derived from
+ * ticket state (thread comments + status earns + alignments). No time-series
+ * history exists yet, so everything is framed as a current snapshot ("Since
+ * Tracking") — no fake trends. Namespaced ins-*; tokens + existing helpers.
+ * ──────────────────────────────────────────────────────────────────────── */
+const INS_FRAMED_GAPS = 202;   // gaps the framing exercise scoped across the app
+
+async function viewInsights() {
+  if (!J.flows) J.flows = await api('/api/flows');
+  const v = $('view'); v.className = 'view maxw';
+  const ts = J.tickets, n = ts.length || 1;
+
+  /* ── derived metrics ──────────────────────────────────────────────────── */
+  const by      = s => ts.filter(t => t.state.status === s).length;
+  const sevCount = x => ts.filter(t => t.severity === x).length;
+  const typeCount = x => ts.filter(t => t.type === x).length;
+  const p0 = sevCount('P0'), p1 = sevCount('P1'), p2 = sevCount('P2');
+  const shipped = by('Shipped'), confirmedLive = by('ConfirmedLive');
+  const done = shipped + confirmedLive;
+  const openP0 = ts.filter(t => t.severity === 'P0' && !['Shipped', 'ConfirmedLive'].includes(t.state.status)).length;
+
+  const flows = J.flows || {};
+  const surfaces = flows.surfaces || [];
+  const roster = flows.roster || [];
+  const cov = flows.coverage || { traced: 0, total: 0 };
+  const gaps = surfaces.reduce((a, s) => a + (s.counts ? s.counts.gaps : 0), 0);
+  const dead = surfaces.reduce((a, s) => a + (s.counts ? s.counts.dead : 0), 0);
+  const firesAnyway = surfaces.reduce((a, s) => a + (s.counts ? s.counts.firesAnyway : 0), 0);
+  const runnableSpecs = surfaces.reduce((a, s) => a + (s.counts ? s.counts.total : 0), 0);
+
+  /* ── App Health Score — composite 0–100 (4 weighted drivers) ──────────────
+   * Each driver is a 0–1 health ratio (1 = perfect); the score is their
+   * weighted sum × 100. Drivers chosen for honest signal, not vanity:
+   *   • Critical pressure (35%) — open P0s drag hardest; 0 P0 = full marks.
+   *   • Gap coverage      (30%) — gaps found vs the 202 framed; fewer = better.
+   *   • Walk coverage     (20%) — surfaces traced vs total.
+   *   • Shipped ratio     (15%) — done (Shipped+ConfirmedLive) vs all tickets. */
+  const dCrit  = openP0 === 0 ? 1 : Math.max(0, 1 - openP0 / 5);          // 5 open P0s → 0
+  const dGaps  = Math.max(0, 1 - gaps / INS_FRAMED_GAPS);
+  const dWalk  = cov.total ? cov.traced / cov.total : 0;
+  const dShip  = done / n;
+  const score  = Math.round((dCrit * 0.35 + dGaps * 0.30 + dWalk * 0.20 + dShip * 0.15) * 100);
+  const band   = score >= 75 ? { label: 'Healthy', tone: 'green' }
+               : score >= 50 ? { label: 'At Risk', tone: 'amber' }
+               :               { label: 'Critical', tone: 'red' };
+
+  // the 2–3 drivers that move the needle most, worst-first, as readable lines
+  const driverDefs = [
+    { k: 'crit', tone: openP0 ? 'red' : 'green', h: dCrit,
+      label: openP0 ? `${openP0} Open P0 Critical` : 'No Open P0s',
+      hint:  openP0 ? 'Highest-severity work still in flight — the heaviest drag.' : 'No critical tickets in flight — top driver is clean.' },
+    { k: 'gaps', tone: gaps >= 12 ? 'red' : gaps >= 1 ? 'amber' : 'green', h: dGaps,
+      label: `${gaps} App-Map Gaps`,
+      hint:  `Found across the walk vs the ${INS_FRAMED_GAPS} framed — ${Math.round(dGaps * 100)}% clear.` },
+    { k: 'walk', tone: dWalk >= 1 ? 'green' : dWalk >= 0.6 ? 'amber' : 'red', h: dWalk,
+      label: `${cov.traced}/${cov.total} Surfaces Traced`,
+      hint:  dWalk >= 1 ? 'Every surface has a runnable walk — full coverage.' : 'Some surfaces are not yet walked.' },
+    { k: 'ship', tone: dShip >= 0.4 ? 'green' : dShip >= 0.15 ? 'amber' : 'amber', h: dShip,
+      label: `${done} Of ${ts.length} Shipped Or Live`,
+      hint:  `${Math.round(dShip * 100)}% of tracked tickets are done or confirmed live.` },
+  ];
+  const drivers = driverDefs.slice().sort((a, b) => a.h - b.h).slice(0, 3);
+
+  /* ── SVG donut: severity distribution (P0 / P1 / P2) ──────────────────── */
+  const sevSlices = [
+    { label: 'P0 · Critical', val: p0, color: 'var(--red)'   },
+    { label: 'P1 · High',     val: p1, color: 'var(--amber)' },
+    { label: 'P2 · Normal',   val: p2, color: 'var(--label)' },
+  ];
+  const donut = insDonut(sevSlices, ts.length, 'Tickets');
+
+  /* ── status funnel: Open → … → Shipped ───────────────────────────────── */
+  const funnelMax = Math.max(1, ...STATUSES.map(by));
+  const funnel = STATUSES.map(s => {
+    const c = by(s), w = Math.max(c ? 7 : 2, Math.round(c / funnelMax * 100));
+    return `<button type="button" class="ins-funrow s-${s}"
+        onclick="J.filter={surface:'',severity:'',type:'',status:'${s}',search:'',sort:'activity',view:'all'};location.hash='#/board'"
+        title="Open the ${esc(STATUS_LABEL[s])} tickets on the Board">
+        <span class="ins-funlbl">${esc(STATUS_LABEL[s])}</span>
+        <span class="ins-funtrack"><span class="ins-funbar" style="width:${w}%"></span></span>
+        <span class="ins-funn">${c}</span>
+      </button>`;
+  }).join('');
+
+  /* ── tickets by type (horizontal bars) ────────────────────────────────── */
+  const typeDefs = [
+    { id: 'bug',     label: 'Bugs',     tone: 'red'   },
+    { id: 'feature', label: 'Features', tone: 'violet'},
+    { id: 'task',    label: 'Tasks',    tone: 'teal'  },
+  ];
+  const typeMax = Math.max(1, ...typeDefs.map(d => typeCount(d.id)));
+  const typeBars = typeDefs.map(d => {
+    const c = typeCount(d.id), w = Math.max(c ? 7 : 2, Math.round(c / typeMax * 100));
+    return `<button type="button" class="ins-bar ins-${d.tone}"
+        onclick="setFilter('type','${d.id}');location.hash='#/board'"
+        title="Filter the Board to ${esc(d.label)}">
+        <span class="ins-barlbl">${esc(d.label)}</span>
+        <span class="ins-bartrack"><span class="ins-barfill" style="width:${w}%"></span></span>
+        <span class="ins-barn">${c}</span>
+      </button>`;
+  }).join('');
+
+  /* ── tickets by surface (top surfaces by ticket count) ────────────────── */
+  const ros = Object.fromEntries(roster.map(r => [r.id, r.name]));
+  const shortName = g => (ros[g] || String(g || '—')).split(/\s+[—–\/]\s+/)[0].split(' ')[0];
+  const bySurfaceMap = {};
+  ts.forEach(t => { const g = t.group || t.surface || 'other'; bySurfaceMap[g] = (bySurfaceMap[g] || 0) + 1; });
+  const surfaceRows = Object.entries(bySurfaceMap).sort((a, b) => b[1] - a[1]);
+  const surfMax = Math.max(1, ...surfaceRows.map(r => r[1]));
+  const surfaceBars = surfaceRows.map(([g, c]) => {
+    const w = Math.max(7, Math.round(c / surfMax * 100));
+    return `<button type="button" class="ins-bar ins-accent"
+        onclick="setFilter('surface','${esc(g)}');location.hash='#/board'"
+        title="Filter the Board to the ${esc(shortName(g))} surface">
+        <span class="ins-barlbl">${esc(shortName(g))}</span>
+        <span class="ins-bartrack"><span class="ins-barfill" style="width:${w}%"></span></span>
+        <span class="ins-barn">${c}</span>
+      </button>`;
+  }).join('');
+
+  /* ── walk-coverage gauge (ring) + the three honest counters ───────────── */
+  const covPct = cov.total ? Math.round(cov.traced / cov.total * 100) : 0;
+  const covRing = insRing(covPct, `${cov.traced}/${cov.total}`, 'Surfaces', covPct >= 100 ? 'green' : covPct >= 60 ? 'amber' : 'red');
+
+  /* ── aging: oldest open tickets by state.opened ───────────────────────── */
+  const OPEN_STATES = ['Open', 'Discussing', 'Aligned', 'Investigating'];
+  const aging = ts
+    .filter(t => OPEN_STATES.includes(t.state.status) && t.state.opened)
+    .sort((a, b) => new Date(a.state.opened) - new Date(b.state.opened))
+    .slice(0, 6);
+  const agingRows = aging.length
+    ? aging.map((t, i) => `<button type="button" class="ins-agerow" onclick="location.hash='#/ticket/${t.id}'">
+        <span class="ins-agerank">${i + 1}</span>
+        <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+        <span class="ins-aget">${esc(t.title)}</span>
+        <span class="ins-agemeta"><span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span><span class="ins-ageid">${t.id}</span></span>
+        <span class="ins-agedays">opened ${esc(ago(t.state.opened))}</span>
+        <span class="ins-rowgo" aria-hidden="true">→</span>
+      </button>`).join('')
+    : `<div class="ins-empty">No open tickets — nothing aging.</div>`;
+
+  /* ── live activity feed: comments + status earns + alignments, ts desc ──
+   * Each ticket carries a thread of {author,text,ts}; alignments are stamped
+   * separately. We flatten every event across every ticket into one stream,
+   * tag the kind, sort newest-first, and render "actor · what · when (ago)". */
+  const feed = insBuildFeed(ts).slice(0, 14);
+  const feedRows = feed.length
+    ? feed.map(e => `<button type="button" class="ins-feedrow" onclick="location.hash='#/ticket/${e.id}'">
+        <span class="ins-feedav ins-av-${e.actorKey}">${e.avatar}</span>
+        <span class="ins-feedbody">
+          <span class="ins-feedtop"><b class="ins-feedactor">${esc(e.actor)}</b> ${esc(e.verb)} <span class="ins-feedid">${e.id}</span></span>
+          <span class="ins-feedwhat">${e.what}</span>
+        </span>
+        <span class="ins-feedwhen" title="${esc(when(e.ts))}">${esc(ago(e.ts))}</span>
+      </button>`).join('')
+    : `<div class="ins-empty">No activity recorded yet — comments, status changes and alignments will stream here.</div>`;
+
+  /* ── render ───────────────────────────────────────────────────────────── */
+  v.innerHTML = `
+    <header class="ov2head">
+      <div>
+        <h1>Insights</h1>
+        <p class="subtitle">Command-centre telemetry — one composite health read, the analytics behind it, and a live stream of everything happening across the project.</p>
+      </div>
+      <span class="ins-snaptag">Snapshot · Since Tracking</span>
+    </header>
+
+    <section class="ins-top">
+      <!-- App Health Score — the hero gauge -->
+      <div class="ins-panel ins-health ins-h-${band.tone}">
+        <div class="ins-panel-h">
+          <div>
+            <h2 class="ins-title">App Health Score</h2>
+            <p class="ins-sub">A composite of critical pressure, gap coverage, walk coverage and shipped ratio.</p>
+          </div>
+        </div>
+        <div class="ins-healthbody">
+          ${insScoreRing(score, band)}
+          <div class="ins-drivers">
+            <div class="ins-drivers-h">Top Drivers</div>
+            ${drivers.map(d => `<div class="ins-driver ins-d-${d.tone}">
+              <span class="ins-driver-dot"></span>
+              <span class="ins-driver-txt"><b>${esc(d.label)}</b><span class="ins-driver-hint">${esc(d.hint)}</span></span>
+            </div>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- analytics chart row beside the gauge -->
+      <div class="ins-chartcol">
+        <div class="ins-panel">
+          <div class="ins-panel-h"><h2 class="ins-title">Severity Distribution</h2><span class="ov2-count">${ts.length}</span></div>
+          <div class="ins-donutwrap">
+            ${donut}
+            <div class="ins-legend">
+              ${sevSlices.map(s => `<div class="ins-legrow"><span class="ins-legdot" style="background:${s.color}"></span><span class="ins-leglbl">${esc(s.label)}</span><span class="ins-legn">${s.val}</span></div>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="ins-panel">
+          <div class="ins-panel-h"><h2 class="ins-title">Status Funnel</h2><span class="ov2-count">Open → Shipped</span></div>
+          <div class="ins-funnel">${funnel}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ins-grid3">
+      <div class="ins-panel">
+        <div class="ins-panel-h"><h2 class="ins-title">Tickets By Type</h2></div>
+        <div class="ins-bars">${typeBars}</div>
+      </div>
+      <div class="ins-panel">
+        <div class="ins-panel-h"><h2 class="ins-title">Tickets By Surface</h2><span class="ov2-count">${surfaceRows.length}</span></div>
+        <div class="ins-bars ins-bars-scroll">${surfaceBars || '<div class="ins-empty">No tickets yet.</div>'}</div>
+      </div>
+      <div class="ins-panel ins-cov">
+        <div class="ins-panel-h">
+          <div><h2 class="ins-title">Walk Coverage</h2><p class="ins-sub">How much of the app has a runnable walk.</p></div>
+        </div>
+        <div class="ins-covbody">
+          ${covRing}
+          <div class="ins-covstats">
+            <div class="ins-covstat"><span class="ins-covn">${cov.traced}/${cov.total}</span><span class="ins-covl">Surfaces Walked</span></div>
+            <div class="ins-covstat"><span class="ins-covn">${runnableSpecs}</span><span class="ins-covl">Runnable Specs</span></div>
+            <div class="ins-covstat ins-cov-warn"><span class="ins-covn">${gaps}</span><span class="ins-covl">Gaps Found</span></div>
+            <div class="ins-covstat ins-cov-warn"><span class="ins-covn">${dead + firesAnyway}</span><span class="ins-covl">Dead · Fires Anyway</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ins-grid2">
+      <div class="ins-panel ins-aging">
+        <div class="ins-panel-h">
+          <div><h2 class="ins-title">Oldest Open Tickets</h2><p class="ins-sub">Ranked by how long they have been open — the staleness watch.</p></div>
+          <span class="ov2-count">${aging.length}</span>
+        </div>
+        <div class="ins-agelist">${agingRows}</div>
+      </div>
+
+      <div class="ins-panel ins-feed">
+        <div class="ins-panel-h">
+          <div><h2 class="ins-title">Live Activity Feed</h2><p class="ins-sub">Comments, status changes and alignments across every ticket — newest first.</p></div>
+          <span class="ins-livedot" aria-hidden="true"></span>
+        </div>
+        <div class="ins-feedlist">${feedRows}</div>
+      </div>
+    </section>`;
+}
+
+/* ── Insights helpers (kept local to the section) ─────────────────────────── */
+
+// the big score ring — a conic-gradient gauge with the number + band label inside
+function insScoreRing(score, band) {
+  const deg = Math.round(score / 100 * 360);
+  const col = band.tone === 'green' ? 'var(--green)' : band.tone === 'amber' ? 'var(--amber)' : 'var(--red)';
+  const soft = band.tone === 'green' ? 'var(--green-bg)' : band.tone === 'amber' ? 'var(--amber-bg)' : 'var(--red-bg)';
+  return `<div class="ins-scorering" style="--ins-deg:${deg}deg;--ins-col:${col};--ins-soft:${soft}">
+      <div class="ins-scorehole">
+        <span class="ins-scoreval">${score}</span>
+        <span class="ins-scoreunit">/ 100</span>
+        <span class="ins-scoreband ins-b-${band.tone}">${esc(band.label)}</span>
+      </div>
+    </div>`;
+}
+
+// a small SVG donut from weighted slices; renders a centred total in the hole
+function insDonut(slices, total, centreLabel) {
+  const C = 84, R = 58, SW = 22, circ = 2 * Math.PI * R;
+  const sum = slices.reduce((a, s) => a + s.val, 0) || 1;
+  let off = 0, segs = '';
+  slices.forEach(s => {
+    if (!s.val) return;
+    const len = s.val / sum * circ;
+    segs += `<circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${SW}"
+      stroke-dasharray="${len} ${circ - len}" stroke-dashoffset="${-off}"
+      transform="rotate(-90 ${C} ${C})" class="ins-donutseg"/>`;
+    off += len;
+  });
+  return `<svg class="ins-donut" viewBox="0 0 ${C * 2} ${C * 2}" width="168" height="168" role="img" aria-label="Severity distribution">
+      <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--card2)" stroke-width="${SW}"/>
+      ${segs}
+      <text x="${C}" y="${C - 4}" text-anchor="middle" font-size="34" font-weight="700" fill="var(--head)">${total}</text>
+      <text x="${C}" y="${C + 20}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)">${esc(centreLabel)}</text>
+    </svg>`;
+}
+
+// a single-value progress ring (walk coverage); pct 0–100, toned
+function insRing(pct, big, small, tone) {
+  const C = 70, R = 50, SW = 14, circ = 2 * Math.PI * R;
+  const len = Math.max(0, Math.min(100, pct)) / 100 * circ;
+  const col = tone === 'green' ? 'var(--green)' : tone === 'amber' ? 'var(--amber)' : 'var(--red)';
+  return `<svg class="ins-covring" viewBox="0 0 ${C * 2} ${C * 2}" width="148" height="148" role="img" aria-label="Walk coverage ${pct} percent">
+      <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="var(--card2)" stroke-width="${SW}"/>
+      <circle cx="${C}" cy="${C}" r="${R}" fill="none" stroke="${col}" stroke-width="${SW}" stroke-linecap="round"
+        stroke-dasharray="${len} ${circ - len}" transform="rotate(-90 ${C} ${C})" class="ins-covarc"/>
+      <text x="${C}" y="${C - 2}" text-anchor="middle" font-size="26" font-weight="700" fill="var(--head)">${esc(big)}</text>
+      <text x="${C}" y="${C + 20}" text-anchor="middle" font-size="13" font-weight="600" fill="var(--muted)">${esc(small)}</text>
+    </svg>`;
+}
+
+// flatten every ticket's events (comments + alignment + status earn) into one
+// newest-first stream. Each event: {id, ts, actor, actorKey, avatar, verb, what}.
+function insBuildFeed(ts) {
+  const events = [];
+  const avOf = a => a === 'john' ? 'J' : a === 'jarvis' ? 'Jv' : 'CC';
+  const nameOf = a => a === 'john' ? 'John' : a === 'jarvis' ? 'Jarvis' : 'CC';
+  ts.forEach(t => {
+    const st = t.state || {};
+    (st.thread || []).forEach(c => {
+      const isAlign = /✓?\s*ALIGNED/.test(c.text || '');
+      const isCC = c.author === 'cc' && /\*\*CC result\*\*/.test(c.text || '');
+      events.push({
+        id: t.id, ts: c.ts, actor: nameOf(c.author), actorKey: c.author, avatar: avOf(c.author),
+        verb: isAlign ? 'aligned' : isCC ? 'posted results on' : 'commented on',
+        what: `<span class="ins-feedtitle">${esc(t.title)}</span> · ${esc((c.text || '').replace(/\s+/g, ' ').slice(0, 96))}${(c.text || '').length > 96 ? '…' : ''}`,
+        kind: isAlign ? 'align' : 'comment',
+      });
+    });
+    // a derived "status" event from lastActivity for tickets that earned a terminal
+    // state but carry no matching thread line (keeps the feed honest + alive)
+    if (st.status && ['Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'].includes(st.status)) {
+      const hasThreadAt = (st.thread || []).some(c => c.ts === st.lastActivity);
+      if (!hasThreadAt && st.lastActivity) {
+        events.push({
+          id: t.id, ts: st.lastActivity, actor: st.assignee === 'cc' ? 'CC' : 'John',
+          actorKey: st.assignee === 'cc' ? 'cc' : 'john', avatar: st.assignee === 'cc' ? 'CC' : 'J',
+          verb: 'moved to ' + (STATUS_LABEL[st.status] || st.status), what: `<span class="ins-feedtitle">${esc(t.title)}</span>`,
+          kind: 'status',
+        });
+      }
+    }
+  });
+  return events
+    .filter(e => e.ts)
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+}
+
+/* ════════════════════════ ROADMAP (now · next · shipped) ════════════════
+ * A premium delivery roadmap built from the earned-state machine — no new
+ * data, no `bundle` field needed. Three lanes mapped straight off status:
+ *   NOW      = Aligned + Investigating  (actively being worked by CC)
+ *   NEXT     = Open + Discussing        (queued; severity-sorted, P0 first)
+ *   SHIPPED  = ConfirmedLive + Shipped  (proven live / done)
+ * Clean horizontal kanban-roadmap. Cards → #/ticket/<id>, severity pill,
+ * surface in Title Case, age. Honest where a lane is empty. Reads J.tickets.
+ * ──────────────────────────────────────────────────────────────────────── */
+const RM_SEVRANK = { P0: 0, P1: 1, P2: 2 };
+
+// The three lanes, in delivery order. `tone` drives the lane's accent rail +
+// header dot; `statuses` is the set of earned states it gathers.
+const RM_LANES = [
+  {
+    id: 'now', title: 'Now', tone: 'teal',
+    sub: 'Actively being worked — aligned and handed to CC, or under investigation.',
+    statuses: ['Aligned', 'Investigating'],
+    empty: 'Nothing in flight right now. Align a ticket on the Board to hand it to CC and it lands here.',
+  },
+  {
+    id: 'next', title: 'Next', tone: 'amber',
+    sub: 'Queued and waiting on a decision — highest severity first.',
+    statuses: ['Open', 'Discussing'],
+    empty: 'The queue is clear — nothing open or under discussion. The next move is yours to scope.',
+  },
+  {
+    id: 'shipped', title: 'Recently Shipped / Confirmed', tone: 'green',
+    sub: 'Proven live in the running app, or shipped and done.',
+    statuses: ['ConfirmedLive', 'Shipped'],
+    empty: 'Nothing confirmed live or shipped yet — fixes land here once their evidence is proven.',
+  },
+];
+
+// surface id → Title Case label (surfaces are lowercase ids like "dashboard").
+// "ai"/"nav" read better upper-cased; everything else is word-cased.
+const rmSurface = s => {
+  const v = String(s == null ? '' : s).trim();
+  if (!v) return '—';
+  if (v === 'ai' || v === 'nav') return v.toUpperCase();
+  return v.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+// Sort within a lane: severity (P0→P2), then freshest activity first.
+function rmSort(arr) {
+  return arr.slice().sort((a, b) =>
+    (RM_SEVRANK[a.severity] - RM_SEVRANK[b.severity]) ||
+    (new Date(b.state.lastActivity || 0) - new Date(a.state.lastActivity || 0)));
+}
+
+function viewRoadmap() {
+  const v = $('view'); v.className = 'view maxw'; const ts = J.tickets;
+
+  // bucket once: every ticket falls into exactly one lane via its status
+  const laneTickets = {};
+  RM_LANES.forEach(l => { laneTickets[l.id] = rmSort(ts.filter(t => l.statuses.includes(t.state.status))); });
+  const shipReady = ts.filter(t => t.state.status === 'ConfirmedLive').length;  // the honest "ready to ship" count
+
+  // header summary — counts that mirror the lanes, plus the ship-ready signal
+  const summary = `
+    <div class="rm-summary">
+      ${RM_LANES.map(l => `
+        <button type="button" class="rm-sum rm-sum-${l.tone}" onclick="rmFocusLane('${l.id}')" title="Jump to ${esc(l.title)}">
+          <span class="rm-sum-n">${laneTickets[l.id].length}</span>
+          <span class="rm-sum-l">${esc(l.title)}</span>
+        </button>`).join('')}
+      <div class="rm-sum rm-sum-ship" title="Tickets with a Confirmed Live fix — ready to ship">
+        <span class="rm-sum-n">${shipReady}</span>
+        <span class="rm-sum-l">Ship-Ready</span>
+      </div>
+    </div>`;
+
+  v.innerHTML = `
+    <header class="rm-head">
+      <div>
+        <h1>Roadmap</h1>
+        <p class="subtitle">The whole project as a delivery flow — what's moving now, what's queued next, and what's landed. Built live from each ticket's earned status. Tap any card to open it.</p>
+      </div>
+      <a class="rm-head-link" href="#/planning">Open Planning →</a>
+    </header>
+    ${summary}
+    <div class="rm-lanes">
+      ${RM_LANES.map(l => rmLane(l, laneTickets[l.id])).join('')}
+    </div>`;
+}
+
+// One lane = header (title · count · dot) + its sorted cards (or an honest empty).
+function rmLane(lane, tickets) {
+  return `<section class="rm-lane rm-lane-${lane.tone}" id="rm-lane-${lane.id}">
+    <div class="rm-lane-h">
+      <span class="rm-lane-dot" aria-hidden="true"></span>
+      <span class="rm-lane-title">${esc(lane.title)}</span>
+      <span class="rm-lane-ct">${tickets.length}</span>
+    </div>
+    <p class="rm-lane-sub">${esc(lane.sub)}</p>
+    <div class="rm-lane-body">
+      ${tickets.length
+        ? tickets.map(rmCard).join('')
+        : `<div class="rm-empty"><span class="rm-empty-dot" aria-hidden="true"></span>${esc(lane.empty)}</div>`}
+    </div>
+  </section>`;
+}
+
+// A roadmap card — clickable → ticket, severity pill, status pill, surface (Title
+// Case) + age in the foot. Mirrors the .plan-card language (premium, hover-lift).
+function rmCard(t) {
+  const st = t.state;
+  return `<article class="rm-card ${sevCls(t.severity)}" role="button" tabindex="0"
+      onclick="location.hash='#/ticket/${t.id}'"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash='#/ticket/${t.id}'}">
+    <div class="rm-card-top">
+      <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+      <span class="pill sm s-${st.status}">${STATUS_LABEL[st.status]}</span>
+      <span class="rm-card-go" aria-hidden="true">→</span>
+    </div>
+    <div class="rm-card-t">${esc(t.title)}</div>
+    <div class="rm-card-foot">
+      <span class="rm-card-surface">${esc(rmSurface(t.group || t.surface))}</span>
+      <span class="rm-card-dot">·</span>
+      <span class="rm-card-id">${t.id}</span>
+      <span class="rm-card-age">active ${ago(st.lastActivity)}</span>
+    </div>
+  </article>`;
+}
+
+// Summary chip → scroll its lane into view + a brief highlight (no re-render).
+function rmFocusLane(id) {
+  const el = $('rm-lane-' + id); if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  el.classList.add('rm-flash');
+  setTimeout(() => el.classList.remove('rm-flash'), 900);
+}
+
+/* ════════════════════════ COMMAND DECK ══════════════════════════════════
+ * Agent Library + Prompt Library. One route (#/command), two tabs.
+ * - Walk Drone DEPLOYS for real: action('runWalk',{group}) then polls
+ *   /api/walklog (same shape app.js uses: { lines, running }). Honest label.
+ * - Every other agent's Deploy COPIES a CC mission prompt (no autonomous
+ *   spawn without CC). Modal + Copy button, ticket context optional.
+ * - Prompts come from GET /api/prompts (server seeds defaults if the file is
+ *   missing). John can ADD/EDIT/DELETE templates → action('savePrompts',{list}).
+ * State lives on J.* (added lazily — no edit to the J literal required).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+// The 9 real walk surfaces (mirror of specs.json "groups"; only these are valid
+// runWalk scopes server-side). Label = Title Case; value = the group id.
+const CMD_WALK_GROUPS = [
+  ['',          'All Runnable Surfaces'],
+  ['dashboard', 'Dashboard'], ['bills', 'Bills'], ['savings', 'Savings'],
+  ['plan', 'Plan'], ['ai', 'AI'], ['analysis', 'Analysis'],
+  ['debts', 'Debts'], ['settings', 'Settings'], ['nav', 'Navigation'],
+];
+
+// The agent roster. `kind:'walk'` is the one that runs for real; the rest are
+// `kind:'prompt'` — Deploy copies a CC mission prompt built from `template`.
+// {ticket} / {group} / {topic} placeholders fill from the deploy modal.
+const CMD_AGENTS = [
+  {
+    id: 'walk-drone', name: 'Walk Drone', kind: 'walk', glyph: '◎', tone: 'teal',
+    role: 'Drives the running app and screenshots every step',
+    produces: 'A walk dir under tests/walker-out — per-flow steps, deltas, lands[], PNG captures',
+    inputs: 'A surface scope (or all runnable). Reads the app live; writes nothing to state.',
+  },
+  {
+    id: 'trace-drone', name: 'Trace Drone', kind: 'prompt', glyph: '◇', tone: 'violet',
+    role: 'Maps one surface IS-vs-SHOULD — what it does now vs what the spec says it should',
+    produces: 'A gap list for the surface (each gap → a candidate ticket on the Board)',
+    inputs: 'A surface + its walk evidence. Reads FEATURE-MAP + the flow.',
+    template:
+`Trace the {group} surface — IS vs SHOULD.
+
+Read the {group} walk evidence (latest tests/walker-out flow for this surface) and
+its row in FEATURE-MAP.md. For each thing the surface SHOULD do (per the spec /
+invariants), state what it ACTUALLY does now from the walk steps + lands[]. List
+every divergence as a numbered gap: symptom · which INV-NN it touches (if any) ·
+file:line · suggested severity (P0/P1/P2). Plain English, real names. Do NOT code —
+report the gap list so I can open tickets.{ticketCtx}`,
+  },
+  {
+    id: 'auditor', name: 'Auditor', kind: 'prompt', glyph: '✓', tone: 'green',
+    role: 'Verifies a finding is real and live — strongest-test-first, not a label',
+    produces: 'A PASS/FAIL verdict with the evidence that proves it (or disproves it)',
+    inputs: 'A ticket / claim. Runs the strongest simulation (close+replay storageState).',
+    template:
+`Audit this finding — is it real and live?
+
+Verify with strongest-test-first discipline: skip weak rounds, go straight to the
+strongest simulation (close + replay storageState, not page.reload). Walk S.txns
+(Ledger Walk Step 0) before promoting any state-derived claim. Return a PASS/FAIL
+verdict with the exact evidence that proves it in the RUNNING app — fixture date +
+fresh:yes/no. Name the state source explicitly. No "looks like" without follow-up.{ticketCtx}`,
+  },
+  {
+    id: 'ux-expert', name: 'UX Expert', kind: 'prompt', glyph: '◈', tone: 'amber',
+    role: 'Premium-feel UX review on a 380px phone viewport',
+    produces: 'A prioritised UX punch-list — contrast, info-density, touch targets, motion',
+    inputs: 'A surface or capture set. Reviews against slyght premium-feel discipline.',
+    template:
+`Premium UX review of the {group} surface (380×660 phone viewport).
+
+Check: text contrast (numbers always --text, never small --text3 on --bg3/4);
+info-density (4-question check before any inline breakdown — tap-for-detail beats
+clutter); 44×44 touch targets; "alive" micro-motion without jank; plain-English
+labels, real names. Return a prioritised punch-list (P0/P1/P2) with the concrete
+visible outcome for each, not CSS jargon.{ticketCtx}`,
+  },
+  {
+    id: 'integrator', name: 'Integrator', kind: 'prompt', glyph: '⛓', tone: 'blue',
+    role: 'Merges built parts into index.html surgically and keeps invariants green',
+    produces: 'One atomic integration + Guardian-green gate + a phone-verify block',
+    inputs: 'The built parts (drop-in blocks). Audits readers before any shape change.',
+    template:
+`Integrate the built parts into index.html.
+
+Read the target bytes FIRST, then ONE atomic edit per block — no intermediate
+_OBSOLETE_ placeholders. Before any value-shape change, grep every reader. Route
+through canonical writers + BRAIN.SOURCES tags + audit log. Gate on full Guardian
+(npm run guardian — all + static + runtime) and the boot self-test. End with a
+PASS/FAIL phone-verify block (Open · Do · PASS · FAIL).{ticketCtx}`,
+  },
+];
+
+const cmdAgent = id => CMD_AGENTS.find(a => a.id === id);
+const cmdGroupLabel = g => (CMD_WALK_GROUPS.find(x => x[0] === g) || [g, g])[1];
+
+/* ── view: Agent Library (default Command tab) ──────────────────────────── */
+function viewCommand() {
+  const v = $('view'); v.className = 'view maxw';
+  const running = !!(J.walk && J.walk.deploying);
+  v.innerHTML = `
+    ${cmdHeader('agents')}
+    <section class="cmd-agentgrid">
+      ${CMD_AGENTS.map(a => cmdAgentCard(a, running)).join('')}
+    </section>`;
+  // If a walk was already streaming when we navigated back, re-attach the poll UI.
+  if (running) cmdReflectWalk();
+}
+
+function cmdAgentCard(a, running) {
+  const real = a.kind === 'walk';
+  const deployable = real ? !running : true;
+  const cta = real
+    ? (running ? 'Walking…' : 'Deploy — Run Walk')
+    : 'Deploy — Copy Mission Prompt';
+  const honesty = real
+    ? `<span class="cmd-tag cmd-tag-live">Runs for real</span>`
+    : `<span class="cmd-tag">Copies a mission prompt for CC</span>`;
+  return `<article class="cmd-card cmd-${a.tone}" id="cmd-card-${a.id}">
+    <div class="cmd-card-h">
+      <span class="cmd-glyph" aria-hidden="true">${a.glyph}</span>
+      <div class="cmd-card-titles">
+        <h2 class="cmd-card-name">${esc(a.name)}</h2>
+        <p class="cmd-card-role">${esc(a.role)}</p>
+      </div>
+      ${honesty}
+    </div>
+    <dl class="cmd-meta">
+      <div class="cmd-meta-row"><dt>Produces</dt><dd>${esc(a.produces)}</dd></div>
+      <div class="cmd-meta-row"><dt>Inputs</dt><dd>${esc(a.inputs)}</dd></div>
+    </dl>
+    <div class="cmd-card-foot">
+      <button class="cmd-deploy${real ? ' cmd-deploy-live' : ''}" ${deployable ? '' : 'disabled'}
+        onclick="cmdDeploy('${a.id}')">
+        <span class="cmd-deploy-ic" aria-hidden="true">${real ? '▶' : '⧉'}</span> ${cta}
+      </button>
+      ${real ? `<div class="cmd-walkstatus" id="cmd-walkstatus" aria-live="polite"></div>` : ''}
+    </div>
+  </article>`;
+}
+
+/* ── deploy dispatch ────────────────────────────────────────────────────── */
+function cmdDeploy(agentId) {
+  const a = cmdAgent(agentId); if (!a) return;
+  if (a.kind === 'walk') return cmdDeployWalkModal(a);
+  return cmdDeployPromptModal(a);
+}
+
+// Walk Drone — pick a scope, then actually run it.
+function cmdDeployWalkModal(a) {
+  modal(`<h2>Deploy ${esc(a.name)}</h2>
+    <p>This runs for real — the walker drives the running app and captures every step.
+       Pick a surface (or run all runnable). Server validates the scope; nothing else can be passed.</p>
+    <label class="cmd-flbl" for="cmdWalkGroup">Surface scope</label>
+    <div class="cmd-selwrap">
+      <select id="cmdWalkGroup" class="cmd-sel">
+        ${CMD_WALK_GROUPS.map(([val, lbl]) => `<option value="${esc(val)}">${esc(lbl)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="btns">
+      <button class="btn primary" onclick="cmdRunWalk()"><span aria-hidden="true">▶</span> Deploy &amp; Run</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+
+// The real run + live poll — same contract app.js uses (/api/walklog → {lines,running}).
+let cmdWalkPoll = null;
+async function cmdRunWalk() {
+  const group = ($('cmdWalkGroup') ? $('cmdWalkGroup').value : '') || '';
+  try {
+    const r = await action('runWalk', group ? { group } : {});
+    if (!r.started) { toast(r.reason || 'a walk is already running', 'err'); return; }
+  } catch (e) { return; }  // action() already toasted the rejection
+  J.walk = Object.assign({}, J.walk, { deploying: true, scope: group || 'all' });
+  closeModal();
+  toast('Walk Drone deployed — ' + cmdGroupLabel(group), 'ok');
+  // If the Agent Library is on screen, light up the live status line + button.
+  cmdReflectWalk();
+  cmdWalkSeen = 0;
+  clearInterval(cmdWalkPoll);
+  cmdWalkPoll = setInterval(async () => {
+    let j; try { j = await api('/api/walklog'); } catch (_) { return; }
+    const lines = j.lines || [];
+    const st = $('cmd-walkstatus');
+    if (st) {
+      // last meaningful line as a one-line ticker
+      const last = [...lines].reverse().find(l => !l.startsWith('@@WALK_EXIT')) || 'starting…';
+      st.innerHTML = `<span class="cmd-live-dot"></span> Walking · ${lines.length} line${lines.length === 1 ? '' : 's'}
+        <span class="cmd-live-last">${esc(last.replace(/^@@/, '').slice(0, 80))}</span>`;
+    }
+    if (!j.running) {
+      clearInterval(cmdWalkPoll); cmdWalkPoll = null;
+      J.walk = Object.assign({}, J.walk, { deploying: false });
+      const exit = (lines.find(l => l.startsWith('@@WALK_EXIT')) || '').split(' ')[1];
+      if (st) st.innerHTML = `<span class="cmd-done-dot"></span> Walk complete${exit && exit !== '0' ? ` (exit ${esc(exit)})` : ''} — captures in tests/walker-out`;
+      toast('Walk complete — rebuild evidence with node scripts/mc/build-cases.js', 'ok');
+      // re-enable the Deploy button if still on the Agents tab
+      const btn = document.querySelector('#cmd-card-walk-drone .cmd-deploy');
+      if (btn) { btn.disabled = false; btn.querySelector('.cmd-deploy-ic') && (btn.innerHTML = `<span class="cmd-deploy-ic" aria-hidden="true">▶</span> Deploy — Run Walk`); }
+    }
+  }, 600);
+}
+let cmdWalkSeen = 0;
+
+// Reflect an in-flight walk in the Agents tab (disable button, show live status).
+function cmdReflectWalk() {
+  const btn = document.querySelector('#cmd-card-walk-drone .cmd-deploy');
+  if (btn && J.walk && J.walk.deploying) {
+    btn.disabled = true;
+    btn.innerHTML = `<span class="cmd-deploy-ic" aria-hidden="true">▶</span> Walking…`;
+  }
+  const st = $('cmd-walkstatus');
+  if (st && J.walk && J.walk.deploying) st.innerHTML = `<span class="cmd-live-dot"></span> Walking…`;
+}
+
+// The prompt agents — build the mission prompt from template (+ optional ticket).
+function cmdDeployPromptModal(a) {
+  const needsGroup = /\{group\}/.test(a.template);
+  const tOpts = J.tickets.slice().sort((x, y) => (SEVRANK_BD[x.severity] - SEVRANK_BD[y.severity]));
+  modal(`<h2>Deploy ${esc(a.name)}</h2>
+    <p>${esc(a.role)}. Real autonomous spawning needs CC, so this <b>copies a ready-to-paste
+       mission prompt</b> — fill the fields, copy, and start the mission in Claude Code.</p>
+    ${needsGroup ? `
+      <label class="cmd-flbl" for="cmdAgGroup">Surface</label>
+      <div class="cmd-selwrap"><select id="cmdAgGroup" class="cmd-sel" onchange="cmdRenderPrompt('${a.id}')">
+        ${CMD_WALK_GROUPS.filter(x => x[0]).map(([val, lbl]) => `<option value="${esc(val)}">${esc(lbl)}</option>`).join('')}
+      </select></div>` : ''}
+    <label class="cmd-flbl" for="cmdAgTicket">Ticket context (optional)</label>
+    <div class="cmd-selwrap"><select id="cmdAgTicket" class="cmd-sel" onchange="cmdRenderPrompt('${a.id}')">
+      <option value="">No ticket — general mission</option>
+      ${tOpts.map(t => `<option value="${esc(t.id)}">${esc(t.id)} · ${esc(t.title)}</option>`).join('')}
+    </select></div>
+    <label class="cmd-flbl">Mission prompt</label>
+    <pre id="cmdPromptOut">${esc(cmdFillAgentPrompt(a, '', ''))}</pre>
+    <div class="btns">
+      <button class="btn primary" onclick="cmdCopy('cmdPromptOut')"><span aria-hidden="true">⧉</span> Copy Mission Prompt</button>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>`);
+}
+function cmdRenderPrompt(agentId) {
+  const a = cmdAgent(agentId); if (!a) return;
+  const group = $('cmdAgGroup') ? $('cmdAgGroup').value : '';
+  const ticket = $('cmdAgTicket') ? $('cmdAgTicket').value : '';
+  $('cmdPromptOut').textContent = cmdFillAgentPrompt(a, group, ticket);
+}
+function cmdFillAgentPrompt(a, group, ticketId) {
+  let out = a.template.replace(/\{group\}/g, group ? cmdGroupLabel(group) : 'target');
+  const t = ticketId ? get(ticketId) : null;
+  const ctx = t
+    ? `\n\nTicket context — ${t.id} (${t.severity} · ${t.group}):\n` +
+      `Title: ${t.title}\nSummary: ${t.summary}\n` +
+      (t.rich && t.rich.rootCause ? `Root cause: ${t.rich.rootCause}\n` : '') +
+      (t.rich && (t.rich.files || []).length ? `Files: ${t.rich.files.join('; ')}\n` : '') +
+      `Post results back into ${t.id} on the Board.`
+    : '';
+  return out.replace(/\{ticketCtx\}/g, ctx);
+}
+
+/* ════════════════════════ PROMPT LIBRARY (Command tab 2) ════════════════ */
+// Templates load from /api/prompts (server seeds defaults). Shape:
+//   { id, title, body, vars:[{ name, label, kind?:'ticket'|'text', placeholder? }] }
+// {name} tokens in body fill from the form; a 'ticket' var offers a J.tickets dropdown.
+async function viewPrompts() {
+  const v = $('view'); v.className = 'view maxw';
+  if (!J.prompts) { try { J.prompts = (await api('/api/prompts')).prompts || []; } catch (_) { J.prompts = []; } }
+  v.innerHTML = `
+    ${cmdHeader('prompts')}
+    <section class="cmd-promptbar">
+      <p class="cmd-promptbar-note">Reusable mission prompts with <code>{variables}</code>. Click one to fill it in. Your own templates are saved to <code>mission-control/prompts.json</code>.</p>
+      <button class="cmd-addbtn" onclick="cmdEditPrompt(null)"><span aria-hidden="true">＋</span> Add Template</button>
+    </section>
+    <section class="cmd-promptlist">
+      ${J.prompts.length
+        ? J.prompts.map(cmdPromptRow).join('')
+        : `<div class="cmd-empty"><div class="cmd-empty-ic">⌨</div><div class="cmd-empty-h">No templates yet</div><div class="cmd-empty-b">Add your first reusable mission prompt.</div></div>`}
+    </section>`;
+}
+function cmdPromptRow(p) {
+  const varCount = (p.vars || []).length;
+  return `<article class="cmd-prow">
+    <button class="cmd-prow-main" onclick="cmdUsePrompt('${esc(p.id)}')">
+      <span class="cmd-prow-titles">
+        <span class="cmd-prow-title">${esc(p.title)}</span>
+        <span class="cmd-prow-preview">${esc((p.body || '').slice(0, 120))}${(p.body || '').length > 120 ? '…' : ''}</span>
+      </span>
+      ${varCount ? `<span class="cmd-prow-vars">${varCount} variable${varCount === 1 ? '' : 's'}</span>` : ''}
+      <span class="cmd-prow-go" aria-hidden="true">→</span>
+    </button>
+    <div class="cmd-prow-actions">
+      <button class="cmd-iconbtn" title="Edit template" onclick="cmdEditPrompt('${esc(p.id)}')">Edit</button>
+      <button class="cmd-iconbtn cmd-iconbtn-danger" title="Delete template" onclick="cmdDeletePrompt('${esc(p.id)}')">Delete</button>
+    </div>
+  </article>`;
+}
+
+// USE — fill the variables, see the live output, copy.
+function cmdUsePrompt(id) {
+  const p = (J.prompts || []).find(x => x.id === id); if (!p) return;
+  const vars = p.vars || [];
+  const tOpts = J.tickets.slice().sort((x, y) => (SEVRANK_BD[x.severity] - SEVRANK_BD[y.severity]));
+  const field = vr => {
+    if (vr.kind === 'ticket') {
+      return `<div class="cmd-selwrap"><select class="cmd-sel cmd-varin" data-var="${esc(vr.name)}" onchange="cmdRenderFilled('${esc(id)}')">
+        <option value="">Pick a ticket…</option>
+        ${tOpts.map(t => `<option value="${esc(t.id)}">${esc(t.id)} · ${esc(t.title)}</option>`).join('')}
+      </select></div>`;
+    }
+    return `<input class="cmd-varin" data-var="${esc(vr.name)}" placeholder="${esc(vr.placeholder || vr.label)}" oninput="cmdRenderFilled('${esc(id)}')" autocomplete="off">`;
+  };
+  modal(`<h2>${esc(p.title)}</h2>
+    <p>Fill the variables — the prompt updates live. Copy it, then run the mission in CC.</p>
+    ${vars.length ? `<div class="cmd-varform">${vars.map(vr => `
+      <label class="cmd-flbl">${esc(vr.label || vr.name)} <code>{${esc(vr.name)}}</code></label>
+      ${field(vr)}`).join('')}</div>` : '<p class="cmd-novars">This template has no variables — copy it as-is.</p>'}
+    <label class="cmd-flbl">Filled prompt</label>
+    <pre id="cmdFilledOut">${esc(p.body || '')}</pre>
+    <div class="btns">
+      <button class="btn primary" onclick="cmdCopy('cmdFilledOut')"><span aria-hidden="true">⧉</span> Copy Prompt</button>
+      <button class="btn" onclick="closeModal()">Close</button>
+    </div>`);
+}
+function cmdRenderFilled(id) {
+  const p = (J.prompts || []).find(x => x.id === id); if (!p) return;
+  const vals = {};
+  document.querySelectorAll('.cmd-varin').forEach(el => { vals[el.dataset.var] = (el.value || '').trim(); });
+  $('cmdFilledOut').textContent = cmdFillBody(p.body || '', vals);
+}
+// Replace {name} tokens; an unfilled var stays as its {name} so it's obvious.
+function cmdFillBody(body, vals) {
+  return body.replace(/\{(\w+)\}/g, (m, name) => (vals[name] != null && vals[name] !== '') ? vals[name] : m);
+}
+
+/* ── add / edit / delete templates → persisted via savePrompts ──────────── */
+function cmdEditPrompt(id) {
+  const editing = id ? (J.prompts || []).find(x => x.id === id) : null;
+  const p = editing || { id: '', title: '', body: '', vars: [] };
+  // vars edited as a simple one-per-line mini-syntax:  name | Label | kind
+  const varsText = (p.vars || []).map(vr => [vr.name, vr.label || '', vr.kind || 'text'].join(' | ')).join('\n');
+  modal(`<h2>${editing ? 'Edit Template' : 'Add Template'}</h2>
+    <p>Use <code>{name}</code> tokens in the body. List variables below — one per line as
+       <code>name | Label | kind</code> (kind = <code>text</code> or <code>ticket</code>; a ticket var offers a dropdown of your tickets).</p>
+    <label class="cmd-flbl" for="cmdEdTitle">Title</label>
+    <input id="cmdEdTitle" value="${esc(p.title)}" placeholder="e.g. Investigate a ticket end-to-end" autocomplete="off">
+    <label class="cmd-flbl" for="cmdEdBody">Body</label>
+    <textarea id="cmdEdBody" class="cmd-bodyta" placeholder="Investigate {ticket}: read its handoff and run the full pipeline.">${esc(p.body)}</textarea>
+    <label class="cmd-flbl" for="cmdEdVars">Variables (one per line: name | Label | kind)</label>
+    <textarea id="cmdEdVars" class="cmd-varsta" placeholder="ticket | Ticket | ticket&#10;area | Area to improve | text">${esc(varsText)}</textarea>
+    <div class="btns">
+      <button class="btn primary" onclick="cmdSavePrompt('${editing ? esc(id) : ''}')">${editing ? 'Save Changes' : 'Add Template'}</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+  setTimeout(() => { const el = $('cmdEdTitle'); if (el) el.focus(); }, 30);
+}
+function cmdParseVars(text) {
+  return (text || '').split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const [name, label, kind] = l.split('|').map(s => (s || '').trim());
+    if (!name || !/^\w+$/.test(name)) return null;
+    return { name, label: label || name, kind: kind === 'ticket' ? 'ticket' : 'text' };
+  }).filter(Boolean);
+}
+async function cmdSavePrompt(id) {
+  const title = ($('cmdEdTitle').value || '').trim();
+  const body = ($('cmdEdBody').value || '').trim();
+  if (!title) { toast('title required', 'err'); $('cmdEdTitle').focus(); return; }
+  if (!body)  { toast('body required', 'err'); $('cmdEdBody').focus(); return; }
+  const vars = cmdParseVars($('cmdEdVars').value);
+  const list = (J.prompts || []).slice();
+  if (id) {
+    const i = list.findIndex(x => x.id === id);
+    if (i >= 0) list[i] = Object.assign({}, list[i], { title, body, vars });
+  } else {
+    // id = title slug + short suffix; keep it stable + collision-safe client-side
+    const base = (title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)) || 'prompt';
+    let nid = base, n = 2; while (list.some(x => x.id === nid)) nid = base + '-' + (n++);
+    list.push({ id: nid, title, body, vars });
+  }
+  try {
+    await action('savePrompts', { list });
+    J.prompts = list;            // optimistic local mirror (server returns ok+count)
+    closeModal(); toast('templates saved', 'ok'); viewPrompts();
+  } catch (e) {}                 // action() toasted the rejection
+}
+function cmdDeletePrompt(id) {
+  const p = (J.prompts || []).find(x => x.id === id); if (!p) return;
+  modal(`<h2>Delete template?</h2>
+    <p>Remove <b>${esc(p.title)}</b> from your prompt library. This rewrites
+       <code>mission-control/prompts.json</code>.</p>
+    <div class="btns">
+      <button class="btn danger" onclick="cmdConfirmDelete('${esc(id)}')">Delete</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+async function cmdConfirmDelete(id) {
+  const list = (J.prompts || []).filter(x => x.id !== id);
+  try { await action('savePrompts', { list }); J.prompts = list; closeModal(); toast('template deleted', 'ok'); viewPrompts(); } catch (e) {}
+}
+
+/* ── shared command-deck helpers ────────────────────────────────────────── */
+// The two-tab header (Agents | Prompts). Title Case throughout.
+function cmdHeader(active) {
+  return `<header class="cmd-head">
+    <div>
+      <h1>Command Deck</h1>
+      <p class="subtitle">Deploy the agents that drive slyght — and the reusable mission prompts that brief them.</p>
+    </div>
+    <div class="cmd-tabs" role="tablist">
+      <a class="cmd-tab ${active === 'agents' ? 'on' : ''}" role="tab" aria-selected="${active === 'agents'}" href="#/command">Agent Library</a>
+      <a class="cmd-tab ${active === 'prompts' ? 'on' : ''}" role="tab" aria-selected="${active === 'prompts'}" href="#/command/prompts">Prompt Library</a>
+    </div>
+  </header>`;
+}
+// Copy helper — same pattern as jarvisTake/goDeeper (reads a <pre> by id).
+function cmdCopy(elId) {
+  const el = $(elId); if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => toast('copied', 'ok'), () => toast('copy failed', 'err'));
+}
+
+/* ════════════════════════ KNOWLEDGE (the doc knowledge base) ════════════════════
+ * A browsable index of slyght's security + governance + reference docs. The list/grid
+ * uses the full ultrawide width; opening a doc reads it via the allowlisted
+ * /api/read?name=<key> endpoint (read-only, path-jailed server-side) and renders the
+ * markdown at a comfortable ~860px reading column. esc()-first renderer — every text
+ * node is escaped before any inline formatting is applied, so doc content can never
+ * inject markup. State lives on J.kb = { open, content, loading, error }.
+ * ──────────────────────────────────────────────────────────────────────────────── */
+const KB_DOCS = [
+  // group · key (must match server READS) · title · one-line description · icon
+  { group: 'Security & Governance', key: 'security',       title: 'Security',               desc: "slyght's security decision-log — phase order, the live phase, what's committed next.", icon: '🛡️' },
+  { group: 'Security & Governance', key: 'mc-security',     title: 'Mission Control Security', desc: 'The seven hard rules behind this cockpit — localhost-only, allowlisted, path-jailed.', icon: '🔐' },
+  { group: 'Security & Governance', key: 'pipeline',        title: 'Pipeline',               desc: 'The standing six-tier development pipeline every session, bundle, and commit runs through.', icon: '🧭' },
+  { group: 'Security & Governance', key: 'rules',           title: 'Mission Rules',          desc: 'The operating rules for mission-control work — what gates, what ships, what stops.', icon: '📐' },
+
+  { group: 'The Contract',          key: 'invariants',      title: 'Financial Invariants',   desc: 'The mathematical contract slyght must satisfy — every INV the money math is held to.', icon: '∑' },
+  { group: 'The Contract',          key: 'featuremap',      title: 'Feature Map',            desc: 'The atlas of surfaces, canonical writers, and state fields — where everything lives.', icon: '🗺️' },
+
+  { group: 'Project',               key: 'openbugs',        title: 'Open Bugs',              desc: "The current substrate state — what's known broken right now, in priority order.", icon: '🐞' },
+  { group: 'Project',               key: 'john-knowledge',  title: 'John Knowledge',         desc: "John's working frontier — Demonstrated vs Building, to calibrate every explanation.", icon: '👤' },
+  { group: 'Project',               key: 'coverage',        title: 'Coverage Map',           desc: 'The walk-and-judge coverage map — which surfaces are traced and which still have gaps.', icon: '✅' },
+];
+const KB_GROUPS = ['Security & Governance', 'The Contract', 'Project'];
+const KB_GROUP_SUB = {
+  'Security & Governance': 'How slyght is kept safe and how the work is governed.',
+  'The Contract':          'The mathematical and structural promises the app must keep.',
+  'Project':               'The living state of the project — bugs, frontier, and coverage.',
+};
+const kbDoc = key => KB_DOCS.find(d => d.key === key);
+
+// J.kb holds the view state; initialise lazily so we never assume it on the shared J.
+function kbState() { return (J.kb = J.kb || { open: null, content: '', loading: false, error: '' }); }
+
+async function viewKnowledge(key) {
+  const v = $('view'); v.className = 'view maxw';
+  const s = kbState();
+  s.open = key || null;
+
+  if (!s.open) { v.innerHTML = kbIndexHTML(); return; }   // ── the list / card grid ──
+
+  // ── a single doc — fetch via the allowlisted, path-jailed read, then render md ──
+  const meta = kbDoc(s.open);
+  if (!meta) { location.hash = '#/knowledge'; return; }   // unknown key → back to the index
+  s.loading = true; s.error = ''; s.content = '';
+  v.innerHTML = kbDocShellHTML(meta, '<div class="kb-loading">Loading ' + esc(meta.title) + '…</div>');
+  try {
+    const r = await api('/api/read?name=' + encodeURIComponent(s.open));
+    if (r && typeof r.content === 'string') { s.content = r.content; }
+    else { s.error = (r && r.error) || 'Could not read this document.'; }
+  } catch (e) { s.error = 'Could not reach the read endpoint — is the mission-control server running?'; }
+  s.loading = false;
+  // re-render only if the user is still on this doc (guards against fast nav)
+  if (s.open !== (meta && meta.key)) return;
+  const body = s.error
+    ? `<div class="kb-error"><div class="kb-error-ic">⚠</div><div><div class="kb-error-h">Couldn't load this document</div><div class="kb-error-b">${esc(s.error)}</div></div></div>`
+    : `<article class="kb-doc">${renderMarkdown(s.content)}</article>`;
+  v.innerHTML = kbDocShellHTML(meta, body);
+}
+
+// ── the index: full-width grouped card grid ──────────────────────────────────────
+function kbIndexHTML() {
+  const card = d => `
+    <a class="kb-card" href="#/knowledge/${d.key}" aria-label="Open ${esc(d.title)}">
+      <span class="kb-card-ic" aria-hidden="true">${esc(d.icon)}</span>
+      <span class="kb-card-body">
+        <span class="kb-card-title">${esc(d.title)}</span>
+        <span class="kb-card-desc">${esc(d.desc)}</span>
+      </span>
+      <span class="kb-card-go" aria-hidden="true">→</span>
+    </a>`;
+  const groups = KB_GROUPS.map(g => {
+    const docs = KB_DOCS.filter(d => d.group === g);
+    if (!docs.length) return '';
+    return `
+      <section class="kb-group">
+        <div class="kb-group-h">
+          <h2 class="kb-group-title">${esc(g)}</h2>
+          <p class="kb-group-sub">${esc(KB_GROUP_SUB[g] || '')}</p>
+        </div>
+        <div class="kb-grid">${docs.map(card).join('')}</div>
+      </section>`;
+  }).join('');
+  return `
+    <header class="kb-head">
+      <div>
+        <h1>Knowledge</h1>
+        <p class="subtitle">The security, governance, and reference docs for slyght — one browsable place. Open a document to read it; everything here is read-only.</p>
+      </div>
+      <span class="kb-head-count">${KB_DOCS.length} documents</span>
+    </header>
+    ${groups}`;
+}
+
+// ── the doc shell: back link + header + the rendered body slot ────────────────────
+function kbDocShellHTML(meta, bodyHTML) {
+  return `
+    <a class="kb-back" href="#/knowledge">‹ All documents</a>
+    <header class="kb-dochead">
+      <span class="kb-dochead-ic" aria-hidden="true">${esc(meta.icon)}</span>
+      <div class="kb-dochead-text">
+        <span class="kb-dochead-group">${esc(meta.group)}</span>
+        <h1 class="kb-dochead-title">${esc(meta.title)}</h1>
+        <p class="kb-dochead-desc">${esc(meta.desc)}</p>
+      </div>
+    </header>
+    <div class="kb-docwrap">${bodyHTML}</div>`;
+}
+
+/* ── renderMarkdown — a compact, escape-FIRST markdown→HTML renderer ──────────────
+ * Supports the constructs the slyght docs actually use: ATX headings (# … ######),
+ * bold/italic, inline code + fenced code blocks, unordered + ordered lists,
+ * blockquotes, horizontal rules, links, and paragraphs. NOT a full CommonMark
+ * engine — deliberately small and predictable for a known doc corpus.
+ *
+ * Safety: every raw text run is esc()'d BEFORE any tag is introduced. Inline
+ * formatting only ever wraps already-escaped text, and link hrefs are sanitised
+ * (http/https/# only), so document content can never inject markup or script.
+ * ──────────────────────────────────────────────────────────────────────────────── */
+function renderMarkdown(src) {
+  if (!src) return '';
+  const lines = String(src).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  let listType = null;          // 'ul' | 'ol' | null — currently open list
+  let para = [];                // buffered paragraph lines
+  let quote = [];               // buffered blockquote lines
+
+  const flushPara = () => {
+    if (para.length) { out.push('<p>' + mdInline(para.join(' ')) + '</p>'); para = []; }
+  };
+  const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+  const flushQuote = () => {
+    if (quote.length) {
+      out.push('<blockquote>' + quote.map(q => '<p>' + mdInline(q) + '</p>').join('') + '</blockquote>');
+      quote = [];
+    }
+  };
+  const flushAll = () => { flushPara(); flushQuote(); closeList(); };
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // fenced code block ``` … ```
+    const fence = line.match(/^\s*```+\s*([\w.+-]*)\s*$/);
+    if (fence) {
+      flushAll();
+      const lang = fence[1] || '';
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```+\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++; // consume the closing fence (or run off the end)
+      out.push('<pre class="kb-pre"' + (lang ? ' data-lang="' + esc(lang) + '"' : '') + '><code>' + esc(buf.join('\n')) + '</code></pre>');
+      continue;
+    }
+
+    // blank line — paragraph / quote separator
+    if (/^\s*$/.test(line)) { flushPara(); flushQuote(); i++; continue; }
+
+    // horizontal rule
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushAll(); out.push('<hr>'); i++; continue; }
+
+    // ATX heading  # … ######
+    const h = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
+    if (h) { flushAll(); const lvl = h[1].length; out.push('<h' + lvl + '>' + mdInline(h[2]) + '</h' + lvl + '>'); i++; continue; }
+
+    // blockquote  > …
+    const bq = line.match(/^\s*>\s?(.*)$/);
+    if (bq) { flushPara(); closeList(); quote.push(bq[1]); i++; continue; }
+
+    // unordered list  - / * / +
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (ul) { flushPara(); flushQuote(); if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; } out.push('<li>' + mdInline(ul[1]) + '</li>'); i++; continue; }
+
+    // ordered list  1. / 1)
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ol) { flushPara(); flushQuote(); if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; } out.push('<li>' + mdInline(ol[1]) + '</li>'); i++; continue; }
+
+    // anything else — paragraph text
+    flushQuote(); closeList(); para.push(line.trim()); i++;
+  }
+  flushAll();
+  return out.join('\n');
+}
+
+// inline formatting — runs on raw markdown text. esc() FIRST so the text is safe,
+// then re-introduce a fixed, known set of inline tags. Code spans are extracted
+// before other rules so their contents aren't double-formatted.
+function mdInline(text) {
+  if (text == null) return '';
+  // 1) protect inline code spans `…` — escape contents, swap in a placeholder
+  const codes = [];
+  let s = String(text).replace(/`([^`]+)`/g, (_, c) => {
+    codes.push('<code class="kb-code">' + esc(c) + '</code>');
+    return ' ' + (codes.length - 1) + ' ';
+  });
+  // 2) escape the remaining text (placeholders survive — they contain no &<>)
+  s = esc(s);
+  // 3) links [label](href) — sanitise href to http/https/# only
+  s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, href) => {
+    const safe = /^(https?:\/\/|#|\/)/i.test(href);
+    if (!safe) return label;
+    const ext = /^https?:/i.test(href);
+    return '<a href="' + esc(href) + '"' + (ext ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' + label + '</a>';
+  });
+  // 4) bold **…** / __…__  then italic *…* / _…_  (bold first so ** isn't eaten by *)
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+       .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+       .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
+       .replace(/(^|[^_\w])_([^_\s][^_]*?)_(?=$|[^_\w])/g, '$1<em>$2</em>');
+  // 5) restore the code spans
+  s = s.replace(/ (\d+) /g, (_, n) => codes[+n]);
+  return s;
 }
 
 /* ── placeholder views (sequenced next) ───────────────────────────────── */
@@ -1172,6 +2338,304 @@ function viewSoon(title, body) {
   $('view').className = 'view maxw';
   $('view').innerHTML = `<h1>${title}</h1><p class="subtitle">${body}</p>
     <div class="card"><p class="summary" style="margin:0">Built next in the sequence — the core loop comes first (per the brief). The data model already reserves what this view needs, so it won't be a retrofit.</p></div>`;
+}
+
+/* ════════════════════════ COMMAND PALETTE (⌘K / Ctrl-K) ══════════════════
+ * Global jump-and-act. One key opens a centered, blurred overlay; fuzzy-search
+ * across TICKETS · VIEWS · SURFACES · ACTIONS; ↑↓ to move, ↵ to activate, Esc to
+ * close; hover + click too. Built ONCE (own #cpScrim/#cpPanel — independent of the
+ * #scrim/#modal ticket dialogs). Every result either navigates (location.hash),
+ * opens a ticket, runs newTicket(), or runs a real walk (action('runWalk') + the
+ * same /api/walklog poll app.js uses). Honest labels — nothing fake.
+ * State is local module-scope (CP), never touches the shared J literal.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+// The fixed, navigable VIEWS. Hashes match the router; titles + keywords feed fuzzy
+// search.
+const CP_VIEWS = [
+  { title: 'Overview',  hash: '#/overview',         icon: '◎', kw: 'home dashboard start whole story' },
+  { title: 'Board',     hash: '#/board',            icon: '▦', kw: 'tickets list worklist kanban' },
+  { title: 'App Map',   hash: '#/map',              icon: '◇', kw: 'surfaces graph relationship flows wiring' },
+  { title: 'Insights',  hash: '#/insights',         icon: '◑', kw: 'analytics charts trends metrics' },
+  { title: 'Command',   hash: '#/command',          icon: '⌁', kw: 'agents deploy walk drone deck' },
+  { title: 'Prompts',   hash: '#/command/prompts',  icon: '⌨', kw: 'prompt library templates mission' },
+  { title: 'Knowledge', hash: '#/knowledge',        icon: '▣', kw: 'docs security invariants feature map rules reference' },
+  { title: 'Roadmap',   hash: '#/roadmap',          icon: '◈', kw: 'plan releases bundles future' },
+  { title: 'Calendar',  hash: '#/calendar',         icon: '▦', kw: 'month dates due target schedule' },
+  { title: 'Planning',  hash: '#/planning',         icon: '◈', kw: 'roadmap features candidates releases' },
+];
+
+// The 9 real surfaces (mirror of the App-Map roster ids). Each → #/map/<id>. Label =
+// Title Case; id = the surface key the map detail view expects.
+const CP_SURFACES = [
+  { id: 'dashboard', title: 'Dashboard', kw: 'cash hub balance home' },
+  { id: 'bills',     title: 'Bills',     kw: 'due paid recurring' },
+  { id: 'savings',   title: 'Savings',   kw: 'goals buckets envelopes' },
+  { id: 'plan',      title: 'Plan',      kw: 'payday allocate canvas lock' },
+  { id: 'analysis',  title: 'Analysis',  kw: 'ledger trend net worth where money went' },
+  { id: 'debts',     title: 'Debts',     kw: 'pay down kia loan mum' },
+  { id: 'ai',        title: 'AI',        kw: 'chat assistant agent state' },
+  { id: 'settings',  title: 'Settings',  kw: 'config preferences' },
+  { id: 'nav',       title: 'Navigation', kw: 'boot routing frame' },
+];
+
+// ACTIONS — the verbs. `run()` is called on activate. Walk runs for real; New Ticket
+// opens the real modal. Both close the palette first.
+const CP_ACTIONS = [
+  { title: 'New Ticket', icon: '＋', kw: 'create add open bug feature task',
+    run: () => { closePalette(); newTicket(); } },
+  { title: 'Run Walk', icon: '▶', kw: 'walk drone deploy capture screenshot run all runnable',
+    run: () => { closePalette(); cpRunWalk(); } },
+];
+
+// Palette module state (never on the shared J).
+const CP = { open: false, items: [], sel: 0, built: false, walking: false, walkPoll: null };
+
+/* ── build the DOM once + register the global keydown ───────────────────── */
+function setupPalette() {
+  if (!CP.built) {
+    const scrim = document.createElement('div');
+    scrim.className = 'cp-scrim';
+    scrim.id = 'cpScrim';
+    scrim.innerHTML = `
+      <div class="cp-panel" id="cpPanel" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="cp-searchwrap">
+          <svg class="cp-searchic" viewBox="0 0 20 20" aria-hidden="true"><path d="M9 3.5a5.5 5.5 0 1 0 3.4 9.83l3.13 3.14a1 1 0 0 0 1.42-1.42l-3.14-3.13A5.5 5.5 0 0 0 9 3.5Zm0 2a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z"/></svg>
+          <input id="cpInput" class="cp-input" type="text" placeholder="Search tickets, views, surfaces, actions…"
+                 autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Search" aria-controls="cpResults">
+          <kbd class="cp-esc">esc</kbd>
+        </div>
+        <div class="cp-results" id="cpResults" role="listbox" aria-label="Results"></div>
+        <div class="cp-foot">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> open</span>
+          <span><kbd>esc</kbd> close</span>
+          <span class="cp-foot-brand">Jarvis ⌘K</span>
+        </div>
+      </div>`;
+    document.body.appendChild(scrim);
+
+    // click the backdrop (not the panel) closes
+    scrim.addEventListener('click', e => { if (e.target === scrim) closePalette(); });
+
+    const input = $('cpInput');
+    input.addEventListener('input', () => cpSearch(input.value));
+    // navigation keys live on the input so it keeps focus the whole time
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown')      { e.preventDefault(); cpMove(1); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); cpMove(-1); }
+      else if (e.key === 'Enter')     { e.preventDefault(); cpActivate(CP.sel); }
+      else if (e.key === 'Escape')    { e.preventDefault(); closePalette(); }
+      // Home/End for long lists
+      else if (e.key === 'Home')      { e.preventDefault(); cpSelect(0); }
+      else if (e.key === 'End')       { e.preventDefault(); cpSelect(CP.items.length - 1); }
+    });
+    CP.built = true;
+  }
+
+  // global trigger — ⌘K (mac) / Ctrl-K (win/linux). Capture so it beats the browser
+  // (some browsers map Ctrl-K to the address bar). Toggle: open if closed, close if open.
+  document.addEventListener('keydown', e => {
+    const isK = (e.key === 'k' || e.key === 'K');
+    if (isK && (e.metaKey || e.ctrlKey) && !e.altKey) {
+      e.preventDefault();
+      CP.open ? closePalette() : openPalette();
+    }
+  }, true);
+}
+
+/* ── open / close ───────────────────────────────────────────────────────── */
+function openPalette() {
+  if (!CP.built) setupPalette();
+  const scrim = $('cpScrim'); if (!scrim) return;
+  CP.open = true;
+  scrim.classList.add('on');
+  document.body.classList.add('cp-lock');      // freeze background scroll
+  const input = $('cpInput');
+  input.value = '';
+  cpSearch('');                                 // show the default (everything, grouped)
+  // focus after paint so the caret lands and the entrance animation is smooth
+  requestAnimationFrame(() => { input.focus(); input.select(); });
+}
+function closePalette() {
+  const scrim = $('cpScrim'); if (!scrim) return;
+  CP.open = false;
+  scrim.classList.remove('on');
+  document.body.classList.remove('cp-lock');
+}
+
+/* ── fuzzy search across the four sources ───────────────────────────────── */
+// Lightweight subsequence fuzzy match — returns a score (higher = better) or -1.
+// Rewards: exact substring > word-boundary start > contiguous run > earliest match.
+function cpFuzzy(query, text) {
+  if (!query) return 0;                          // empty query = everything, neutral score
+  const q = query.toLowerCase(), t = text.toLowerCase();
+  const idx = t.indexOf(q);
+  if (idx !== -1) {                              // substring hit — strongest
+    let s = 1000 - idx;
+    if (idx === 0 || /\W/.test(t[idx - 1])) s += 300;   // word-boundary bonus
+    return s;
+  }
+  // subsequence fallback — all query chars appear in order
+  let ti = 0, score = 0, run = 0, last = -1;
+  for (let qi = 0; qi < q.length; qi++) {
+    const c = q[qi];
+    let found = -1;
+    for (; ti < t.length; ti++) { if (t[ti] === c) { found = ti; break; } }
+    if (found === -1) return -1;                 // a query char never appeared → no match
+    if (found === last + 1) { run++; score += 12 + run * 4; } else { run = 0; score += 4; }
+    if (found === 0 || /\W/.test(t[found - 1])) score += 8;  // landed on a boundary
+    last = found; ti = found + 1;
+  }
+  return score;
+}
+
+// Build the flat candidate list (each carries a haystack + an activate()), score
+// against the query, sort within group by score, then render grouped.
+function cpSearch(query) {
+  const q = (query || '').trim();
+
+  const cand = [];
+  // ACTIONS — verbs first; they're the highest-intent on an empty query
+  CP_ACTIONS.forEach(a => cand.push({
+    group: 'Actions', icon: a.icon, title: a.title, sub: a.title === 'Run Walk' ? 'Deploys the walk drone — runs for real' : 'Open a new ticket',
+    hay: a.title + ' ' + a.kw, run: a.run,
+  }));
+  // VIEWS
+  CP_VIEWS.forEach(v => cand.push({
+    group: 'Views', icon: v.icon, title: v.title, sub: v.hash,
+    hay: v.title + ' ' + v.hash + ' ' + v.kw, run: () => { closePalette(); location.hash = v.hash; },
+  }));
+  // SURFACES → App Map detail
+  CP_SURFACES.forEach(s => cand.push({
+    group: 'Surfaces', icon: '◇', title: s.title, sub: 'App Map → ' + s.id,
+    hay: s.title + ' ' + s.id + ' ' + s.kw + ' surface map', run: () => { closePalette(); location.hash = '#/map/' + s.id; },
+  }));
+  // TICKETS — title + id, badged with severity + surface
+  (J.tickets || []).forEach(t => {
+    const surface = t.group || t.surface || '';
+    cand.push({
+      group: 'Tickets', icon: 'ticket', title: t.title, id: t.id,
+      severity: t.severity, surface, status: t.state && t.state.status,
+      hay: t.title + ' ' + t.id + ' ' + surface + ' ' + (t.summary || '') + ' ' + t.severity,
+      run: () => { closePalette(); location.hash = '#/ticket/' + t.id; },
+    });
+  });
+
+  // score + filter
+  const scored = [];
+  for (const c of cand) {
+    const sc = cpFuzzy(q, c.hay);
+    if (sc >= 0) scored.push(Object.assign({ _score: sc }, c));
+  }
+
+  // group order; within a group sort by score (desc), then title
+  const ORDER = ['Actions', 'Views', 'Surfaces', 'Tickets'];
+  scored.sort((a, b) =>
+    (ORDER.indexOf(a.group) - ORDER.indexOf(b.group)) ||
+    (b._score - a._score) ||
+    a.title.localeCompare(b.title));
+
+  // cap tickets so the list stays instant; keep all of the small fixed groups
+  const counts = {};
+  CP.items = scored.filter(c => {
+    counts[c.group] = (counts[c.group] || 0) + 1;
+    return c.group !== 'Tickets' || counts.Tickets <= 8;
+  });
+
+  CP.sel = 0;
+  cpRender(q);
+}
+
+/* ── render the grouped list ────────────────────────────────────────────── */
+function cpRender(q) {
+  const box = $('cpResults'); if (!box) return;
+  if (!CP.items.length) {
+    box.innerHTML = `<div class="cp-empty">No matches for “${esc(q)}”. Try a view, a surface, or a ticket id.</div>`;
+    return;
+  }
+  let html = '', lastGroup = null, i = 0;
+  for (const it of CP.items) {
+    if (it.group !== lastGroup) { html += `<div class="cp-grouph">${esc(it.group)}</div>`; lastGroup = it.group; }
+    html += cpRow(it, i); i++;
+  }
+  box.innerHTML = html;
+  // delegated mouse handlers (set once per render — innerHTML wiped the old ones)
+  box.querySelectorAll('.cp-row').forEach(el => {
+    const idx = +el.dataset.i;
+    el.addEventListener('mousemove', () => cpSelect(idx));   // hover follows the pointer
+    el.addEventListener('click', () => cpActivate(idx));
+  });
+  cpSelect(0);
+}
+
+function cpRow(it, i) {
+  // ticket rows carry severity + surface badges; everything else a glyph + subtitle
+  const isTicket = it.group === 'Tickets';
+  const icon = isTicket
+    ? `<span class="cp-ic cp-ic-ticket" aria-hidden="true">▤</span>`
+    : `<span class="cp-ic" aria-hidden="true">${esc(it.icon || '›')}</span>`;
+  const meta = isTicket
+    ? `<span class="cp-badges">
+         <span class="pill sm ${sevCls(it.severity)}">${esc(it.severity)}</span>
+         ${it.surface ? `<span class="cp-surface">${esc(it.surface)}</span>` : ''}
+         ${it.status ? `<span class="pill sm s-${it.status}">${esc(STATUS_LABEL[it.status] || it.status)}</span>` : ''}
+       </span>`
+    : `<span class="cp-sub">${esc(it.sub || '')}</span>`;
+  const trail = isTicket ? `<span class="cp-id">${esc(it.id)}</span>` : `<span class="cp-enter" aria-hidden="true">↵</span>`;
+  return `<div class="cp-row" data-i="${i}" role="option" aria-selected="false" id="cpRow${i}">
+      ${icon}
+      <span class="cp-rowmain">
+        <span class="cp-title">${esc(it.title)}</span>
+        ${meta}
+      </span>
+      ${trail}
+    </div>`;
+}
+
+/* ── selection + activation ─────────────────────────────────────────────── */
+function cpSelect(idx) {
+  if (!CP.items.length) return;
+  CP.sel = Math.max(0, Math.min(idx, CP.items.length - 1));
+  const box = $('cpResults'); if (!box) return;
+  box.querySelectorAll('.cp-row').forEach(el => {
+    const on = +el.dataset.i === CP.sel;
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-selected', on ? 'true' : 'false');
+    if (on) el.scrollIntoView({ block: 'nearest' });
+  });
+  const active = box.querySelector('.cp-row.on');
+  const input = $('cpInput'); if (input && active) input.setAttribute('aria-activedescendant', active.id);
+}
+function cpMove(delta) {
+  if (!CP.items.length) return;
+  const n = CP.items.length;
+  cpSelect((CP.sel + delta + n) % n);            // wrap top↔bottom
+}
+function cpActivate(idx) {
+  const it = CP.items[idx]; if (!it || typeof it.run !== 'function') return;
+  it.run();
+}
+
+/* ── Run Walk — real, mirrors app.js / Command Deck (/api/walklog poll) ──── */
+async function cpRunWalk() {
+  if (CP.walking) { toast('a walk is already running', 'err'); return; }
+  try {
+    const r = await action('runWalk', {});       // {} = all runnable surfaces
+    if (!r.started) { toast(r.reason || 'a walk is already running', 'err'); return; }
+  } catch (e) { return; }                          // action() already toasted the rejection
+  CP.walking = true;
+  toast('Walk drone deployed — all runnable surfaces', 'ok');
+  clearInterval(CP.walkPoll);
+  CP.walkPoll = setInterval(async () => {
+    let j; try { j = await api('/api/walklog'); } catch (_) { return; }
+    if (!j.running) {
+      clearInterval(CP.walkPoll); CP.walkPoll = null; CP.walking = false;
+      const lines = j.lines || [];
+      const exit = (lines.find(l => l.startsWith('@@WALK_EXIT')) || '').split(' ')[1];
+      toast(`Walk complete${exit && exit !== '0' ? ` (exit ${exit})` : ''} — captures in tests/walker-out`, 'ok');
+    }
+  }, 700);
 }
 
 /* ── router ───────────────────────────────────────────────────────────── */
@@ -1203,11 +2667,16 @@ function route() {
   if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
   else if (r === 'board') viewBoard();
   else if (r === 'map') viewMap(parts[1]);
+  else if (r === 'knowledge') viewKnowledge(parts[1]);
   else if (r === 'calendar') viewCalendar();
   else if (r === 'planning') viewPlanning();
+  else if (r === 'insights') viewInsights();
+  else if (r === 'roadmap') viewRoadmap();
+  else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
+  renderTopbarStatus();
   window.scrollTo(0, 0);
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
 window.addEventListener('hashchange', route);
-(async function boot() { await load(); if (!location.hash) location.hash = '#/overview'; route(); })();
+(async function boot() { await load(); renderTopbarStatus(); if (!location.hash) location.hash = '#/overview'; route(); setupPalette(); })();
