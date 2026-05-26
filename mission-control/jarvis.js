@@ -6,7 +6,7 @@
  * ==========================================================================*/
 'use strict';
 const TOKEN = window.MC_TOKEN;
-const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, walk: null, mapFace: 'back', mapSurface: null, cal: null };
+const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, autotickets: null, walk: null, mapFace: 'back', mapSurface: null, cal: null };
 const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
 
@@ -17,7 +17,14 @@ async function action(name, args) {
   const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, args: args || {}, token: TOKEN }) });
   const j = await r.json(); if (!r.ok || j.ok === false) { toast(j.error || j.reason || 'failed', 'err'); throw new Error(j.error || j.reason); } return j;
 }
-function toast(m, k) { const t = $('toast'); t.textContent = m; t.className = 'on ' + (k || ''); setTimeout(() => t.className = k || '', 2800); }
+function toast(m, k) {
+  // Premium voice: ensure the first LETTER is capitalised. Skips leading non-letters
+  // (✓, “, digits, the em-dash) and never down-cases — so "SLY-1 → Aligned", "CC drone…"
+  // and already-Title-Case strings pass through unchanged; "comment added" → "Comment added".
+  let s = String(m == null ? '' : m);
+  s = s.replace(/^([^A-Za-z]*)([a-z])/, (_, lead, ch) => lead + ch.toUpperCase());
+  const t = $('toast'); t.textContent = s; t.className = 'on ' + (k || ''); setTimeout(() => t.className = k || '', 2800);
+}
 function modal(html) { $('modal').innerHTML = html; $('scrim').classList.add('on'); }
 function closeModal() { $('scrim').classList.remove('on'); }
 const ago = iso => { if (!iso) return '—'; const d = Math.round((Date.now() - new Date(iso)) / 86400000); return d <= 0 ? 'today' : d + ' day' + (d > 1 ? 's' : ''); };
@@ -64,10 +71,24 @@ function cap(s) {
 const AT_GAP_CLASS = new Set(['gap', 'broken', 'dead', 'fires-anyway']);
 function countUntrackedGaps() {
   if (!J.flows || !J.flows.surfaces) return 0;
+  const minted = J.autotickets instanceof Set ? J.autotickets : null;   // gapKeys already auto-ticketed (server dedupe)
   return J.flows.surfaces.reduce((n, s) => {
     if (s.ticket) return n;                                  // surface-level ticket covers its gaps
-    return n + (s.steps || []).filter(st => AT_GAP_CLASS.has(st.is) && !st.ticket).length;
+    return n + (s.steps || []).filter(st =>
+      AT_GAP_CLASS.has(st.is) &&
+      !st.ticket &&
+      !(minted && minted.has(s.id + ':' + st.n))             // already minted on a prior auto-ticket run
+    ).length;
   }, 0);
+}
+
+/* Hydrate J.autotickets — the Set of gapKeys the server has already auto-ticketed
+ * (keys of auto-tickets.json via the read-only /api/autotickets). countUntrackedGaps()
+ * subtracts these so the App-Map badge reads true after a run. Best-effort: on any
+ * failure leave the Set empty (badge falls back to the flows-only count). */
+async function loadAutoTickets() {
+  try { const r = await api('/api/autotickets'); J.autotickets = new Set(r.keys || []); }
+  catch (_) { J.autotickets = J.autotickets || new Set(); }
 }
 
 /* ── data ─────────────────────────────────────────────────────────────── */
@@ -152,8 +173,8 @@ async function viewOverview() {
       const g = s.counts ? s.counts.gaps : 0;
       const tone = g >= 3 ? 'red' : g >= 1 ? 'amber' : 'green';
       const w = Math.max(g ? 6 : 2, Math.round(g / mx * 100));
-      return `<div class="gbsrow gbs-${tone}" onclick="location.hash='#/map/${s.id}'" title="Open the ${esc(shortName(s))} map">
-          <span class="gbslabel">${esc(shortName(s))}</span>
+      return `<div class="gbsrow gbs-${tone}" onclick="location.hash='#/map/${s.id}'" title="Open the ${esc(niceSurface(s.id))} map">
+          <span class="gbslabel">${esc(niceSurface(s.id))}</span>
           <div class="gbstrack"><div class="gbsbar" style="width:${w}%"></div></div>
           <span class="gbsnum">${g}</span>
           <span class="gbsgo" aria-hidden="true">→</span>
@@ -208,7 +229,7 @@ async function viewOverview() {
           <div class="ov2list">
             ${needsJohn.slice(0, 6).map(t => ovRow(t, true)).join('') || '<div class="empty">Nothing waiting on you — all clear.</div>'}
           </div>
-          ${needsJohn.length > 6 ? `<button type="button" class="ov2-more" onclick="J.filter={surface:'',severity:'',type:'',status:'needs',search:'',sort:'activity',view:'all'};location.hash='#/board'">+${needsJohn.length - 6} more on the Board →</button>` : ''}
+          ${needsJohn.length > 6 ? `<button type="button" class="ov2-more" onclick="location.hash='#/board?status=needs'">+${needsJohn.length - 6} more on the Board →</button>` : ''}
         </div>
 
         <div class="ov2panel ov2-status">
@@ -600,7 +621,12 @@ function viewTicket(id) {
             <button class="btn" onclick="jarvisTake('${t.id}')">Get Jarvis's take</button>
             <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
             ${['Open', 'Discussing'].includes(status)
-              ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>`
+              ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>
+                 <button class="btn dsp-btn dsp-btn-locked" type="button" disabled
+                   title="Align this ticket first to dispatch — CC needs the handoff package">
+                   <span class="dsp-btn-ic" aria-hidden="true">▶</span> Dispatch to CC
+                   <span class="dsp-locked-hint">Align this ticket first to dispatch</span>
+                 </button>`
               : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package</button>
                  <button class="btn dsp-btn" onclick="dispatchToCC('${t.id}')" title="Spawn a real CC drone on this ticket's handoff package">
                    <span class="dsp-btn-ic" aria-hidden="true">▶</span> Dispatch to CC
@@ -775,17 +801,20 @@ async function viewHandoff(id) {
  * the ticket so the drone's posted comment shows in the thread.
  * ──────────────────────────────────────────────────────────────────────────── */
 let dspMode = 'plan';          // module-scope toggle for the confirm modal
+let dspModel = 'sonnet';       // model select  — sonnet (default) | opus
+let dspReasoning = 'off';      // reasoning ctrl — off (default) | think | deep
 let dspPoll = null;            // single active /api/ccjobs poller
 
 function dispatchToCC(id) {
   const t = get(id);
   if (!t) { toast('ticket not found', 'err'); return; }
-  dspMode = 'plan';            // always reset to the SAFE default on open
+  dspMode = 'plan';            // always reset to the SAFE defaults on open
+  dspModel = 'sonnet';
+  dspReasoning = 'off';
   modal(`<h2>Dispatch ${esc(id)} to CC</h2>
     <p>This spawns a <b>real headless Claude Code drone</b> on this ticket's handoff package — it
-       runs Claude Code on your machine, costs tokens (capped at <b>$1.50</b> / <b>40 turns</b>),
-       and <b>never runs git push or deploys</b>. Its result posts straight back into the ticket
-       thread when it finishes.</p>
+       runs Claude Code on your machine, costs tokens, and <b>never runs git push or deploys</b>.
+       Its result posts straight back into the ticket thread when it finishes.</p>
     <div class="dsp-modes" role="radiogroup" aria-label="Dispatch mode">
       <button type="button" class="dsp-mode on" id="dspModePlan" role="radio" aria-checked="true"
         onclick="dspSetMode('plan')">
@@ -798,6 +827,31 @@ function dispatchToCC(id) {
         <span class="dsp-mode-b">Investigates AND implements the fix on the current branch (acceptEdits). Still <b>never pushes</b>; review the diff before you deploy.</span>
       </button>
     </div>
+
+    <div class="dsp-tunes">
+      <div class="dsp-tune">
+        <label class="dsp-tune-lbl" for="dspModelSel">Model</label>
+        <div class="dsp-selwrap">
+          <select id="dspModelSel" class="dsp-sel" aria-label="Model" onchange="dspSetModel(this.value)">
+            <option value="sonnet" selected>Sonnet — fast &amp; cheap</option>
+            <option value="opus">Opus — deeper, costs more</option>
+          </select>
+        </div>
+      </div>
+      <div class="dsp-tune">
+        <label class="dsp-tune-lbl" for="dspReasonSel">Reasoning</label>
+        <div class="dsp-selwrap">
+          <select id="dspReasonSel" class="dsp-sel" aria-label="Reasoning" onchange="dspSetReasoning(this.value)">
+            <option value="off" selected>Off — answer directly</option>
+            <option value="think">Think — step by step</option>
+            <option value="deep">Deep think — reason hard</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="dsp-cost" id="dspCost"></div>
+
     <div class="dsp-confirm">
       <div class="dsp-confirm-label">Type <code>dispatch</code> to confirm</div>
       <input id="dspConfirm" placeholder="dispatch" autocomplete="off"
@@ -809,6 +863,7 @@ function dispatchToCC(id) {
       </button>
       <button class="btn" onclick="closeModal()">Cancel</button>
     </div>`);
+  dspRenderCost();             // paint the initial cost note (sonnet · off → $1.50 cap)
   setTimeout(() => { const el = $('dspConfirm'); if (el) el.focus(); }, 30);
 }
 
@@ -818,16 +873,37 @@ function dspSetMode(mode) {
   const plan = $('dspModePlan'), fix = $('dspModeFix');
   if (plan) { plan.classList.toggle('on', dspMode === 'plan'); plan.setAttribute('aria-checked', dspMode === 'plan'); plan.querySelector('.dsp-mode-tick').textContent = dspMode === 'plan' ? '●' : '○'; }
   if (fix)  { fix.classList.toggle('on', dspMode === 'fix');   fix.setAttribute('aria-checked', dspMode === 'fix');   fix.querySelector('.dsp-mode-tick').textContent = dspMode === 'fix' ? '●' : '○'; }
+  dspRenderCost();
+}
+
+// Model + Reasoning selects — validated client-side too (server re-validates, this is just UX).
+function dspSetModel(v)     { dspModel = v === 'opus' ? 'opus' : 'sonnet'; dspRenderCost(); }
+function dspSetReasoning(v) { dspReasoning = ['off', 'think', 'deep'].includes(v) ? v : 'off'; dspRenderCost(); }
+
+// Live cost note — mirrors the server's budget rule (opus → $3, sonnet → $1.50; reasoning raises
+// token use within the same hard cap). Always shows the budget that WILL apply.
+function dspRenderCost() {
+  const host = $('dspCost'); if (!host) return;
+  const cap = dspModel === 'opus' ? '3.00' : '1.50';
+  const modelLbl = dspModel === 'opus' ? 'Opus' : 'Sonnet';
+  const rsnLbl = dspReasoning === 'deep' ? 'deep thinking' : dspReasoning === 'think' ? 'step-by-step thinking' : 'no extra thinking';
+  const heavy = dspModel === 'opus' || dspReasoning === 'deep';
+  host.className = 'dsp-cost' + (heavy ? ' dsp-cost-heavy' : '');
+  host.innerHTML =
+    `<span class="dsp-cost-ic" aria-hidden="true">$</span>` +
+    `<span><b>${modelLbl}</b> · ${esc(rsnLbl)} — hard cap <b>$${cap}</b> / <b>40 turns</b>. ` +
+    `${heavy ? 'Deeper + costlier; ' : ''}never pushes or deploys.</span>`;
 }
 
 async function doDispatch(id) {
   const el = $('dspConfirm');
   if (!el || el.value.trim().toLowerCase() !== 'dispatch') { toast('type “dispatch” to confirm', 'err'); return; }
-  const mode = dspMode;
+  const mode = dspMode, model = dspModel, reasoning = dspReasoning;
   try {
-    const r = await action('dispatchCC', { id, confirm: true, mode });
+    const r = await action('dispatchCC', { id, confirm: true, mode, model, reasoning });
     closeModal();
-    toast(`CC drone dispatched on ${id} — ${mode === 'fix' ? 'Fix' : 'Investigate'} mode`, 'ok');
+    const rsnTag = reasoning === 'deep' ? ' · deep think' : reasoning === 'think' ? ' · think' : '';
+    toast(`CC drone dispatched on ${id} — ${mode === 'fix' ? 'Fix' : 'Investigate'} · ${model === 'opus' ? 'Opus' : 'Sonnet'}${rsnTag}`, 'ok');
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);   // status flips to Investigating live
     dspStartPoll(id);          // watch THIS ticket's job; reload+re-render on done/failed
@@ -1014,6 +1090,7 @@ async function doAutoTicket() {
                : (r.skipped ? `All ${r.skipped} gaps already ticketed` : 'No untracked gaps'),
           'ok');
     await load();                 // re-pull the board truth (new tickets now in J.tickets)
+    await loadAutoTickets();      // refresh the minted-gapKey set so the badge reads true
     location.hash = '#/board';    // navigate so John sees them
   } catch (e) { /* action() already toasted the rejection */ }
 }
@@ -1077,6 +1154,7 @@ const RELATIONSHIPS = {
 /* ════════════════════════ APP MAP — relationship graph ════════════════════ */
 async function viewMap(surfaceId) {
   if (!J.flows) J.flows = await api('/api/flows');
+  if (!J.autotickets) await loadAutoTickets();
   if (surfaceId) return renderSurfaceFlow(surfaceId);   // ← UNCHANGED: per-surface detail
   const f = J.flows, v = $('view'); v.className = 'view maxw';
   const totalGaps = (f.surfaces || []).reduce((n, s) => n + (s.counts ? s.counts.gaps : 0), 0);
@@ -2175,6 +2253,235 @@ function rmFocusLane(id) {
   setTimeout(() => el.classList.remove('rm-flash'), 900);
 }
 
+/* ════════════════════════ RECOMMEND (Jarvis: what to ship next) ══════════
+ * Jarvis proactively ranks every NON-shipped ticket by LEVERAGE — a weighted
+ * blend of severity, age, readiness, surface-criticality and link/blast. It then
+ * surfaces (a) anything Confirmed Live as "ship it now", and (b) the top ~8 to
+ * pick up next, each with the WHY (the factors that ranked it) + quick actions.
+ *
+ * Pure read model: scoreTicket() is deterministic from a ticket's own fields, so
+ * the ranking is explainable — every points line traces back to a named factor.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+// ── scoring weights ──────────────────────────────────────────────────────────
+// Each factor returns a 0..1 "intensity", multiplied by its WEIGHT (the max points
+// that factor can contribute). Total max ≈ 100. Tuned so SEVERITY and READINESS
+// dominate (what + how-ready), AGE and SURFACE modulate (how-urgent + how-much-it-
+// -touches-money), and BLAST is a tie-breaker (how-many-things-hang-off-it).
+const REC_WEIGHTS = {
+  severity: 34,   // P0 vs P2 — the single biggest lever. What's actually critical.
+  readiness: 28,  // how close to landing. ConfirmedLive = "ship now"; Open = needs John.
+  age:       16,  // open-staleness. Older untouched tickets rot — nudge them up.
+  surface:   14,  // cash-surface criticality. Money surfaces outrank cosmetic ones.
+  blast:      8,  // link count / blast radius. More dependents = clear it first.
+};
+
+// SEVERITY intensity — P0 critical, P1 high, P2 normal.
+const REC_SEV = { P0: 1.0, P1: 0.6, P2: 0.28 };
+
+// READINESS intensity — how far along the earned-state machine a ticket is.
+// ConfirmedLive tops it: the fix is PROVEN live, it just needs the ship gesture
+// ("ship it now"). Aligned/Investigating are in CC's hands (in flight). Open/
+// Discussing still need John's judgment, which is itself high-leverage attention.
+const REC_READY = {
+  ConfirmedLive: 1.0,    // proven live → ship it now
+  Investigating: 0.62,   // CC is on it
+  Aligned:       0.70,   // handed off, freshest in-flight intent
+  Discussing:    0.55,   // needs John — a decision unblocks it
+  Open:          0.50,   // needs John — untriaged
+};
+
+// SURFACE criticality — the cash surfaces touch money, so a bug there is felt
+// daily and directly. These outrank cosmetic/meta surfaces. Keyed by group id.
+const REC_CASH = new Set(['savings', 'bills', 'debts', 'plan', 'dashboard']);
+const REC_SURFACE = g => REC_CASH.has(g) ? 1.0
+  : (g === 'analysis' || g === 'ai') ? 0.55      // money-adjacent (reads/explains cash)
+  : 0.32;                                          // settings / nav / planning / other
+
+// AGE intensity — days a ticket has been open, saturating at ~21 days so a single
+// ancient ticket can't run away with the ranking. Newer = lower; week-old = high.
+function recAgeIntensity(openedIso) {
+  if (!openedIso) return 0.3;
+  const days = Math.max(0, (Date.now() - new Date(openedIso)) / 86400000);
+  return Math.min(1, days / 21);                   // 0d→0, 21d+→1, linear between
+}
+
+// BLAST intensity — number of links/dependents, saturating at 4. A ticket other
+// tickets hang off is worth clearing first (it unblocks them).
+function recBlastIntensity(t) {
+  const n = (t.links || []).length;
+  return Math.min(1, n / 4);
+}
+
+// Score one ticket. Returns { total, factors:[{key,label,pts,why}] } so the view
+// can show BOTH the number and the human "why". factors are sorted by pts desc.
+function scoreTicket(t) {
+  const st = t.state || {};
+  const cash = REC_CASH.has(t.group);
+  const f = [
+    { key: 'severity', label: 'Severity',
+      i: REC_SEV[t.severity] != null ? REC_SEV[t.severity] : 0.4,
+      why: t.severity === 'P0' ? 'P0 · critical' : t.severity === 'P1' ? 'P1 · high' : 'P2 · normal' },
+    { key: 'readiness', label: 'Readiness',
+      i: REC_READY[st.status] != null ? REC_READY[st.status] : 0.4,
+      why: st.status === 'ConfirmedLive' ? 'verified live — ship it'
+         : st.status === 'Aligned' ? 'aligned — handed to CC'
+         : st.status === 'Investigating' ? 'CC investigating'
+         : 'needs your judgment' },
+    { key: 'surface', label: 'Surface',
+      i: REC_SURFACE(t.group),
+      why: cash ? 'cash surface (' + niceSurface(t.group) + ')' : niceSurface(t.group) + ' surface' },
+    { key: 'age', label: 'Age',
+      i: recAgeIntensity(st.opened),
+      why: 'open ' + ago(st.opened) },
+    { key: 'blast', label: 'Blast',
+      i: recBlastIntensity(t),
+      why: (t.links || []).length
+        ? (t.links.length + ' link' + (t.links.length === 1 ? '' : 's') + ' hang off it')
+        : 'no links' },
+  ];
+  let total = 0;
+  const factors = f.map(x => {
+    const pts = Math.round(x.i * REC_WEIGHTS[x.key]);
+    total += pts;
+    return { key: x.key, label: x.label, pts, why: x.why };
+  }).sort((a, b) => b.pts - a.pts);
+  return { total, factors };
+}
+
+// The top reasons line — the 2-3 factors that ranked it, in plain English.
+// Always leads with severity if P0/P1, then the next-strongest non-trivial factors.
+function recWhy(scored) {
+  // keep factors that actually contributed meaningfully (>= 4 pts), max 3
+  const top = scored.factors.filter(x => x.pts >= 4).slice(0, 3);
+  return (top.length ? top : scored.factors.slice(0, 2)).map(x => x.why).join(' · ');
+}
+
+function viewRecommend() {
+  const v = $('view'); v.className = 'view maxw';
+  const ts = J.tickets || [];
+
+  // score every NON-shipped ticket; rank by leverage (ties → severity, then fresher)
+  const ranked = ts
+    .filter(t => t.state && t.state.status !== 'Shipped')
+    .map(t => ({ t, s: scoreTicket(t) }))
+    .sort((a, b) =>
+      (b.s.total - a.s.total) ||
+      (SEVRANK[a.t.severity] - SEVRANK[b.t.severity]) ||
+      (new Date(b.t.state.lastActivity || 0) - new Date(a.t.state.lastActivity || 0)));
+
+  const shipReady = ranked.filter(x => x.t.state.status === 'ConfirmedLive');
+  // "next" = everything that still needs work (exclude the ship-ready callout dupes)
+  const next = ranked.filter(x => x.t.state.status !== 'ConfirmedLive').slice(0, 8);
+  const top = ranked.length ? ranked[0] : null;
+  const maxScore = ranked.length ? ranked[0].s.total : 1;
+
+  // Jarvis-voice opener — adapts to what's actually on the board.
+  const voice = !ranked.length
+    ? `Everything's shipped — there's nothing for me to recommend right now. Clean board.`
+    : shipReady.length
+      ? `Here's where I'd put your attention next. ${shipReady.length} fix${shipReady.length === 1 ? ' is' : 'es are'} verified live and ready to ship — I'd clear ${shipReady.length === 1 ? 'it' : 'those'} first, then work down the ranked list.`
+      : `Here's where I'd put your attention next. Nothing's ship-ready yet, so the highest-leverage move is ${top.t.state.status === 'Open' || top.t.state.status === 'Discussing' ? 'a decision from you on ' + top.t.id : 'pushing ' + top.t.id + ' forward'}.`;
+
+  // ── Ship-Ready Now callout ──────────────────────────────────────────────
+  const shipReadyBlock = shipReady.length ? `
+    <section class="rec-shipready">
+      <div class="rec-sr-head">
+        <span class="rec-sr-ic" aria-hidden="true">✓</span>
+        <div>
+          <h2 class="rec-sr-title">Ship-Ready Now</h2>
+          <p class="rec-sr-sub">Verified live in the running app — these earned Confirmed Live. Ship them.</p>
+        </div>
+        <span class="rec-sr-count">${shipReady.length}</span>
+      </div>
+      <div class="rec-sr-list">
+        ${shipReady.map(x => recShipRow(x.t, x.s)).join('')}
+      </div>
+    </section>` : '';
+
+  // ── Recommended Next ranked list ────────────────────────────────────────
+  const nextBlock = `
+    <section class="rec-next">
+      <div class="rec-next-head">
+        <div>
+          <h2 class="rec-next-title">Recommended Next</h2>
+          <p class="rec-next-sub">Ranked by leverage — severity, readiness, age, how much it touches money, and what hangs off it.</p>
+        </div>
+        <span class="rec-next-count">${next.length}</span>
+      </div>
+      <div class="rec-list">
+        ${next.length
+          ? next.map((x, i) => recRow(x.t, x.s, i + 1, maxScore)).join('')
+          : `<div class="rec-empty"><span class="rec-empty-dot" aria-hidden="true"></span>Nothing queued — the ship-ready list above is the whole picture.</div>`}
+      </div>
+    </section>`;
+
+  v.innerHTML = `
+    <header class="rec-head">
+      <div>
+        <h1>Jarvis Recommends</h1>
+        <p class="subtitle">What I'd ship next — every open ticket ranked by leverage, with the reasoning shown.</p>
+      </div>
+      <a class="rec-head-link" href="#/roadmap">Open Roadmap →</a>
+    </header>
+
+    <div class="rec-voice">
+      <span class="rec-voice-av" aria-hidden="true">Jv</span>
+      <p class="rec-voice-txt">${esc(voice)}</p>
+    </div>
+
+    ${shipReadyBlock}
+    ${nextBlock}`;
+}
+
+// Ship-ready row — green, "ship it now" framing. Whole row → ticket.
+function recShipRow(t, scored) {
+  return `<div class="rec-sr-row" role="button" tabindex="0"
+      onclick="location.hash='#/ticket/${t.id}'"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash='#/ticket/${t.id}'}">
+    <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+    <span class="rec-sr-t">${esc(t.title)}</span>
+    <span class="rec-sr-surface">${esc(niceSurface(t.group || t.surface))}</span>
+    <span class="rec-sr-id">${t.id}</span>
+    <span class="rec-sr-go" aria-hidden="true">Ship →</span>
+  </div>`;
+}
+
+// Recommended row — rank chip · title · WHY line · score · quick actions.
+// score is shown as both the number and a leverage bar (relative to the top score).
+function recRow(t, scored, rank, maxScore) {
+  const st = t.state || {};
+  const pct = Math.max(6, Math.round(scored.total / Math.max(1, maxScore) * 100));
+  const aligned = st.status === 'Aligned' || st.status === 'Investigating';
+  const needsJohn = st.status === 'Open' || st.status === 'Discussing';
+  return `<div class="rec-row ${sevCls(t.severity)}" role="button" tabindex="0"
+      onclick="location.hash='#/ticket/${t.id}'"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash='#/ticket/${t.id}'}">
+    <span class="rec-rank">${rank}</span>
+    <div class="rec-body">
+      <div class="rec-rowtop">
+        <span class="rec-t">${esc(t.title)}</span>
+        <span class="pill sm s-${st.status}">${STATUS_LABEL[st.status]}</span>
+      </div>
+      <div class="rec-meta">
+        <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+        <span class="rec-why">${esc(recWhy(scored))}</span>
+        <span class="rec-id">${t.id}</span>
+      </div>
+    </div>
+    <div class="rec-scorewrap" title="Leverage score ${scored.total} / ${maxScore}">
+      <div class="rec-score-n">${scored.total}</div>
+      <div class="rec-score-l">leverage</div>
+      <div class="rec-score-track"><div class="rec-score-fill" style="width:${pct}%"></div></div>
+    </div>
+    <div class="rec-actions" onclick="event.stopPropagation()">
+      <a class="rec-act" href="#/ticket/${t.id}">Open →</a>
+      ${aligned ? `<span class="rec-dispatch-hint" title="Aligned — handed to CC. Open the ticket to view the handoff or dispatch a drone.">▶ Dispatch-ready</span>` : ''}
+      ${needsJohn ? `<span class="rec-needs-hint" title="Open or discussing — a decision from you unblocks it.">Needs you</span>` : ''}
+    </div>
+  </div>`;
+}
+
 /* ════════════════════════ COMMAND DECK ══════════════════════════════════
  * Agent Library + Prompt Library. One route (#/command), two tabs.
  * - Walk Drone DEPLOYS for real: action('runWalk',{group}) then polls
@@ -2830,6 +3137,7 @@ const CP_VIEWS = [
   { title: 'Prompts',   hash: '#/command/prompts',  icon: '⌨', kw: 'prompt library templates mission' },
   { title: 'Knowledge', hash: '#/knowledge',        icon: '▣', kw: 'docs security invariants feature map rules reference' },
   { title: 'Roadmap',   hash: '#/roadmap',          icon: '◈', kw: 'plan releases bundles future' },
+  { title: 'Recommends', hash: '#/recommend', icon: '✦', kw: 'jarvis recommend next ship leverage priority what should i do attention' },
   { title: 'Calendar',  hash: '#/calendar',         icon: '▦', kw: 'month dates due target schedule' },
   { title: 'Planning',  hash: '#/planning',         icon: '◈', kw: 'roadmap features candidates releases' },
 ];
@@ -3141,11 +3449,22 @@ function route() {
   else if (r === 'planning') viewPlanning();
   else if (r === 'insights') viewInsights();
   else if (r === 'roadmap') viewRoadmap();
+  else if (r === 'recommend') viewRecommend();
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
   renderTopbarStatus();
   window.scrollTo(0, 0);
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
+// Escape closes the shared ticket-style modal (Deploy / Create / Delete / Align / Dispatch /
+// prompt forms). Bails when the ⌘K palette owns the keypress (it has its own #cpScrim + Esc),
+// and only acts when the #scrim is actually open — so it can't fire spuriously.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (CP && CP.open) return;                                   // palette owns Esc when it's open
+  if (!$('scrim').classList.contains('on')) return;            // no ticket modal is up
+  e.preventDefault();
+  closeModal();
+});
 window.addEventListener('hashchange', route);
 (async function boot() { await load(); renderTopbarStatus(); if (!location.hash) location.hash = '#/overview'; route(); setupPalette(); dspBootPoll(); })();

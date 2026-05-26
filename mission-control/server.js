@@ -328,7 +328,7 @@ const ACTIONS = {
   //     (--permission-mode plan). 'fix' mode (acceptEdits) is opt-in from the confirm modal.
   // id is pinned to ^SLY-\d+$ like every ticket action; the handoff path is jail()'d; the only
   // thing that varies is plan-vs-fix, which maps to a fixed pair of (directive, permission-mode).
-  dispatchCC: ({ id, confirm, mode }) => {
+  dispatchCC: ({ id, confirm, mode, model, reasoning }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
     if (confirm !== true) return { ok: false, reason: 'dispatch needs confirm:true' };
     if (ccJobs[id] && ccJobs[id].status === 'running') return { ok: false, reason: 'a drone is already on ' + id };
@@ -339,19 +339,41 @@ const ACTIONS = {
     catch { throw new Error('No handoff yet — align the ticket first.'); }
 
     const m = mode === 'fix' ? 'fix' : 'plan';   // default SAFE = plan (investigate only)
-    const directive = m === 'fix'
+
+    // NEW knobs — ALLOWLISTED, never raw. Each maps to a FIXED flag/string; unknown → safe default.
+    //   model     ∈ {sonnet, opus}  → --model <model>          (default sonnet — fast & cheap)
+    //   reasoning ∈ {off, think, deep} → fixed directive suffix (Claude Code triggers extended
+    //              reasoning on prompt keywords; there is NO --reasoning flag, so we append text)
+    const mdl = model === 'opus' ? 'opus' : 'sonnet';        // default SAFE/cheap = sonnet
+    const rsn = ['off', 'think', 'deep'].includes(reasoning) ? reasoning : 'off';   // default off
+    const REASON_SUFFIX = {
+      off:   '',
+      think: ' Think carefully, step by step, before answering.',
+      deep:  ' Ultrathink — reason deeply and consider edge cases before acting.',
+    };
+    // Cost cap RISES for the heavier model but stays a HARD cap (opus → $3, sonnet → $1.5).
+    const budget = mdl === 'opus' ? '3' : '1.5';
+
+    const directive = (m === 'fix'
       ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. NEVER run git push or deploy. End with a concise RESULT section: what you found, what you changed (files), and the evidence.'
-      : 'You are a CC drone dispatched by Jarvis on ' + id + '. INVESTIGATE ONLY — read + analyse, propose the precise fix with file:line + evidence. Do NOT edit files. End with a concise RESULT section.';
+      : 'You are a CC drone dispatched by Jarvis on ' + id + '. INVESTIGATE ONLY — read + analyse, propose the precise fix with file:line + evidence. Do NOT edit files. End with a concise RESULT section.')
+      + REASON_SUFFIX[rsn];
     const prompt = handoff + '\n\n---\n' + directive;
 
     const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';
-    const args = ['-p', '--output-format', 'json', '--model', 'sonnet', '--max-turns', '40', '--max-budget-usd', '1.5', '--permission-mode', (m === 'fix' ? 'acceptEdits' : 'plan'), '--disallowedTools', 'Bash(git push:*)', 'Bash(git push)'];
+    const args = ['-p', '--output-format', 'json', '--model', mdl, '--max-turns', '40', '--max-budget-usd', budget, '--permission-mode', (m === 'fix' ? 'acceptEdits' : 'plan'), '--disallowedTools', 'Bash(git push:*)', 'Bash(git push)'];
 
     // Spawn WITHOUT a shell (no shell-injection surface); feed the prompt via STDIN.
-    const child = spawn(claudeBin, args, { cwd: REPO });
+    // P0 WINDOWS FIX: a shell-less spawn of a `.cmd` throws EINVAL on win32 (Node refuses to
+    // launch a batch file without a shell). Launch the batch via cmd.exe /c instead — still
+    // shell:false (no shell-metachar interpolation of OUR args), args are fixed/validated flags,
+    // and the prompt goes via STDIN, never argv → no injection vector. Non-win32 path unchanged.
+    const child = process.platform === 'win32'
+      ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: REPO })
+      : spawn(claudeBin, args, { cwd: REPO });
     child.stdin.write(prompt); child.stdin.end();
 
-    const job = ccJobs[id] = { status: 'running', mode: m, started: Date.now(), out: '' };
+    const job = ccJobs[id] = { status: 'running', mode: m, model: mdl, reasoning: rsn, started: Date.now(), out: '' };
     child.stdout.on('data', d => job.out += d);
     child.stderr.on('data', d => job.out += d);
 
@@ -366,7 +388,7 @@ const ACTIONS = {
       const st = readState();
       const t = st[id];
       if (t) {
-        t.thread.push({ author: 'cc', text: '**CC drone — ' + m + ' mode**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
+        t.thread.push({ author: 'cc', text: '**CC drone — ' + m + ' mode · ' + mdl + (rsn !== 'off' ? ' · ' + rsn + '-think' : '') + '**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
         t.lastActivity = new Date().toISOString();
         writeState(st);
       }
@@ -383,7 +405,7 @@ const ACTIONS = {
       writeState(st0);
     }
 
-    return { ok: true, dispatched: id, mode: m };
+    return { ok: true, dispatched: id, mode: m, model: mdl, reasoning: rsn, budget };
   },
 
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
@@ -705,6 +727,13 @@ const server = http.createServer((req, res) => {
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
+    // Read-only: the already-auto-ticketed gapKeys (keys of auto-tickets.json, the server's
+    // dedupe map gapKey→ticketId). Returns ONLY the keys so the client can subtract them from
+    // the untracked-gap count (true badge after a run). jail()'d; missing file → [] (first run).
+    if (p === '/api/autotickets') {
+      try { const d = JSON.parse(fs.readFileSync(jail(path.join('mission-control', 'auto-tickets.json')), 'utf8')) || {}; return send(res, 200, { keys: Object.keys(d) }); }
+      catch (e) { return send(res, 200, { keys: [] }); }
+    }
     if (p === '/api/history') {
       let events = [], snapshots = [];
       try {                                                                       // history.jsonl — last 500 events, newest LAST (chronological)
@@ -733,7 +762,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/walkspecs')   return send(res, 200, { specs: listWalkSpecs() });
     if (p === '/api/walkspec')    { try { return send(res, 200, { name: url.searchParams.get('name'), content: fs.readFileSync(jail(path.join('docs','walk-and-judge','specs', path.basename(url.searchParams.get('name')||''))), 'utf8') }, ); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/walklog')     return send(res, 200, { lines: walkLog, running: !!walkChild });
-    if (p === '/api/ccjobs')      return send(res, 200, Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, { status: v.status, mode: v.mode, started: v.started, exit: v.exit }])));
+    if (p === '/api/ccjobs')      return send(res, 200, Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, { status: v.status, mode: v.mode, model: v.model, reasoning: v.reasoning, started: v.started, exit: v.exit }])));
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
       if (!READS[key]) return send(res, 400, { error: 'not an allowlisted read: ' + key });
@@ -771,7 +800,7 @@ server.listen(PORT, HOST, () => {
   console.log('  token:  ' + TOKEN + '   (auto-injected into the page)');
   console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
-  console.log('  dispatch: CC drone (claude headless) — confirm-gated, no-push, cost-capped $1.50/40-turn, plan-default');
+  console.log('  dispatch: CC drone (claude headless) — confirm-gated, no-push, cost-capped $1.50 sonnet / $3 opus, 40-turn, plan-default');
   console.log('  history:' + (snap.skipped ? ' ' + snap.skipped : snap.ok ? ' snapshot ' + snap.date + ' (' + snap.total + ' tickets)' : ' snapshot failed: ' + snap.error));
   console.log('  stop:   Ctrl-C\n');
 });
