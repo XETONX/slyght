@@ -175,3 +175,12 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .gaplink{font-weight:700}
 .plainbox{background:var(--card2);border-radius:10px;padding:18px 22px;margin-top:22px}
 .plainbox .pb{font-size:16px;line-height:1.75;color:var(--text)}
+
+/* ── App Map — hub-and-spokes overview ──────────────────────────────────── */
+.hubwrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:12px}
+#hub{display:block;max-height:620px;margin:0 auto}
+.hubnode text{pointer-events:none}
+.hubnode:hover circle{filter:brightness(.96)}
+.hublegend{display:flex;gap:20px;align-items:center;font-size:13px;color:var(--muted);padding:0 6px}
+.hublegend .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.hublegend .dot.g{background:var(--green)} .hublegend .dot.a{background:var(--amber)} .hublegend .dot.r{background:var(--red)}

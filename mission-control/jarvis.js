@@ -226,15 +226,38 @@ async function viewMap(surfaceId) {
   if (!J.flows) J.flows = await api('/api/flows');
   if (surfaceId) return renderSurfaceFlow(surfaceId);
   const f = J.flows, v = $('view'); v.className = 'view maxw';
+  const totalGaps = (f.surfaces || []).reduce((n, s) => n + (s.counts ? s.counts.gaps : 0), 0);
   v.innerHTML = `
     <h1>App Map</h1>
-    <p class="subtitle">Every surface's complete intended journey — <b>what SHOULD happen</b> beside <b>what IS</b>, with the gap shown in position. ${f.coverage.traced || 0}/${f.coverage.total || 0} surfaces traced so far; each gap is a ticket.</p>
-    <div class="maproster">
-      ${(f.roster || []).map(r => `<div class="surfcard ${r.traced ? 'traced' : 'soon'}" ${r.traced ? `onclick="location.hash='#/map/${r.id}'"` : ''}>
-        <div class="sh">${esc(r.name)}</div>
-        <div class="srow">${r.traced ? `<span class="pill sm s-ConfirmedLive">traced</span>${r.ticket ? `<span class="pill sm k-confirmed">${r.ticket}</span>` : ''}` : `<span class="pill sm p-p2">not yet traced</span>`}</div>
-      </div>`).join('')}
+    <p class="subtitle">The whole app from both sides — cash at the hub, every surface a spoke. Colour = how broken (gap count). Click a surface for its <b>what SHOULD happen</b> vs <b>what IS</b> ladder. ${f.coverage.traced || 0}/${f.coverage.total || 0} surfaces traced · ${totalGaps} gaps.</p>
+    <div class="hubwrap"><svg id="hub" viewBox="0 0 940 600" width="100%"></svg></div>
+    <div class="hublegend">
+      <span><i class="dot g"></i> clean</span><span><i class="dot a"></i> 1–2 gaps</span><span><i class="dot r"></i> 3+ gaps</span>
+      <span style="margin-left:auto" class="meta">tap any surface →</span>
     </div>`;
+  drawHub(f);
+}
+function drawHub(f) {
+  const roster = f.roster || [], surf = Object.fromEntries((f.surfaces || []).map(s => [s.id, s]));
+  const cx = 470, cy = 300, R = 205, n = roster.length;
+  const sevColor = g => g >= 3 ? { s: '#e24b4a', b: '#fdeaea' } : g >= 1 ? { s: '#b54708', b: '#fef6e7' } : { s: '#067647', b: '#e7f6ec' };
+  let edges = '', nodes = '';
+  roster.forEach((r, i) => {
+    const a = (-90 + i * (360 / n)) * Math.PI / 180, x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+    const gaps = surf[r.id] && surf[r.id].counts ? surf[r.id].counts.gaps : 0;
+    const c = r.traced ? sevColor(gaps) : { s: '#98a2b3', b: '#f0f1f4' };
+    edges += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="${c.s}" stroke-width="${gaps >= 3 ? 3 : 2}" ${gaps >= 3 ? 'stroke-dasharray="6 5"' : ''} opacity="0.5"/>`;
+    nodes += `<g class="hubnode" onclick="location.hash='#/map/${r.id}'" style="cursor:pointer">
+      <circle cx="${x}" cy="${y}" r="46" fill="${c.b}" stroke="${c.s}" stroke-width="${gaps >= 3 ? 3 : 2}"/>
+      <text x="${x}" y="${y - 4}" text-anchor="middle" fill="#101828" font-size="15" font-weight="600">${esc(r.name.split(' ')[0])}</text>
+      ${r.traced ? `<text x="${x}" y="${y + 15}" text-anchor="middle" fill="${c.s}" font-size="12" font-weight="700">${gaps} gap${gaps === 1 ? '' : 's'}</text>` : `<text x="${x}" y="${y + 15}" text-anchor="middle" fill="#98a2b3" font-size="11">untraced</text>`}
+      ${r.ticket ? `<text x="${x}" y="${y + 32}" text-anchor="middle" fill="#667085" font-size="10">${r.ticket}</text>` : ''}
+    </g>`;
+  });
+  $('hub').innerHTML = edges + nodes
+    + `<g><circle cx="${cx}" cy="${cy}" r="58" fill="#0d2818" stroke="#067647" stroke-width="2.5"/>`
+    + `<text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">cash</text>`
+    + `<text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#5dcaa5" font-size="13">the hub</text></g>`;
 }
 async function renderSurfaceFlow(id) {
   const s = (J.flows.surfaces || []).find(x => x.id === id), v = $('view');
