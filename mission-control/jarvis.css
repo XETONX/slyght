@@ -194,3 +194,15 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .ovbar .pill{min-width:96px;text-align:center;justify-content:center}
 .bartrack{flex:1;height:8px;background:var(--card2);border-radius:5px;overflow:hidden}
 .barfill{height:100%;background:var(--blue);border-radius:5px;transition:width .4s}
+
+/* ── App Map front/back toggle + now-vs-after ───────────────────────────── */
+.facetoggle{display:inline-flex;gap:4px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:4px;margin:6px 0 18px}
+.ftab{font-size:14px;font-weight:500;padding:8px 16px;border-radius:7px;border:none;background:transparent;color:var(--muted)}
+.ftab.on{background:var(--card);color:var(--head);box-shadow:0 1px 3px rgba(16,24,40,.08);font-weight:600}
+.nowafter{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.na-col{}
+.na-h{font-size:13px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid}
+.na-h.now{color:var(--red);border-color:var(--red-bg)} .na-h.after{color:var(--green);border-color:var(--green-bg)}
+.shots{display:flex;gap:10px;flex-wrap:wrap}
+.shot{max-height:480px;width:auto;max-width:100%;border:1px solid var(--border2);border-radius:10px;background:#000}
+.aftercard{background:var(--green-bg);border:1px solid #a6e9c0;border-radius:10px;padding:16px 18px;font-size:15px;line-height:1.7;color:#1a1d24}

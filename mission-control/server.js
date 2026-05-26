@@ -319,6 +319,13 @@ const server = http.createServer((req, res) => {
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
+    if (p === '/api/shot') {  // serve a walk screenshot for the App Map "front" view (path-jailed to the latest walk dir)
+      const rel = url.searchParams.get('f') || '';
+      if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+\.png$/i.test(rel)) return send(res, 400, { error: 'bad shot path' });
+      const w = latestWalk(); if (!w) return send(res, 404, { error: 'no walk' });
+      try { const png = fs.readFileSync(jail(path.join('tests', 'walker-out', w.dir, rel))); res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); return res.end(png); }
+      catch (e) { return send(res, 404, { error: e.message }); }
+    }
     if (p === '/api/gitstatus') {  // read-only git info for the Deploy view (fixed args, no shell)
       const run = (a) => { try { return require('child_process').execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
       return send(res, 200, {

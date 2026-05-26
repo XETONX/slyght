@@ -6,7 +6,7 @@
  * ==========================================================================*/
 'use strict';
 const TOKEN = window.MC_TOKEN;
-const J = { tickets: [], filter: { surface: '', severity: '', type: '' }, flows: null };
+const J = { tickets: [], filter: { surface: '', severity: '', type: '' }, flows: null, walk: null, mapFace: 'back', mapSurface: null };
 const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
 
@@ -306,21 +306,51 @@ function drawHub(f) {
     + `<text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="#fff" font-size="18" font-weight="700">cash</text>`
     + `<text x="${cx}" y="${cy + 16}" text-anchor="middle" fill="#5dcaa5" font-size="13">the hub</text></g>`;
 }
+const SURF_FLOW = { savings: 'darwin-A-quicklog', bills: 'bills-mark-paid', plan: 'plan-lock', ai: 'ai-provenance', dashboard: 'log-transaction' };
 async function renderSurfaceFlow(id) {
   const s = (J.flows.surfaces || []).find(x => x.id === id), v = $('view');
   if (!s) { v.innerHTML = `<a class="backlink" href="#/map">‹ App Map</a><div class="empty">Not traced yet.</div>`; return; }
-  const gap = s.steps.find(x => x.is === 'gap' || x.is === 'broken'), harm = s.steps.find(x => x.is === 'fires-anyway' || x.is === 'dead');
+  if (J.mapSurface !== id) { J.mapFace = 'back'; J.mapSurface = id; }   // reset to Flow on a fresh surface
+  const face = J.mapFace || 'back';
   v.innerHTML = `
     <a class="backlink" href="#/map">‹ App Map</a>
     <div class="card">
       <h1>${esc(s.name)}</h1>
       <p class="summary">${esc(s.summary)} ${s.ticket ? `· <a href="#/ticket/${s.ticket}">${s.ticket}</a>` : ''}</p>
-      <div class="ladhead"><div>What should happen</div><div>What happens now</div></div>
-      ${s.steps.map(ladderRow).join('')}
-      <div class="plainbox"><div class="label">The whole thing, plain</div>
-        <div class="pb">This is a ${s.steps.length}-step journey.${gap ? ` Step ${gap.n} — <b>${esc(gap.title)}</b> — is the break (${gap.is === 'gap' ? 'a missing rung' : 'a broken rung'}).` : ''}${harm ? ` Because of it, <b>${esc(harm.title)}</b> ${harm.is === 'fires-anyway' ? 'fires anyway — that\'s the loss' : 'is never reached'}.` : ''} The fix is the rung — tracked as ${s.ticket ? `<a href="#/ticket/${s.ticket}">${s.ticket}</a>` : 'a ticket'}.</div></div>
+      <div class="facetoggle">
+        <button class="ftab ${face === 'back' ? 'on' : ''}" onclick="setFace('${id}','back')">Flow — how it's wired</button>
+        <button class="ftab ${face === 'front' ? 'on' : ''}" onclick="setFace('${id}','front')">Screen — now vs after fix</button>
+      </div>
+      <div id="faceBody"></div>
+    </div>`;
+  if (face === 'front') renderFront(s); else renderBack(s);
+}
+function renderBack(s) {
+  const gap = s.steps.find(x => x.is === 'gap' || x.is === 'broken'), harm = s.steps.find(x => x.is === 'fires-anyway' || x.is === 'dead');
+  $('faceBody').innerHTML = `
+    <div class="ladhead"><div>What should happen</div><div>What happens now</div></div>
+    ${s.steps.map(ladderRow).join('')}
+    <div class="plainbox"><div class="label">The whole thing, plain</div>
+      <div class="pb">This is a ${s.steps.length}-step journey.${gap ? ` Step ${gap.n} — <b>${esc(gap.title)}</b> — is the break (${gap.is === 'gap' ? 'a missing rung' : 'a broken rung'}).` : ''}${harm ? ` Because of it, <b>${esc(harm.title)}</b> ${harm.is === 'fires-anyway' ? 'fires anyway — that\'s the loss' : 'is never reached'}.` : ''} The fix is the rung — tracked as ${s.ticket ? `<a href="#/ticket/${s.ticket}">${s.ticket}</a>` : 'a ticket'}.</div></div>`;
+}
+async function renderFront(s) {
+  const flow = SURF_FLOW[s.id];
+  if (!flow) { $('faceBody').innerHTML = `<div class="empty">No live screen capture for this surface yet — it has no wired walk flow. The <b>Flow</b> view shows how it's wired; once a walk covers it, the real screen lands here.</div>`; return; }
+  if (!J.walk) J.walk = await api('/api/walk-latest');
+  const fl = ((J.walk.walk && J.walk.walk.flows) || []).find(f => f.flow === flow);
+  const frames = fl ? (fl.steps || []).filter(st => st.screenshot).map(st => st.screenshot).slice(-3) : [];
+  const gap = s.steps.find(x => x.is === 'gap' || x.is === 'broken');
+  $('faceBody').innerHTML = `
+    <div class="nowafter">
+      <div class="na-col"><div class="na-h now">Now — the real screen today</div>
+        <div class="shots">${frames.length ? frames.map(f => `<img class="shot" src="/api/shot?f=${encodeURIComponent(f)}" alt="${esc(f)}" loading="lazy">`).join('') : '<div class="empty">no frames captured for this flow</div>'}</div>
+        <div class="meta">real capture · walk ${esc(J.walk.dir || '')} · flow ${esc(flow)}</div></div>
+      <div class="na-col"><div class="na-h after">After fix</div>
+        <div class="aftercard">${gap ? `<b>${esc(gap.title)}</b> — the rung the fix adds.<br><br>${esc(gap.plain)}` : 'This surface is healthy — no fix needed.'}${s.ticket ? `<br><br>Tracked as <a href="#/ticket/${s.ticket}">${s.ticket}</a> — the fix detail + walk evidence live on the ticket.` : ''}</div>
+        <div class="meta">annotation — the real after-fix screen lands when ${s.ticket || 'the fix'} ships</div></div>
     </div>`;
 }
+function setFace(id, f) { J.mapFace = f; renderSurfaceFlow(id); }
 function ladderRow(st) {
   const LBL = { ok: '✓ works', gap: '✗ Missing — the gap', dead: '— never reached', 'fires-anyway': '⚠ fires anyway — the harm', broken: '✗ wrong rung' };
   const cls = st.is === 'ok' ? 'ok' : st.is === 'dead' ? 'dead' : st.is === 'fires-anyway' ? 'fire' : 'gap';
