@@ -33,4 +33,8 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(port, () => console.log('serving ' + root + ' on http://localhost:' + port));
+// Bind to 127.0.0.1 (localhost-only), NEVER 0.0.0.0. Without an explicit host
+// Node listens on all interfaces, exposing this static file server (which serves
+// the whole repo) to anything on the local network. Hard-coding the loopback
+// address closes that — same rule the mission-control server is built to.
+}).listen(port, '127.0.0.1', () => console.log('serving ' + root + ' on http://127.0.0.1:' + port + ' (localhost-only)'));
