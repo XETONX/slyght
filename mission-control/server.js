@@ -193,6 +193,91 @@ const ACTIONS = {
     t.lastActivity = new Date().toISOString(); writeState(st);
     return { ok: true, status: to, assignee: t.assignee };
   },
+  // EARNED ConfirmedLive — the brief's defining promise. NO free-text evidence param:
+  // the proof is READ from the latest walk on disk. Look up the ticket's surface → the
+  // walker flow(s) that exercise it → the latest walk dir → and ONLY transition if a
+  // REAL, RECENT, PASSING walk for that scope exists, recording the actual walk as proof.
+  // The state-machine edge is still enforced (ConfirmedLive only from Investigating /
+  // Shipped per TRANSITIONS) — same guarantee as setStatus.
+  confirmFromWalk: ({ id }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+
+    // STATE MACHINE — unchanged. ConfirmedLive must be a legal edge from the current state.
+    if (!(TRANSITIONS[t.status] || []).includes('ConfirmedLive'))
+      throw new Error(`illegal transition ${t.status} → ConfirmedLive`);
+
+    // Resolve the ticket's surface → walk scope. Prefer the live spine value (surface),
+    // fall back to group; both are read-only registry-validated, never paths.
+    const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id);
+    const surface = (ticket && (ticket.surface || ticket.group)) || null;
+    const scope = walkScopeForSurface(surface);
+    const niceScope = surface || '(no surface)';
+
+    if (!scope.group || !scope.flows.length)
+      return { ok: false, reason: `no runnable walk flow maps to ${niceScope} — this surface isn't walkable yet, so ConfirmedLive can't be earned from a walk` };
+
+    // Read the LATEST walk on disk (the same source /api/walk-latest + the App-Map use).
+    const w = latestWalk();
+    if (!w || !w.walk)
+      return { ok: false, reason: `no walk exists yet for ${niceScope} — run the Walk Drone first` };
+
+    // Freshness — a stale capture can't vouch for current code.
+    const walkedAt = w.walk.generatedAt ? new Date(w.walk.generatedAt) : null;
+    const ageDays = walkedAt ? (Date.now() - walkedAt.getTime()) / 86400000 : Infinity;
+    if (!walkedAt || isNaN(ageDays))
+      return { ok: false, reason: `latest walk has no timestamp — re-run the Walk Drone for ${niceScope}` };
+    if (ageDays > WALK_MAX_AGE_DAYS)
+      return { ok: false, reason: `latest walk is ${Math.round(ageDays)} days old (stale > ${WALK_MAX_AGE_DAYS}d) — re-run the Walk Drone for ${niceScope}` };
+
+    // Verdict per flow in this surface's scope. At least one flow must be PRESENT and PASSING.
+    const verdicts = scope.flows.map(f => flowVerdict(w.walk, f));
+    const passing = verdicts.filter(v => v.found && v.passing);
+    const present = verdicts.filter(v => v.found);
+
+    if (!present.length)
+      return { ok: false, reason: `the latest walk (${w.dir}) didn't cover ${niceScope} — run the Walk Drone for ${niceScope} first` };
+    if (!passing.length)
+      return { ok: false, reason: `the latest walk for ${niceScope} has failing step(s) — fix + re-walk before confirming live (walk ${w.dir})` };
+
+    // ── EARNED. Record the actual walk as proof — id/timestamp/scope + the relevant step
+    //    results — into ticket meta. This is STRUCTURED evidence, not a typed label. ──
+    const proof = {
+      kind: 'walk',
+      walkDir: w.dir,
+      walkedAt: w.walk.generatedAt,
+      scope: scope.group,
+      flows: passing.map(v => ({ flow: v.flow, title: v.title, steps: v.steps })),
+      confirmedAt: new Date().toISOString(),
+    };
+    const from = t.status;
+    t.status = 'ConfirmedLive';
+    t.assignee = assigneeFor('ConfirmedLive');
+    t.evidence = proof;                                   // structured proof (was a free string)
+    logTransition(id, from, 'ConfirmedLive', 'jarvis');   // same audit edge as every transition
+
+    // Proof line into the thread — the human-readable "confirmed by walk …, audit trail" record.
+    const flowLine = passing.map(v => `${v.flow} (${v.steps.length} steps, all clean)`).join(', ');
+    t.thread.push({
+      author: 'jarvis',
+      text: `✓ CONFIRMED LIVE — earned from walk \`${w.dir}\` (${(w.walk.generatedAt || '').slice(0, 16)}), scope **${scope.group}**. Passing flow(s): ${flowLine}. This is walk-attested, not a typed label.`,
+      ts: proof.confirmedAt,
+    });
+    t.lastActivity = proof.confirmedAt;
+    writeState(st);
+
+    // PROPAGATE — same terminal-state propagation setStatus/postResult do: push the
+    // status to the linked canonical record (OPEN-BUGS), reasoning stays on the ticket.
+    const propagated = [];
+    if (ticket && ticket.openBug) {
+      try {
+        ACTIONS.setBugStatus({ bugNum: ticket.openBug, status: `fix confirmed live — Jarvis ${id} (walk ${w.dir}, ${new Date().toISOString().slice(0, 10)})` });
+        propagated.push('OPEN-BUGS #' + ticket.openBug);
+      } catch (e) {}
+    }
+
+    return { ok: true, status: 'ConfirmedLive', assignee: t.assignee, walkDir: w.dir, scope: scope.group, flows: passing.map(v => v.flow), propagated };
+  },
   // THE GATE — John's alignment collates the rich package + writes the handoff CC reads.
   alignHandoff: ({ id, decision }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
@@ -201,7 +286,7 @@ const ACTIONS = {
     if (!['Open', 'Discussing'].includes(t.status)) throw new Error(`can only align from Open/Discussing (now ${t.status})`);
     const abs = jail(path.join('mission-control', 'handoffs', id + '.md'));
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, collate(ticket, t, decision));
+    fs.writeFileSync(abs, collate(ticket, t, decision), 'utf8');
     const from = t.status;                                                                              // ← capture before align (Open or Discussing)
     t.status = 'Aligned'; t.assignee = 'cc';
     logTransition(id, from, 'Aligned', 'john');                                                         // ← THE GATE — log the align edge
@@ -373,22 +458,55 @@ const ACTIONS = {
       : spawn(claudeBin, args, { cwd: REPO });
     child.stdin.write(prompt); child.stdin.end();
 
-    const job = ccJobs[id] = { status: 'running', mode: m, model: mdl, reasoning: rsn, started: Date.now(), out: '' };
-    child.stdout.on('data', d => job.out += d);
-    child.stderr.on('data', d => job.out += d);
+    // UTF-8 FIX: collect raw Buffer chunks and decode ONCE at exit with Buffer.concat
+    // (a chunk boundary inside a multi-byte sequence — e.g. the 3-byte em-dash — must not
+    // be toString()'d per chunk, or each half becomes �). `out` is filled at exit from
+    // these chunks; `_chunks` is the runtime accumulator (never serialised to /api/ccjobs).
+    const job = ccJobs[id] = { status: 'running', mode: m, model: mdl, reasoning: rsn, started: Date.now(), out: '', _chunks: [] };
+    child.stdout.on('data', d => job._chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+    child.stderr.on('data', d => job._chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
 
     child.on('exit', code => {
       job.exit = code;
+      // Decode the WHOLE stream as utf8 in one shot — split multibyte chunks rejoin cleanly.
+      job.out = Buffer.concat(job._chunks).toString('utf8');
+      job._chunks = null;                                  // free the raw buffers
       let resultText = '';
-      try { const j = JSON.parse(job.out); resultText = j.result || j.text || ''; }
+      let costUsd = null, numTurns = null, durationMs = null;   // telemetry — degrade to null
+      try {
+        const j = JSON.parse(job.out);
+        resultText = j.result || j.text || '';
+        // Claude Code headless --output-format json returns these alongside result.
+        // Defensive: any may be absent/null on some exits → stays null (UI shows "—").
+        if (typeof j.total_cost_usd === 'number') costUsd = j.total_cost_usd;
+        if (typeof j.num_turns === 'number') numTurns = j.num_turns;
+        if (typeof j.duration_ms === 'number') durationMs = j.duration_ms;
+      }
       catch (_) { resultText = job.out.slice(-4000); }
       job.result = resultText;
+      job.cost = costUsd;            // number | null
+      job.turns = numTurns;          // number | null
+      job.durationMs = durationMs;   // number | null
       job.status = code === 0 ? 'done' : 'failed';
+
+      // Running spend total (best-effort, jail()'d). job.spend = the post-write ledger total
+      // so /api/ccjobs can expose it without a re-read; null if the ledger write failed.
+      const led = recordSpend(id, costUsd, numTurns, durationMs);
+      job.spend = led ? led.total_usd : null;
+      job.spendCount = led ? led.count : null;
+
+      // Telemetry suffix for the comment header — "· $0.72 · 10 turns · 4.5 min".
+      // Each piece degrades independently: missing cost → "$—", missing turns/dur omitted.
+      const costStr = (costUsd != null) ? '$' + costUsd.toFixed(2) : '$—';
+      const turnStr = (numTurns != null) ? numTurns + ' turn' + (numTurns === 1 ? '' : 's') : null;
+      const minStr  = (durationMs != null) ? (durationMs / 60000).toFixed(1) + ' min' : null;
+      const telem = ' · ' + [costStr, turnStr, minStr].filter(Boolean).join(' · ');
+
       // post the drone's result back INTO the ticket thread (closes the loop)
       const st = readState();
       const t = st[id];
       if (t) {
-        t.thread.push({ author: 'cc', text: '**CC drone — ' + m + ' mode · ' + mdl + (rsn !== 'off' ? ' · ' + rsn + '-think' : '') + '**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
+        t.thread.push({ author: 'cc', text: '**CC drone — ' + m + ' mode · ' + mdl + (rsn !== 'off' ? ' · ' + rsn + '-think' : '') + telem + '**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
         t.lastActivity = new Date().toISOString();
         writeState(st);
       }
@@ -581,6 +699,46 @@ function listWalkSpecs() {
   return fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.endsWith('.md')).sort() : [];
 }
 
+// ── Surface → walk scope. A ticket's surface/group maps to the walker FLOW ids that
+//    exercise it, via the SAME specs.json registry runWalk() validates against. We only
+//    ever look up known group ids; flow ids come from the registry, never from input. ──
+function walkScopeForSurface(surface) {
+  const group = String(surface || '').trim();
+  if (!group) return { group: null, flows: [] };
+  let reg = {};
+  try { reg = JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8')); } catch (_) {}
+  const known = (reg.groups || []).includes(group);
+  const flows = [];
+  (reg.specs || []).forEach(s => {
+    if (s.group === group && s.runnable && Array.isArray(s.flows)) {
+      s.flows.forEach(f => { if (f && !flows.includes(f)) flows.push(f); });
+    }
+  });
+  return { group: known ? group : null, flows };
+}
+
+// ── Is this flow's latest walk a real PASS? A flow PASSES when it ran (has steps) and
+//    NO step carries an error (error===null on every step). We return the per-step
+//    summary too, so the proof recorded on the ticket is the actual evidence, not a label.
+//    `lands` is surfaced per step so the proof shows that writes actually fired.
+function flowVerdict(walk, flowId) {
+  const f = (walk.flows || []).find(x => x.flow === flowId);
+  if (!f) return { flow: flowId, found: false, passing: false, steps: [] };
+  const steps = (f.steps || []).map(s => ({
+    n: s.n, id: s.id, action: s.action,
+    lands: (s.lands || []).map(l => l.type),
+    error: s.error || null,
+  }));
+  const ran = steps.length > 0;
+  const errored = steps.some(s => s.error);
+  return { flow: flowId, title: f.title, found: true, passing: ran && !errored, steps };
+}
+
+// Freshness gate — a walk older than this is "stale" and cannot earn ConfirmedLive.
+// 14 days: long enough to align→investigate→confirm without re-walking; short enough
+// that a months-old capture can't silently vouch for current code. Tunable.
+const WALK_MAX_AGE_DAYS = 14;
+
 // ── Jarvis tickets: spine (generated) + mutable state, merged for the API. ────
 const TICKETS = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'tickets.json'), 'utf8')).tickets || []; } catch { return []; } };
 const MANUAL = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'tickets-manual.json'), 'utf8')).tickets || []; } catch { return []; } };
@@ -659,6 +817,43 @@ then POST BACK into ${ticket.id} (what you found / fixed / evidence). Run the fu
 // never break the user-facing action it rides inside, so it swallows its own errors.
 const HISTORY_FILE   = path.join('mission-control', 'history.jsonl');
 const SNAPSHOTS_FILE = path.join('mission-control', 'snapshots.json');
+// Running CC-dispatch spend ledger. RUNTIME only (gitignored), path-jailed to ONE
+// fixed file — mirrors history.jsonl/snapshots.json. Records every dispatch's cost
+// so the UI can show a running total. Best-effort: a ledger write must NEVER break
+// the dispatch it rides inside (it swallows its own errors, like logTransition).
+const SPEND_FILE = path.join('mission-control', 'cc-spend.json');
+
+// Read the spend ledger (jail()'d, missing/corrupt → empty zeroed ledger).
+function readSpend() {
+  try {
+    const s = JSON.parse(fs.readFileSync(jail(SPEND_FILE), 'utf8'));
+    if (s && typeof s === 'object') {
+      return { total_usd: +s.total_usd || 0, count: +s.count || 0, jobs: Array.isArray(s.jobs) ? s.jobs : [] };
+    }
+  } catch (_) {}
+  return { total_usd: 0, count: 0, jobs: [] };
+}
+
+// Append ONE dispatch's cost to the running total. cost may be a number or null/undefined
+// (Claude omits total_cost_usd on some exits) — null contributes 0 to the total but is
+// still recorded on the job row so the UI can render "—". Caps the jobs[] tail at 200 so
+// the file can't grow without bound. Best-effort; never throws into the exit handler.
+function recordSpend(id, cost, turns, durationMs) {
+  try {
+    const led = readSpend();
+    const c = (typeof cost === 'number' && isFinite(cost)) ? cost : null;
+    led.total_usd = +(led.total_usd + (c || 0)).toFixed(6);   // null → adds 0
+    led.count += 1;
+    led.jobs.push({ id, cost: c, turns: (typeof turns === 'number' ? turns : null),
+                    durationMs: (typeof durationMs === 'number' ? durationMs : null),
+                    ts: new Date().toISOString() });
+    if (led.jobs.length > 200) led.jobs = led.jobs.slice(-200);
+    const abs = jail(SPEND_FILE);                              // RULE 3 — fixed file, jailed
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, JSON.stringify(led, null, 2));       // string → utf8 by default
+    return led;
+  } catch (_) { return null; }   // ledger is best-effort — never break the dispatch
+}
 
 function logTransition(ticketId, from, to, by) {
   if (!from || !to || from === to) return;            // only real edges
@@ -751,18 +946,92 @@ const server = http.createServer((req, res) => {
       catch (e) { return send(res, 404, { error: e.message }); }
     }
     if (p === '/api/gitstatus') {  // read-only git info for the Deploy view (fixed args, no shell)
-      const run = (a) => { try { return require('child_process').execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
+      const cp = require('child_process');
+      // run(): trimmed stdout, '' on any failure (unchanged behaviour for the 3 legacy fields).
+      const run = (a) => { try { return cp.execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
+      // runOK(): same call, but reports success so we can DISTINGUISH "0 ahead" from "no upstream".
+      const runOK = (a) => { try { return { ok: true,  out: cp.execFileSync('git', a, { cwd: REPO }).toString().trim() }; }
+                             catch (e) { return { ok: false, out: '' }; } };
+
+      const branch = run(['branch', '--show-current']);
+      const dirty  = run(['status', '--porcelain']).split('\n').filter(Boolean);
+
+      // Upstream detection — the load-bearing distinction. `@{u}` resolves ONLY when the
+      // branch tracks a remote; otherwise git exits non-zero and we know there's no origin.
+      const up        = runOK(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+      const hasUpstream = up.ok && !!up.out;
+      const upstream    = hasUpstream ? up.out : null;          // e.g. "origin/mission-control"
+
+      // Unpushed commits + count — only meaningful when an upstream exists. With no upstream
+      // we report ahead:0 + hasUpstream:false, and the client renders the "no remote" state
+      // (NOT "nothing to push").
+      let unpushed = [], ahead = 0;
+      if (hasUpstream) {
+        const log = runOK(['log', '@{u}..HEAD', '--oneline']);
+        unpushed = log.ok ? log.out.split('\n').filter(Boolean) : [];
+        ahead = unpushed.length;
+      }
+
       return send(res, 200, {
-        branch: run(['branch', '--show-current']),
-        dirty: run(['status', '--porcelain']).split('\n').filter(Boolean),
-        unpushed: run(['log', '@{u}..HEAD', '--oneline']).split('\n').filter(Boolean),
+        branch,
+        dirty,                       // legacy field — array of porcelain lines
+        unpushed,                    // legacy field — array of "<sha> <subject>" (empty when no upstream)
+        // NEW — read-only, no write surface:
+        hasUpstream,                 // bool — does this branch track a remote?
+        upstream,                    // string|null — the tracking ref name
+        ahead,                       // int — commits ahead of origin (trust only when hasUpstream)
+        clean: dirty.length === 0,   // convenience: working tree clean?
+      });
+    }
+    if (p === '/api/walk-confirm') {
+      const id = url.searchParams.get('id') || '';
+      if (!/^SLY-\d+$/.test(id)) return send(res, 400, { error: 'bad ticket id' });
+      const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id);
+      const surface = (ticket && (ticket.surface || ticket.group)) || null;
+      const scope = walkScopeForSurface(surface);
+      const cur = (readState()[id] || {}).status || null;
+      const canEdge = !!(cur && (TRANSITIONS[cur] || []).includes('ConfirmedLive'));
+      if (!scope.group || !scope.flows.length)
+        return send(res, 200, { id, surface, scope: scope.group, canEdge, status: cur, eligible: false, reason: 'surface not walkable', flows: [] });
+      const w = latestWalk();
+      if (!w || !w.walk)
+        return send(res, 200, { id, surface, scope: scope.group, canEdge, status: cur, eligible: false, reason: 'no walk yet', flows: [] });
+      const walkedAt = w.walk.generatedAt ? new Date(w.walk.generatedAt) : null;
+      const ageDays = walkedAt && !isNaN(walkedAt) ? (Date.now() - walkedAt.getTime()) / 86400000 : Infinity;
+      const fresh = ageDays <= WALK_MAX_AGE_DAYS;
+      const verdicts = scope.flows.map(f => flowVerdict(w.walk, f));
+      const anyPresent = verdicts.some(v => v.found);
+      const anyPassing = verdicts.some(v => v.found && v.passing);
+      const eligible = canEdge && fresh && anyPassing;
+      return send(res, 200, {
+        id, surface, scope: scope.group, canEdge, status: cur,
+        walkDir: w.dir, walkedAt: w.walk.generatedAt, ageDays: Math.round(ageDays), fresh,
+        anyPresent, anyPassing, eligible,
+        reason: !canEdge ? `can only confirm-live from Investigating/Shipped (now ${cur})`
+              : !anyPresent ? 'latest walk did not cover this surface'
+              : !fresh ? `latest walk is ${Math.round(ageDays)}d old (stale)`
+              : !anyPassing ? 'latest walk has failing steps'
+              : 'ready',
+        flows: verdicts,
       });
     }
     if (p === '/api/walk-latest') { const w = latestWalk(); return send(res, 200, w || { dir: null, walk: null }); }
     if (p === '/api/walkspecs')   return send(res, 200, { specs: listWalkSpecs() });
     if (p === '/api/walkspec')    { try { return send(res, 200, { name: url.searchParams.get('name'), content: fs.readFileSync(jail(path.join('docs','walk-and-judge','specs', path.basename(url.searchParams.get('name')||''))), 'utf8') }, ); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/walklog')     return send(res, 200, { lines: walkLog, running: !!walkChild });
-    if (p === '/api/ccjobs')      return send(res, 200, Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, { status: v.status, mode: v.mode, model: v.model, reasoning: v.reasoning, started: v.started, exit: v.exit }])));
+    if (p === '/api/ccjobs') {
+      const jobs = Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, {
+        status: v.status, mode: v.mode, model: v.model, reasoning: v.reasoning,
+        started: v.started, exit: v.exit,
+        cost: (v.cost != null ? v.cost : null),            // number | null (per-job total_cost_usd)
+        turns: (v.turns != null ? v.turns : null),         // number | null
+        durationMs: (v.durationMs != null ? v.durationMs : null),
+      }]));
+      // Running spend ledger (persisted across restarts) — UI shows "CC spend: $X.XX (N runs)".
+      // Read fresh from the jail()'d file so a server restart still reports the lifetime total.
+      const led = readSpend();
+      return send(res, 200, { jobs, spend: { total_usd: led.total_usd, count: led.count } });
+    }
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
       if (!READS[key]) return send(res, 400, { error: 'not an allowlisted read: ' + key });
@@ -801,6 +1070,8 @@ server.listen(PORT, HOST, () => {
   console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
   console.log('  dispatch: CC drone (claude headless) — confirm-gated, no-push, cost-capped $1.50 sonnet / $3 opus, 40-turn, plan-default');
+  const _sp = readSpend();
+  console.log('  cc-spend: $' + _sp.total_usd.toFixed(2) + ' lifetime (' + _sp.count + ' run' + (_sp.count === 1 ? '' : 's') + ')');
   console.log('  history:' + (snap.skipped ? ' ' + snap.skipped : snap.ok ? ' snapshot ' + snap.date + ' (' + snap.total + ' tickets)' : ' snapshot failed: ' + snap.error));
   console.log('  stop:   Ctrl-C\n');
 });

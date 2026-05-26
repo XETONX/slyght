@@ -6,7 +6,7 @@
  * ==========================================================================*/
 'use strict';
 const TOKEN = window.MC_TOKEN;
-const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, autotickets: null, walk: null, mapFace: 'back', mapSurface: null, cal: null };
+const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, autotickets: null, walk: null, mapFace: 'back', mapSurface: null, cal: null, dep: null, ccspend: null };
 const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
 
@@ -546,13 +546,15 @@ function rerenderBoardKeepSearch() {
 // evidence; on rejection action() toasts the error and we reload to snap back to truth.
 async function changeStatus(id, to, sel) {
   const t = get(id); if (!t || to === t.state.status) { if (sel) sel.value = t ? t.state.status : to; return; }
-  let evidence;
+  // ConfirmedLive is EARNED, never typed. Snap the dropdown back to truth and open the
+  // Confirm-From-Walk flow: it shows the actual walk evidence (or why there is none) and
+  // confirms via confirmFromWalk({id}) — the server reads the walk, no free-text param.
   if (to === 'ConfirmedLive') {
-    evidence = (window.prompt('Confirmed live is EARNED — paste the walk evidence (what proves it landed in the running app):', '') || '').trim();
-    if (!evidence) { toast('Confirmed live needs evidence — not just a label', 'err'); if (sel) sel.value = t.state.status; return; }
+    if (sel) sel.value = t.state.status;     // don't optimistically move; the walk earns it
+    return confirmFromWalk(id);
   }
   try {
-    await action('setStatus', { id, to, evidence });
+    await action('setStatus', { id, to });   // NB: no `evidence` — only ConfirmedLive carried it, and it's gone
     toast(`${t.id} → ${STATUS_LABEL[to]}`, 'ok');
   } catch (e) { /* action() already toasted the rejection */ }
   await load();   // re-pull truth either way
@@ -664,7 +666,8 @@ function viewTicket(id) {
           <div class="sh">Activity</div>
           <div class="kv"><span class="k">Opened</span><span class="v">${when(st.opened)}</span></div>
           ${st.alignment ? `<div class="kv"><span class="k">Aligned</span><span class="v">${when(st.alignment.ts)}</span></div>` : ''}
-          ${ev ? `<div class="kv"><span class="k">Walk-confirmed</span><span class="v">Yes</span></div>` : ''}
+          ${ev ? `<div class="kv"><span class="k">Found by walk</span><span class="v">${esc(ev.walkDir || 'Yes')}</span></div>` : ''}
+          ${st.evidence && st.evidence.kind === 'walk' ? `<div class="kv cw-confirmed"><span class="k">Confirmed-live by</span><span class="v">walk <code>${esc(st.evidence.walkDir)}</code> · ${when(st.evidence.walkedAt)}</span></div>` : ''}
           <div class="kv"><span class="k">Last activity</span><span class="v">${when(st.lastActivity)}</span></div>
         </div>
         <div class="siderail danger-rail">
@@ -784,6 +787,103 @@ async function doAlign(id) {
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);  // refresh the card behind the modal → status flips to Aligned live
   } catch (e) {}
 }
+/* ════════════════════ CONFIRM FROM WALK (earned ConfirmedLive) ═══════════════
+ * The brief's defining promise: ConfirmedLive is EARNED from walk evidence, not a
+ * typed label. This replaces the old window.prompt. It previews the latest walk for
+ * the ticket's surface (via /api/walk-confirm — read-only), and only offers a confirm
+ * button when a real, recent, passing walk exists. The button calls the allowlisted
+ * confirmFromWalk({id}); the SERVER re-reads the walk and earns the transition — the
+ * client passes NO evidence. ─────────────────────────────────────────────────────── */
+async function confirmFromWalk(id) {
+  const t = get(id);
+  if (!t) { toast('ticket not found', 'err'); return; }
+  const surface = t.surface || t.group || null;
+  const niceS = niceSurface(surface);
+
+  let r;
+  try { r = await api('/api/walk-confirm?id=' + encodeURIComponent(id)); }
+  catch (e) { toast('could not read walk status', 'err'); return; }
+  if (r.error) { toast(r.error, 'err'); return; }
+
+  const head = `<h2>Confirm ${esc(id)} live — from walk evidence</h2>
+    <p>ConfirmedLive is <b>earned</b>, never typed. Jarvis checks the latest Walk Drone
+       run for the <b>${esc(niceS)}</b> surface — only a real, recent, <b>passing</b> walk
+       can confirm this ticket live.</p>`;
+
+  // ── NOT eligible — explain why + offer the Walk Drone shortcut, no confirm button. ──
+  if (!r.eligible) {
+    const why =
+      !r.scope                 ? `<b>${esc(niceS)}</b> isn't a walkable surface yet — there's no walk flow that exercises it, so ConfirmedLive can't be earned from a walk here.`
+      : !r.canEdge             ? `This ticket is <b>${esc(STATUS_LABEL[r.status] || r.status)}</b>. ConfirmedLive can only be earned from <b>Investigating</b> or <b>Shipped</b> — dispatch/investigate it first.`
+      : r.walkDir == null      ? `<b>No walk yet</b> for ${esc(niceS)}. Deploy the Walk Drone for <b>${esc(niceS)}</b> first, then come back and confirm.`
+      : !r.anyPresent          ? `The latest walk (<code>${esc(r.walkDir)}</code>) didn't cover ${esc(niceS)}. Run the Walk Drone scoped to <b>${esc(niceS)}</b>.`
+      : !r.fresh               ? `The latest ${esc(niceS)} walk is <b>${esc(String(r.ageDays))} days old</b> — too stale to vouch for current code. Re-run the Walk Drone.`
+      : !r.anyPassing          ? `The latest ${esc(niceS)} walk has <b>failing step(s)</b>. Fix the issue and re-walk before confirming live.`
+      : 'Not eligible yet.';
+    modal(`${head}
+      <div class="cw-empty">
+        <div class="cw-empty-ic" aria-hidden="true">◎</div>
+        <div class="cw-empty-msg">${why}</div>
+      </div>
+      ${renderWalkVerdicts(r.flows)}
+      <div class="btns">
+        ${r.scope && r.canEdge ? `<button class="btn primary" onclick="goWalkDrone('${esc(surface || '')}')"><span aria-hidden="true">◎</span> Deploy the Walk Drone</button>` : ''}
+        <button class="btn" onclick="closeModal()">Close</button>
+      </div>`);
+    return;
+  }
+
+  // ── Eligible — show the passing walk as proof + the confirm button. ──
+  modal(`${head}
+    <div class="cw-proof">
+      <div class="cw-proof-h"><span class="cw-tick" aria-hidden="true">✓</span> Passing walk found</div>
+      <div class="cw-kv"><span class="k">Walk</span><span class="v"><code>${esc(r.walkDir)}</code></span></div>
+      <div class="cw-kv"><span class="k">Walked</span><span class="v">${when(r.walkedAt)} · ${esc(String(r.ageDays))} day(s) ago</span></div>
+      <div class="cw-kv"><span class="k">Scope</span><span class="v">${esc(niceS)}</span></div>
+    </div>
+    ${renderWalkVerdicts(r.flows)}
+    <p class="cw-note">Confirming records this walk (id, timestamp, scope, step results) as the proof on the ticket — walk-attested, not a label.</p>
+    <div class="btns">
+      <button class="btn green" onclick="doConfirmWalk('${esc(id)}')"><span aria-hidden="true">&#10003;</span> Confirm From Walk</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+
+// Render the per-flow walk verdicts (proof detail — clean vs errored steps).
+function renderWalkVerdicts(flows) {
+  if (!flows || !flows.length) return '';
+  return `<div class="cw-flows">${flows.map(v => {
+    if (!v.found) return `<div class="cw-flow miss"><span class="cw-flow-dot">○</span> <b>${esc(v.flow)}</b> — not in the latest walk</div>`;
+    const bad = (v.steps || []).filter(s => s.error);
+    const cls = v.passing ? 'pass' : 'fail';
+    const dot = v.passing ? '●' : '✕';
+    const tail = v.passing
+      ? `<span class="cw-flow-tail">${(v.steps || []).length} step(s), all clean</span>`
+      : `<span class="cw-flow-tail err">${bad.length} failing step(s)</span>`;
+    return `<div class="cw-flow ${cls}"><span class="cw-flow-dot">${dot}</span> <b>${esc(v.flow)}</b>${v.title ? ` — ${esc(v.title)}` : ''} ${tail}</div>`;
+  }).join('')}</div>`;
+}
+
+// Jump to the Command deck (where the Walk Drone lives) to deploy a walk for this surface.
+// The deck already validates the scope server-side; we just route there + hint via toast.
+function goWalkDrone(surface) {
+  closeModal();
+  location.hash = '#/command';
+  toast(surface ? `Deploy the Walk Drone scoped to ${niceSurface(surface)}` : 'Deploy the Walk Drone for this surface', 'ok');
+}
+
+// The earn — call confirmFromWalk({id}). NO evidence param. On success: toast + refresh
+// the ticket (the server has posted the proof comment + flipped the status).
+async function doConfirmWalk(id) {
+  try {
+    const r = await action('confirmFromWalk', { id });   // server reads the walk; no free text sent
+    closeModal();
+    toast(`${id} → Confirmed live (walk ${r.walkDir})`, 'ok');
+  } catch (e) { /* action() already toasted the server's reason (no/stale/failing walk) */ return; }
+  await load();
+  route();            // re-render board / ticket detail with the new status + proof comment
+}
+
 async function viewHandoff(id) {
   const r = await api('/api/handoff?id=' + id);
   modal(`<h2>Handoff package — ${id}</h2><p>The rich collated payload CC investigates from (vs the summary you read):</p>
@@ -918,8 +1018,10 @@ function dspStartPoll(watchId) {
   if (dspPoll) return;         // single shared poller
   let lastWatchStatus = null;
   dspPoll = setInterval(async () => {
-    let jobs; try { jobs = await api('/api/ccjobs'); } catch (_) { return; }
-    J.ccjobs = jobs || {};
+    let resp; try { resp = await api('/api/ccjobs'); } catch (_) { return; }
+    const jobs = (resp && resp.jobs) || {};
+    J.ccjobs = jobs;
+    J.ccspend = (resp && resp.spend) || J.ccspend || null;   // cache running total for the chip
     dspRenderTopbar();
     // if the watched ticket's drone just finished, reload + re-render so the posted comment shows
     const w = J.dspWatch, wj = w && jobs ? jobs[w] : null;
@@ -943,10 +1045,28 @@ function dspRenderTopbar() {
   const host = $('dspAgents'); if (!host) return;
   const jobs = J.ccjobs || {};
   const running = Object.entries(jobs).filter(([, v]) => v.status === 'running');
-  if (!running.length) { host.innerHTML = ''; return; }
-  const chips = running.slice(0, 4).map(([id, v]) =>
-    `<button type="button" class="dsp-chip" title="${esc(id)} · ${esc(v.mode)} mode — open ticket"
-       onclick="location.hash='#/ticket/${esc(id)}'">${esc(id)}</button>`).join('');
+
+  // Lifetime CC-spend chip — shown whenever there's a recorded total, running or not.
+  // Defensive: missing/null total → "$—"; missing count → 0. Reuses the .sys-stat language.
+  const sp = J.ccspend;
+  const spendChip = (sp && (sp.total_usd != null || sp.count))
+    ? `<span class="sys-sep"></span>` +
+      `<span class="dsp-spend" title="Total spend across all CC dispatches (cc-spend.json)">` +
+        `<span class="dsp-spend-ic" aria-hidden="true">$</span>` +
+        `<b class="dsp-spend-n">${sp.total_usd != null ? sp.total_usd.toFixed(2) : '—'}</b>` +
+        `<span class="dsp-spend-l">CC spend · ${(+sp.count || 0)} run${(+sp.count === 1) ? '' : 's'}</span>` +
+      `</span>`
+    : '';
+
+  if (!running.length) { host.innerHTML = spendChip; return; }   // chip persists at rest
+
+  const chips = running.slice(0, 4).map(([id, v]) => {
+    // per-running-drone chip now carries live cost if Claude has reported it (usually only at exit,
+    // so this is "$—" while running — that's expected; the comment + spend chip show final cost).
+    const c = (v.cost != null) ? ' · $' + v.cost.toFixed(2) : '';
+    return `<button type="button" class="dsp-chip" title="${esc(id)} · ${esc(v.mode)} mode${esc(c)} — open ticket"
+       onclick="location.hash='#/ticket/${esc(id)}'">${esc(id)}</button>`;
+  }).join('');
   const more = running.length > 4 ? `<span class="dsp-chip-more">+${running.length - 4}</span>` : '';
   host.innerHTML =
     `<span class="sys-sep"></span>` +
@@ -955,16 +1075,19 @@ function dspRenderTopbar() {
        <b class="dsp-agents-n">${running.length}</b>
        <span class="dsp-agents-l">Agent${running.length === 1 ? '' : 's'} Running</span>
        <span class="dsp-chips">${chips}${more}</span>
-     </span>`;
+     </span>` +
+    spendChip;
 }
 
 // On boot, do one /api/ccjobs read so a drone started in a previous page-load still shows in the
 // topbar, and resume polling if any are still running. Cheap, read-only, fire-and-forget.
 async function dspBootPoll() {
-  let jobs; try { jobs = await api('/api/ccjobs'); } catch (_) { return; }
-  J.ccjobs = jobs || {};
+  let resp; try { resp = await api('/api/ccjobs'); } catch (_) { return; }
+  const jobs = (resp && resp.jobs) || {};
+  J.ccjobs = jobs;
+  J.ccspend = (resp && resp.spend) || null;
   dspRenderTopbar();
-  if (Object.values(jobs || {}).some(v => v.status === 'running')) dspStartPoll();
+  if (Object.values(jobs).some(v => v.status === 'running')) dspStartPoll();
 }
 
 function newTicket() {
@@ -2574,6 +2697,200 @@ PASS/FAIL phone-verify block (Open · Do · PASS · FAIL).{ticketCtx}`,
 const cmdAgent = id => CMD_AGENTS.find(a => a.id === id);
 const cmdGroupLabel = g => (CMD_WALK_GROUPS.find(x => x[0] === g) || [g, g])[1];
 
+/* ════════════════════════ DEPLOY (the careful last mile) ════════════════════
+ * Surfaces the prod state + the ONE irreversible action (server deploy() → git push,
+ * RULE 6, confirm-gated). Reads /api/gitstatus (now upstream-aware). The push lives
+ * behind a TYPED-confirm modal mirroring Dispatch/Delete: type `deploy` to arm.
+ * Never runs on its own; never auto-fires; this is the only way prod changes go live.
+ * ──────────────────────────────────────────────────────────────────────────── */
+async function viewDeploy() {
+  const v = $('view'); v.className = 'view maxw';
+  v.innerHTML = `
+    <header class="dep-head">
+      <div>
+        <h1>Deploy</h1>
+        <p class="subtitle">The careful last mile — the one irreversible action. This runs
+          <code>git push</code> from your local repo and is the only way prod changes go live.</p>
+      </div>
+      <button class="dep-refresh" type="button" onclick="depRefresh()" title="Re-read git state">
+        <span aria-hidden="true">⟳</span> Refresh
+      </button>
+    </header>
+    <div id="depBody"><div class="dep-loading">Reading git state…</div></div>`;
+  await depLoad();
+}
+
+// Pull /api/gitstatus into J.dep, then paint. Used by the view + the Refresh button +
+// the post-push refresh (same reload+re-render contract as the rest of the app).
+async function depLoad() {
+  try { J.dep = await api('/api/gitstatus'); }
+  catch (e) { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-err">Couldn't read git state — is the server running? <span>${esc(e.message || e)}</span></div>`; return; }
+  depRender();
+}
+async function depRefresh() { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-loading">Re-reading git state…</div>`; await depLoad(); }
+
+function depRender() {
+  const g = J.dep || {};
+  const body = $('depBody'); if (!body) return;
+
+  const branch     = g.branch || '(detached / unknown)';
+  const hasUp      = g.hasUpstream === true;
+  const upstream   = g.upstream || null;
+  const ahead      = hasUp ? (g.ahead || 0) : 0;
+  const dirty      = Array.isArray(g.dirty) ? g.dirty : [];
+  const dirtyN     = dirty.length;
+  const unpushed   = Array.isArray(g.unpushed) ? g.unpushed : [];
+
+  // The three deploy states:
+  //   1. NO UPSTREAM  — branch tracks no remote. CANNOT push with a bare `git push`.
+  //                     Button disabled; explain the branch has never been pushed.
+  //   2. NOTHING AHEAD — upstream exists, 0 commits ahead. Button disabled, "Nothing to push".
+  //   3. READY         — upstream exists, ≥1 commit ahead. Button armed (behind typed confirm).
+  const state = !hasUp ? 'no-upstream' : ahead === 0 ? 'nothing' : 'ready';
+
+  // ── status hero ──
+  const upRow = hasUp
+    ? `<div class="dep-stat"><span class="dep-stat-k">Tracking</span>
+         <span class="dep-stat-v dep-ok">${esc(upstream)}</span></div>`
+    : `<div class="dep-stat dep-stat-warn"><span class="dep-stat-k">Tracking</span>
+         <span class="dep-stat-v dep-warn">No upstream — branch not on a remote</span></div>`;
+
+  const aheadRow = !hasUp
+    ? `<div class="dep-stat"><span class="dep-stat-k">Ahead of origin</span>
+         <span class="dep-stat-v dep-muted">— (no remote)</span></div>`
+    : `<div class="dep-stat"><span class="dep-stat-k">Ahead of origin</span>
+         <span class="dep-stat-v ${ahead ? 'dep-accent' : 'dep-muted'}">${ahead} commit${ahead === 1 ? '' : 's'}</span></div>`;
+
+  const dirtyRow = `<div class="dep-stat"><span class="dep-stat-k">Uncommitted changes</span>
+      <span class="dep-stat-v ${dirtyN ? 'dep-warn' : 'dep-ok'}">${dirtyN ? dirtyN + ' file' + (dirtyN === 1 ? '' : 's') : 'Working tree clean'}</span></div>`;
+
+  // ── unpushed commit list (subjects only — sha stripped for readability) ──
+  const commitList = unpushed.length
+    ? `<div class="dep-commits">
+         <div class="dep-commits-h">${ahead} commit${ahead === 1 ? '' : 's'} waiting to ship</div>
+         <ul class="dep-commitlist">
+           ${unpushed.slice(0, 30).map(line => {
+             const sp = line.indexOf(' ');
+             const sha = sp > 0 ? line.slice(0, sp) : '';
+             const subj = sp > 0 ? line.slice(sp + 1) : line;
+             return `<li><code class="dep-sha">${esc(sha)}</code> <span class="dep-subj">${esc(subj)}</span></li>`;
+           }).join('')}
+           ${unpushed.length > 30 ? `<li class="dep-more">+${unpushed.length - 30} more…</li>` : ''}
+         </ul>
+       </div>`
+    : '';
+
+  // ── dirty file note (count + first few names; informational, NOT a blocker — git push
+  //    only ships committed work, so uncommitted files simply won't go) ──
+  const dirtyNote = dirtyN
+    ? `<div class="dep-dirtynote">
+         <b>${dirtyN} uncommitted file${dirtyN === 1 ? '' : 's'}</b> in the working tree — these
+         <b>won't</b> be pushed (only committed work ships). Commit them first if they should go live.
+         <div class="dep-dirtyfiles">${dirty.slice(0, 8).map(l => `<code>${esc(l)}</code>`).join('')}${dirtyN > 8 ? `<span class="dep-more">+${dirtyN - 8} more</span>` : ''}</div>
+       </div>`
+    : '';
+
+  // ── the push button — armed only in 'ready' ──
+  let pushBtn, hint;
+  if (state === 'no-upstream') {
+    pushBtn = `<button class="dep-push" disabled title="This branch has no remote tracking branch">
+        <span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
+    hint = `<div class="dep-hint dep-hint-warn">Branch <code>${esc(branch)}</code> has no upstream. A bare
+      <code>git push</code> won't know where to go. Set a remote first (e.g.
+      <code>git push -u origin ${esc(branch)}</code> from your terminal), then this button will arm.</div>`;
+  } else if (state === 'nothing') {
+    pushBtn = `<button class="dep-push" disabled title="Nothing to push">
+        <span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
+    hint = `<div class="dep-hint">Nothing to push — <code>${esc(branch)}</code> is level with
+      <code>${esc(upstream)}</code>. Prod is up to date.</div>`;
+  } else {
+    pushBtn = `<button class="dep-push dep-push-ready" onclick="depAskPush()">
+        <span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
+    hint = `<div class="dep-hint">Pushes <b>${ahead} commit${ahead === 1 ? '' : 's'}</b> to
+      <code>${esc(upstream)}</code>. You'll type <code>deploy</code> to confirm — nothing fires until then.</div>`;
+  }
+
+  body.innerHTML = `
+    <div class="dep-grid">
+      <div class="dep-main">
+        <div class="dep-card dep-state-${state}">
+          <div class="dep-card-h">
+            <span class="dep-branch-ic" aria-hidden="true">⎇</span>
+            <div>
+              <div class="dep-branch">${esc(branch)}</div>
+              <div class="dep-branch-sub">${hasUp ? 'tracking ' + esc(upstream) : 'local only — no remote'}</div>
+            </div>
+            <span class="dep-state-badge dep-badge-${state}">${state === 'ready' ? 'Ready to push' : state === 'nothing' ? 'Up to date' : 'No remote'}</span>
+          </div>
+          <div class="dep-stats">${upRow}${aheadRow}${dirtyRow}</div>
+        </div>
+        ${commitList}
+        ${dirtyNote}
+      </div>
+      <aside class="dep-side">
+        <div class="dep-pushcard">
+          ${pushBtn}
+          ${hint}
+        </div>
+        <div class="dep-note">
+          <div class="dep-note-h">What this does</div>
+          <p>Runs <code>git push</code> from the local repo. This is the <b>only</b> way prod changes
+             go live (GitHub Pages deploys from the pushed branch). It never fires on its own —
+             every push is a manual, typed-confirm action.</p>
+        </div>
+      </aside>
+    </div>`;
+}
+
+/* ── the typed-confirm modal (mirrors Dispatch's dsp-confirm: type `deploy` to arm) ── */
+function depAskPush() {
+  const g = J.dep || {};
+  const ahead = g.ahead || 0, upstream = g.upstream || 'origin';
+  if (!g.hasUpstream || ahead === 0) { toast('Nothing to push', 'err'); return; }   // guard — never arm without an upstream + commits
+  modal(`<h2>Push ${ahead} commit${ahead === 1 ? '' : 's'} to GitHub</h2>
+    <p>This runs <b>git push</b> from your local repo to <code>${esc(upstream)}</code> — the
+       <b>one irreversible action</b>. It's the only way prod changes go live. Review the commit
+       list behind this dialog first; nothing fires until you type the word below.</p>
+    <div class="dep-confirm">
+      <div class="dep-confirm-label">Type <code>deploy</code> to confirm</div>
+      <input id="depConfirm" placeholder="deploy" autocomplete="off"
+        oninput="document.getElementById('depGo').disabled = (this.value.trim().toLowerCase() !== 'deploy')">
+    </div>
+    <div class="btns">
+      <button class="btn green" id="depGo" disabled onclick="doDeploy()">
+        <span aria-hidden="true">⬆</span> Push to GitHub
+      </button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`);
+  setTimeout(() => { const el = $('depConfirm'); if (el) el.focus(); }, 30);
+}
+
+/* ── doDeploy — the server call. confirm:true (RULE 6) AND the typed gate above. ── */
+async function doDeploy() {
+  const el = $('depConfirm');
+  if (!el || el.value.trim().toLowerCase() !== 'deploy') { toast('type “deploy” to confirm', 'err'); return; }
+  const go = $('depGo'); if (go) { go.disabled = true; go.innerHTML = '<span aria-hidden="true">⬆</span> Pushing…'; }
+  try {
+    const r = await action('deploy', { confirm: true });   // server: spawn('git', ['push']) → {ok, code, output}
+    closeModal();
+    if (r.ok) {
+      toast('Pushed to GitHub — prod is live', 'ok');
+    } else {
+      // surface the git output so a rejected/failed push is visible (not silently swallowed)
+      modal(`<h2>Push failed</h2>
+        <p>git push exited with code <b>${esc(String(r.code))}</b>. Output:</p>
+        <pre>${esc(r.output || r.reason || '(no output)')}</pre>
+        <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
+      toast('Push failed — see details', 'err');
+    }
+  } catch (e) {
+    // action() already toasted the rejection (bad token / confirm / origin)
+    if (go) { go.disabled = false; go.innerHTML = '<span aria-hidden="true">⬆</span> Push to GitHub'; }
+    return;
+  }
+  await depLoad();   // re-read git state → ahead should now be 0, button disables itself
+}
+
 /* ── view: Agent Library (default Command tab) ──────────────────────────── */
 function viewCommand() {
   const v = $('view'); v.className = 'view maxw';
@@ -3134,6 +3451,7 @@ const CP_VIEWS = [
   { title: 'App Map',   hash: '#/map',              icon: '◇', kw: 'surfaces graph relationship flows wiring' },
   { title: 'Insights',  hash: '#/insights',         icon: '◑', kw: 'analytics charts trends metrics' },
   { title: 'Command',   hash: '#/command',          icon: '⌁', kw: 'agents deploy walk drone deck' },
+  { title: 'Deploy',    hash: '#/deploy',           icon: '⬆', kw: 'deploy push git ship prod release origin go live last mile' },
   { title: 'Prompts',   hash: '#/command/prompts',  icon: '⌨', kw: 'prompt library templates mission' },
   { title: 'Knowledge', hash: '#/knowledge',        icon: '▣', kw: 'docs security invariants feature map rules reference' },
   { title: 'Roadmap',   hash: '#/roadmap',          icon: '◈', kw: 'plan releases bundles future' },
@@ -3450,6 +3768,7 @@ function route() {
   else if (r === 'insights') viewInsights();
   else if (r === 'roadmap') viewRoadmap();
   else if (r === 'recommend') viewRecommend();
+  else if (r === 'deploy') viewDeploy();
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
   renderTopbarStatus();

@@ -79,3 +79,6 @@ mission-control/prompts.json
 # Jarvis time-series history (runtime, append-only — see metrics-catalog Appendix A)
 mission-control/history.jsonl
 mission-control/snapshots.json
+
+# Jarvis CC-dispatch spend ledger (runtime, append-only — total_usd + per-job cost)
+mission-control/cc-spend.json

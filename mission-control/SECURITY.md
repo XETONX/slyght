@@ -67,9 +67,10 @@ It exists only while you're actively using it.
 ### 6. Deploy needs an explicit confirm
 
 `deploy()` (the one irreversible action — `git push`) refuses unless it receives
-`confirm: true`, and the UI gates it behind a typed confirmation ("type **ship**"). Both
-gates must agree before a push fires. Same discipline as the push/cache deploys: prove
-the mechanism, then trust it with the irreversible action — built last.
+`confirm: true`, and the UI gates it behind a typed confirmation (type `deploy`). Both
+gates must agree before a push fires: the server's `confirm:true` gate AND the UI's
+typed-`deploy` gate. Same discipline as the push/cache deploys: prove the mechanism,
+then trust it with the irreversible action — built last.
 
 *Protects against:* an accidental or unintended push to main.
 
@@ -114,8 +115,8 @@ server. What changed, and how it stays inside the rules:
   no raw user text reaches the shell (run-by-group honesty).
 - **New read endpoints (GET, read-only, no token — same class as the existing reads):**
   `/api/cases` (cases.json), `/api/specs` (specs.json), `/api/notes` (case-notes.json),
-  `/api/gitstatus` (read-only `git branch`/`status`/`log` via `execFileSync`, fixed args,
-  **no shell** — informs the Deploy view's "what ships"; cannot mutate anything).
+  `/api/gitstatus` (read-only `git branch`/`status`/`log`/`rev-parse` via `execFileSync`,
+  fixed args, **no shell** — informs the Deploy view's "what ships"; cannot mutate anything).
 - **Static assets `/app.js` + `/app.css`** served from the mission-control dir (fixed
   filenames, not a user path).
 - **Anti-clobber + OPEN-BUGS append-only/surgical rules stand unchanged.** `cases.json`
@@ -134,6 +135,7 @@ writer/exec; no new outbound network. The reskin (jarvis.css/jarvis.js) is prese
 |---|---|---|
 | `addComment` | `ticket-state.json` | author validated (john\|jarvis\|cc), ticket id `^SLY-\d+$`, 8k cap. First John comment earns Open→Discussing. |
 | `setStatus` | `ticket-state.json` | **validated against the state machine** — only legal transitions; `ConfirmedLive` REQUIRES walk evidence (cannot be a typed label). |
+| `confirmFromWalk` | `ticket-state.json` (+ composes `setBugStatus`) | EARNED `ConfirmedLive` — takes only `{id}`, reads NO free-text evidence. Same state-machine edge check as `setStatus` (ConfirmedLive only from Investigating/Shipped); reads the latest walk on disk (jail()'d via `latestWalk()`) for the ticket's surface scope (`specs.json` registry, never a path) and transitions ONLY if a real, recent (≤14d), passing walk exists — recording the actual walk as structured proof. |
 | `alignHandoff` | `handoffs/SLY-N.md` + `ticket-state.json` | the gate — collates finding + thread + alignment + links + age into a path-jailed handoff file CC reads; only from Open/Discussing. |
 | `createTicket` | `tickets-manual.json` | manual store (regen never clobbers it); type validated (bug\|feature\|task). |
 | `postResult` | `ticket-state.json` (+ composes `setBugStatus`) | CC posts back; on a terminal state PROPAGATES the linked OPEN-BUGS status (surgical — via the existing allowlisted setBugStatus, prose preserved). The rich reasoning stays on the ticket. |
