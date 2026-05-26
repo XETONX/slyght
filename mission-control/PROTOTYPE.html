@@ -1,0 +1,77 @@
+<!-- slyght mission control — VISUAL PROTOTYPE (Opus, chat-built) -->
+<!-- This is the look/interaction spec for the cockpit. The walk runner is a -->
+<!-- scripted demo (chat widgets can't drive Playwright). Match the aesthetic: -->
+<!-- dark mono terminal, Space Mono, the money-flow board feel. Real version -->
+<!-- reads walk.json / OPEN-BUGS.md / FEATURE-MAP.md and writes via the server. -->
+<div style="font-family:'Space Mono',monospace;background:#0a0c10;border-radius:16px;overflow:hidden;border:1px solid #1c2230;max-width:680px;margin:0 auto;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid #1c2230;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div id="statusDot" style="width:8px;height:8px;border-radius:50%;background:#5b6472;transition:all .3s;"></div>
+      <span style="font-size:13px;color:#e8eaed;letter-spacing:0.5px;">slyght · mission control</span>
+    </div>
+    <span id="statusTxt" style="font-size:11px;color:#5b6472;">idle · prototype</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#1c2230;">
+    <div style="background:#0a0c10;padding:10px 14px;"><div style="font-size:9px;color:#5b6472;letter-spacing:1px;">FRAMED</div><div style="font-size:19px;color:#e8eaed;margin-top:1px;">202</div></div>
+    <div style="background:#0a0c10;padding:10px 14px;"><div style="font-size:9px;color:#5b6472;letter-spacing:1px;">WALKED</div><div style="font-size:19px;color:#85b7eb;margin-top:1px;"><span id="mWalked">0</span></div></div>
+    <div style="background:#0a0c10;padding:10px 14px;"><div style="font-size:9px;color:#5b6472;letter-spacing:1px;">BROKEN</div><div style="font-size:19px;color:#e24b4a;margin-top:1px;"><span id="mBroken">0</span></div></div>
+    <div style="background:#0a0c10;padding:10px 14px;"><div style="font-size:9px;color:#5b6472;letter-spacing:1px;">PROGRESS</div><div style="font-size:19px;color:#efc84a;margin-top:1px;"><span id="mProg">0</span><span style="font-size:11px;color:#5b6472;">%</span></div></div>
+  </div>
+  <div style="height:3px;background:#11161e;"><div id="progBar" style="height:100%;width:0%;background:#efc84a;transition:width .4s;"></div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#1c2230;">
+    <div style="background:#0a0c10;padding:14px;">
+      <div style="font-size:9px;color:#5b6472;letter-spacing:1px;margin-bottom:8px;">SCREEN MAP</div>
+      <svg width="100%" viewBox="0 0 300 250">
+        <line id="ln-bills" x1="60" y1="55" x2="150" y2="125" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-save" x1="150" y1="125" x2="240" y2="55" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-plan" x1="150" y1="125" x2="240" y2="125" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-debts" x1="150" y1="125" x2="60" y2="125" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-ai" x1="150" y1="125" x2="240" y2="195" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-analysis" x1="150" y1="125" x2="60" y2="195" stroke="#2a3340" stroke-width="1.5"/>
+        <line id="ln-dash" x1="150" y1="125" x2="150" y2="215" stroke="#2a3340" stroke-width="1.5"/>
+        <g><circle id="n-cash" cx="150" cy="125" r="24" fill="#11161e" stroke="#5dcaa5" stroke-width="1.5"/><text x="150" y="122" text-anchor="middle" fill="#e8eaed" style="font-size:9px;font-family:monospace;">cash</text><text x="150" y="133" text-anchor="middle" fill="#5dcaa5" style="font-size:8px;font-family:monospace;">hub</text></g>
+        <g><circle id="n-bills" cx="60" cy="55" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="60" y="58" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">bills</text></g>
+        <g><circle id="n-save" cx="240" cy="55" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="240" y="58" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">save</text></g>
+        <g><circle id="n-plan" cx="240" cy="125" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="240" y="128" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">plan</text></g>
+        <g><circle id="n-debts" cx="60" cy="125" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="60" y="128" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">debts</text></g>
+        <g><circle id="n-ai" cx="240" cy="195" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="240" y="198" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">AI</text></g>
+        <g><circle id="n-analysis" cx="60" cy="195" r="19" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="60" y="198" text-anchor="middle" fill="#888780" style="font-size:7px;font-family:monospace;">analysis</text></g>
+        <g><circle id="n-dash" cx="150" cy="215" r="17" fill="#11161e" stroke="#2a3340" stroke-width="1.5"/><text x="150" y="218" text-anchor="middle" fill="#888780" style="font-size:8px;font-family:monospace;">dash</text></g>
+      </svg>
+    </div>
+    <div style="background:#0a0c10;padding:14px;">
+      <div style="font-size:9px;color:#5b6472;letter-spacing:1px;margin-bottom:8px;">WALK FEED</div>
+      <div id="feed" style="height:200px;overflow-y:auto;font-size:10px;line-height:1.7;color:#888780;font-family:monospace;"><div style="color:#5b6472;">// press RUN WALK to begin</div></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;padding:14px 18px;border-top:1px solid #1c2230;border-bottom:1px solid #1c2230;">
+    <button id="runBtn" onclick="runWalk()" style="flex:1;font-family:monospace;font-size:12px;padding:10px;border-radius:8px;border:1px solid #1a3a2c;background:#0d1512;color:#5dcaa5;cursor:pointer;letter-spacing:0.5px;">&#9654; RUN WALK</button>
+    <button onclick="resetWalk()" style="flex:0 0 auto;font-family:monospace;font-size:12px;padding:10px 16px;border-radius:8px;border:1px solid #2a3340;background:#11161e;color:#888780;cursor:pointer;">&#8635;</button>
+  </div>
+  <div style="padding:14px 18px 18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <span style="font-size:9px;color:#5b6472;letter-spacing:1px;">OPEN BUGS · organise + compose deploy</span>
+      <span id="bugCount" style="font-size:9px;color:#5b6472;">0 open</span>
+    </div>
+    <div id="bugList" style="display:flex;flex-direction:column;gap:6px;"><div style="font-size:10px;color:#5b6472;font-family:monospace;padding:8px;">// bugs land here as the walk finds them</div></div>
+  </div>
+</div>
+<script>
+const surfaces=[
+  {id:'bills',label:'bills',verdict:'bad',bug:{sev:1,blast:'every pre-payday bill',title:'Bills undo — key mismatch, $50 stuck paid'}},
+  {id:'save',label:'savings',verdict:'bad',bug:{sev:1,blast:'silent loss',title:'Savings no goal picker — cash leaves, bucket uncredited'}},
+  {id:'plan',label:'plan',verdict:'good'},
+  {id:'debts',label:'debts',verdict:'good'},
+  {id:'ai',label:'AI chat',verdict:'bad',bug:{sev:0,blast:'poisons adviser',title:'AI prompt reads raw balance — $60/day on $0 surplus'}},
+  {id:'analysis',label:'analysis',verdict:'pending'},
+  {id:'dash',label:'dash',verdict:'pending'}
+];
+const SEV=[{t:'P0',c:'#e24b4a'},{t:'P1',c:'#efc84a'}];
+let walked=0,broken=0,bugs=[],running=false;
+function feed(m,c){const f=document.getElementById('feed');const d=document.createElement('div');d.style.color=c||'#888780';d.textContent=m;f.appendChild(d);f.scrollTop=f.scrollHeight;}
+function renderBugs(){bugs.sort((a,b)=>a.sev-b.sev);document.getElementById('bugCount').textContent=bugs.length+' open';if(!bugs.length){document.getElementById('bugList').innerHTML='<div style="font-size:10px;color:#5b6472;font-family:monospace;padding:8px;">// bugs land here as the walk finds them</div>';return;}document.getElementById('bugList').innerHTML=bugs.map((b)=>{const s=SEV[b.sev]||SEV[1];return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;background:#0d1117;border:1px solid #2a1c1c;"><span style="font-size:9px;color:'+s.c+';border:1px solid '+s.c+'44;border-radius:4px;padding:2px 5px;">'+s.t+'</span><span style="font-size:10px;color:#e8eaed;flex:1;line-height:1.4;">'+b.title+'<br><span style="font-size:9px;color:#5b6472;">'+b.blast+'</span></span><button style="font-family:monospace;font-size:9px;padding:5px 9px;border-radius:6px;border:1px solid #2a3340;background:#11161e;color:#85b7eb;cursor:pointer;white-space:nowrap;">compose &#8599;</button></div>';}).join('');}
+function setNode(id,v){const n=document.getElementById('n-'+id),ln=document.getElementById('ln-'+id);const c=v==='bad'?'#e24b4a':v==='good'?'#1d9e75':'#888780';n.setAttribute('stroke',c);n.setAttribute('stroke-width',v==='bad'?'2.5':'2');if(ln){ln.setAttribute('stroke',c);if(v==='bad')ln.setAttribute('stroke-dasharray','5 4');}}
+function runWalk(){if(running)return;resetWalk();running=true;document.getElementById('runBtn').style.opacity='0.5';document.getElementById('statusDot').style.background='#efc84a';document.getElementById('statusTxt').textContent='walking · live';feed('// walk started','#5dcaa5');let i=0;function next(){if(i>=surfaces.length){running=false;document.getElementById('runBtn').style.opacity='1';document.getElementById('statusDot').style.background='#1d9e75';document.getElementById('statusTxt').textContent='walk complete · '+broken+' broken';feed('// walk complete — '+walked+'/7, '+broken+' broken','#5dcaa5');return;}const s=surfaces[i];document.getElementById('n-'+s.id).setAttribute('stroke','#efc84a');feed('→ walking '+s.label+'...','#85b7eb');setTimeout(function(){setNode(s.id,s.verdict);walked++;document.getElementById('mWalked').textContent=walked;document.getElementById('mProg').textContent=Math.round(walked/7*100);document.getElementById('progBar').style.width=Math.round(walked/7*100)+'%';if(s.verdict==='bad'){broken++;document.getElementById('mBroken').textContent=broken;feed('  ✗ '+s.label+' BROKEN — '+s.bug.title,'#e24b4a');bugs.push(s.bug);renderBugs();}else if(s.verdict==='good'){feed('  ✓ '+s.label+' clean','#5dcaa5');}else{feed('  ⊘ '+s.label+' not reached','#5b6472');}i++;setTimeout(next,650);},550);}next();}
+function resetWalk(){walked=0;broken=0;bugs=[];running=false;document.getElementById('mWalked').textContent='0';document.getElementById('mBroken').textContent='0';document.getElementById('mProg').textContent='0';document.getElementById('progBar').style.width='0%';document.getElementById('statusDot').style.background='#5b6472';document.getElementById('statusTxt').textContent='idle · prototype';document.getElementById('runBtn').style.opacity='1';surfaces.forEach(function(s){setNode(s.id,'pending');});document.getElementById('feed').innerHTML='<div style="color:#5b6472;">// press RUN WALK to begin</div>';renderBugs();}
+renderBugs();
+</script>

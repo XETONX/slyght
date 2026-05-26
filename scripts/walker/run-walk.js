@@ -255,8 +255,10 @@ const FLOWS = [
   const results = [];
   for (const flow of FLOWS) {
     if (flow.reseedBefore) await reseed(env.page);
+    console.log('@@FLOW_START ' + flow.id); // Mission Control live tracker hook
     const result = await runFlow(env, flow);
     checkpointFlow(env, result); // LAYER A — resumable per surface
+    console.log('@@FLOW_DONE ' + flow.id);  // → cockpit flips this node ⊘→walked, live
     results.push(result);
   }
   const walk = { generatedAt: new Date().toISOString(), fixture: 'state-snapshot.fake.json (FAKE, pushOnSaveEnabled:false)', frozen: FROZEN_ISO, viewport: VIEWPORT, pageErrors: env.errors, flows: results };
