@@ -111,7 +111,7 @@ export default {
     const corsHeaders = {
       'Access-Control-Allow-Origin': 'https://xetonx.github.io',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Content-Encoding',
     };
 
     if (request.method === 'OPTIONS') {
@@ -186,7 +186,22 @@ export default {
       await ensureMigrated(auth.hash, env);
       const ns = `device:${auth.hash}:`;
       try {
-        const body = await request.json();
+        // Accept gzip-compressed bodies (push-reliability fix 2026-05-26). The
+        // client gzips the ~136KB blob to ~22KB so it fits the browser's 64KB
+        // keepalive cap on the pagehide/background flush. Sniff Content-Encoding
+        // and decompress via the runtime's DecompressionStream (available since
+        // compat_date 2023-08-01; wrangler.toml is 2024-09-23). Backward-
+        // compatible: a non-gzip client still hits request.json(). Malformed
+        // gzip throws inside this try -> existing 400 path. No merge/assign, so
+        // the prototype-pollution posture is unchanged.
+        let body;
+        const enc = (request.headers.get('Content-Encoding') || '').toLowerCase();
+        if (enc.includes('gzip')) {
+          const text = await new Response(request.body.pipeThrough(new DecompressionStream('gzip'))).text();
+          body = JSON.parse(text);
+        } else {
+          body = await request.json();
+        }
         if (!body || typeof body !== 'object' || !body.S || !Array.isArray(body.BILLS)) {
           return new Response(JSON.stringify({ error: 'expected {S, BILLS}' }), {
             status: 400, headers: corsHeaders,
