@@ -57,11 +57,19 @@ Each entry: **concept · what it means in slyght-terms · the catch that proved 
 **What it means.** When a server "listens" it picks which network interfaces accept connections. `127.0.0.1` (loopback) accepts only from the same machine; `0.0.0.0` accepts from every interface — the whole local network can reach it. Same code, opposite exposure.
 **Proven by.** Building Mission Control (2026-05-26), John independently flagged his existing `scripts/serve.js`: *"binds all interfaces (0.0.0.0) — fix that to 127.0.0.1 too while you're here,"* catching the same exposure class in pre-existing code unprompted. Recognising the bind-address exposure in his own code = operational, not memorised.
 
+### Web-app structure — many views vs one scroll
+**What it means.** A real app separates into VIEWS you navigate between (a router shows one at a time), each drawn from shared in-memory STATE — versus one long scrolling page. The split is architectural: views + router + state is how you get "a website you move through," not a document you scroll.
+**Proven by.** John drove the v1→v2 Mission Control reframe (2026-05-26): named v1's failure as "one endless scroll", specified "a real multi-view web app — routed views, real state, navigation between views", and that bugs + translator must FUSE into one Cases surface (opening a bug IS its translation). Diagnosing the single-page architecture as the problem and specifying the routed-views fix is operating at the app-architecture level, not "make it look nicer."
+
 ---
 
 ## Building (frontier — pitch explanations SCAFFOLDED on these, grow vocab incrementally)
 
 Each entry: **concept · why John is building here · how CC should pitch it.**
+
+### Web-app implementation mechanics (router / state / render)
+**Status.** Surfaced building Mission Control v2 (2026-05-26). John specified the intent (routed views, real state) and approved the SPA structure; the build taught the mechanics. Still building: hash routing (`#/cases/:id` → which view renders), the in-memory state model the views read from, render-from-state (change state → redraw the view), and SPA-vs-MPA (one shell + JS draws every view, vs a fresh HTML page per click).
+**How to pitch.** Anchor to MAWM screen-flow: "the router is the screen-flow controller — one app, many screens, no reload between them; the URL hash says which screen you're on." One mechanic at a time, cockpit as the concrete example (e.g. "#/cases/savings-no-picker → the router reads the id, finds that case in state, draws the detail"). Don't stack router + state + render in one breath.
 
 ### Local-server security model (the cockpit's protections)
 **Status.** Introduced 2026-05-26 building the Mission Control server; John engaged with and approved all seven rules, and the build itself taught them. Already Demonstrated: localhost binding (above). Still building: CORS / origin-locking (the browser-set `Origin` stamp + a server allowlist), allowlisted-vs-arbitrary endpoints (a fixed action menu vs "exec anything"), path-jailing (resolve the absolute path, reject anything outside the repo), and why a browser page can't write to disk but a local Node process can (sandbox vs a process running with John's own permissions).
