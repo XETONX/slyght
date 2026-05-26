@@ -2136,6 +2136,8 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
 </div>
 <div id="debt-celebrate-overlay"><div id="debt-celebrate-msg"></div></div>
 <div id="offline-badge" style="display:none;position:fixed;top:8px;right:8px;background:var(--amber-dim);border:1px solid var(--amber-border);border-radius:var(--r-xs);padding:3px 8px;font-size:10px;font-weight:700;color:var(--amber);z-index:800;font-family:var(--mono)">OFFLINE</div>
+<!-- Bundle 33-cache (#51): permanent build-stamp — glance to confirm fresh code. BUMP with sw.js CACHE_VERSION on every deploy. -->
+<div id="build-stamp" style="position:fixed;bottom:2px;left:5px;font-size:8px;line-height:1;font-family:var(--mono);color:var(--text3);opacity:0.45;z-index:700;pointer-events:none;user-select:none">b33 · 2026-05-26</div>
 
 <!-- END-OF-DAY RECONCILIATION MODAL -->
 <div class="recon-overlay" id="eod-recon-modal">
@@ -16031,21 +16033,29 @@ updateOnlineStatus();
 })();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(r => r.unregister());
-    navigator.serviceWorker.register('/slyght/sw.js').then(reg => {
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // New version available — show update banner
-            const banner = document.getElementById('sw-update-banner');
-            if (banner) banner.style.display = 'flex';
-          }
-        });
+  // Bundle 33-cache (#51): proper update delivery. REPLACES the old
+  // unregister-every-load workaround (commit 8496d12, generic message + no
+  // protective rationale — scar tissue for this exact staleness): it tore down
+  // the controller on every load, defeated caching, and kept this banner from
+  // firing. updateViaCache:'none' forces the browser to revalidate sw.js itself
+  // so the SW can never get byte-stuck behind an HTTP cache.
+  const _hadController = !!navigator.serviceWorker.controller;
+  const _showUpdateBanner = () => { const b = document.getElementById('sw-update-banner'); if (b) b.style.display = 'flex'; };
+  navigator.serviceWorker.register('/slyght/sw.js', { updateViaCache: 'none' }).then(reg => {
+    reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        // New version installed while a controller already exists → offer reload (John taps WHEN).
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) _showUpdateBanner();
       });
-    }).catch(() => {});
-  });
+    });
+  }).catch(() => {});
+  // New SW took control (skipWaiting+claim) → offer reload, but only on a genuine
+  // update (a controller already existed), never on first install.
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (_hadController) _showUpdateBanner(); });
 }
 
 // Handle notification action URL params on app open
