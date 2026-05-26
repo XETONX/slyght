@@ -1,40 +1,34 @@
 <!DOCTYPE html>
-<!-- slyght — Mission Control v2 (the translator web app). Shell only: the server
-     injects the write-token below; app.css + app.js carry the design + the app.
-     A real multi-view SPA — left-nav, hash router, real state. -->
+<!-- Jarvis — slyght mission control. Ticketing platform + CC intermediary.
+     Shell only: the server injects the write-token; jarvis.css + jarvis.js carry
+     the ServiceNow/Jira skin + the app. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>slyght · mission control</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/app.css">
+<title>Jarvis · slyght mission control</title>
+<link rel="stylesheet" href="/jarvis.css">
 </head>
 <body>
-  <nav class="sidebar">
-    <div class="brand">
-      <div id="dot"></div>
-      <div><b>mission control</b><small id="statusTxt">translator · idle</small></div>
-    </div>
-    <div class="nav">
-      <a href="#/overview" data-r="overview"><span class="ic">◎</span> Overview</a>
-      <a href="#/cases"    data-r="cases"><span class="ic">▣</span> Cases <span class="badge" id="navBroken"></span></a>
-      <a href="#/walk"     data-r="walk"><span class="ic">▶</span> Live walk</a>
-      <a href="#/docs"     data-r="docs"><span class="ic">▤</span> Docs + specs</a>
-      <a href="#/deploy"   data-r="deploy"><span class="ic">⇧</span> Deploy</a>
-    </div>
-    <div class="foot">
-      The translator: CC's depth → plain-English you can judge → a deep brief back.
-      <br><br>reads walk.json · cases.json · the repo docs. writes via the secured server.
-    </div>
-  </nav>
-  <main><div id="view" class="view"></div></main>
+  <header class="topbar">
+    <div class="brand"><div class="logo">J</div> Jarvis <small>· slyght mission control</small></div>
+    <div class="right"><span id="srvStatus">●&nbsp; live · localhost</span></div>
+  </header>
+  <div class="layout">
+    <nav class="rail">
+      <div class="sect">Project</div>
+      <a href="#/board" data-r="board"><span class="ic">▦</span> Board</a>
+      <div class="sect">Views</div>
+      <a href="#/map" data-r="map"><span class="ic">◇</span> App Map <span class="soon">Soon</span></a>
+      <a href="#/calendar" data-r="calendar"><span class="ic">▣</span> Calendar / Planning <span class="soon">Soon</span></a>
+    </nav>
+    <main><div id="view" class="view"></div></main>
+  </div>
 
   <div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
   <div id="toast"></div>
 
   <script>window.MC_TOKEN = "__MC_TOKEN__";</script>
-  <script src="/app.js"></script>
+  <script src="/jarvis.js"></script>
 </body>
 </html>

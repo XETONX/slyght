@@ -122,5 +122,26 @@ server. What changed, and how it stays inside the rules:
   is generated read-only by `scripts/mc/build-cases.js`; the cockpit never writes it.
 - Runtime outputs `case-notes.json` + `briefs/` are gitignored (personal/per-session).
 
+---
+
+## v3 / Jarvis additions (2026-05-26) — all seven rules unchanged
+
+The ticketing-platform rework (Jarvis) adds the comment/status/handoff loop. Five
+new allowlisted, path-jailed write actions join the fixed menu (rule 2); no generic
+writer/exec; no new outbound network. The reskin (jarvis.css/jarvis.js) is presentation.
+
+| Action | Target (path-jailed) | Notes |
+|---|---|---|
+| `addComment` | `ticket-state.json` | author validated (john\|jarvis\|cc), ticket id `^SLY-\d+$`, 8k cap. First John comment earns Open→Discussing. |
+| `setStatus` | `ticket-state.json` | **validated against the state machine** — only legal transitions; `ConfirmedLive` REQUIRES walk evidence (cannot be a typed label). |
+| `alignHandoff` | `handoffs/SLY-N.md` + `ticket-state.json` | the gate — collates finding + thread + alignment + links + age into a path-jailed handoff file CC reads; only from Open/Discussing. |
+| `createTicket` | `tickets-manual.json` | manual store (regen never clobbers it); type validated (bug\|feature\|task). |
+| `postResult` | `ticket-state.json` (+ composes `setBugStatus`) | CC posts back; on a terminal state PROPAGATES the linked OPEN-BUGS status (surgical — via the existing allowlisted setBugStatus, prose preserved). The rich reasoning stays on the ticket. |
+
+New reads (GET, read-only, no token): `/api/tickets` (spine + state merged), `/api/handoff?id`.
+Asset serving generalized to any `.css/.js` **basename** in the MC dir (`path.basename`
+strips traversal). Mutable stores (`ticket-state.json`, `tickets-manual.json`, `handoffs/`)
+are gitignored. The earned-state machine means status is a real workflow, not a free field.
+
 *If a future change adds an action or a write target, it must reconcile with this file
 first. New action → new row above + which rule covers it.*

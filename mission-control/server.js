@@ -130,6 +130,79 @@ const ACTIONS = {
     return { ok: true, caseId };
   },
 
+  // ── Jarvis loop actions — each path-jailed to ticket-state.json / handoffs/.
+  // The comment thread (John ↔ Jarvis ↔ CC), persisted with timestamps.
+  addComment: ({ id, author, text }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (!['john', 'jarvis', 'cc'].includes(author)) throw new Error('bad author');
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    t.thread.push({ author, text: String(text || '').slice(0, 8000), ts: new Date().toISOString() });
+    if (t.status === 'Open' && author === 'john') { t.status = 'Discussing'; t.assignee = 'john'; }  // first comment earns Discussing
+    t.lastActivity = new Date().toISOString(); writeState(st);
+    return { ok: true, status: t.status, comments: t.thread.length };
+  },
+  // earned state transition — validated against the state machine; ConfirmedLive
+  // cannot be a typed label, it must carry walk evidence.
+  setStatus: ({ id, to, evidence }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    if (!(TRANSITIONS[t.status] || []).includes(to)) throw new Error(`illegal transition ${t.status} → ${to}`);
+    if (to === 'ConfirmedLive' && !(evidence && String(evidence).trim())) throw new Error('ConfirmedLive must be EARNED — attach walk evidence, not a label');
+    t.status = to; t.assignee = assigneeFor(to); if (evidence) t.evidence = String(evidence).slice(0, 4000);
+    t.lastActivity = new Date().toISOString(); writeState(st);
+    return { ok: true, status: to, assignee: t.assignee };
+  },
+  // THE GATE — John's alignment collates the rich package + writes the handoff CC reads.
+  alignHandoff: ({ id, decision }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id); if (!ticket) throw new Error('no ticket spine for ' + id);
+    if (!['Open', 'Discussing'].includes(t.status)) throw new Error(`can only align from Open/Discussing (now ${t.status})`);
+    const abs = jail(path.join('mission-control', 'handoffs', id + '.md'));
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, collate(ticket, t, decision));
+    t.status = 'Aligned'; t.assignee = 'cc';
+    t.alignment = { decision: String(decision || 'agreed with the proposed fix').slice(0, 4000), ts: new Date().toISOString() };
+    t.thread.push({ author: 'john', text: '✓ ALIGNED — handed to CC. ' + t.alignment.decision, ts: t.alignment.ts });
+    t.lastActivity = t.alignment.ts; writeState(st);
+    return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.` };
+  },
+  // John (or a walk) creates a ticket → manual store (never clobbered by regen).
+  createTicket: ({ title, summary, surface, severity, type }) => {
+    if (!title) throw new Error('title required');
+    if (type && !['bug', 'feature', 'task'].includes(type)) throw new Error('bad type');
+    const all = [...TICKETS(), ...MANUAL()]; const nextN = Math.max(0, ...all.map(t => +(t.id.replace('SLY-', '') || 0))) + 1; const id = 'SLY-' + nextN;
+    const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
+    let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
+    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links: [] });
+    fs.mkdirSync(path.dirname(manualPath), { recursive: true }); fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
+    const stt = readState(); const now = new Date().toISOString(); stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now }; writeState(stt);
+    return { ok: true, id };
+  },
+  // CC posts results BACK into the ticket — closes the loop. Optional transition.
+  postResult: ({ id, found, fixed, evidence, to, propagate }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    t.thread.push({ author: 'cc', text: `**CC result** — Found: ${found || '—'}\nFixed: ${fixed || '—'}\nEvidence: ${evidence || '—'}`.slice(0, 8000), ts: new Date().toISOString() });
+    if (to) {
+      if (!(TRANSITIONS[t.status] || []).includes(to)) throw new Error(`illegal transition ${t.status} → ${to}`);
+      if (to === 'ConfirmedLive' && !(evidence && String(evidence).trim())) throw new Error('ConfirmedLive needs evidence');
+      t.status = to; t.assignee = assigneeFor(to); if (evidence) t.evidence = String(evidence).slice(0, 4000);
+    }
+    t.lastActivity = new Date().toISOString(); writeState(st);
+    // PROPAGATE — Jarvis is the one place: on a terminal state, push the status to
+    // the linked canonical record (surgical, prose preserved). The full reasoning
+    // stays IN the ticket; OPEN-BUGS just gets the status + a pointer to SLY-N.
+    const propagated = [];
+    if (to && ['ConfirmedLive', 'Shipped'].includes(to) && propagate !== false) {
+      const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id);
+      if (ticket && ticket.openBug) {
+        try { ACTIONS.setBugStatus({ bugNum: ticket.openBug, status: `${to === 'Shipped' ? 'fixed' : 'fix confirmed live'} — Jarvis ${id} (${new Date().toISOString().slice(0, 10)})` }); propagated.push('OPEN-BUGS #' + ticket.openBug); } catch (e) {}
+      }
+    }
+    return { ok: true, status: t.status, propagated };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
@@ -165,6 +238,60 @@ function listWalkSpecs() {
   return fs.existsSync(d) ? fs.readdirSync(d).filter(f => f.endsWith('.md')).sort() : [];
 }
 
+// ── Jarvis tickets: spine (generated) + mutable state, merged for the API. ────
+const TICKETS = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'tickets.json'), 'utf8')).tickets || []; } catch { return []; } };
+const MANUAL = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'tickets-manual.json'), 'utf8')).tickets || []; } catch { return []; } };
+const readState = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'ticket-state.json'), 'utf8')); } catch { return {}; } };
+const writeState = (s) => fs.writeFileSync(jail(path.join('mission-control', 'ticket-state.json')), JSON.stringify(s, null, 2));
+// the earned-state machine — each transition is a legal edge, not a free text set
+const TRANSITIONS = { Open: ['Discussing'], Discussing: ['Aligned', 'Open'], Aligned: ['Investigating', 'Discussing'], Investigating: ['ConfirmedLive', 'Shipped', 'Aligned'], ConfirmedLive: ['Shipped', 'Investigating'], Shipped: ['Investigating'] };
+const assigneeFor = (st) => (st === 'Aligned' || st === 'Investigating') ? 'cc' : 'john';
+function mergedTickets() {
+  const spine = [...TICKETS(), ...MANUAL()], state = readState();
+  return { tickets: spine.map(t => ({ ...t, state: state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null } })) };
+}
+// the COLLATE step — assemble the rich package John's alignment triggers.
+function collate(ticket, state, decision) {
+  const age = state.opened ? Math.round((Date.now() - new Date(state.opened)) / 86400000) : 0;
+  const ev = ticket.rich.evidence; let evTxt = '_(not walked)_';
+  if (ev) evTxt = `Flow \`${ev.flow}\` (walk ${ev.walkDir}):\n` + (ev.steps || []).map(s => { const d = Object.entries(s.delta || {}).map(([k, v]) => `${k}: ${v}`).join(', '); return `- ${s.step}: lands [${(s.lands || []).join(', ') || 'NONE — no-op'}]${d ? ' · ' + d : ''}${s.probe ? '\n  probe: ' + JSON.stringify(s.probe) : ''}`; }).join('\n');
+  const thread = (state.thread || []).map(c => `- **${c.author}** (${(c.ts || '').slice(0, 16)}): ${c.text}`).join('\n') || '_(no discussion)_';
+  const links = (ticket.links || []).map(l => `- ${l.to} — ${l.why}`).join('\n') || '_(none)_';
+  return `# Handoff: ${ticket.id} — ${ticket.title}
+
+**${ticket.severity} · ${ticket.kind}** · surface: ${ticket.group} · open ${age} day(s) · aligned ${new Date().toISOString().slice(0, 16)}
+
+## John's alignment decision (the trigger)
+${decision || 'agreed with the proposed fix'}
+
+## Summary (what John read)
+${ticket.summary}
+
+## The finding — investigate + resolve from this
+### Mechanism
+${ticket.rich.mechanism || '_(see root cause)_'}
+### Root cause
+${ticket.rich.rootCause}
+### Walk evidence (from the running app)
+${evTxt}
+### Proposed fix
+${ticket.rich.fix}
+### Files
+${(ticket.rich.files || []).map(f => '- ' + f).join('\n')}
+
+## Discussion thread
+${thread}
+
+## Links / relationships
+${links}
+
+---
+You're receiving this because John ALIGNED. Investigate + resolve the complete package,
+then POST BACK into ${ticket.id} (what you found / fixed / evidence). Run the full
+6-tier pipeline. Conservation + Guardian green gate. §8 plain-English. My approval before push.
+`;
+}
+
 // ── HTTP ────────────────────────────────────────────────────────────────────
 const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -182,13 +309,15 @@ const server = http.createServer((req, res) => {
       html = html.replace('__MC_TOKEN__', TOKEN);          // RULE 4 — inject token into the same-origin page only
       return send(res, 200, html, 'text/html; charset=utf-8');
     }
-    if (p === '/app.js' || p === '/app.css') {                 // v2 split assets (fixed names, served from MC dir)
-      try { return send(res, 200, fs.readFileSync(path.join(MC, p.slice(1)), 'utf8'), p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8'); }
+    if (/^\/[a-z0-9_-]+\.(css|js)$/i.test(p)) {                 // static assets: any .css/.js basename in MC dir (path.basename strips any traversal)
+      try { return send(res, 200, fs.readFileSync(path.join(MC, path.basename(p)), 'utf8'), p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8'); }
       catch (e) { return send(res, 404, { error: e.message }); }
     }
     if (p === '/api/cases') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'cases.json'), 'utf8'))); } catch (e) { return send(res, 200, { cases: [], counts: {}, error: 'run: node scripts/mc/build-cases.js' }); } }
     if (p === '/api/specs') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8'))); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/notes') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'case-notes.json'), 'utf8'))); } catch (e) { return send(res, 200, {}); } }
+    if (p === '/api/tickets') return send(res, 200, mergedTickets());
+    if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/gitstatus') {  // read-only git info for the Deploy view (fixed args, no shell)
       const run = (a) => { try { return require('child_process').execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
       return send(res, 200, {

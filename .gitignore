@@ -61,3 +61,10 @@ tests/walker-out/
 # (the cockpit reads it; regenerate with scripts/mc/build-cases.js).
 mission-control/case-notes.json
 mission-control/briefs/
+
+# --- 2026-05-26 Jarvis (Mission Control v3) ---
+# Mutable runtime stores (status/thread/alignment, manual tickets, handoff packages).
+# tickets.json + cases.json + specs.json ARE committed (generated spines).
+mission-control/ticket-state.json
+mission-control/tickets-manual.json
+mission-control/handoffs/

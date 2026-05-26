@@ -1,0 +1,46 @@
+<!-- ============================================================ -->
+<!-- JARVIS REFERENCE — the IS-vs-SHOULD flow ladder (App Map)    -->
+<!-- The shape for "click a surface, see the complete flow with   -->
+<!-- the gap in place." Example: the savings surface.             -->
+<!--   - The COMPLETE intended journey in real slyght steps       -->
+<!--   - The missing/broken rung shown IN POSITION (step 4 here)  -->
+<!--   - Greyed steps = "never reached"; ✗-anyway = fires regardless-->
+<!--   - In the real App Map: show what-IS and what-SHOULD-be side -->
+<!--     by side; the gap is the difference between the columns.   -->
+<!-- This single-ladder version shows the gap-in-place clearly;    -->
+<!-- the real build renders IS and SHOULD as two columns.          -->
+<!-- Re-skin to the bright ServiceNow look (see the skin ref).     -->
+<!-- ============================================================ -->
+<style>
+  .lad { font-family:-apple-system,"Segoe UI",Roboto,sans-serif; color:#1a1d24; max-width:900px; }
+  .lad-step { display:flex; align-items:flex-start; gap:18px; }
+  .lad-num { width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;flex-shrink:0; }
+  .lad-ok { background:#e7f6ec;color:#067647;border:1px solid #a6e9c0; }
+  .lad-gap { background:#fdeaea;color:#b42318;border:2px dashed #f0a3a3; }
+  .lad-dead { background:#f0f1f4;color:#98a2b3;border:2px dashed #d0d5dd; }
+  .lad-line { width:2px;height:34px;margin:0 17px; }
+  .lad-title { font-size:17px;font-weight:500; }
+  .lad-sub { font-size:14px;color:#667085;margin-top:2px;line-height:1.6; }
+  @media (prefers-color-scheme: dark){ .lad{color:#e4e7ec;} .lad-sub{color:#98a2b3;} }
+</style>
+<div class="lad">
+  <h2 style="font-size:22px;font-weight:600;margin:0 0 4px;">Savings — the full flow</h2>
+  <p style="font-size:15px;color:#667085;margin:0 0 24px;">The complete journey money should take to reach a goal. The missing rung is shown where it belongs.</p>
+
+  <div class="lad-step"><div class="lad-num lad-ok">1</div><div style="padding-top:5px;"><div class="lad-title">Dashboard</div><div class="lad-sub">You're on the home screen, you tap the <b style="color:#067647;">+ (Log a transaction)</b>.</div></div></div>
+  <div class="lad-line" style="background:#a6e9c0;"></div>
+  <div class="lad-step"><div class="lad-num lad-ok">2</div><div style="padding-top:5px;"><div class="lad-title">Quick Log modal opens</div><div class="lad-sub"><code>openQuickLogModal()</code> · index.html:10154 — the box for entering the transaction.</div></div></div>
+  <div class="lad-line" style="background:#a6e9c0;"></div>
+  <div class="lad-step"><div class="lad-num lad-ok">3</div><div style="padding-top:5px;"><div class="lad-title">Choose "Savings"</div><div class="lad-sub">You pick the Savings category — telling it this money is going to a goal.</div></div></div>
+  <div class="lad-line" style="background:#f0a3a3;"></div>
+  <div class="lad-step"><div class="lad-num lad-gap">!</div><div style="padding-top:3px;flex:1;"><div style="border:2px dashed #f0a3a3;border-radius:10px;padding:14px 16px;background:#fdeaea;"><div style="font-size:13px;font-weight:600;color:#b42318;margin-bottom:4px;">MISSING RUNG — the gap</div><div style="font-size:17px;font-weight:500;color:#b42318;">Goal picker — "which goal?"</div><div style="font-size:14px;color:#7a271a;margin-top:4px;line-height:1.6;">This step <b>should</b> appear here and doesn't. It's the screen that asks <i>which</i> goal (Darwin? China?) the money belongs to. Without it, the flow has no destination — so the next step has nothing to write to.</div></div></div></div>
+  <div class="lad-line" style="background:#d0d5dd;"></div>
+  <div class="lad-step"><div class="lad-num lad-dead">5</div><div style="padding-top:5px;"><div class="lad-title" style="color:#98a2b3;">Allocate to the savings bucket <span style="font-size:12px;">— never reached</span></div><div class="lad-sub">Where the chosen bucket gets credited (<code>bucket_saved_change</code>). Greyed because step 4 never lets the flow get here.</div></div></div>
+  <div class="lad-line" style="background:#d0d5dd;"></div>
+  <div class="lad-step"><div class="lad-num lad-dead">6</div><div style="padding-top:5px;"><div class="lad-title" style="color:#98a2b3;">Cash debited −$300 <span style="font-size:12px;color:#b42318;">✗ happens anyway</span></div><div class="lad-sub">This part fires regardless — so the money leaves your cash even though it reached no bucket. That's the loss.</div></div></div>
+
+  <div style="background:#f7f8fa;border-radius:10px;padding:18px 20px;margin-top:22px;">
+    <div style="font-size:13px;font-weight:600;color:#475467;margin-bottom:8px;">THE WHOLE THING, PLAIN</div>
+    <div style="font-size:16px;color:#1a1d24;line-height:1.75;">The flow is a 6-step journey and <b style="color:#b42318;">step 4 is missing</b>. Money leaves at step 6 no matter what, but with no step 4 it never gets a destination, so step 5 never writes to a bucket. <b style="color:#067647;">The fix is the missing rung</b>: insert the goal picker at step 4, and the existing step 5 plumbing (which already works on the Plan-tick path) finally has somewhere to send it.</div>
+  </div>
+</div>

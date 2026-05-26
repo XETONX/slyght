@@ -1,0 +1,245 @@
+/* ============================================================================
+ * Jarvis — slyght mission control. The ticketing platform + CC intermediary.
+ * Hash router · board (kanban by status) · ticket detail (the case-view skin) ·
+ * the core loop: discuss thread → "get Jarvis's take" → ALIGN gate → collate
+ * handoff → CC posts back. Reads /api/tickets; writes via the allowlisted actions.
+ * ==========================================================================*/
+'use strict';
+const TOKEN = window.MC_TOKEN;
+const J = { tickets: [], filter: { surface: '', severity: '', type: '' } };
+const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
+const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+async function api(p) { const r = await fetch(p); return r.json(); }
+async function action(name, args) {
+  const r = await fetch('/api/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, args: args || {}, token: TOKEN }) });
+  const j = await r.json(); if (!r.ok || j.ok === false) { toast(j.error || j.reason || 'failed', 'err'); throw new Error(j.error || j.reason); } return j;
+}
+function toast(m, k) { const t = $('toast'); t.textContent = m; t.className = 'on ' + (k || ''); setTimeout(() => t.className = k || '', 2800); }
+function modal(html) { $('modal').innerHTML = html; $('scrim').classList.add('on'); }
+function closeModal() { $('scrim').classList.remove('on'); }
+const ago = iso => { if (!iso) return '—'; const d = Math.round((Date.now() - new Date(iso)) / 86400000); return d <= 0 ? 'today' : d + ' day' + (d > 1 ? 's' : ''); };
+const when = iso => iso ? new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+const sevCls = s => s === 'P0' ? 'p-p0' : s === 'P1' ? 'p-p1' : 'p-p2';
+
+/* ── data ─────────────────────────────────────────────────────────────── */
+async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
+const get = id => J.tickets.find(t => t.id === id);
+
+/* ════════════════════════ BOARD ════════════════════════ */
+function viewBoard() {
+  const v = $('view'); const ts = J.tickets;
+  const f = J.filter;
+  const shown = ts.filter(t => (!f.surface || t.group === f.surface) && (!f.severity || t.severity === f.severity) && (!f.type || t.type === f.type));
+  const count = s => ts.filter(t => t.state.status === s).length;
+  const surfaces = [...new Set(ts.map(t => t.group))].sort();
+  v.className = 'view';
+  v.innerHTML = `
+    <h1>Board</h1>
+    <p class="subtitle">${ts.length} tickets across the slyght project. You read the summary, discuss with Jarvis, align — Jarvis hands CC the rich package, CC posts results back here.</p>
+    <div class="stats">
+      ${[['Open', 'Open'], ['Discussing', 'In discussion'], ['Aligned', 'Handed to CC'], ['ConfirmedLive', 'Confirmed live'], ['Shipped', 'Shipped']].map(([s, l]) => `<div class="statcard"><div class="n">${count(s)}</div><div class="l">${l}</div></div>`).join('')}
+    </div>
+    <div class="toolbar">
+      <button class="btn primary" onclick="newTicket()">+ New ticket</button>
+      <select onchange="J.filter.type=this.value;route()"><option value="">All types</option>${['bug', 'feature', 'task'].map(x => `<option ${f.type === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <select onchange="J.filter.severity=this.value;route()"><option value="">All severities</option>${['P0', 'P1', 'P2'].map(x => `<option ${f.severity === x ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      <select onchange="J.filter.surface=this.value;route()"><option value="">All surfaces</option>${surfaces.map(x => `<option ${f.surface === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <span class="meta">${shown.length} shown</span>
+    </div>
+    <div class="kanban">
+      ${STATUSES.map(s => {
+        const col = shown.filter(t => t.state.status === s);
+        return `<div class="col"><div class="colh"><span class="pill sm s-${s}">${STATUS_LABEL[s]}</span><span class="ct">${col.length}</span></div>
+          ${col.map(ticketCard).join('') || '<div class="empty" style="font-size:12px;padding:6px 8px">—</div>'}</div>`;
+      }).join('')}
+    </div>`;
+}
+function ticketCard(t) {
+  const a = t.state.assignee;
+  return `<div class="tk" onclick="location.hash='#/ticket/${t.id}'">
+    <div class="row"><span class="id">${t.id}</span><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span><span class="pill sm k-${t.kind}">${t.type}</span></div>
+    <div class="t">${esc(t.title)}</div>
+    <div class="row"><span class="age">${ago(t.state.opened)}</span><span class="who">${a === 'cc' ? '→ CC' : '→ John'}</span></div>
+  </div>`;
+}
+
+/* ════════════════════════ TICKET DETAIL (the case-view skin) ════════════ */
+function viewTicket(id) {
+  const t = get(id); const v = $('view');
+  if (!t) { v.innerHTML = `<a class="backlink" href="#/board">‹ Board</a><div class="empty">Ticket not found.</div>`; return; }
+  const st = t.state, status = st.status, assignee = st.assignee;
+  const cur = (t.rich.mechanism || '').slice(0, 180);
+  const aft = (t.rich.fix || '').slice(0, 180);
+  const ev = t.rich.evidence;
+  const sync = [t.openBug ? `OPEN-BUGS #${t.openBug}` : null, ev ? 'feature map (' + t.group + ')' : null].filter(Boolean);
+  v.className = 'view maxw';
+  v.innerHTML = `
+    <a class="backlink" href="#/board">‹ Board</a>
+    <div class="card">
+      <div class="tk-head">
+        <div>
+          <div class="pills">
+            <span class="pill ${sevCls(t.severity)}">${t.severity}${t.severity === 'P0' ? ' · Critical' : ''}</span>
+            <span class="pill s-${status}">${STATUS_LABEL[status]}${['Open', 'Discussing'].includes(status) ? ' · ' + ago(st.opened) : ''}</span>
+            <span class="pill k-${t.kind}">${t.kind}</span>
+            <span class="meta">${t.id} · ${esc(t.group)} · ${t.type} · Assignee: ${assignee === 'cc' ? 'CC (investigating)' : 'John (needs judgment)'}</span>
+          </div>
+          <h1>${esc(t.title)}</h1>
+        </div>
+      </div>
+
+      ${(t.links || []).length ? `<div class="rel"><span class="i">&#9432;</span><div class="txt">${t.links.map(l => `Linked to <a href="${l.to.startsWith('SLY') ? '#/ticket/' + l.to : '#'}"><b>${esc(l.to)}</b></a> — ${esc(l.why)}.`).join('<br>')}</div></div>` : ''}
+
+      <div class="label">What's happening (your summary)</div>
+      <p class="summary">${esc(t.summary)}</p>
+
+      ${cur || aft ? `<div class="twocol">
+        <div class="mini cur"><div class="h">CURRENT</div><div class="b">${esc(cur)}${cur.length >= 180 ? '…' : ''}</div></div>
+        <div class="mini aft"><div class="h">AFTER FIX</div><div class="b">${esc(aft)}${aft.length >= 180 ? '…' : ''}</div></div>
+      </div>` : ''}
+
+      ${sync.length ? `<div class="rel" style="background:var(--green-bg)"><span class="i" style="color:var(--green)">&#8635;</span><div class="txt" style="color:var(--green)">Kept in sync: when this ships, the post-back updates <b>${sync.map(esc).join('</b>, <b>')}</b> — the full reasoning stays here on the ticket.</div></div>` : ''}
+
+      ${t.rich.rootCause ? `<details class="deep"><summary><span class="tw">▸</span> Technical depth — mechanism, root cause, walk evidence, files</summary><div class="dbody">
+        ${t.rich.mechanism ? `<p><b>Mechanism.</b> ${esc(t.rich.mechanism)}</p>` : ''}
+        <p><b>Root cause.</b> ${esc(t.rich.rootCause)}</p>
+        ${ev ? `<div class="label" style="margin-top:12px">Walk evidence — ${esc(ev.flow)} (${esc(ev.walkDir)})</div>${renderTrace(ev)}` : ''}
+        ${(t.rich.files || []).length ? `<div class="label" style="margin-top:12px">Files</div>${t.rich.files.map(f => `<code class="fileline">${esc(f)}</code>`).join('')}` : ''}
+        ${t.rich.fix ? `<p style="margin-top:12px"><b>Proposed fix.</b> ${esc(t.rich.fix)}</p>` : ''}
+      </div></details>` : ''}
+
+      <div class="label">Discuss with Jarvis (thread) — then ALIGN to hand to CC</div>
+      <div class="thread" id="thread">${renderThread(st.thread)}</div>
+      <div class="composer">
+        <textarea id="cmt" placeholder="Refine the fix, add a constraint, ask a question…"></textarea>
+        <div class="summary-bubble"><div class="h">This ticket, in short</div>${esc((t.summary || '').slice(0, 200))}…</div>
+      </div>
+      <div class="btns">
+        <button class="btn" onclick="comment('${t.id}')">Comment</button>
+        <button class="btn" onclick="jarvisTake('${t.id}')">Get Jarvis's take</button>
+        <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
+        ${['Open', 'Discussing'].includes(status)
+          ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>`
+          : `<button class="btn" onclick="viewHandoff('${t.id}')">View handoff package CC received</button>`}
+      </div>
+    </div>
+
+    <div class="footer-meta">
+      <span>Opened ${when(st.opened)}</span>
+      ${st.alignment ? `<span>Aligned ${when(st.alignment.ts)}</span>` : ''}
+      ${ev ? `<span>Finding confirmed by walk ${esc(ev.walkDir)}</span>` : ''}
+      <span>Last activity ${when(st.lastActivity)}</span>
+    </div>`;
+}
+function renderThread(thread) {
+  if (!thread || !thread.length) return '<div class="empty">No discussion yet. Add a comment, or get Jarvis\'s take.</div>';
+  return thread.map(c => {
+    const av = c.author === 'john' ? 'J' : c.author === 'jarvis' ? 'Jv' : 'CC';
+    const name = c.author === 'john' ? 'John' : c.author === 'jarvis' ? 'Jarvis' : 'CC';
+    const align = /ALIGNED/.test(c.text) ? ' align' : '';
+    return `<div class="cmt ${c.author}${align}"><div class="av">${av}</div><div class="bub"><span class="who">${name}<span class="ts">${when(c.ts)}</span></span><div class="txt">${esc(c.text)}</div></div></div>`;
+  }).join('');
+}
+function renderTrace(ev) {
+  return `<div class="trace">${(ev.steps || []).map(s => {
+    const lands = s.lands && s.lands.length ? `<span class="lands">lands: [${s.lands.join(', ')}]</span>` : '<span class="miss">lands: [] (no-op)</span>';
+    const delta = Object.keys(s.delta || {}).length ? ' · <span class="delta">' + Object.entries(s.delta).map(([k, vv]) => `${k}: ${vv}`).join(' · ') + '</span>' : '';
+    return `<div class="st"><b>${esc(s.step)}</b> — ${esc(s.action || '')}<br>${lands}${delta}${s.probe ? `<div class="probe">${esc(JSON.stringify(s.probe, null, 2))}</div>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+/* ── loop actions ─────────────────────────────────────────────────────── */
+async function refreshTicket(id) { await load(); route(); }
+async function comment(id) {
+  const text = ($('cmt').value || '').trim(); if (!text) { toast('write something first', 'err'); return; }
+  try { await action('addComment', { id, author: 'john', text }); toast('comment added', 'ok'); await refreshTicket(id); } catch (e) {}
+}
+function jarvisTake(id) {
+  const t = get(id);
+  const prompt = `Jarvis discussion on ${t.id} — ${t.title}\n\nSummary: ${t.summary}\nRoot cause: ${t.rich.rootCause}\nProposed fix: ${t.rich.fix}\n\nThread so far:\n${(t.state.thread || []).map(c => `${c.author}: ${c.text}`).join('\n') || '(none)'}\n\nGive your take on the fix / what to watch for.`;
+  modal(`<h2>Get Jarvis's take</h2>
+    <p>This routes the thread to CC/Opus (no always-on LLM, no key). Copy it, get the take, then paste the reply below — it posts back into the thread as a <b>Jarvis</b> comment. The ALIGN gate is still the formal handoff.</p>
+    <pre id="jt">${esc(prompt)}</pre>
+    <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('jt').textContent);toast('copied','ok')">Copy prompt</button>
+    <div class="label" style="margin-top:16px">Paste Jarvis's reply to post it into the thread</div>
+    <textarea id="jtReply" placeholder="Jarvis's take…"></textarea>
+    <div class="btns"><button class="btn primary" onclick="postTake('${id}')">Post as Jarvis</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function postTake(id) {
+  const text = ($('jtReply').value || '').trim(); if (!text) { toast('paste the reply first', 'err'); return; }
+  try { await action('addComment', { id, author: 'jarvis', text }); closeModal(); toast('Jarvis comment posted', 'ok'); await refreshTicket(id); } catch (e) {}
+}
+function goDeeper(id) {
+  const t = get(id);
+  const prompt = `Go deeper on slyght ${t.id} — ${t.title}.\nRoot cause: ${t.rich.rootCause}\nFiles: ${(t.rich.files || []).join('; ')}\n\nQuestion: `;
+  modal(`<h2>Go deeper</h2><p>A focused prompt to dig further on this finding. Add your question, copy, ask CC.</p>
+    <pre id="gd">${esc(prompt)}</pre>
+    <div class="btns"><button class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('gd').textContent);toast('copied','ok')">Copy</button><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
+function align(id) {
+  const t = get(id);
+  modal(`<h2>&#10003; Aligned — hand to CC</h2>
+    <p>This is the gate. Jarvis collates the rich finding + your whole thread + this decision + links + age into one package and hands it to CC. State → <b>Aligned</b>.</p>
+    <div class="label" style="margin-top:8px">Your alignment decision</div>
+    <textarea id="alignDec" placeholder="e.g. Agreed — fix as proposed. Or: change it — do X instead because…">Agreed with the proposed fix.</textarea>
+    <div class="btns"><button class="btn green" onclick="doAlign('${id}')">Confirm — collate &amp; hand to CC</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doAlign(id) {
+  const decision = ($('alignDec').value || '').trim();
+  try {
+    const r = await action('alignHandoff', { id, decision });
+    closeModal();
+    modal(`<h2>Handed to CC → ${esc(r.handoff)}</h2>
+      <p>The rich package is written. <b>This is what CC receives</b> — deeper than your summary: the finding, your full thread, your decision, links, age. Paste the kickoff to start the mission:</p>
+      <pre id="kick">${esc(r.kickoff)}</pre>
+      <div class="btns"><button class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('kick').textContent);toast('copied','ok')">Copy kickoff</button>
+      <button class="btn" onclick="viewHandoff('${id}')">View the package</button>
+      <button class="btn" onclick="closeModal()">Close</button></div>`);
+    await load();
+  } catch (e) {}
+}
+async function viewHandoff(id) {
+  const r = await api('/api/handoff?id=' + id);
+  modal(`<h2>Handoff package — ${id}</h2><p>The rich collated payload CC investigates from (vs the summary you read):</p>
+    <pre>${esc(r.content || r.error || '(not generated — align first)')}</pre>
+    <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
+function newTicket() {
+  modal(`<h2>New ticket</h2>
+    <div class="label">Type</div><select id="ntType"><option value="task">Task</option><option value="feature">Feature (e.g. bank integration, Opal)</option><option value="bug">Bug</option></select>
+    <div class="label">Title</div><input id="ntTitle" placeholder="Short title">
+    <div class="label">Summary</div><textarea id="ntSummary" placeholder="What it is, in plain terms"></textarea>
+    <div class="label">Surface / area</div><input id="ntSurface" placeholder="e.g. bank, savings, planning">
+    <div class="label">Severity</div><select id="ntSev"><option>P2</option><option>P1</option><option>P0</option></select>
+    <div class="btns"><button class="btn primary" onclick="doCreate()">Create</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doCreate() {
+  const title = ($('ntTitle').value || '').trim(); if (!title) { toast('title required', 'err'); return; }
+  try { const r = await action('createTicket', { title, summary: $('ntSummary').value, surface: $('ntSurface').value, severity: $('ntSev').value, type: $('ntType').value }); closeModal(); toast('created ' + r.id, 'ok'); await load(); location.hash = '#/ticket/' + r.id; } catch (e) {}
+}
+
+/* ── placeholder views (sequenced next) ───────────────────────────────── */
+function viewSoon(title, body) {
+  $('view').className = 'view maxw';
+  $('view').innerHTML = `<h1>${title}</h1><p class="subtitle">${body}</p>
+    <div class="card"><p class="summary" style="margin:0">Built next in the sequence — the core loop comes first (per the brief). The data model already reserves what this view needs, so it won't be a retrofit.</p></div>`;
+}
+
+/* ── router ───────────────────────────────────────────────────────────── */
+function route() {
+  const h = (location.hash || '#/board').slice(1);
+  const parts = h.split('/').filter(Boolean);
+  const r = parts[0] || 'board';
+  document.querySelectorAll('.rail a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
+  if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
+  else if (r === 'map') viewSoon('App Map', 'The whole app as IS-vs-SHOULD flow ladders — every surface\'s complete journey with the gaps shown in position, clickable. The savings ladder reference is built; the full trace is the next big phase.');
+  else if (r === 'calendar') viewSoon('Calendar / Planning', 'Plan features (bank integration, Opal) and bundle fixes against dates and timelines. Tickets + bundles plotted on a calendar; releases group what ships together.');
+  else viewBoard();
+  window.scrollTo(0, 0);
+}
+$('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
+window.addEventListener('hashchange', route);
+(async function boot() { await load(); if (!location.hash) location.hash = '#/board'; route(); })();

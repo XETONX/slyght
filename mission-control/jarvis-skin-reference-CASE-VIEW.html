@@ -1,0 +1,85 @@
+<!-- ============================================================ -->
+<!-- JARVIS SKIN REFERENCE — ServiceNow/Jira-style case view      -->
+<!-- This is the VISUAL DIRECTION for the Jarvis reskin.          -->
+<!-- Match THIS, not slyght's dark-mono terminal.                 -->
+<!--   - Bright, dense, informational (ServiceNow / Jira / Linear)-->
+<!--   - Proper Title/Sentence case (NOT all-lowercase)           -->
+<!--   - Big readable type, uses full ultrawide width             -->
+<!--   - Status bubbles/pills, relationship popups, age badges    -->
+<!--   - Clean sans body, real status colors                      -->
+<!-- Uses CSS vars here for portability; in the real app use      -->
+<!-- proper light/dark tokens. The STRUCTURE + DENSITY + CAPS are -->
+<!-- the point, not the exact hex.                                -->
+<!-- ============================================================ -->
+<style>
+  .jv-wrap { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color:#1a1d24; max-width:1100px; }
+  .jv-card { background:#ffffff; border:1px solid #e3e6ec; border-radius:12px; padding:24px 28px; margin-bottom:16px; }
+  .jv-pill { font-size:13px; font-weight:600; padding:4px 12px; border-radius:6px; display:inline-block; }
+  .jv-p0 { background:#fdeaea; color:#b42318; }
+  .jv-open { background:#fef6e7; color:#b54708; }
+  .jv-loss { background:#eaf1fb; color:#175cd3; }
+  .jv-meta { font-size:13px; color:#667085; }
+  .jv-h2 { font-size:23px; font-weight:600; margin:0; color:#101828; }
+  .jv-label { font-size:13px; font-weight:600; color:#475467; letter-spacing:0.3px; margin-bottom:8px; }
+  .jv-body { font-size:16px; line-height:1.7; color:#1a1d24; }
+  .jv-rel { background:#eaf1fb; border-radius:8px; padding:14px 16px; display:flex; gap:10px; align-items:flex-start; }
+  .jv-mini { background:#f7f8fa; border-radius:8px; padding:16px; }
+  .jv-btn { font-size:14px; font-weight:500; padding:9px 16px; border-radius:8px; border:1px solid #d0d5dd; background:#fff; color:#344054; cursor:pointer; }
+  .jv-btn-primary { border-color:#175cd3; background:#175cd3; color:#fff; }
+  @media (prefers-color-scheme: dark) {
+    .jv-wrap { color:#e4e7ec; }
+    .jv-card { background:#1a1d24; border-color:#2a2f3a; }
+    .jv-h2 { color:#f5f6f8; }
+    .jv-body { color:#e4e7ec; }
+    .jv-mini { background:#22262f; }
+    .jv-btn { background:#22262f; border-color:#3a4150; color:#cdd2dc; }
+  }
+</style>
+<div class="jv-wrap">
+  <div class="jv-card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px;">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+          <span class="jv-pill jv-p0">P0 · Critical</span>
+          <span class="jv-pill jv-open">Open · 14 days</span>
+          <span class="jv-pill jv-loss">Money loss</span>
+          <span class="jv-meta">SLY-44 · Savings · Assignee: John (needs judgment)</span>
+        </div>
+        <h2 class="jv-h2">Quick Log → Savings silently loses money</h2>
+      </div>
+      <span class="jv-meta" style="white-space:nowrap;">Status: Confirmed live</span>
+    </div>
+
+    <div class="jv-rel" style="margin-bottom:18px;">
+      <span style="font-size:18px;color:#175cd3;flex-shrink:0;">&#9432;</span>
+      <div style="font-size:14px;color:#175cd3;line-height:1.6;">Possibly related to <b>SLY-21</b> (Bills undo) — both write to one place and read from another. Worth fixing the pattern together.</div>
+    </div>
+
+    <div class="jv-label">WHAT'S HAPPENING (your summary)</div>
+    <p class="jv-body" style="margin:0 0 18px;">When you save to a goal, your tap hits one handler — like a Postman request hitting one endpoint. It's meant to do two things: take the money from your cash (it does) and put it in the goal bucket (it never does), because the goal picker that says <i>which</i> bucket is never shown. The money leaves and lands nowhere.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;">
+      <div class="jv-mini">
+        <div style="font-size:13px;font-weight:600;color:#b42318;margin-bottom:6px;">CURRENT</div>
+        <div style="font-size:14px;line-height:1.6;color:#475467;">$300 leaves cash → no goal picker → bucket stays $800 → toast reads "−$300 · Savings · —"</div>
+      </div>
+      <div class="jv-mini">
+        <div style="font-size:13px;font-weight:600;color:#067647;margin-bottom:6px;">AFTER FIX</div>
+        <div style="font-size:14px;line-height:1.6;color:#475467;">Pick goal → affordability check → $300 → Darwin $800 → $1,100 → toast reads "−$300 · Darwin"</div>
+      </div>
+    </div>
+
+    <div class="jv-label">DISCUSS WITH JARVIS (thread) — then ALIGN to hand to CC</div>
+    <div style="border:1px solid #e3e6ec;border-radius:8px;padding:12px;margin-bottom:10px;font-size:14px;color:#667085;">Thread of comments appears here. "Get Jarvis's take" routes to CC/Opus; reply posts back as a Jarvis comment. Summary bubble stays visible while you write.</div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button class="jv-btn">Get Jarvis's take</button>
+      <button class="jv-btn">Go deeper</button>
+      <button class="jv-btn jv-btn-primary">&#10003; Aligned — hand to CC</button>
+    </div>
+  </div>
+
+  <div class="jv-meta" style="display:flex;gap:16px;padding:0 4px;">
+    <span>Opened May 12</span><span>Walked May 26</span><span>Confirmed by walk 2026-05-26</span>
+  </div>
+</div>
