@@ -34,3 +34,17 @@ tests/visual-captures/
 # scripts/reconcile-against-bank.js and scripts/dump-app-state.js.
 # Reproducible from the source state export; keep out of git history.
 tests/state-dump/
+
+# --- 2026-05-26 hygiene pass (push-reliability session Step 0) ---
+# Wrangler local state/cache — never belongs in git.
+slyght-worker/.wrangler/
+# Archives/binaries kept on disk, not history.
+*.zip
+# Regenerated report — reproducible from `npm run runtime`.
+runtime-report.json
+# Regenerated scenario-walk outputs + their screenshots (timestamped per run,
+# reproducible from scripts/scenario-walk.js). Genuine dated audit *reports*
+# (docs/audit/YYYY-MM-DD-*.md) stay tracked.
+docs/audit/*-scenario-walk.md
+docs/audit/*-scenario-walk.jsonl
+docs/audit/_scenario_screenshots/
