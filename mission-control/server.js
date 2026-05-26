@@ -179,6 +179,39 @@ const ACTIONS = {
     const stt = readState(); const now = new Date().toISOString(); stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now }; writeState(stt);
     return { ok: true, id };
   },
+  // John removes a ticket. MANUAL tickets (tickets-manual.json) are deleted outright;
+  // GENERATED tickets (the read-only spine) can't be removed from the spine, so we
+  // tombstone them with state.deleted=true and mergedTickets() filters them out.
+  // Path-jailed to the same two mutable stores createTicket touches. Irreversible
+  // by design (the UI gates it behind a typed confirm).
+  deleteTicket: ({ id }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    // does it exist anywhere in the merged spine?
+    const inSpine  = TICKETS().some(t => t.id === id);
+    const inManual = MANUAL().some(t => t.id === id);
+    if (!inSpine && !inManual) throw new Error('no such ticket: ' + id);
+
+    let removedManual = false;
+    if (inManual) {
+      const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
+      let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
+      const before = m.tickets.length;
+      m.tickets = m.tickets.filter(t => t.id !== id);
+      removedManual = m.tickets.length < before;
+      fs.mkdirSync(path.dirname(manualPath), { recursive: true });
+      fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
+    }
+
+    // Tombstone the state entry. For a generated (spine) ticket this is what hides it;
+    // for a manual ticket it cleans up the orphaned state row too. mergedTickets()
+    // drops anything with state.deleted === true.
+    const st = readState();
+    if (st[id]) { st[id].deleted = true; st[id].deletedAt = new Date().toISOString(); }
+    else if (inSpine) { st[id] = { deleted: true, deletedAt: new Date().toISOString() }; } // generated ticket never commented on
+    writeState(st);
+
+    return { ok: true, id, kind: removedManual ? 'manual-removed' : 'tombstoned' };
+  },
   // CC posts results BACK into the ticket — closes the loop. Optional transition.
   postResult: ({ id, found, fixed, evidence, to, propagate }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
@@ -248,7 +281,11 @@ const TRANSITIONS = { Open: ['Discussing'], Discussing: ['Aligned', 'Open'], Ali
 const assigneeFor = (st) => (st === 'Aligned' || st === 'Investigating') ? 'cc' : 'john';
 function mergedTickets() {
   const spine = [...TICKETS(), ...MANUAL()], state = readState();
-  return { tickets: spine.map(t => ({ ...t, state: state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null } })) };
+  return {
+    tickets: spine
+      .filter(t => !(state[t.id] && state[t.id].deleted === true))   // tombstoned tickets are excluded everywhere
+      .map(t => ({ ...t, state: state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null } }))
+  };
 }
 // the COLLATE step — assemble the rich package John's alignment triggers.
 function collate(ticket, state, decision) {
