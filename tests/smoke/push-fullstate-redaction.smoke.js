@@ -59,21 +59,24 @@ test.describe('R5 T6+T2 — PUSH.pushFullState redaction + size cap', () => {
 
   // Case 1 — captured request body MUST NOT contain any NEVER_SYNC field.
   test('Case 1: NEVER_SYNC fields stripped from pushed body', async ({ page }) => {
-    let capturedBody = null;
+    let capturedBuf = null;
     await page.route('**/push-full-state', async route => {
-      capturedBody = route.request().postData();
+      capturedBuf = route.request().postDataBuffer();
       await route.fulfill({ status: 200, body: JSON.stringify({ ok: true, meta: {} }) });
     });
 
-    const result = await page.evaluate(async () => {
-      // Trigger push
-      const r = await PUSH.pushFullState({});
-      return r;
-    });
+    const result = await page.evaluate(async () => await PUSH.pushFullState({}));
 
     expect(result.ok).toBe(true);
-    expect(capturedBody).toBeTruthy();
-    const parsed = JSON.parse(capturedBody);
+    expect(capturedBuf).toBeTruthy();
+    // push-reliability fix 2026-05-26: the body is now gzipped — inflate it
+    // before asserting redaction (gzip magic bytes 0x1f 0x8b).
+    const zlib = require('zlib');
+    const parsed = JSON.parse(
+      (capturedBuf[0] === 0x1f && capturedBuf[1] === 0x8b)
+        ? zlib.gunzipSync(capturedBuf).toString('utf8')
+        : capturedBuf.toString('utf8')
+    );
     expect(parsed.S).toBeTruthy();
 
     // The forbidden fields MUST NOT appear

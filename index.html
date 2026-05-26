@@ -2524,18 +2524,18 @@ function save() {
   }
 }
 
-// Bundle 32a — debounced push-on-save scaffold.
-// Every save() call resets a 30s timer; when it fires, PUSH.pushFullState
-// uploads the full {S, BILLS} localStorage blob to the worker's
-// /push-full-state endpoint. The dev side then pulls via
-// `npm run fixture:fresh` (scripts/recon/pull-from-kv.js) before any
-// smoke run so the fixture matches John's live phone state.
-// On pagehide/beforeunload, any pending push is flushed via
-// navigator.sendBeacon (fire-and-forget, doesn't block tab close).
-// See ADR-bundle-32a-push-on-save-and-fixture-freshness.md.
+// Bundle 32a — debounced push-on-save. Push-reliability fix 2026-05-26:
+// every save() resets a 5s timer (was 30s); when it fires, PUSH.pushFullState
+// gzips the full {S, BILLS} blob (~136KB -> ~22KB) and POSTs it to the
+// worker's /push-full-state endpoint. Backgrounding the app also pushes the
+// current state immediately (visibilitychange:hidden, which has runway) and
+// flushes synchronously from the gzip cache on pagehide/beforeunload
+// (PUSH.flushSync) — so a save can't be stranded by Android suspending the
+// PWA before the debounce fires. See ADR-bundle-32a + the push-reliability
+// session doc (docs/sessions/2026-05-26-push-reliability-session.md).
 let _pushFullStateTimer = null;
 let _pushFullStatePending = false;
-const _PUSH_FULL_STATE_DEBOUNCE_MS = 30000;
+const _PUSH_FULL_STATE_DEBOUNCE_MS = 5000;  // 30s lost the race vs Android background-suspend; 5s wins it
 
 function _schedulePushFullState() {
   // Explicit opt-out via S.pushOnSaveEnabled === false (default true)
@@ -2551,26 +2551,30 @@ function _schedulePushFullState() {
   }, _PUSH_FULL_STATE_DEBOUNCE_MS);
 }
 
-// Bundle 32a — pagehide flush. If the user exits the app within the
-// debounce window, the pending push would be lost.
-//
-// Phase A update (2026-05-20): switched from navigator.sendBeacon to
-// PUSH.pushFullState({keepalive:true}). sendBeacon can't carry custom
-// headers — including Phase A's required Authorization header — so it
-// would 401 against the auth'd worker. fetch + keepalive:true is the
-// modern equivalent that supports headers and survives tab close
-// (browser policy limits cumulative keepalive bodies to ~64kB which
-// matches sendBeacon's typical size limit, so the failure mode is
-// unchanged for large states — graceful skip + next session catches up).
+// Bundle 32a — pagehide flush. Push-reliability fix 2026-05-26: the flush now
+// uses PUSH.flushSync() — a SYNCHRONOUS keepalive fetch from the pre-gzipped
+// cache. Because the body is gzipped to ~22KB (under the browser's 64KB
+// keepalive cap), large states NO LONGER drop on exit — that was the prior
+// failure mode (OPEN-BUGS #50). Phase A history: sendBeacon was replaced by
+// keepalive fetch because sendBeacon can't carry the Authorization header.
+// The normal backgrounding case is covered earlier by visibilitychange:hidden,
+// which has runway to gzip the CURRENT state before Android suspends the PWA.
 function _flushPushFullState() {
+  // pagehide/beforeunload — SYNCHRONOUS best-effort. We deliberately do NOT
+  // await an async gzip here: the page can freeze mid-await before fetch() is
+  // even called, which is exactly how keepalive guarantees get lost. Instead
+  // PUSH.flushSync() fires a keepalive fetch with the PRE-GZIPPED cache (built
+  // by the last pushFullState / the visibilitychange:hidden push), so the body
+  // is ready synchronously and fits under the 64KB keepalive cap. The normal
+  // backgrounding case is already covered by visibilitychange:hidden (which has
+  // runway to gzip the CURRENT state). A service-worker retry queue is the
+  // future hardening for true hard-close (needs Bundle 33-cache).
   if (!_pushFullStatePending) return;
   if (_pushFullStateTimer) { clearTimeout(_pushFullStateTimer); _pushFullStateTimer = null; }
   _pushFullStatePending = false;
   if (typeof S !== 'undefined' && S && S.pushOnSaveEnabled === false) return;
-  if (typeof PUSH === 'undefined' || typeof PUSH.pushFullState !== 'function') return;
-  try {
-    PUSH.pushFullState({ keepalive: true }).catch(() => {});  // fire-and-forget
-  } catch (_) {}
+  if (typeof PUSH === 'undefined' || typeof PUSH.flushSync !== 'function') return;
+  try { PUSH.flushSync(); } catch (_) {}
 }
 
 // Bundle 32a — wire pagehide + beforeunload to flush any pending push.
@@ -5571,6 +5575,19 @@ if (typeof document !== 'undefined' && document.addEventListener) {
       if (document.visibilityState === 'hidden') {
         S._invariantsHiddenAt = Date.now();
         save();
+        // Push-reliability fix 2026-05-26: backgrounding IS the failure window.
+        // Push the CURRENT state immediately instead of waiting for the 5s
+        // debounce (Android may suspend the PWA first). visibilitychange:hidden
+        // fires with runway — before pagehide/freeze — so the async gzip +
+        // keepalive fetch completes and refreshes the flushSync gzip cache.
+        try {
+          if (typeof PUSH !== 'undefined' && typeof PUSH.pushFullState === 'function'
+              && !(S && S.pushOnSaveEnabled === false)) {
+            if (_pushFullStateTimer) { clearTimeout(_pushFullStateTimer); _pushFullStateTimer = null; }
+            _pushFullStatePending = false;
+            PUSH.pushFullState({ keepalive: true }).catch(() => {});
+          }
+        } catch (_) {}
       }
     } catch (_) {}
   });
@@ -19009,33 +19026,82 @@ const PUSH = {
         for (const k of NEVER_SYNC) delete parsed.S[k];
       }
       const body = JSON.stringify(parsed);
-      // Size cap (Drone R5 finding T2) — bounds amplification + matches worker cap.
+      // Size cap (Drone R5 finding T2) — sanity bound on the RAW JSON.
       if (body.length > 500000) {
         if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState too-large:', body.length);
-        return { ok: false, reason: 'too-large', size: body.length };
+        const r = { ok: false, reason: 'too-large', size: body.length };
+        this._recordPushOutcome(r); return r;
       }
-      const init = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() },
-        body,
-      };
-      // Phase A — `keepalive: true` lets the request survive pagehide
-      // for best-effort flush. Replaces the Bundle 32a sendBeacon path
-      // (which couldn't carry the Authorization header). Browser policy
-      // limits keepalive bodies to ~64kB cumulative; large state pushes
-      // may be rejected — that's the same failure mode as sendBeacon
-      // had on >64kB bodies. Next session's save() catches up.
+      // Push-reliability fix 2026-05-26 — gzip the body. CompressionStream
+      // squashes the ~136KB JSON to ~22KB (under the 64KB keepalive cap) so the
+      // pagehide/background flush survives. The worker sniffs Content-Encoding
+      // and decompresses. Cache the gzipped bytes for flushSync() (the sync
+      // pagehide path). If CompressionStream is unavailable (very old browser),
+      // fall back to the plain body — old behaviour, large keepalive may drop.
+      let gzBuf = null;
+      try {
+        const stream = new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'));
+        gzBuf = await new Response(stream).arrayBuffer();
+        this._lastGzipBody = gzBuf;
+      } catch (_) { gzBuf = null; }
+      const headers = { 'Content-Type': 'application/json', 'Authorization': getAuthHeader() };
+      const init = { method: 'POST', headers };
+      if (gzBuf) { headers['Content-Encoding'] = 'gzip'; init.body = gzBuf; }
+      else { init.body = body; }
+      // keepalive lets the request survive pagehide; with gzip the body is
+      // ~22KB, comfortably under the browser's 64KB keepalive cap.
       if (opts && opts.keepalive) init.keepalive = true;
-      const res = await fetch(this.workerUrl + '/push-full-state', init);
+      let res;
+      try {
+        res = await fetch(this.workerUrl + '/push-full-state', init);
+      } catch (e) {
+        if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState fetch-fail:', e);
+        const r = { ok: false, error: e.message }; this._recordPushOutcome(r); return r;
+      }
       if (!res.ok) {
         if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState non-ok:', res.status);
-        return { ok: false, status: res.status };
+        const r = { ok: false, status: res.status }; this._recordPushOutcome(r); return r;
       }
-      return { ok: true };
+      const r = { ok: true, at: Date.now() }; this._recordPushOutcome(r); return r;
     } catch (e) {
       if (window.SLYGHT_DEBUG) console.log('PUSH.pushFullState failed:', e);
-      return { ok: false, error: e.message };
+      const r = { ok: false, error: e.message }; this._recordPushOutcome(r); return r;
     }
+  },
+
+  // Push-reliability fix 2026-05-26 — observability. Records the last push
+  // outcome + timestamp to a localStorage key SEPARATE from slyght_v5 (so it
+  // never enters the synced blob and never triggers another push). This
+  // replaces the old silent `.catch(()=>{})` blind spot: a dropped push now
+  // leaves a trace (slyght_push_status) the acid test / dev-inspect can read.
+  _lastResult: null,
+  _lastGzipBody: null,
+  _recordPushOutcome(result) {
+    try {
+      const rec = { ok: !!(result && result.ok), at: Date.now() };
+      if (result && !result.ok) rec.reason = result.reason || result.status || result.error || 'unknown';
+      localStorage.setItem('slyght_push_status', JSON.stringify(rec));
+      this._lastResult = rec;
+    } catch (_) {}
+  },
+
+  // Push-reliability fix 2026-05-26 — synchronous pagehide flush. Fires a
+  // keepalive fetch using the PRE-GZIPPED cache (no await — so the request
+  // initiates before the page is torn down). Body is ~22KB gzipped, well under
+  // the 64KB keepalive cap. Returns true if a flush was attempted.
+  flushSync() {
+    try {
+      if (typeof S !== 'undefined' && S && S.pushOnSaveEnabled === false) return false;
+      if (!this._lastGzipBody) return false;
+      fetch(this.workerUrl + '/push-full-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', 'Authorization': getAuthHeader() },
+        body: this._lastGzipBody,
+        keepalive: true,
+      }).catch(() => {});
+      try { localStorage.setItem('slyght_push_status', JSON.stringify({ ok: 'flush-attempted', at: Date.now() })); } catch (_) {}
+      return true;
+    } catch (_) { return false; }
   },
 
   renderSubscribeButton() {
