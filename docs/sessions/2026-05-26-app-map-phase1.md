@@ -41,3 +41,13 @@ rungs that should exist but are missing/broken — gap shown IN POSITION, two co
 ## JOHN-KNOWLEDGE
 Added Demonstrated: **IS-vs-SHOULD as the complete intended journey** (John designed the
 reframe + the gap-in-position modelling insight + built the savings ladder reference).
+
+## Update — Phase 1 COMPLETE + Phase 2 hub map (same session)
+- `bd5a423` — ground the other 7 surfaces via parallel trace drones; all 9 traced, 22 gaps,
+  file:lines verified. New bugs surfaced: settings Reset unrecoverable (saveUndoState→S._prevState
+  deleted by reset), debts no partial pay-down + FR-07, plan 3rd lock store (:27355) no writer,
+  nav PIN gate orphaned + boot TDZ, analysis lax-vs-strict filter split. (Not yet ticketed.)
+- `649996b` — Phase 2 hub-and-spokes overview map (cash hub + 9 spokes, severity by gap count,
+  click → ladder). Verified 0 JS errors.
+- NEXT: front/back toggle (front = real walk screenshot, back = ladder) + now-vs-after-fix;
+  mint tickets for the new findings.
