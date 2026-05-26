@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-05-26T11:26:10.345Z",
+  "generatedAt": "2026-05-26T11:49:50.123Z",
   "coverage": {
-    "traced": 2,
+    "traced": 9,
     "total": 9
   },
   "roster": [
     {
       "id": "dashboard",
       "name": "Dashboard",
-      "traced": false,
-      "ticket": null
+      "traced": true,
+      "ticket": "SLY-4"
     },
     {
       "id": "bills",
@@ -26,41 +26,352 @@
     {
       "id": "plan",
       "name": "Payday plan",
-      "traced": false,
-      "ticket": null
+      "traced": true,
+      "ticket": "SLY-5"
     },
     {
       "id": "analysis",
       "name": "Analysis",
-      "traced": false,
+      "traced": true,
       "ticket": null
     },
     {
       "id": "debts",
       "name": "Debts",
-      "traced": false,
+      "traced": true,
       "ticket": null
     },
     {
       "id": "ai",
       "name": "AI chat",
-      "traced": false,
-      "ticket": null
+      "traced": true,
+      "ticket": "SLY-3"
     },
     {
       "id": "settings",
       "name": "Settings",
-      "traced": false,
+      "traced": true,
       "ticket": null
     },
     {
       "id": "nav",
       "name": "Nav / onboarding",
-      "traced": false,
+      "traced": true,
       "ticket": null
     }
   ],
   "surfaces": [
+    {
+      "id": "ai",
+      "name": "AI Chat — ask SLYGHT a money question",
+      "surface": "ai",
+      "ticket": "SLY-3",
+      "summary": "What happens when John asks the AI coach a question — and why the answer is built from a stale, hand-edited brief instead of the correct one sitting right next to it.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Open AI Chat tab",
+          "is": "ok",
+          "does": "You tap the chat tab and the SLYGHT AI screen opens.",
+          "wired": "goPage('pg-chat') → checkChatInactivity() + scrollChatToBottom()",
+          "file": "index.html:4192 (nav button index.html:1738)",
+          "reads": [
+            "S.chatHistory"
+          ],
+          "writes": [],
+          "plain": "Opening the chat surface. In Postman terms: opening the collection where the AI request lives — you haven't fired anything yet."
+        },
+        {
+          "n": 2,
+          "title": "Type a question + tap send",
+          "is": "ok",
+          "does": "You type 'can I afford X?' and hit send (or Enter).",
+          "wired": "chat-input → chatInputKeydown(event) → sendChatMessage(); send button onclick=\"sendChatMessage()\"",
+          "file": "index.html:1031-1035, Enter handler index.html:16004",
+          "reads": [],
+          "writes": [],
+          "plain": "You fill in the question and press Send. This is clicking 'Send' on the Postman request — it kicks off everything downstream."
+        },
+        {
+          "n": 3,
+          "title": "Your message is recorded",
+          "is": "ok",
+          "does": "Your typed text is appended to the chat history and shown on screen with a typing indicator.",
+          "wired": "sendChatMessage() → BRAIN.chat.addUser(text, CHAT_USER_SEND) → renderChatMessages()",
+          "file": "index.html:15583, addUser index.html:15611",
+          "reads": [
+            "S.chatHistory",
+            "S.apiKey"
+          ],
+          "writes": [
+            "chat_user_msg"
+          ],
+          "plain": "Your question is filed in the conversation log (canonical writer, audited) and painted into the chat. Like logging the request you're about to send."
+        },
+        {
+          "n": 4,
+          "title": "Assemble the request body (system prompt)",
+          "is": "broken",
+          "does": "Builds the giant system-prompt string that tells the AI John's whole financial picture. THIS is the body sent to the API — and it's hand-assembled with raw + stale values.",
+          "wired": "inline `systemPrompt` template literal in sendChatMessage()",
+          "file": "index.html:15665-15743",
+          "reads": [
+            "S.bal (RAW)",
+            "getDynamicDailyBudget()",
+            "MODEL.daysToPayday",
+            "S.savingsBuckets",
+            "goals['rainy-day-fund']"
+          ],
+          "writes": [],
+          "plain": "THE BROKEN RUNG. This is the request body you POST to the endpoint — but it was hand-edited, not built by the proper composite-API. Four things are wrong in the body: (1) it reads RAW S.bal (index.html:15672) instead of getLiveBal(), (2) it quotes getDynamicDailyBudget() (index.html:15676) instead of the genuine surplus, (3) it has NO licensed-advice disclaimer, and (4) it carries stale hardcoded facts — the Darwin trip is frozen as 'June 7-15' (index.html:15704). Worst: it looks up the Rainy Day Fund by id 'rainy-day-fund' (index.html:15649) but the real intent id is 'rainy-day', so the lookup misses and the AI is told $0 saved. A request body with hardcoded fields that no longer match the live data.",
+          "ticket": "SLY-3"
+        },
+        {
+          "n": 5,
+          "title": "The CORRECT builder that should run here",
+          "is": "dead",
+          "does": "SHOULD be the function that builds the body: getLiveBal() for balance, getGenuineSurplus() for headroom, AND prepends the licensed-advice disclaimer.",
+          "wired": "buildSystemPrompt() — defined, complete, ZERO callers",
+          "file": "index.html:15332 (getLiveBal 15335, getGenuineSurplus 15340, disclaimer 15375)",
+          "reads": [
+            "getLiveBal()",
+            "getGenuineSurplus()",
+            "getNetWorth()"
+          ],
+          "writes": [],
+          "plain": "The 'should' rung. A composite-API that builds the request body CORRECTLY — right balance, right surplus, the legal disclaimer baked in. It exists and is finished… but nothing ever calls it. Greyed out because step 4 builds its own hand-edited body instead. Like having a tested 'build request' script in the collection that nobody wired to the Send button."
+        },
+        {
+          "n": 6,
+          "title": "Send to the Anthropic API",
+          "is": "ok",
+          "does": "POSTs the request to the messages endpoint with the assembled system prompt + recent chat history.",
+          "wired": "fetch('https://api.anthropic.com/v1/messages', { system: systemPrompt, messages: apiMessages })",
+          "file": "index.html:15755 (system field index.html:15766)",
+          "reads": [
+            "S.chatHistory (last 20)",
+            "S.apiKey"
+          ],
+          "writes": [],
+          "plain": "The actual Send. The body from step 4 — stale fields and all — goes out over the wire. The mechanism works perfectly; it's just carrying the wrong payload."
+        },
+        {
+          "n": 7,
+          "title": "Reply renders into the chat",
+          "is": "ok",
+          "does": "The AI's answer comes back and is shown as a message bubble.",
+          "wired": "resp.json() → BRAIN.chat.addAssistant(reply, {}, CHAT_ASSISTANT_REPLY) → renderChatMessages()",
+          "file": "index.html:15786-15813, render index.html:15822",
+          "reads": [
+            "S.chatHistory"
+          ],
+          "writes": [
+            "chat_assistant_msg"
+          ],
+          "plain": "The response lands and is painted into the chat (and filed in history). The plumbing is fine — but the advice is only as good as the stale body from step 4 fed it."
+        },
+        {
+          "n": 8,
+          "title": "Optional AI action [ACTION:{...}]",
+          "is": "ok",
+          "does": "If the reply ends with an [ACTION:{...}] tag, it's parsed and executed (log a txn, mark a bill paid, update balance, etc).",
+          "wired": "reply.match(/\\[ACTION:(.*?)\\]/) → JSON.parse → executeChatAction(action)",
+          "file": "index.html:15804-15809, handler index.html:15826",
+          "reads": [
+            "action JSON from reply"
+          ],
+          "writes": [
+            "txn_record",
+            "bill_mark_paid",
+            "balance_apply_delta"
+          ],
+          "plain": "The AI can suggest a concrete action and the app runs it. Note: the update_balance action here is FR-03 (overshoots ~$7k) — a separate open bug. This rung fires correctly; its risk is downstream of SLY-3."
+        }
+      ],
+      "counts": {
+        "total": 8,
+        "gaps": 1,
+        "dead": 1,
+        "firesAnyway": 0
+      }
+    },
+    {
+      "id": "analysis",
+      "name": "Analysis — where my money went & how the trend is moving",
+      "surface": "analysis",
+      "ticket": null,
+      "summary": "Opening Analysis and reading a truthful picture of spend + net-worth trend. The rendering rungs work; the BROKEN rungs are the filters underneath — three tiles answer 'how much did I spend' with three different WHERE clauses, and the trend tiles compare an all-time total (or a stale snapshot) against a monthly baseline.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Tap Analysis tab",
+          "is": "ok",
+          "does": "You open the Analysis surface from the bottom nav.",
+          "wired": "nav-spend button → goPage('pg-spend')",
+          "file": "index.html:1742, handler index.html:4174",
+          "reads": [],
+          "writes": [],
+          "plain": "The entry point. In Postman terms this is selecting the Analysis collection — the screen you'll fire all the read-only 'report' requests from. goPage just swaps which screen is visible, then calls renderAll()."
+        },
+        {
+          "n": 2,
+          "title": "renderAll fans out to the Analysis renderers",
+          "is": "ok",
+          "does": "Because pg-spend is now the active screen, the master render pass calls the three Analysis builders.",
+          "wired": "renderAll() → if pg-spend active { renderAnalysisTab(); renderSurvivalForecast(); renderSpendingPivot(); }",
+          "file": "index.html:7269",
+          "reads": [
+            "S.txns",
+            "S.monthlyHistory",
+            "MODEL"
+          ],
+          "writes": [],
+          "plain": "One dispatcher fires several report queries at once. Each builder is its own endpoint reading the same txn table — and that's where the trouble starts: they don't all use the same WHERE clause."
+        },
+        {
+          "n": 3,
+          "title": "Spending pivot renders — 'WHERE YOUR MONEY WENT'",
+          "is": "ok",
+          "does": "The top tile draws category cards with a total-outflows header and a Today / 7 Days / 30 Days / All time period toggle.",
+          "wired": "renderSpendingPivot() reading buildSpendingPivot(period)",
+          "file": "index.html:19969, builder index.html:19940",
+          "reads": [
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "The headline report. The card layout, bars and toggle are healthy — this rung works. The number it shows is sourced by the filter in the next step."
+        },
+        {
+          "n": 4,
+          "title": "Pivot total uses the LAX outflow filter",
+          "is": "broken",
+          "does": "buildSpendingPivot groups txns via getAllOutflowsByCategory — only drops income, corrections and round-ups. Bills / Loan / CC Payment / Savings / Transfer ALL count as 'spend'.",
+          "wired": "buildSpendingPivot() → getAllOutflowsByCategory(cutoff, now)",
+          "file": "index.html:19952, filter index.html:3688",
+          "reads": [
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "Here's the first cracked rung. This query forgot to exclude the non-discretionary rows — its WHERE clause only filters out income/corrections. So on a bill-pay day this tile's 'today' total balloons. Meanwhile the Dashboard 'spent today' uses the STRICT filter (computeSpentInRange / _NON_SPEND_CATS, 8 excluded cats). Same question, two endpoints, two answers — OPEN-BUGS #6/#8 filter scatter."
+        },
+        {
+          "n": 5,
+          "title": "Toggle the period (Today / 7d / 30d / All)",
+          "is": "ok",
+          "does": "Tapping a period chip re-queries the pivot for that window.",
+          "wired": "pivotSetPeriod(period) → sets data-period, re-renders",
+          "file": "index.html:20063, chips index.html:19982",
+          "reads": [
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "The time-window selector works mechanically — it just narrows the WHERE clause's date range. But because step 4's filter is lax, every window inherits the same over-count."
+        },
+        {
+          "n": 6,
+          "title": "Category breakdown tile renders",
+          "is": "broken",
+          "does": "renderCatBreakdown draws a second 'where it went' list labelled 'This month (all logged)' — but it queries ALL-TIME, not this month, and uses the same lax outflow filter.",
+          "wired": "renderCatBreakdown() → getAllOutflowsByCategory(0, Date.now())",
+          "file": "index.html:10054, range arg index.html:10061",
+          "reads": [
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "A broken rung in two ways. The label says 'This month' but the date range is from 0 (the dawn of time) to now — so a returning user sees lifetime totals under a monthly heading. And it's the same lax filter as the pivot, so it can disagree with both the Dashboard AND the strict Cut-sliders tile sitting just below it. This is the 'today's spend shows 3 different numbers' class."
+        },
+        {
+          "n": 7,
+          "title": "Cut sliders tile — STRICT discretionary filter",
+          "is": "ok",
+          "does": "'Where to cut' reads STRICT discretionary by category (excludes Bills/Loan/CC/Transfer + corrections/roundups) and compares each category to a monthly baseline.",
+          "wired": "renderCutSliders() reading MODEL.cycleDiscretionaryByCategory",
+          "file": "index.html:9955, source index.html:9972",
+          "reads": [
+            "MODEL.cycleDiscretionaryByCategory"
+          ],
+          "writes": [],
+          "plain": "This rung is healthy AND correctly opinionated: for 'what should I cut' it deliberately uses the strict WHERE clause (don't suggest cutting a loan repayment). The bug isn't here — it's that the tile ABOVE it (step 6) uses a different filter, so the two tiles on the same screen disagree on totals. OPEN-BUGS #7 (all-time-vs-monthly) was patched here by moving to cycle-scoped MODEL data; baselines remain hardcoded monthly."
+        },
+        {
+          "n": 8,
+          "title": "Change the segment (1m / 3m / 6m)",
+          "is": "ok",
+          "does": "Tapping a segment chip multiplies the projected savings over 1, 3 or 6 months and re-renders the cut sliders.",
+          "wired": "setSeg(s) → S.seg = s; renderCutSliders()",
+          "file": "index.html:9953",
+          "reads": [
+            "S.seg"
+          ],
+          "writes": [
+            "seg_select"
+          ],
+          "plain": "A projection multiplier — the only step on this surface that writes anything (it stores which horizon you picked). It scales the strict per-category overage by 1/3/6 months. Works correctly."
+        },
+        {
+          "n": 9,
+          "title": "renderTrend — month-on-month category deltas",
+          "is": "broken",
+          "does": "renderTrend compares each category's spend to last month's snapshot — but 'this' side is ALL-TIME outflows, while the comparison baseline is a single monthlyHistory snapshot.",
+          "wired": "renderTrend() → getAllOutflowsByCategory(0, Date.now()) vs history[last]",
+          "file": "index.html:10031, range index.html:10043, baseline index.html:10047",
+          "reads": [
+            "S.txns",
+            "S.monthlyHistory"
+          ],
+          "writes": [],
+          "plain": "Broken rung: it diffs an all-time running total against a point-in-time monthly snapshot. As lifetime spend only ever grows, the delta vs 'last month' inflates over time — the same shape as comparing a cumulative ledger balance to a single period's figure. Renders fine, reads wrong."
+        },
+        {
+          "n": 10,
+          "title": "Month-on-Month tile (inside Analysis tab)",
+          "is": "ok",
+          "does": "renderAnalysisTab draws a per-category '% vs last month' list using STRICT discretionary spend vs the last monthlyHistory snapshot.",
+          "wired": "renderAnalysisTab() month-on-month block",
+          "file": "index.html:6308",
+          "reads": [
+            "S.txns",
+            "S.monthlyHistory"
+          ],
+          "writes": [],
+          "plain": "This tile is healthy — it filters strict (excludes _NON_SPEND_CATS) and only shows a delta when last month's value exists. Note it can still disagree with step 9's renderTrend, which uses the lax all-time filter — two 'month-on-month' tiles, two methods."
+        },
+        {
+          "n": 11,
+          "title": "Net Worth Trend — 'vs last month'",
+          "is": "broken",
+          "does": "Reads the latest monthlyHistory snapshot's liquidNet and subtracts it from live net worth to show the 'vs last month' delta.",
+          "wired": "renderAnalysisTab() NW block → latest = monthlyHistory[last]; delta = nw.liquidNet - latest.liquidNet",
+          "file": "index.html:6402, baseline read index.html:6414, delta index.html:6422",
+          "reads": [
+            "S.monthlyHistory",
+            "getNetWorth()"
+          ],
+          "writes": [],
+          "plain": "The famous '+$90k vs last month' rung. The baseline is whatever sits in the last monthlyHistory row — and if that snapshot is stale or pre-dates a big asset entry (WRX, Super), the delta is nonsense. A $15k SANITY_CAP guard now hides implausible deltas behind a 'trend stabilising' message instead of printing the wrong number, but the underlying read is still against a possibly-wrong baseline. Like reporting month-over-month change against a snapshot that was never refreshed."
+        },
+        {
+          "n": 12,
+          "title": "Net Worth Trend delta passes the sanity gate",
+          "is": "ok",
+          "does": "When the snapshot is fresh and the delta is within plausible bounds, the green/red '+/- $X vs last month' line renders correctly.",
+          "wired": "renderAnalysisTab() NW block → isPlausible guard then delta line",
+          "file": "index.html:6424",
+          "reads": [
+            "S.monthlyHistory",
+            "getNetWorth()"
+          ],
+          "writes": [],
+          "plain": "The happy path. With a current snapshot the math is right and the guard lets the real number through. This is the rung working as intended — the breakage in step 11 is entirely about whether the baseline snapshot is trustworthy."
+        }
+      ],
+      "counts": {
+        "total": 12,
+        "gaps": 4,
+        "dead": 0,
+        "firesAnyway": 0
+      }
+    },
     {
       "id": "bills",
       "name": "Bills — mark paid & undo",
@@ -156,6 +467,708 @@
       }
     },
     {
+      "id": "dashboard",
+      "name": "Dashboard — open the app and read where you stand",
+      "surface": "dash",
+      "ticket": "SLY-4",
+      "summary": "The complete journey of opening the home screen and reading your money — the headline number, what's safe to spend, the payday countdown, net worth — and the rungs that render wrong or disagree across surfaces.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Open the dashboard",
+          "is": "ok",
+          "does": "You land on the home screen (or tap the Dash tab) and the whole view paints.",
+          "wired": "goPage('pg-dash') → renderAll()",
+          "file": "index.html:4174",
+          "reads": [],
+          "writes": [],
+          "plain": "The starting screen. In Postman terms goPage is the request that opens the collection; its last line calls renderAll() — the composite-API that assembles the entire dashboard view in one pass."
+        },
+        {
+          "n": 2,
+          "title": "Refresh the model everything reads from",
+          "is": "ok",
+          "does": "Before painting, renderAll recomputes the shared financial model so every tile reads the same snapshot.",
+          "wired": "renderAll() → refreshModel()",
+          "file": "index.html:6745",
+          "reads": [
+            "S.bal",
+            "S.payday",
+            "S.txns",
+            "S.debts",
+            "BILLS"
+          ],
+          "writes": [],
+          "plain": "The composite-API first calls one upstream endpoint (refreshModel) so the tiles below all read MODEL — the same assembled response — instead of each re-querying entity fields and drifting apart."
+        },
+        {
+          "n": 3,
+          "title": "Read live balance",
+          "is": "ok",
+          "does": "Reads the true spendable cash — BRAIN.balance.get(), falling back to S.bal.",
+          "wired": "getLiveBal()",
+          "file": "index.html:3643",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [],
+          "plain": "Reading the canonical balance field. getLiveBal asks the BRAIN.balance bubble for the number rather than touching S.bal raw — the single source of truth for cash."
+        },
+        {
+          "n": 4,
+          "title": "Cash hero renders the headline number",
+          "is": "broken",
+          "does": "The big number paints — Safe-to-spend headroom from the plan snapshot (falls back to live balance). Counter-rolls each time the value changes.",
+          "wired": "renderAll() hero block → _hbal '#h-bal'",
+          "file": "index.html:6851",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [],
+          "plain": "The headline composite-API writes the number into #h-bal. Each render diffs the old value against the new and, if they differ by >= 0.5, tweens between them frame-by-frame — so the headline number visibly slews across frames instead of snapping to its true value. That render-drift is the headline-instability defect.",
+          "ticket": "SLY-4"
+        },
+        {
+          "n": 5,
+          "title": "Counter-roll animation tweens the digits",
+          "is": "broken",
+          "does": "Drives the per-frame digit roll on the hero (and NW / Max-per-day) over ~380ms with an ease-out curve.",
+          "wired": "_animateCounter({el,from,to,durationMs,format})",
+          "file": "index.html:13139",
+          "reads": [],
+          "writes": [],
+          "plain": "The animator the hero hands its from/to to. It paints intermediate dollar values (from + (to-from)*eased) into the element on every requestAnimationFrame tick — so for ~380ms the headline shows numbers that were never the real balance. This is the mechanism behind the SLY-4 render-drift.",
+          "ticket": "SLY-4"
+        },
+        {
+          "n": 6,
+          "title": "Receipt sub-line shows the math",
+          "is": "broken",
+          "does": "Under the hero: 'cash − $X bills − $Y living = $Z' so the headroom is explainable.",
+          "wired": "renderAll() receipt block → '#cashflow-receipt'",
+          "file": "index.html:6919",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [],
+          "plain": "The trust sub-line. It's built with fmt() (rounds to whole dollars) and painted in low-contrast greys (rcpt-bills / rcpt-living on --text3) on the dark hero panel. Small grey-on-grey numbers are hard to read on the S23, and rounded/empty values can render malformed ($#0-style) — the legibility defect.",
+          "ticket": "SLY-6"
+        },
+        {
+          "n": 7,
+          "title": "MAX PER DAY / daily budget tile",
+          "is": "ok",
+          "does": "Shows what's safe to spend the rest of today, tinted green/amber/red by severity.",
+          "wired": "renderAll() max-day block → '#max-day-display' (MODEL.safeToSpendToday)",
+          "file": "index.html:7177",
+          "reads": [
+            "S.bal",
+            "S.weekdayBudget",
+            "S.weekendBudget",
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "The daily-budget tile reads MODEL.safeToSpendToday — assembled from getDynamicDailyBudget() (index.html:2991): available cash / days-to-payday, capped at your weekday/weekend cap, minus what you've already spent today. Healthy here."
+        },
+        {
+          "n": 8,
+          "title": "Payday countdown bar + label",
+          "is": "broken",
+          "does": "Fills the cycle-progress bar and prints 'N days to payday' under the hero.",
+          "wired": "renderAll() payday block → '#pd-lbl' / '#pd-fill' (days = MODEL.daysToPayday)",
+          "file": "index.html:7150",
+          "reads": [
+            "S.payday",
+            "S.paydayReceived"
+          ],
+          "writes": [],
+          "plain": "The dashboard countdown reads MODEL.daysToPayday (set at index.html:6822). Other surfaces compute the same countdown inline with daysLeft(S.payday) (index.html:2942), and the two diverge on Feb-31-style month clamping and payday-morning gating — so the same 'days to payday' shows different numbers across tabs. Cross-surface incoherence (FR-06)."
+        },
+        {
+          "n": 9,
+          "title": "Liquid net-worth tile",
+          "is": "ok",
+          "does": "Shows '+$X liquid net worth · tap for full picture'; hidden on a coral (over-budget) day so it doesn't soften urgency.",
+          "wired": "renderAll() NW block → '#nw-val' (MODEL.liquidNet)",
+          "file": "index.html:7120",
+          "reads": [
+            "S.bal",
+            "S.debts",
+            "S.assets"
+          ],
+          "writes": [],
+          "plain": "The net-worth strip reads MODEL.liquidNet (assets minus liabilities you could access today) and counter-rolls it like the hero. On a negative-headroom day it's hidden so the red hero stands alone. Healthy."
+        },
+        {
+          "n": 10,
+          "title": "Goal / debt mini-tiles render",
+          "is": "ok",
+          "does": "Immediate Debts grid and Recent Spending list paint below the hero.",
+          "wired": "renderAll() → debt-grid / renderDashTxns()",
+          "file": "index.html:10088",
+          "reads": [
+            "S.debts",
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "The supporting tiles: the debts grid lists immediate debts and renderDashTxns paints the last few transactions. Each is a small composite read off S — no writes, just the view."
+        },
+        {
+          "n": 11,
+          "title": "Tap a number → explainer modal",
+          "is": "ok",
+          "does": "Tapping a tile opens its math: Max-per-day → breakdown; hero → balance edit; NW strip → full picture.",
+          "wired": "explainMaxPerDay() / openHeroBalEdit() / openNetWorthModal()",
+          "file": "index.html:3221",
+          "reads": [
+            "S.bal",
+            "S.weekdayBudget",
+            "S.weekendBudget",
+            "S.txns"
+          ],
+          "writes": [],
+          "plain": "Every number is tappable to its 'why'. explainMaxPerDay (3221) re-derives the same available/days/cap/spent math and shows the receipt; openHeroBalEdit (7771) lets you correct the balance; openNetWorthModal (7620) shows the asset/liability breakdown. The explainer rung works."
+        }
+      ],
+      "counts": {
+        "total": 11,
+        "gaps": 4,
+        "dead": 0,
+        "firesAnyway": 0
+      }
+    },
+    {
+      "id": "debts",
+      "name": "Debts — clear a debt & add a new one",
+      "surface": "debts",
+      "ticket": null,
+      "summary": "The journey a debt takes from the list, through a full clear (cash debits + a Debt-repayment txn logs), to gone. The pay-down rungs are healthy; the missing rung is what happens to a debt that's whittled to ~$0 — there's no clean archive, and the only exit (Delete) uses a native confirm.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Open Debts",
+          "is": "ok",
+          "does": "You land on the Immediate Debts list (it lives on the Dashboard; the Analysis 'Debts →' link routes here too).",
+          "wired": "goPage('pg-dash') → renderDebtTiles()",
+          "file": "index.html:1409, 7841",
+          "reads": [
+            "S.debts",
+            "S.debtStrategy"
+          ],
+          "writes": [],
+          "plain": "Opening the Debts collection. The list is one of the cards on the home screen — there is no separate Debts page, the 'Debts →' link just scrolls you to the same card."
+        },
+        {
+          "n": 2,
+          "title": "List renders (priority / strategy order)",
+          "is": "ok",
+          "does": "Active debts (paid + viaRent excluded from the headline total) render as tiles, sorted by priority; an IMMEDIATE total shows at the top.",
+          "wired": "renderDebtTiles() → S.debts.filter(!paid).sort(priority); imm-total = sum(!viaRent)",
+          "file": "index.html:7850-7859",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "A GET that returns every unpaid debt row and lays them out. The headline 'total' is the sum of the manual-pay rows. Avalanche/snowball ordering itself lives in getTopPriorityDebt (avalanche = highest rate first, snowball = smallest balance first).",
+          "ticket": null
+        },
+        {
+          "n": 3,
+          "title": "Headline total can disagree with the Payday canvas",
+          "is": "gap",
+          "does": "The Debts-card headline sums ALL non-viaRent unpaid debts; the Payday canvas reads only debts with a due-date inside this cycle. Same concept, two readers — they drift.",
+          "wired": "card total: renderDebtTiles imm-total (sum of all !viaRent) vs canvas: getActiveDebtsDueBeforePayday (delayDate within cycle only)",
+          "file": "index.html:7857-7859 vs index.html:3605-3632",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "FR-07. Two different Postman endpoints answer 'what do I owe?' off the same debts table but with different WHERE clauses — the card counts every manual debt, the canvas counts only ones due before payday. They return different numbers and no one reconciles them. Violates INV-11 / INV-18.",
+          "ticket": null
+        },
+        {
+          "n": 4,
+          "title": "Tap a debt → modal opens",
+          "is": "ok",
+          "does": "Tapping a tile opens the debt detail modal with name, amount, rate, due date, notes, and a payoff-ETA line.",
+          "wired": "openDebtModal(idx)",
+          "file": "index.html:8140-8165",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "Opening the detail view for one debt row so you can act on it."
+        },
+        {
+          "n": 5,
+          "title": "Tap \"Mark Cleared\"",
+          "is": "ok",
+          "does": "You declare this debt paid off in full.",
+          "wired": "markDebtPaid() (UI handler, debounced)",
+          "file": "index.html:1772, 8206-8254",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "Fires the 'clear this debt' request. Note there is NO partial pay-down anywhere — the only pay action is a full clear (or hand-editing the amount). One concept: clear-in-full."
+        },
+        {
+          "n": 6,
+          "title": "markPaid composes cash + flag atomically",
+          "is": "ok",
+          "does": "Records a 'Debt repayment' outflow txn for the full amount AND flips the debt to paid:true, inside one writer. Aborts (and leaves the debt un-cleared) if the txn fails.",
+          "wired": "BRAIN.debts.markPaid → BRAIN.transaction.recordWithAllocation('Debt repayment', outflow); debt.paid=true; debt._clearedTxnTs=rec.txnTs",
+          "file": "index.html:8226, 25855-25882",
+          "reads": [
+            "S.debts",
+            "S.bal"
+          ],
+          "writes": [
+            "txn_record",
+            "balance_apply_delta",
+            "debt_mark_paid"
+          ],
+          "plain": "A composite endpoint: in one call it writes the cash-out transaction, debits the balance, and stamps the debt 'paid' with a back-reference to that txn (so it can be cleanly undone). CREATE-strict — if the txn write fails the whole thing rolls back, so you never get a 'paid' debt with no matching money movement."
+        },
+        {
+          "n": 7,
+          "title": "Cash debited + Debt-repayment txn logged",
+          "is": "ok",
+          "does": "Balance drops by the debt amount; a Debt repayment transaction appears in history.",
+          "wired": "recordWithAllocation (inside markPaid)",
+          "file": "index.html:24524",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [
+            "balance_apply_delta",
+            "txn_record"
+          ],
+          "plain": "The money side. Walk: bal 4800 → 4583 after clearing a $217 debt, one 'Debt repayment $217' txn in the ledger. This is the healthy rung — the cash and the record land together."
+        },
+        {
+          "n": 8,
+          "title": "Debt drops off the list (paid:true)",
+          "is": "ok",
+          "does": "renderDebtTiles re-runs; the cleared debt is filtered out (filter(!paid)); a celebration overlay + haptic fire; if the list is now empty the 'No Immediate Debts' congrats shows.",
+          "wired": "onStateChange('debt-paid') → renderDebtTiles(); debt-celebrate-overlay",
+          "file": "index.html:8231-8253, 7860-7864",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "After clearing, the GET no longer returns that row (the tile filter hides paid:true), so it simply vanishes from the grid. The row still exists in the table with paid:true — it's hidden, not deleted."
+        },
+        {
+          "n": 9,
+          "title": "A whittled-down ($0-ish) debt has no archive affordance",
+          "is": "gap",
+          "does": "SHOULD exist here: if you edit a debt's amount down to ~$0 over time (instead of one full Mark-Cleared), there's no 'this is done — archive it' button. It just sits at a near-zero amount in the active list.",
+          "wired": "(missing — no archive/clear-at-zero affordance; saveDebt only edits amt via BRAIN.debts.update, never auto-clears at 0)",
+          "file": "index.html:8190-8194, 25930-25967",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "The MISSING rung. Editing the amount to 0 is a valid path (the amount field is freely editable) but nothing detects 'this debt is effectively gone' and offers to file it away. A $0 row lingers in the active list with no clean exit — the only way out is Delete (next step), which is the wrong tool because it implies 'never happened' rather than 'paid off, keep the history'.",
+          "ticket": null
+        },
+        {
+          "n": 10,
+          "title": "Delete uses a native confirm()",
+          "is": "broken",
+          "does": "The only way to remove a lingering/cleared debt is Delete, which pops a browser-native confirm() dialog before routing to BRAIN.debts.delete.",
+          "wired": "deleteDebt(id) → confirm(...) → BRAIN.debts.delete",
+          "file": "index.html:8313-8333, source confirm at 8316",
+          "reads": [
+            "S.debts"
+          ],
+          "writes": [
+            "debt_delete"
+          ],
+          "plain": "CLAUDE.md §8 violation: financial flows must use the in-app EDIT_MODAL.openConfirm, not the OS-native confirm() box. (saveNewDebt's linked-liability prompt at 8285 is a second native confirm.) Delete also throws away the debt's history — wrong instrument for a paid-off debt, which is why the missing archive rung at step 9 matters."
+        },
+        {
+          "n": 11,
+          "title": "Add a debt → it appears",
+          "is": "ok",
+          "does": "From the '+ Add Debt' button you fill name/amount/rate/due/notes/type, save, and the new tile shows in the list.",
+          "wired": "openAddDebtModal() → saveNewDebt() → BRAIN.debts.add → onStateChange('debt_added') → renderDebtTiles()",
+          "file": "index.html:956, 8256-8310, 25819-25849",
+          "reads": [
+            "S.debts",
+            "S.nextDebtId"
+          ],
+          "writes": [
+            "debt_add"
+          ],
+          "plain": "A POST that inserts a new debt row (with an ID-collision guard so two debts never share an id) and re-renders the list so the tile appears. Adding a debt does NOT move any cash — it just records the obligation. The 'is this linked to your car/credit card?' prompt mid-save is a native confirm() (§8 caveat, line 8285)."
+        }
+      ],
+      "counts": {
+        "total": 11,
+        "gaps": 3,
+        "dead": 0,
+        "firesAnyway": 0
+      }
+    },
+    {
+      "id": "nav",
+      "name": "Nav / Onboarding / Boot — getting into the app",
+      "surface": "nav",
+      "ticket": null,
+      "summary": "The startup journey from first paint to a usable tab — and the two rungs that misfire: the boot model crashes on a not-yet-ready variable (falls back to a stub), and the PIN lock is wired but never actually checked at entry.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "App boots — load() runs",
+          "is": "ok",
+          "does": "On open, the app reads your saved state out of the browser's storage and runs one-time data migrations.",
+          "wired": "load() — reads localStorage 'slyght_v5', merges into S/BILLS, runs migrations",
+          "file": "index.html:2591, called index.html:19877",
+          "reads": [
+            "localStorage:slyght_v5",
+            "S",
+            "BILLS"
+          ],
+          "writes": [
+            "S",
+            "BILLS"
+          ],
+          "plain": "The startup/init sequence kicks off — like a service spinning up and loading its config from disk before it can serve anything. This part works."
+        },
+        {
+          "n": 2,
+          "title": "Build the financial model — refreshModel()",
+          "is": "ok",
+          "does": "At the END of load() the app recomputes the live numbers (balance, days-to-payday, bills due) that every screen reads from.",
+          "wired": "load() → refreshModel() → computeFinancialModel(S, now)",
+          "file": "index.html:2891 (call), 4934 (refreshModel), 4698 (computeFinancialModel)",
+          "reads": [
+            "S",
+            "BILLS"
+          ],
+          "writes": [
+            "MODEL"
+          ],
+          "plain": "The init routine assembles the in-memory record everything downstream queries — one source of truth for the dashboard. The call itself is correctly placed; the problem is WHAT it touches (next step)."
+        },
+        {
+          "n": 3,
+          "title": "Boot TDZ — computeFinancialModel touches BRAIN/PLAN before they exist",
+          "is": "broken",
+          "does": "computeFinancialModel reaches for BRAIN (and PLAN) to build plan/bills shapes, but on this first boot pass those variables are declared LATER in the file and aren't ready yet, so the access throws 'Cannot access BRAIN before initialization'.",
+          "wired": "computeFinancialModel → getBillsDue → isPaid()'s BRAIN guard / _safePlan() PLAN access; BRAIN is `const` at 20294, PLAN at 26142, but load() fires at 19877 — BEFORE both",
+          "file": "index.html:4511-4517 (isPaid BRAIN guard), 4787-4799 (PLAN TDZ note + _safePlan), const BRAIN index.html:20294, const PLAN index.html:26142",
+          "reads": [
+            "BRAIN",
+            "PLAN"
+          ],
+          "writes": [],
+          "plain": "This is the temporal-dead-zone bug: the variable's NAME exists but its value isn't initialised yet — like calling a dependency that's been declared in the manifest but whose container hasn't actually started. Touching it throws. The boot order puts the model-build (line 19877) ahead of the BRAIN/PLAN definitions (lines 20294 / 26142)."
+        },
+        {
+          "n": 4,
+          "title": "MODEL falls back to a stub",
+          "is": "broken",
+          "does": "The throw from step 3 is caught; instead of crashing, refreshModel hands every screen a placeholder MODEL full of zeros/defaults for the very first paint.",
+          "wired": "refreshModel() catch → MODEL = _modelStub()",
+          "file": "index.html:4937-4942 (catch), 4910 (_modelStub), 4933 (let MODEL = _modelStub())",
+          "reads": [],
+          "writes": [
+            "MODEL"
+          ],
+          "plain": "Because the real build failed, the app substitutes a dummy record — bal 0, daysToPayday 1, empty bills/goals, and a warning 'model failed to compute — using stub'. First paint shows stub numbers until a later render (after BRAIN/PLAN do initialise) rebuilds MODEL correctly. It's a soft-fail that masks the ordering bug rather than fixing it."
+        },
+        {
+          "n": 5,
+          "title": "Splash screen shown — 'tap to continue'",
+          "is": "ok",
+          "does": "The SLYGHT splash overlay covers the screen on every open and waits for a tap.",
+          "wired": "#splash-screen (fixed, z-index 500, visible by default) — onclick=\"splashTap()\"",
+          "file": "index.html:807 (markup), 700 (CSS — fixed/visible)",
+          "reads": [],
+          "writes": [],
+          "plain": "The startup banner. It always sits on top first; nothing proceeds until you tap it. That part is fine."
+        },
+        {
+          "n": 6,
+          "title": "PIN gate SHOULD check here — but is never reached",
+          "is": "dead",
+          "does": "SHOULD fire after the tap: if a PIN is set (S.pinHash present), show the pin-screen and require the 4-digit PIN before letting you in. It doesn't — splashTap never looks at S.pinHash and never shows the pin-screen.",
+          "wired": "(orphaned) splashTap() routes only to showMain()/ob-screen — no pinHash check; pin-screen is only ever HIDDEN (3951, 4157), never shown; verifyPIN()/pinKey() exist but are unreachable on boot",
+          "file": "index.html:19917-19924 (splashTap — no pin branch), 828 (pin-screen markup, display:none), 2218 (verifyPIN), 4148 (pinKey)",
+          "reads": [
+            "S.pinHash"
+          ],
+          "writes": [],
+          "plain": "THE MISSING RUNG, and it's security-relevant. The PIN lock is fully built — there's a SHA-256 hash stored, a verify function, a keypad — but nothing on the entry path ever opens the lock screen. So a set PIN does NOT actually gate entry: tap-to-continue walks straight past it. Like having auth middleware written but never registered on the route — every request sails through unauthenticated."
+        },
+        {
+          "n": 7,
+          "title": "Route after tap — splashTap()",
+          "is": "ok",
+          "does": "On tap, splash hides; if there's any real data (txns or bills) it launches straight into the app, otherwise it shows the first-run onboarding screen.",
+          "wired": "splashTap() — hides splash; if (S.txns.length || BILLS.length) showMain(); else show #ob-screen",
+          "file": "index.html:19917",
+          "reads": [
+            "S.txns",
+            "BILLS"
+          ],
+          "writes": [],
+          "plain": "The router after the splash tap: returning user → app, brand-new user → onboarding. Aside from skipping the PIN check (step 6), the data-vs-no-data branch itself works."
+        },
+        {
+          "n": 8,
+          "title": "First-run onboarding — enter starting balance",
+          "is": "ok",
+          "does": "Brand-new users see one onboarding screen asking for their current Virgin Money balance and showing days-to-payday, then tap 'Enter Slyght'.",
+          "wired": "#ob-screen → launchApp() (Enter button); Enter key on #ob-bal also calls launchApp",
+          "file": "index.html:814 (markup), 823 (button), 16014 (Enter-key wiring)",
+          "reads": [
+            "MODEL.daysToPayday"
+          ],
+          "writes": [],
+          "plain": "The one-time setup step for a fresh install: type your real bank balance so the app has a starting truth. A returning user never sees this."
+        },
+        {
+          "n": 9,
+          "title": "Launch the app — launchApp()",
+          "is": "ok",
+          "does": "Validates the entered balance, saves it as S.bal, hides onboarding, and opens the main app (queueing a reconciliation against the prior expected balance).",
+          "wired": "launchApp() → sets S.bal, save(), showMain(); stashes S._pendingRecon for runRecon",
+          "file": "index.html:3955 (launchApp), 3967 (showMain)",
+          "reads": [
+            "S.bal"
+          ],
+          "writes": [
+            "S.bal",
+            "S._pendingRecon"
+          ],
+          "plain": "Commits your starting balance and drops you into the dashboard. showMain() then re-renders with the now-correct MODEL (BRAIN/PLAN are initialised by this point, so the stub from step 4 is replaced). Uses native alert() for the empty-balance guard — minor, but works."
+        },
+        {
+          "n": 10,
+          "title": "AI-consent banner (one-time, deferred)",
+          "is": "ok",
+          "does": "First time you reach the chat surface, a one-time banner asks you to consent before AI chat is enabled.",
+          "wired": "renders if !localStorage 'slyght_ai_consent'; button sets the flag and removes the banner",
+          "file": "index.html:15584-15592",
+          "reads": [
+            "localStorage:slyght_ai_consent"
+          ],
+          "writes": [
+            "localStorage:slyght_ai_consent"
+          ],
+          "plain": "A separate, deferred consent gate — not part of boot, it appears in the chat area the first time. Tapping 'I understand' flips the flag so it never returns."
+        },
+        {
+          "n": 11,
+          "title": "Tab navigation — goPage()",
+          "is": "ok",
+          "does": "Tapping a bottom-nav tab switches screens: closes any open modal/sub-screen, marks the new screen + nav button active, and re-renders.",
+          "wired": "goPage(id) — e.g. goPage('pg-dash'/'pg-cal'/'pg-chat'/'pg-spend'/'pg-settings')",
+          "file": "index.html:4174",
+          "reads": [],
+          "writes": [],
+          "plain": "The everyday navigation switch — move between Dashboard, Calendar, Chat, Spend, Settings. It tidies up open overlays on the way so you don't carry a stale modal across tabs. Healthy."
+        },
+        {
+          "n": 12,
+          "title": "System back-button intercept",
+          "is": "ok",
+          "does": "On Android, pressing back closes the topmost open layer (edit modal → overlay → recon → settings/plan/payday sub-screen) instead of exiting the whole app.",
+          "wired": "popstate listener → _slyghtCloseTopmostModal(); a MutationObserver pushes a history guard whenever a layer opens",
+          "file": "index.html:14730 (popstate), 14688 (_slyghtCloseTopmostModal), 14731 (observer)",
+          "reads": [],
+          "writes": [],
+          "plain": "Keeps the hardware/gesture back button inside the app: it peels off one open layer at a time rather than booting you out. Correct for John's Android Chrome PWA."
+        }
+      ],
+      "counts": {
+        "total": 12,
+        "gaps": 2,
+        "dead": 1,
+        "firesAnyway": 0
+      }
+    },
+    {
+      "id": "plan",
+      "name": "Payday Plan — allocate, lock, tick, unlock",
+      "surface": "plan",
+      "ticket": "SLY-5",
+      "summary": "The full payday-plan journey: open the canvas, set an allocation, lock it, tick items to fire real transactions, then unlock. The healthy allocate→lock→tick path WORKS (the working contrast to Savings). The breaks are feedback (lock/unlock are invisible) and a leftover third lock-store the canonical writers never sync.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Open Payday Plan canvas",
+          "is": "ok",
+          "does": "You tap the Payday Plan tile on the dashboard and the planning canvas slides in.",
+          "wired": "openPaydayPlan() — lazy-inits S.activePlan, runs rolloverIfNeeded, renders root",
+          "file": "index.html:10831",
+          "reads": [
+            "S.activePlan"
+          ],
+          "writes": [
+            "S.activePlan(if-empty)"
+          ],
+          "plain": "Opening the collection in Postman — the canvas is the workspace you fire everything from. First open it creates an empty plan (lockedAt:null) and saves it."
+        },
+        {
+          "n": 2,
+          "title": "Open a category sub-screen (Savings)",
+          "is": "ok",
+          "does": "You tap the Savings row on the canvas and its sub-screen slides over.",
+          "wired": "openPaydayCategory('payday-savings') → renderPaydaySavings()",
+          "file": "index.html:11111",
+          "reads": [
+            "S.activePlan.savings",
+            "S.activePlan.overrides",
+            "S.savingsBuckets"
+          ],
+          "writes": [],
+          "plain": "Drilling into one folder inside the collection — the Savings sub-screen lists each goal/bucket with its planned amount."
+        },
+        {
+          "n": 3,
+          "title": "Set an allocation override",
+          "is": "ok",
+          "does": "You pick an amount for a bucket and Save. The modal writes the override.",
+          "wired": "openEditPaydaySavings save() → BRAIN.plan.setOverride('savings', bucket, amt, {}, PLAN_OVERRIDE_SET)",
+          "file": "index.html:12087",
+          "reads": [],
+          "writes": [],
+          "plain": "Editing the request body before you send it — you're saying 'this cycle, put $X into this goal'. It's stored as an override, not yet executed."
+        },
+        {
+          "n": 4,
+          "title": "Over-allocation gate (INV-32)",
+          "is": "ok",
+          "does": "If the new savings amount would push total savings past the available surplus, the write is refused and the modal stays open with the reason.",
+          "wired": "BRAIN.plan.setOverride savings branch — simulates wouldBeSavingsTotal vs snap.derived.surplus",
+          "file": "index.html:21752",
+          "reads": [
+            "S.activePlan.overrides",
+            "BRAIN.plan.getSnapshot().derived.surplus"
+          ],
+          "writes": [
+            "S.activePlan.overrides",
+            "audit(inv32_refusal | plan_override_set)"
+          ],
+          "plain": "A validation rule on the endpoint: it rejects a request that would over-spend the pool (returns ok:false reason:inv32-over-allocation). Reductions always pass. The healthy guard that Savings-the-surface lacks."
+        },
+        {
+          "n": 5,
+          "title": "Lock the plan",
+          "is": "broken",
+          "does": "You tap Lock plan, confirm, and the plan commits — lockedAt is stamped and mirrored to the allocation store.",
+          "wired": "openPaydayLockPlan save() → BRAIN.plan.lock({snapshot}, CANVAS_LOCK)",
+          "file": "index.html:12706, writer index.html:22075",
+          "reads": [
+            "S.activePlan"
+          ],
+          "writes": [
+            "S.activePlan.lockedAt",
+            "slyght_payday_plan.lockedAt(mirror)",
+            "S.activePlan.streak",
+            "audit(payday_plan_locked)"
+          ],
+          "plain": "Sending the request to commit the plan. The endpoint is correct (it stamps the lock + mirrors it), BUT the screen gives no visible proof — the canvas frame is pixel-identical before and after the tap. From John's seat: the POST returned 200 but the UI never updated, so you can't tell it worked.",
+          "ticket": "SLY-5"
+        },
+        {
+          "n": 6,
+          "title": "Lock state lives in 3 stores — only 2 sync",
+          "is": "broken",
+          "does": "lockedAt is written to S.activePlan AND mirrored to BRAIN.allocation's localStorage. The legacy PLAN-mode tile reads a THIRD store — the slyght_payday_plan.locked boolean — which the canonical writers never set.",
+          "wired": "lock writes lockedAt to (1) S.activePlan.lockedAt + (2) slyght_payday_plan.lockedAt; legacy renderPlanMode reads (3) stored.locked",
+          "file": "writer index.html:22085+22103, legacy reader index.html:27355",
+          "reads": [
+            "S.activePlan.lockedAt",
+            "slyght_payday_plan.lockedAt",
+            "slyght_payday_plan.locked"
+          ],
+          "writes": [],
+          "plain": "The same lock flag duplicated across three shadow tables. The canonical writer keeps tables (1) and (2) in step, but table (3) — the old `.locked` boolean that the legacy PLAN-mode tile still reads — is never updated. So after a canvas lock, the canvas says LOCKED and the old PLAN tile says unlocked. Drift between shadow tables that should always agree.",
+          "ticket": "SLY-7"
+        },
+        {
+          "n": 7,
+          "title": "Tick an item (execute the allocation)",
+          "is": "ok",
+          "does": "Post-lock you tap Mark as allocated on a bucket. paydayTick gates on locked, then fires the real transaction that credits the bucket and debits cash.",
+          "wired": "paydayTick('savings', bucket, PLAN_SAVINGS_TICK) → BRAIN.plan.tickItem → recordWithAllocation(destination:bucket, _skipFreeMoneyGate)",
+          "file": "handler index.html:13055, writer index.html:21841, tick credit index.html:21944",
+          "reads": [
+            "S.activePlan.lockedAt",
+            "S.activePlan.overrides",
+            "S.savingsBuckets"
+          ],
+          "writes": [
+            "bucket_saved_change",
+            "balance_apply_delta",
+            "txn_record",
+            "S.activePlan.ticks",
+            "audit(plan_tick)"
+          ],
+          "plain": "THE WORKING PATH — the contrast to Savings. Because lock committed a destination (the bucket) at step 3-4, tick has somewhere to send the money: it credits the bucket AND debits cash in one atomic envelope. recordWithAllocation fires bucket_saved_change here, exactly the rung Savings-the-surface never reaches."
+        },
+        {
+          "n": 8,
+          "title": "Tick is refused pre-lock",
+          "is": "ok",
+          "does": "If you try to tick before locking, paydayTick refuses and shows the lock-first hint.",
+          "wired": "paydayTick guard — if(!snap.locked) showToast(_PAYDAY_TICK_HINT_PRE); return",
+          "file": "index.html:13058",
+          "reads": [
+            "BRAIN.plan.getSnapshot().locked"
+          ],
+          "writes": [],
+          "plain": "A precondition check on the endpoint: you can't execute the plan until you've committed it. Tapping a tick pre-lock just nudges you to lock first — no money moves."
+        },
+        {
+          "n": 9,
+          "title": "Unlock the plan (canonical paths)",
+          "is": "broken",
+          "does": "You tap Re-plan / Unlock and the lock clears so overrides are editable again. Ticked items stay ticked.",
+          "wired": "openPaydayUnlockPlan / unlockPlanWithConfirm save() → BRAIN.plan.unlock(CANVAS_UNLOCK | PLAN_UNLOCK_INLINE)",
+          "file": "canvas index.html:12903, inline index.html:3588, writer index.html:22149",
+          "reads": [
+            "S.activePlan.lockedAt"
+          ],
+          "writes": [
+            "S.activePlan.lockedAt=null",
+            "slyght_payday_plan.lockedAt=null(mirror)",
+            "S.activePlan.lastStreakedCycleId=null",
+            "audit(payday_plan_unlocked)"
+          ],
+          "plain": "Sending the un-commit request. The endpoint clears stores (1) and (2) correctly — but like step 5 the canvas frame doesn't visibly change, so you can't confirm it landed. And it still doesn't touch store (3), the legacy `.locked` boolean.",
+          "ticket": "SLY-5"
+        },
+        {
+          "n": 10,
+          "title": "INV-29 — overrides frozen while locked",
+          "is": "ok",
+          "does": "While locked, setOverride/clearOverride refuse — you can't edit allocations until you unlock. Transactions, ticks and bonus edits stay editable.",
+          "wired": "BRAIN.plan.setOverride / clearOverride — if(this.isLocked()) return {ok:false, reason:'plan-locked'}",
+          "file": "index.html:21710, 21813",
+          "reads": [
+            "S.activePlan.lockedAt"
+          ],
+          "writes": [
+            "audit(inv29_refusal)"
+          ],
+          "plain": "The commit is locked: while a plan is locked the allocation-edit endpoint returns 'plan-locked' and refuses. This is why the lock has to be clean — and why the stale third store (step 6) matters: the wrong surface could disagree about whether editing is even allowed."
+        }
+      ],
+      "counts": {
+        "total": 10,
+        "gaps": 3,
+        "dead": 0,
+        "firesAnyway": 0
+      }
+    },
+    {
       "id": "savings",
       "name": "Savings — putting money toward a goal",
       "surface": "save",
@@ -241,6 +1254,188 @@
         "gaps": 1,
         "dead": 1,
         "firesAnyway": 1
+      }
+    },
+    {
+      "id": "settings",
+      "name": "Settings — edit income/payday & the 3-stage Reset",
+      "surface": "settings",
+      "ticket": null,
+      "summary": "Two journeys through Settings. (A) Editing income/payday flows cleanly into the daily budget and payday countdown — a healthy ladder. (B) The 3-stage Reset safely gates the wipe, but its 'last chance' screen mis-states what survives and its undo backup can't outlive the reload.",
+      "steps": [
+        {
+          "n": 1,
+          "title": "Open Settings",
+          "is": "ok",
+          "does": "You tap the gear icon in the header and land on the Settings page.",
+          "wired": "header gear → goPage('pg-settings')",
+          "file": "index.html:891",
+          "reads": [],
+          "writes": [],
+          "plain": "The config screen for the whole app. In WMS terms, this is the admin panel where you edit entity fields — salary, payday, budgets — rather than recording transactions."
+        },
+        {
+          "n": 2,
+          "title": "Tap 'Monthly salary' → edit modal",
+          "is": "ok",
+          "does": "The income row opens a single-field modal pre-filled with your current salary.",
+          "wired": "openEditIncome() → EDIT_MODAL.open({ save: BRAIN.config.setIncome })",
+          "file": "index.html:14517",
+          "reads": [
+            "S.income"
+          ],
+          "writes": [],
+          "plain": "You open the edit form for the 'income' field. The form already shows the current value, like opening an entity record before changing one field."
+        },
+        {
+          "n": 3,
+          "title": "Save → canonical income writer",
+          "is": "ok",
+          "does": "Validates a positive number, writes S.income, audits the change, persists.",
+          "wired": "BRAIN.config.setIncome(v, SETTINGS_INCOME_EDIT)",
+          "file": "index.html:21039",
+          "reads": [
+            "S.income"
+          ],
+          "writes": [
+            "income_change",
+            "save()"
+          ],
+          "plain": "The canonical setter for the salary field: bounds-check → write S.income → stamp BRAIN.audit with a typed source → save(). Every income edit lands in the forensic log; there is no direct-write back door."
+        },
+        {
+          "n": 4,
+          "title": "Payday edit (same path)",
+          "is": "ok",
+          "does": "The Payday row opens its own modal; save routes through the canonical payday writer (1–28 guard).",
+          "wired": "openEditPayday() → BRAIN.config.setPayday(v, SETTINGS_PAYDAY_EDIT)",
+          "file": "index.html:14527, writer index.html:21052",
+          "reads": [
+            "S.payday"
+          ],
+          "writes": [
+            "payday_change",
+            "save()"
+          ],
+          "plain": "Same shape as income, different field. The 1–28 clamp is the writer's job — the day-of-month can never be set to an impossible value that the cycle math downstream can't handle."
+        },
+        {
+          "n": 5,
+          "title": "Re-render recomputes the model",
+          "is": "ok",
+          "does": "On save the modal closes and calls renderAll(), which first calls refreshModel() to rebuild MODEL from the new S.",
+          "wired": "EDIT_MODAL save → renderAll() → refreshModel() → computeFinancialModel(S)",
+          "file": "index.html:14480, 6748, 4698",
+          "reads": [
+            "S.income",
+            "S.payday"
+          ],
+          "writes": [
+            "MODEL (in-memory)"
+          ],
+          "plain": "After the write, the whole financial model is recomputed from the fresh fields in one pass — so every tile this render reads the same new snapshot. This is the rung that makes the edit actually move downstream numbers."
+        },
+        {
+          "n": 6,
+          "title": "Daily budget + payday countdown update",
+          "is": "ok",
+          "does": "MODEL.daysToPayday (from the new payday) and the income-driven survival/per-day forecast now reflect the edit across the dashboard.",
+          "wired": "computeFinancialModel: daysToPayday; getSurvivalForecast() reads income",
+          "file": "index.html:4712, 5802",
+          "reads": [
+            "S.payday",
+            "S.income",
+            "MODEL.daysToPayday"
+          ],
+          "writes": [],
+          "plain": "The countdown ('N days to payday') and the MAX-PER-DAY / safe-to-spend numbers are derived from payday-distance and income. Change the field, the readers change. Journey A closes cleanly — writer → recompute → readers all agree."
+        },
+        {
+          "n": 7,
+          "title": "Tap the red 'Reset All Data' row",
+          "is": "ok",
+          "does": "Opens the 3-stage Reset flow modal (replaces the old native confirm() chain).",
+          "wired": "Reset row → RESET_FLOW.start() → showStage1()",
+          "file": "index.html:1135, 14841",
+          "reads": [],
+          "writes": [],
+          "plain": "Start of the destructive path. Like hitting 'purge this environment' — the app deliberately makes you walk three gates instead of one OK button."
+        },
+        {
+          "n": 8,
+          "title": "Stage 1 — type RESET to arm",
+          "is": "ok",
+          "does": "Continue stays disabled until you type the literal word RESET in capitals.",
+          "wired": "RESET_FLOW.showStage1() / _validateStage1()",
+          "file": "index.html:14856, 14870",
+          "reads": [],
+          "writes": [],
+          "plain": "First gate: a typed-confirmation interlock. You can't fat-finger your way to a wipe; the button is dead until the exact word matches."
+        },
+        {
+          "n": 9,
+          "title": "Stage 2 — 'Last chance' impact summary",
+          "is": "gap",
+          "does": "Shows concrete counts of what you'll lose: balance, txns, snapshots, bills, debts, trips+goals.",
+          "wired": "RESET_FLOW.showStage2() reads S.txns / SNAPSHOTS.load() / BILLS / S.debts",
+          "file": "index.html:14879-14908",
+          "reads": [
+            "S.bal",
+            "S.txns",
+            "SNAPSHOTS.load()",
+            "BILLS",
+            "S.debts"
+          ],
+          "writes": [],
+          "plain": "Second gate — honest in spirit but the snapshot line is misleading. It lists 'Snapshots: N' as something that will be permanently lost, but Step 11's wipe never touches the slyght_snapshots key. The user is told their backups die; in reality they survive. Copy promises a deletion the executor doesn't perform."
+        },
+        {
+          "n": 10,
+          "title": "Stage 3 — 3-second countdown + undo backup",
+          "is": "broken",
+          "does": "A 3-2-1 countdown (cancelable), then saveUndoState() stashes the current state into S._prevState before the wipe.",
+          "wired": "showStage3() → _executeReset() → saveUndoState()",
+          "file": "index.html:14910, 14934, 15276",
+          "reads": [
+            "S",
+            "BILLS"
+          ],
+          "writes": [
+            "S._prevState (in-memory only)"
+          ],
+          "plain": "The 'backup before a destructive migration' rung — but it backs up to the wrong place. saveUndoState() writes S._prevState INSIDE the S object. S lives in localStorage 'slyght_v5', which the very next line deletes, and then the page reloads (clearing memory too). The backup is destroyed by the same operation it's meant to protect against. There is no SNAPSHOTS.take here and no working undo."
+        },
+        {
+          "n": 11,
+          "title": "Execute wipe → reseed → reload",
+          "is": "ok",
+          "does": "Removes slyght_v5 + seed flags + slyght_api_key, audits reset_all_execute, then location.reload() reseeds first-launch state.",
+          "wired": "_executeReset(): localStorage.removeItem(STORAGE_KEY) + SEED_FLAGS + slyght_api_key + reload",
+          "file": "index.html:14937-14944",
+          "reads": [],
+          "writes": [
+            "reset_all_execute (audit, in wiped state)",
+            "localStorage cleared"
+          ],
+          "plain": "The destructive write itself works for its stated goal: state, seed markers and API key are gone, and the reseed runs on reload. Note the side effects — slyght_snapshots and slyght_payday_plan are NOT in the removal set, so they persist past the 'everything goes' reset (the root of Step 9's mismatch)."
+        },
+        {
+          "n": 12,
+          "title": "Restore path",
+          "is": "dead",
+          "does": "SHOULD let the user recover from an accidental reset — an undo or a 'restore from snapshot' offer after the wipe.",
+          "wired": "(none — undoLastAction reads S._prevState, gone after reload)",
+          "file": "index.html:15315",
+          "reads": [],
+          "writes": [],
+          "plain": "Never reachable. undoLastAction() depends on S._prevState, which the reset destroyed (Step 10), and the surviving snapshots (Step 11) are never surfaced as a post-reset 'restore?' offer. So the design intent of a recoverable wipe has no working rung — the loss, if a wipe was a mistake, is final."
+        }
+      ],
+      "counts": {
+        "total": 12,
+        "gaps": 2,
+        "dead": 1,
+        "firesAnyway": 0
       }
     }
   ]

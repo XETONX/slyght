@@ -1,0 +1,81 @@
+{
+  "id": "settings",
+  "name": "Settings — edit income/payday & the 3-stage Reset",
+  "surface": "settings",
+  "ticket": null,
+  "summary": "Two journeys through Settings. (A) Editing income/payday flows cleanly into the daily budget and payday countdown — a healthy ladder. (B) The 3-stage Reset safely gates the wipe, but its 'last chance' screen mis-states what survives and its undo backup can't outlive the reload.",
+  "steps": [
+    { "n": 1, "title": "Open Settings", "is": "ok",
+      "does": "You tap the gear icon in the header and land on the Settings page.",
+      "wired": "header gear → goPage('pg-settings')", "file": "index.html:891",
+      "reads": [], "writes": [],
+      "plain": "The config screen for the whole app. In WMS terms, this is the admin panel where you edit entity fields — salary, payday, budgets — rather than recording transactions." },
+
+    { "n": 2, "title": "Tap 'Monthly salary' → edit modal", "is": "ok",
+      "does": "The income row opens a single-field modal pre-filled with your current salary.",
+      "wired": "openEditIncome() → EDIT_MODAL.open({ save: BRAIN.config.setIncome })", "file": "index.html:14517",
+      "reads": ["S.income"], "writes": [],
+      "plain": "You open the edit form for the 'income' field. The form already shows the current value, like opening an entity record before changing one field." },
+
+    { "n": 3, "title": "Save → canonical income writer", "is": "ok",
+      "does": "Validates a positive number, writes S.income, audits the change, persists.",
+      "wired": "BRAIN.config.setIncome(v, SETTINGS_INCOME_EDIT)", "file": "index.html:21039",
+      "reads": ["S.income"], "writes": ["income_change", "save()"],
+      "plain": "The canonical setter for the salary field: bounds-check → write S.income → stamp BRAIN.audit with a typed source → save(). Every income edit lands in the forensic log; there is no direct-write back door." },
+
+    { "n": 4, "title": "Payday edit (same path)", "is": "ok",
+      "does": "The Payday row opens its own modal; save routes through the canonical payday writer (1–28 guard).",
+      "wired": "openEditPayday() → BRAIN.config.setPayday(v, SETTINGS_PAYDAY_EDIT)", "file": "index.html:14527, writer index.html:21052",
+      "reads": ["S.payday"], "writes": ["payday_change", "save()"],
+      "plain": "Same shape as income, different field. The 1–28 clamp is the writer's job — the day-of-month can never be set to an impossible value that the cycle math downstream can't handle." },
+
+    { "n": 5, "title": "Re-render recomputes the model", "is": "ok",
+      "does": "On save the modal closes and calls renderAll(), which first calls refreshModel() to rebuild MODEL from the new S.",
+      "wired": "EDIT_MODAL save → renderAll() → refreshModel() → computeFinancialModel(S)", "file": "index.html:14480, 6748, 4698",
+      "reads": ["S.income", "S.payday"], "writes": ["MODEL (in-memory)"],
+      "plain": "After the write, the whole financial model is recomputed from the fresh fields in one pass — so every tile this render reads the same new snapshot. This is the rung that makes the edit actually move downstream numbers." },
+
+    { "n": 6, "title": "Daily budget + payday countdown update", "is": "ok",
+      "does": "MODEL.daysToPayday (from the new payday) and the income-driven survival/per-day forecast now reflect the edit across the dashboard.",
+      "wired": "computeFinancialModel: daysToPayday; getSurvivalForecast() reads income", "file": "index.html:4712, 5802",
+      "reads": ["S.payday", "S.income", "MODEL.daysToPayday"], "writes": [],
+      "plain": "The countdown ('N days to payday') and the MAX-PER-DAY / safe-to-spend numbers are derived from payday-distance and income. Change the field, the readers change. Journey A closes cleanly — writer → recompute → readers all agree." },
+
+    { "n": 7, "title": "Tap the red 'Reset All Data' row", "is": "ok",
+      "does": "Opens the 3-stage Reset flow modal (replaces the old native confirm() chain).",
+      "wired": "Reset row → RESET_FLOW.start() → showStage1()", "file": "index.html:1135, 14841",
+      "reads": [], "writes": [],
+      "plain": "Start of the destructive path. Like hitting 'purge this environment' — the app deliberately makes you walk three gates instead of one OK button." },
+
+    { "n": 8, "title": "Stage 1 — type RESET to arm", "is": "ok",
+      "does": "Continue stays disabled until you type the literal word RESET in capitals.",
+      "wired": "RESET_FLOW.showStage1() / _validateStage1()", "file": "index.html:14856, 14870",
+      "reads": [], "writes": [],
+      "plain": "First gate: a typed-confirmation interlock. You can't fat-finger your way to a wipe; the button is dead until the exact word matches." },
+
+    { "n": 9, "title": "Stage 2 — 'Last chance' impact summary", "is": "gap",
+      "does": "Shows concrete counts of what you'll lose: balance, txns, snapshots, bills, debts, trips+goals.",
+      "wired": "RESET_FLOW.showStage2() reads S.txns / SNAPSHOTS.load() / BILLS / S.debts", "file": "index.html:14879-14908",
+      "reads": ["S.bal", "S.txns", "SNAPSHOTS.load()", "BILLS", "S.debts"],
+      "writes": [],
+      "plain": "Second gate — honest in spirit but the snapshot line is misleading. It lists 'Snapshots: N' as something that will be permanently lost, but Step 11's wipe never touches the slyght_snapshots key. The user is told their backups die; in reality they survive. Copy promises a deletion the executor doesn't perform." },
+
+    { "n": 10, "title": "Stage 3 — 3-second countdown + undo backup", "is": "broken",
+      "does": "A 3-2-1 countdown (cancelable), then saveUndoState() stashes the current state into S._prevState before the wipe.",
+      "wired": "showStage3() → _executeReset() → saveUndoState()", "file": "index.html:14910, 14934, 15276",
+      "reads": ["S", "BILLS"], "writes": ["S._prevState (in-memory only)"],
+      "plain": "The 'backup before a destructive migration' rung — but it backs up to the wrong place. saveUndoState() writes S._prevState INSIDE the S object. S lives in localStorage 'slyght_v5', which the very next line deletes, and then the page reloads (clearing memory too). The backup is destroyed by the same operation it's meant to protect against. There is no SNAPSHOTS.take here and no working undo." },
+
+    { "n": 11, "title": "Execute wipe → reseed → reload", "is": "ok",
+      "does": "Removes slyght_v5 + seed flags + slyght_api_key, audits reset_all_execute, then location.reload() reseeds first-launch state.",
+      "wired": "_executeReset(): localStorage.removeItem(STORAGE_KEY) + SEED_FLAGS + slyght_api_key + reload", "file": "index.html:14937-14944",
+      "reads": [], "writes": ["reset_all_execute (audit, in wiped state)", "localStorage cleared"],
+      "plain": "The destructive write itself works for its stated goal: state, seed markers and API key are gone, and the reseed runs on reload. Note the side effects — slyght_snapshots and slyght_payday_plan are NOT in the removal set, so they persist past the 'everything goes' reset (the root of Step 9's mismatch)." },
+
+    { "n": 12, "title": "Restore path", "is": "dead",
+      "does": "SHOULD let the user recover from an accidental reset — an undo or a 'restore from snapshot' offer after the wipe.",
+      "wired": "(none — undoLastAction reads S._prevState, gone after reload)", "file": "index.html:15315",
+      "reads": [], "writes": [],
+      "plain": "Never reachable. undoLastAction() depends on S._prevState, which the reset destroyed (Step 10), and the surviving snapshots (Step 11) are never surfaced as a post-reset 'restore?' offer. So the design intent of a recoverable wipe has no working rung — the loss, if a wipe was a mistake, is final." }
+  ]
+}
