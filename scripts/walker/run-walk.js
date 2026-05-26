@@ -251,9 +251,22 @@ const FLOWS = [
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outDir = path.join(OUT_ROOT, stamp);
   fs.mkdirSync(outDir, { recursive: true });
+  // Run-honesty: --group=X / --spec=Y filters to the RUNNABLE flows for that scope,
+  // validated against mission-control/specs.json (never raw shell input → safe).
+  const arg = (k) => { const a = process.argv.find(s => s.startsWith('--' + k + '=')); return a ? a.split('=')[1] : null; };
+  const _group = arg('group'), _spec = arg('spec');
+  let flowsToRun = FLOWS;
+  if (_group || _spec) {
+    let reg = {}; try { reg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'mission-control', 'specs.json'), 'utf8')); } catch (_) {}
+    const allowed = new Set();
+    (reg.specs || []).forEach(s => { if (s.runnable && ((_group && s.group === _group) || (_spec && s.file === _spec))) (s.flows || []).forEach(f => allowed.add(f)); });
+    flowsToRun = FLOWS.filter(f => allowed.has(f.id));
+    console.log('@@WALK_SCOPE ' + (_group ? 'group=' + _group : 'spec=' + _spec) + ' → ' + (flowsToRun.map(f => f.id).join(',') || '(none)'));
+    if (!flowsToRun.length) { console.log('@@WALK_EXIT 0'); process.exit(0); }
+  }
   const env = await boot(); env.outDir = outDir;
   const results = [];
-  for (const flow of FLOWS) {
+  for (const flow of flowsToRun) {
     if (flow.reseedBefore) await reseed(env.page);
     console.log('@@FLOW_START ' + flow.id); // Mission Control live tracker hook
     const result = await runFlow(env, flow);

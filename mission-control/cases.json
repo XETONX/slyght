@@ -1,0 +1,836 @@
+{
+  "generatedAt": "2026-05-26T09:25:22.117Z",
+  "walkDir": "2026-05-26T09-00-07",
+  "counts": {
+    "deep": 7,
+    "tracked": 18,
+    "total": 25,
+    "confirmed": 3,
+    "candidate": 4
+  },
+  "cases": [
+    {
+      "id": "savings-no-picker",
+      "title": "Quick Log → Savings silently loses money",
+      "group": "savings",
+      "surface": "save",
+      "severity": "P0",
+      "status": "confirmed",
+      "flow": "darwin-A-quicklog",
+      "openBug": 11,
+      "plain": "When you log money as “Savings” in Quick Log, the app takes it out of your cash but never puts it into any goal — because there's no box to choose which goal it's for. So $300 leaves your balance and lands nowhere. Worse, the success toast says it worked: it reads “−$300 · Savings · — · Tap to undo”, with a dash sitting where the goal name should be.",
+      "mechanism": "The Quick Log modal hides the category row when you pick the “Savings” type but renders no destination (bucket/goal) picker in its place. quickLogTxn() then records a Savings-category transaction that decrements cash via the balance writer but never calls the bucket-credit path — so no goal's `saved` total moves.",
+      "rootCause": "openQuickLogModal (index.html:10154-10291) has no goal-picker for type=savings; quickLogTxn (index.html:10311) records the txn through the balance delta but not through a bucket destination — so `bucket_saved_change` never fires.",
+      "fix": "Add a required goal-picker to the Savings type in the Quick Log modal; block the save if no destination is chosen; route the save through `recordWithAllocation` with the chosen bucket as destination. The crediting machinery already works — the round-up path proves `bucket_saved_change` fires correctly (see log-transaction flow). This is a missing picker, not broken crediting.",
+      "files": [
+        "index.html:10154-10291 (openQuickLogModal — no picker)",
+        "index.html:10311 (quickLogTxn)",
+        "index.html:24524 (recordWithAllocation — the path it should use)"
+      ],
+      "evidence": {
+        "flow": "darwin-A-quicklog",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "baseline",
+            "action": "Dashboard on open",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "open-quicklog",
+            "action": "Open Quick Log",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "select-savings",
+            "action": "Select 'Savings' type",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "enter-300",
+            "action": "Enter $300",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "submit",
+            "action": "Submit (quickLogTxn)",
+            "lands": [
+              "txn_record",
+              "balance_apply_delta"
+            ],
+            "delta": {
+              "bal": "4800 → 4500",
+              "txns.length": "9 → 10"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "aftermath",
+            "action": "Dashboard after submit",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "bills-undo-key-mismatch",
+      "title": "Bills “undo” silently no-ops — bill stuck paid, cash not returned",
+      "group": "bills",
+      "surface": "bills",
+      "severity": "P0",
+      "status": "confirmed",
+      "flow": "bills-mark-paid",
+      "openBug": null,
+      "plain": "Pay a bill that's due before payday, then change your mind and hit undo — nothing happens. The bill stays marked paid and the money doesn't come back. It affects every bill due before payday.",
+      "mechanism": "Marking a pre-payday bill paid files it under NEXT month's key (a “cycle bump”, because day < payday means it belongs to the coming cycle). But the undo path looks up THIS month's key. Writer-key ≠ reader-key, so undo searches the wrong drawer, finds nothing, and quietly does nothing.",
+      "rootCause": "markPaid cycle-bumps the paidBills key for day<payday bills to the next month (~index.html:25192, e.g. `2026-6-Phone Plan-10`), but undoBillPaid (index.html:8809) and unmarkBillFromCal read `paidBillKey(name,day)` = the current month (`2026-5-Phone Plan-10`). The keys never match.",
+      "fix": "Make undo compute the SAME cycle-bumped key markPaid wrote (share one key-builder across mark + undo), or store the actual written key on the paidBills entry so undo reverses by stored key rather than recomputing. Pair with a regression spec asserting pay→undo restores balance + clears the flag for a pre-payday bill.",
+      "files": [
+        "index.html:~25192 (markPaid cycle-bump writes next-month key)",
+        "index.html:8809 (undoBillPaid reads current-month key)",
+        "unmarkBillFromCal (same reader-key bug)"
+      ],
+      "evidence": {
+        "flow": "bills-mark-paid",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "baseline",
+            "action": "Bills / Calendar tab",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "pay-phone",
+            "action": "Pay Phone Plan now (payBillNow → BRAIN.bills.markPaid)",
+            "lands": [
+              "txn_record",
+              "balance_apply_delta",
+              "bill_mark_paid",
+              "bill_mark_paid",
+              "notif_add"
+            ],
+            "delta": {
+              "bal": "4800 → 4750",
+              "txns.length": "9 → 10"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "after-paid",
+            "action": "Calendar after pay",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "undo",
+            "action": "Undo (unmarkBillFromCal — reader-key path)",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "after-undo",
+            "action": "Calendar after undo",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "ai-prompt-provenance",
+      "title": "AI coach is fed a stale hand-written cheat-sheet (and the wrong spendable number)",
+      "group": "ai",
+      "surface": "ai",
+      "severity": "P0",
+      "status": "confirmed",
+      "flow": "ai-provenance",
+      "openBug": null,
+      "plain": "The in-app AI is given a “what you know about John” brief built from hard-coded, out-of-date facts and the wrong “spendable per day” figure — so its advice rests on numbers you can't even see. There's a correct version of that brief already written in the code, but nothing calls it: the app uses a hand-maintained copy instead.",
+      "mechanism": "Two prompt builders exist. The correct one uses your live balance, your genuine surplus, and includes the licensed-advice disclaimer — but it has zero callers (dead code). The one actually sent to the model reads the raw stored balance and a “dynamic daily budget” (not genuine surplus), carries no disclaimer, and hard-codes facts that have drifted (a savings goal it can't find falls back to a made-up $9k; a trip date written as “June 7-15” when the real plan is August).",
+      "rootCause": "buildSystemPrompt (index.html:15332 — uses getLiveBal + getGenuineSurplus + disclaimer) is dead code (0 callers). The live prompt is an inline string (index.html:15665, sent at :15766) reading raw S.bal (:15672) + getDynamicDailyBudget (:15676); it looks up goal id `rainy-day-fund` (:15649) but the intent id is `rainy-day` → miss → hard-coded $9k. Darwin hard-coded “June 7-15” (:15704) vs intent Aug 1–10.",
+      "fix": "Route the live AI call through buildSystemPrompt (or replace the inline literal with it) so the prompt uses getLiveBal + getGenuineSurplus + the live intent data + the disclaimer; delete the hard-coded stale facts; fix the `rainy-day-fund`→`rainy-day` id. NOTE: on the current fixture S.bal == getLiveBal (balance divergence 0), so the raw-balance read is a structural risk here — the demonstrated harm is spend-power ($0 surplus shown as $60/day), the id-miss, the stale dates, and the missing disclaimer.",
+      "files": [
+        "index.html:15332 (buildSystemPrompt — correct, DEAD)",
+        "index.html:15665-15743 (live inline prompt — raw S.bal, stale facts)",
+        "index.html:15649 (rainy-day-fund id miss)",
+        "index.html:15766 (the fetch using the inline prompt)"
+      ],
+      "evidence": {
+        "flow": "ai-provenance",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "open-chat",
+            "action": "Open AI chat",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "probe-prompt",
+            "action": "Probe prompt provenance (no API key — inspect embedded numbers)",
+            "lands": [],
+            "delta": {},
+            "probe": {
+              "live_prompt_uses": "RAW S.bal (:15672) + getDynamicDailyBudget (:15676)",
+              "correct_builder": "buildSystemPrompt (:15332) uses getLiveBal + getGenuineSurplus + disclaimer",
+              "buildSystemPrompt_isDeadCode": "DEFINED but 0 callers (grep-confirmed)",
+              "S_bal": 4800,
+              "getLiveBal": 4800,
+              "bal_divergence": 0,
+              "getGenuineSurplus": 0,
+              "getDynamicDailyBudget": 60,
+              "goal_ids_present": [
+                "rainy-day"
+              ],
+              "rainy_lookup_byPromptId": false,
+              "darwin_intent_dates": {
+                "start": "2026-08-01",
+                "end": "2026-08-10"
+              },
+              "darwin_prompt_hardcoded": "June 7-15 (:15704 literal)",
+              "prompt_has_disclaimer": "NO — disclaimer lives only in dead buildSystemPrompt (:15375)",
+              "hardcoded_contradictions": [
+                "$50,000 deposit target (:15691) vs \"$3k currently\" (:15715)",
+                "Salary $117,500 (:15698)",
+                "$68k total (:15740)",
+                "KIA/Firstmac by name (:15693)"
+              ]
+            },
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "hero-render-drift",
+      "title": "Dashboard headline number visibly drifts across renders",
+      "group": "dashboard",
+      "surface": "dash",
+      "severity": "P1",
+      "status": "candidate",
+      "flow": "log-transaction",
+      "openBug": 13,
+      "plain": "After a single log, the big balance on the dashboard was seen showing three different values across consecutive frames ($2,045 → $1,914 → $1,782) — the headline appears to move on its own. The state underneath is correct (the ledger shows a clean change); it's the on-screen number that wobbles.",
+      "mechanism": "Most likely the animated “counter roll” (the number tweening to its new value) caught mid-animation by the screenshot — the walker's CSS freeze stops CSS animations but not a JS requestAnimationFrame counter. The alternative is a genuine render-vs-state divergence. Needs a walk with the counter settled before capture to tell which.",
+      "rootCause": "Unconfirmed — candidate. Either a rAF counter-roll caught mid-tween (display-layer, benign) or a render path reading a pre-settle value (would be a real display bug). Do NOT promote until re-walked with the counter stable.",
+      "fix": "Add a counter-settle wait to the walker (poll the rendered number until stable before screenshot), re-walk, and compare to the clean S.bal. If it still drifts with the counter settled, trace the hero render path.",
+      "files": [
+        "walker: settle the hero counter before screenshot",
+        "dashboard hero render path (TBD on confirm)"
+      ],
+      "evidence": {
+        "flow": "log-transaction",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "baseline",
+            "action": "Dashboard",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "open-quicklog",
+            "action": "Open Quick Log",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "select-expense",
+            "action": "Select 'Expense' type",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "enter",
+            "action": "Enter $4.50 + note",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "submit",
+            "action": "Submit (quickLogTxn)",
+            "lands": [
+              "txn_record",
+              "balance_apply_delta",
+              "txn_record",
+              "balance_apply_delta",
+              "bucket_saved_change"
+            ],
+            "delta": {
+              "bal": "4800 → 4795",
+              "txns.length": "9 → 11",
+              "bucket:China Holiday": "1500 → 1500.5"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "aftermath",
+            "action": "Dashboard after",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "no-commit-feedback",
+      "title": "Lock / unlock / undo give no visible confirmation",
+      "group": "plan",
+      "surface": "plan",
+      "severity": "P1",
+      "status": "candidate",
+      "flow": "plan-lock",
+      "openBug": null,
+      "plain": "State-changing actions — locking a plan, unlocking it, undoing a bill — produced screens that are pixel-identical before and after. For a money app, an action that changes something with no visible “it happened” is a trust gap: you can't tell if it worked.",
+      "mechanism": "The lock/unlock loop (6 frames) and the bill undo (3 frames) render no badge, frozen field, or toast that distinguishes the new state from the old.",
+      "rootCause": "UX finding (Layer-C). The state changes correctly (audit lands confirm lock/unlock fired) but the UI gives no feedback signal.",
+      "fix": "Add a lock badge + frozen-field styling when a plan is locked; an explicit toast/confirmation on undo; a visible state marker on unlock. Pair with the bills-undo fix (which currently no-ops anyway).",
+      "files": [
+        "plan canvas lock/unlock render",
+        "bill undo render"
+      ],
+      "evidence": {
+        "flow": "plan-lock",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "open-plan",
+            "action": "Open Payday canvas",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "set-override",
+            "action": "Set Rainy Day override $100 (BRAIN.plan.setOverride)",
+            "lands": [
+              "plan_override_set"
+            ],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "lock",
+            "action": "Lock plan (BRAIN.plan.lock)",
+            "lands": [
+              "payday_plan_locked",
+              "payday_plan_locked"
+            ],
+            "delta": {
+              "activePlan.lockedAt": "null → 1779753610149"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "probe-locked",
+            "action": "Probe lock-state across 3 stores",
+            "lands": [],
+            "delta": {},
+            "probe": {
+              "activePlan_lockedAt": 1779753610149,
+              "brain_isLocked_getter": true,
+              "localStorage_lockKeys": {
+                "slyght_payday_plan": "{\"lockedAt\":1779753610149,\"lockedSnapshot\":{\"cycleId\":\"2026-"
+              },
+              "legacy_planLocked": "<none>"
+            },
+            "error": null
+          },
+          {
+            "step": "unlock",
+            "action": "Unlock plan",
+            "lands": [
+              "payday_plan_unlocked",
+              "payday_plan_unlocked"
+            ],
+            "delta": {
+              "activePlan.lockedAt": "1779753610149 → null"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "probe-unlocked",
+            "action": "Probe lock-state after unlock",
+            "lands": [],
+            "delta": {},
+            "probe": {
+              "activePlan_lockedAt": null,
+              "brain_isLocked_getter": false,
+              "localStorage_lockKeys": {
+                "slyght_payday_plan": "{\"lockedAt\":null,\"lockedSnapshot\":null}"
+              },
+              "legacy_planLocked": "<none>"
+            },
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "legibility-debt",
+      "title": "Low-contrast + malformed money lines on the surfaces that must be trusted",
+      "group": "dashboard",
+      "surface": "dash",
+      "severity": "P1",
+      "status": "candidate",
+      "flow": null,
+      "openBug": null,
+      "plain": "Some of the exact lines that justify the headline numbers are hard to read or broken: grey-on-grey calendar bill amounts, “debug-look” multi-colour monospace math lines, and a malformed “$#0” in the canvas reconciliation line (“WHERE THE $5,000 SITS NOW”). The justifications for your money should be the most legible thing, not the least.",
+      "mechanism": "Decorative low-contrast text used where primary numbers belong; a formatting bug producing `$#0` in the canvas reconciliation string.",
+      "rootCause": "UX finding (Layer-C) + a string-format bug for the `$#0` line.",
+      "fix": "Lift money figures to high-contrast (white) with secondary labels; fix the `$#0` format bug in the canvas reconciliation line. Cross-ref the slyght contrast rule (numbers always --text).",
+      "files": [
+        "canvas reconciliation line ($#0 format bug)",
+        "calendar bill-amount styling"
+      ],
+      "evidence": null
+    },
+    {
+      "id": "plan-lock-legacy-path",
+      "title": "Plan lock-state: only the canonical unlock path is proven clean",
+      "group": "plan",
+      "surface": "plan",
+      "severity": "P2",
+      "status": "candidate",
+      "flow": "plan-lock",
+      "openBug": null,
+      "plain": "Locking and unlocking a plan through the main (canonical) path leaves all three places that track “is it locked?” agreeing. But there's a second, older unlock path (used by some UI) that wasn't exercised — and history says the two paths clear different subsets of those three stores, which can leave a stale lock.",
+      "mechanism": "Lock-state lives in three stores (activePlan.lockedAt + a localStorage key + a BRAIN getter). The canonical unlock clears all three; a legacy/UI unlock path historically clears only some.",
+      "rootCause": "Not yet walked — candidate. The canonical path is verified clean (probe shows all three cleared); the legacy path is unexercised (ADR Bundle 32.7 territory).",
+      "fix": "Walk the legacy/UI unlock path; if it leaves a stale store, consolidate to a single unlock that clears all three (or one source of truth).",
+      "files": [
+        "BRAIN.plan.unlock (canonical — clean)",
+        "legacy/UI unlock path (unwalked)"
+      ],
+      "evidence": {
+        "flow": "plan-lock",
+        "walkDir": "2026-05-26T09-00-07",
+        "steps": [
+          {
+            "step": "open-plan",
+            "action": "Open Payday canvas",
+            "lands": [],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "set-override",
+            "action": "Set Rainy Day override $100 (BRAIN.plan.setOverride)",
+            "lands": [
+              "plan_override_set"
+            ],
+            "delta": {},
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "lock",
+            "action": "Lock plan (BRAIN.plan.lock)",
+            "lands": [
+              "payday_plan_locked",
+              "payday_plan_locked"
+            ],
+            "delta": {
+              "activePlan.lockedAt": "null → 1779753610149"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "probe-locked",
+            "action": "Probe lock-state across 3 stores",
+            "lands": [],
+            "delta": {},
+            "probe": {
+              "activePlan_lockedAt": 1779753610149,
+              "brain_isLocked_getter": true,
+              "localStorage_lockKeys": {
+                "slyght_payday_plan": "{\"lockedAt\":1779753610149,\"lockedSnapshot\":{\"cycleId\":\"2026-"
+              },
+              "legacy_planLocked": "<none>"
+            },
+            "error": null
+          },
+          {
+            "step": "unlock",
+            "action": "Unlock plan",
+            "lands": [
+              "payday_plan_unlocked",
+              "payday_plan_unlocked"
+            ],
+            "delta": {
+              "activePlan.lockedAt": "1779753610149 → null"
+            },
+            "probe": null,
+            "error": null
+          },
+          {
+            "step": "probe-unlocked",
+            "action": "Probe lock-state after unlock",
+            "lands": [],
+            "delta": {},
+            "probe": {
+              "activePlan_lockedAt": null,
+              "brain_isLocked_getter": false,
+              "localStorage_lockKeys": {
+                "slyght_payday_plan": "{\"lockedAt\":null,\"lockedSnapshot\":null}"
+              },
+              "legacy_planLocked": "<none>"
+            },
+            "error": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "bug-3",
+      "title": "Round-up cents display in Recent Spending — post-Bundle A retest",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 3,
+      "plain": "Round-up txns showed as `-$0` in Recent Spending. Bundle A",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #3 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #3"
+      ]
+    },
+    {
+      "id": "bug-5",
+      "title": "Auto-sort dialog — verify apply + persist",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 5,
+      "plain": "Auto-sort dialog opens (per Image 1) but unverified whether",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #5 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #5"
+      ]
+    },
+    {
+      "id": "bug-7",
+      "title": "renderCutSliders compares all-time spend to monthly baseline",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 7,
+      "plain": "`renderCutSliders` uses all-time txn history but compares to",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #7 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #7"
+      ]
+    },
+    {
+      "id": "bug-8",
+      "title": "Dashboard \"Running over/under pace this week\" uses lax filter",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 8,
+      "plain": "Dashboard pace tile (~`:3174`) computes",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #8 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #8"
+      ]
+    },
+    {
+      "id": "bug-17",
+      "title": "Cross-tile \"today's spend\" coherence — three renderers, three different values",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 17,
+      "plain": "Footer persistent strip, dashboard \"Over by $X today\" alert,",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #17 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #17"
+      ]
+    },
+    {
+      "id": "bug-15",
+      "title": "Three different daily-cost figures across forecast tiles",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 15,
+      "plain": "Survival/forecast section presents three different daily",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #15 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #15"
+      ]
+    },
+    {
+      "id": "bug-16",
+      "title": "Emergency fund \"saved\" sums travel-goal buckets too",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 16,
+      "plain": "Emergency fund tile shows \"saved\" amount that includes",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #16 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #16"
+      ]
+    },
+    {
+      "id": "bug-20",
+      "title": "Calendar not showing immediate debts on their due dates",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 20,
+      "plain": "Calendar view does not render markers for immediate-debt",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #20 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #20"
+      ]
+    },
+    {
+      "id": "bug-22",
+      "title": "Parallel implementation: 12+ inline `daysLeft(S.payday)` call sites",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 22,
+      "plain": "`daysLeft(S.payday)` and `MODEL.daysToPayday` are two",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #22 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #22"
+      ]
+    },
+    {
+      "id": "bug-30",
+      "title": "Gate verification reliability concern (Mission F finding)",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 30,
+      "plain": "Mission EXPORT (commit bb30b86) reported \"all gates green\"",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #30 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #30"
+      ]
+    },
+    {
+      "id": "bug-31",
+      "title": "paydayDate parallel implementation pattern (second instance)",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 31,
+      "plain": "Mission F caught the `daysLeft(...)` parallel-impl pattern",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #31 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #31"
+      ]
+    },
+    {
+      "id": "bug-32",
+      "title": "Migration auto-delete pattern lacks user-visible surfacing",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 32,
+      "plain": "Schema-cleanup migrations (`_billsCleanedV1` at L1271-1272,",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #32 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #32"
+      ]
+    },
+    {
+      "id": "bug-33",
+      "title": "Mission V fullPage screenshot truncation — Layer V coverage gap",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 33,
+      "plain": "Playwright `fullPage: true` screenshots are capping at the",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #33 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #33"
+      ]
+    },
+    {
+      "id": "bug-34",
+      "title": "Mission E2: dashboard mode-classifier + threshold + filter audit",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 34,
+      "plain": "Mission E (commit pending) resolved the visible card",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #34 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #34"
+      ]
+    },
+    {
+      "id": "bug-35",
+      "title": "Mission V2: Layer 2 render-coherence invariants",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 35,
+      "plain": "Layer V (visual regression) catches pixel changes but",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #35 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #35"
+      ]
+    },
+    {
+      "id": "bug-36",
+      "title": "Mission V3: AI-vision review of baselines",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 36,
+      "plain": "(see OPEN-BUGS.md #36)",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #36 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #36"
+      ]
+    },
+    {
+      "id": "bug-10",
+      "title": "Test-source drift — canonical helpers copy-pasted in tests",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 10,
+      "plain": "`tests/core.test.js` lines 117–530 copy-paste the bodies",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #10 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #10"
+      ]
+    },
+    {
+      "id": "bug-44",
+      "title": "Multi-delete workflow friction — must re-engage delete affordance per txn",
+      "group": "tracked",
+      "surface": null,
+      "severity": "P2",
+      "status": "tracked",
+      "flow": null,
+      "openBug": 44,
+      "plain": "After deleting one txn, deleting a second txn requires a fresh long-press/tap on its delete affordance rather than continuing in a 'delete mode'. The behavior is SAFE (no cascade-delete risk per #43's two-layer defence) but creates friction when the user wants to clean up multipl",
+      "mechanism": "",
+      "rootCause": "Canonical record in OPEN-BUGS.md #44 — not yet walked for depth.",
+      "fix": "Walk this surface to produce a deep case, or scope from the OPEN-BUGS entry.",
+      "files": [
+        "OPEN-BUGS.md #44"
+      ]
+    }
+  ]
+}

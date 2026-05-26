@@ -1,0 +1,19 @@
+{
+  "_note": "Run-honesty registry. runnable=true means a real walker FLOW exercises this spec's actions (Run will actually walk it). runnable=false = authored-only (the spec is written; no flow wired yet → ⊘). run-by-group derives its picks from runnable specs in the group. Keep in sync with scripts/walker/run-walk.js FLOWS. Authored-only ones are honest gaps, not failures.",
+  "groups": ["dashboard", "bills", "savings", "plan", "ai", "analysis", "debts", "settings", "nav"],
+  "specs": [
+    { "file": "01-darwin-both-paths.md",   "title": "Darwin Trip — both savings paths", "group": "savings",   "runnable": true,  "flows": ["darwin-A-quicklog", "darwin-B-plantick"] },
+    { "file": "02-log-transaction.md",      "title": "Log a transaction (+ round-up)",    "group": "dashboard", "runnable": true,  "flows": ["log-transaction"] },
+    { "file": "03-bills-mark-paid.md",      "title": "Bills mark-paid + undo",            "group": "bills",     "runnable": true,  "flows": ["bills-mark-paid"] },
+    { "file": "04-plan-lock.md",            "title": "Payday plan lock / unlock",         "group": "plan",      "runnable": true,  "flows": ["plan-lock"] },
+    { "file": "11-ai-info-sources.md",      "title": "AI prompt provenance",              "group": "ai",        "runnable": true,  "flows": ["ai-provenance"] },
+    { "file": "05-savings-goals-trips.md",  "title": "Savings goals + trips (full)",      "group": "savings",   "runnable": false, "flows": [] },
+    { "file": "06-daily-living.md",         "title": "Daily living: buffer/provisions",   "group": "dashboard", "runnable": false, "flows": [] },
+    { "file": "07-bills-full.md",           "title": "Bills / calendar (full)",           "group": "bills",     "runnable": false, "flows": [] },
+    { "file": "08-analysis-full.md",        "title": "Analysis (full)",                   "group": "analysis",  "runnable": false, "flows": [] },
+    { "file": "09-dashboard-full.md",       "title": "Dashboard (full, ~43 actions)",     "group": "dashboard", "runnable": false, "flows": [] },
+    { "file": "10-debts-full.md",           "title": "Debts (full)",                      "group": "debts",     "runnable": false, "flows": [] },
+    { "file": "12-settings-full.md",        "title": "Settings + diagnostics (~57)",      "group": "settings",  "runnable": false, "flows": [] },
+    { "file": "13-nav-chrome.md",           "title": "Nav / chrome / onboarding / PIN",   "group": "nav",       "runnable": false, "flows": [] }
+  ]
+}

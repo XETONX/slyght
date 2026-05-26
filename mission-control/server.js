@@ -99,16 +99,35 @@ const ACTIONS = {
     throw new Error('no Status line under bug #' + bugNum);
   },
 
-  // RULE 2: fixed command, zero user input interpolated.
-  runWalk: () => {
+  // RULE 2: fixed command. Optional group/spec scope is VALIDATED against the
+  // registry — only known values become a --group=/--spec= arg, never raw input.
+  runWalk: ({ group, spec } = {}) => {
     if (walkChild) return { ok: false, reason: 'a walk is already running' };
+    const args = [path.join('scripts', 'walker', 'run-walk.js')];
+    if (group || spec) {
+      let reg = {}; try { reg = JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8')); } catch (_) {}
+      if (group && (reg.groups || []).includes(group)) args.push('--group=' + group);
+      else if (spec && (reg.specs || []).some(s => s.file === spec)) args.push('--spec=' + spec);
+      else return { ok: false, reason: 'unknown walk scope: ' + (group || spec) };
+    }
     walkLog = [];
-    walkChild = spawn(process.execPath, [path.join('scripts', 'walker', 'run-walk.js')], { cwd: REPO });
+    walkChild = spawn(process.execPath, args, { cwd: REPO });
     const cap = (buf) => String(buf).split('\n').forEach(l => l.trim() && walkLog.push(l));
     walkChild.stdout.on('data', cap);
     walkChild.stderr.on('data', cap);
     walkChild.on('exit', (code) => { walkLog.push('@@WALK_EXIT ' + code); walkChild = null; });
-    return { ok: true, started: true };
+    return { ok: true, started: true, scope: group || spec || 'all' };
+  },
+
+  // Persist John's per-case judgment. Path-jailed to one fixed JSON; caseId is a
+  // map key (validated to safe chars), never a path.
+  saveThoughts: ({ caseId, text }) => {
+    if (!caseId || !/^[a-z0-9-]+$/i.test(caseId)) throw new Error('bad caseId');
+    const abs = jail(path.join('mission-control', 'case-notes.json'));
+    let notes = {}; try { notes = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (_) {}
+    notes[caseId] = { text: String(text || '').slice(0, 20000), updatedAt: new Date().toISOString() };
+    fs.writeFileSync(abs, JSON.stringify(notes, null, 2));
+    return { ok: true, caseId };
   },
 
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
@@ -163,6 +182,21 @@ const server = http.createServer((req, res) => {
       html = html.replace('__MC_TOKEN__', TOKEN);          // RULE 4 — inject token into the same-origin page only
       return send(res, 200, html, 'text/html; charset=utf-8');
     }
+    if (p === '/app.js' || p === '/app.css') {                 // v2 split assets (fixed names, served from MC dir)
+      try { return send(res, 200, fs.readFileSync(path.join(MC, p.slice(1)), 'utf8'), p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8'); }
+      catch (e) { return send(res, 404, { error: e.message }); }
+    }
+    if (p === '/api/cases') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'cases.json'), 'utf8'))); } catch (e) { return send(res, 200, { cases: [], counts: {}, error: 'run: node scripts/mc/build-cases.js' }); } }
+    if (p === '/api/specs') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8'))); } catch (e) { return send(res, 404, { error: e.message }); } }
+    if (p === '/api/notes') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'case-notes.json'), 'utf8'))); } catch (e) { return send(res, 200, {}); } }
+    if (p === '/api/gitstatus') {  // read-only git info for the Deploy view (fixed args, no shell)
+      const run = (a) => { try { return require('child_process').execFileSync('git', a, { cwd: REPO }).toString().trim(); } catch (e) { return ''; } };
+      return send(res, 200, {
+        branch: run(['branch', '--show-current']),
+        dirty: run(['status', '--porcelain']).split('\n').filter(Boolean),
+        unpushed: run(['log', '@{u}..HEAD', '--oneline']).split('\n').filter(Boolean),
+      });
+    }
     if (p === '/api/walk-latest') { const w = latestWalk(); return send(res, 200, w || { dir: null, walk: null }); }
     if (p === '/api/walkspecs')   return send(res, 200, { specs: listWalkSpecs() });
     if (p === '/api/walkspec')    { try { return send(res, 200, { name: url.searchParams.get('name'), content: fs.readFileSync(jail(path.join('docs','walk-and-judge','specs', path.basename(url.searchParams.get('name')||''))), 'utf8') }, ); } catch (e) { return send(res, 404, { error: e.message }); } }
@@ -201,7 +235,7 @@ server.listen(PORT, HOST, () => {
   console.log('  ──────────────────────────────────────────────');
   console.log('  open:   http://' + HOST + ':' + PORT + '   (localhost-only)');
   console.log('  token:  ' + TOKEN + '   (auto-injected into the page)');
-  console.log('  writes: 7 allowlisted actions, path-jailed to ' + REPO);
+  console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
   console.log('  stop:   Ctrl-C\n');
 });

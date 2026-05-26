@@ -54,3 +54,10 @@ docs/audit/_scenario_screenshots/
 # re-running scripts/walker/run-walk.js. The coverage map + persisted specs
 # (docs/walk-and-judge/) are the durable artifacts; the screenshot bundles are not.
 tests/walker-out/
+
+# --- 2026-05-26 Mission Control v2 ---
+# Runtime outputs of the cockpit: John's per-case thoughts (personal) and the
+# composed briefs (generated per-session to feed CC). cases.json IS committed
+# (the cockpit reads it; regenerate with scripts/mc/build-cases.js).
+mission-control/case-notes.json
+mission-control/briefs/

@@ -97,5 +97,30 @@ single-line status edit, never a rewrite.
 
 ---
 
+---
+
+## v2 additions (2026-05-26) — all seven rules unchanged
+
+The translator rework is presentation/architecture on top of the proven-secure
+server. What changed, and how it stays inside the rules:
+
+- **New allowlisted write action: `saveThoughts(caseId, text)`** (rule 2) — persists
+  John's per-case judgment to one fixed file, `mission-control/case-notes.json`
+  (rule 3 path-jailed). `caseId` is a JSON map key validated to `[a-z0-9-]` (not a
+  path); text capped at 20k. Joins the fixed allowlist — still no generic writeFile/exec.
+- **`runWalk` now takes an optional `{group}`/`{spec}` scope** — the value is
+  **validated against `specs.json`** (must be a known group or spec file) before it
+  becomes a `--group=`/`--spec=` arg. Unknown scope → refused. Still a fixed command;
+  no raw user text reaches the shell (run-by-group honesty).
+- **New read endpoints (GET, read-only, no token — same class as the existing reads):**
+  `/api/cases` (cases.json), `/api/specs` (specs.json), `/api/notes` (case-notes.json),
+  `/api/gitstatus` (read-only `git branch`/`status`/`log` via `execFileSync`, fixed args,
+  **no shell** — informs the Deploy view's "what ships"; cannot mutate anything).
+- **Static assets `/app.js` + `/app.css`** served from the mission-control dir (fixed
+  filenames, not a user path).
+- **Anti-clobber + OPEN-BUGS append-only/surgical rules stand unchanged.** `cases.json`
+  is generated read-only by `scripts/mc/build-cases.js`; the cockpit never writes it.
+- Runtime outputs `case-notes.json` + `briefs/` are gitignored (personal/per-session).
+
 *If a future change adds an action or a write target, it must reconcile with this file
 first. New action → new row above + which rule covers it.*
