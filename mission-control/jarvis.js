@@ -61,9 +61,16 @@ async function viewOverview() {
         ${STATUSES.map(s => { const c = by(s); return c ? `<div class="ovbar"><span class="pill sm s-${s}">${STATUS_LABEL[s]}</span><div class="bartrack"><div class="barfill" style="width:${Math.round(c / ts.length * 100)}%"></div></div><span class="meta">${c}</span></div>` : ''; }).join('')}
       </div>
     </div>
-    <div class="panel" style="margin-top:16px">
-      <div class="label">What the walk + map found — confirmed findings (${confirmed.length})</div>
-      ${confirmed.map(t => ovRow(t, false)).join('')}
+    <div class="ovgrid" style="margin-top:16px">
+      <div class="panel">
+        <div class="label">Gaps by surface</div>
+        <p class="meta" style="margin:0 0 14px">How broken each surface is — tap a bar to open its map.</p>
+        ${(() => { const ss = (J.flows.surfaces || []).slice().sort((a, b) => (b.counts ? b.counts.gaps : 0) - (a.counts ? a.counts.gaps : 0)); const mx = Math.max(1, ...ss.map(x => x.counts ? x.counts.gaps : 0)); return ss.map(s => { const g = s.counts ? s.counts.gaps : 0; const c = g >= 3 ? 'var(--red)' : g >= 1 ? 'var(--amber)' : 'var(--green)'; return `<div class="chartrow" onclick="location.hash='#/map/${s.id}'"><span class="chartlabel">${esc(s.name)}</span><div class="charttrack"><div class="chartbar" style="width:${Math.round(g / mx * 100)}%;background:${c}"></div></div><span class="chartnum">${g}</span></div>`; }).join(''); })()}
+      </div>
+      <div class="panel">
+        <div class="label">Confirmed findings (${confirmed.length}) — what the walk + map caught</div>
+        ${confirmed.map(t => ovRow(t, false)).join('')}
+      </div>
     </div>`;
   drawHub(J.flows);
 }
@@ -246,6 +253,7 @@ async function doAlign(id) {
       <button class="btn" onclick="viewHandoff('${id}')">View the package</button>
       <button class="btn" onclick="closeModal()">Close</button></div>`);
     await load();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);  // refresh the card behind the modal → status flips to Aligned live
   } catch (e) {}
 }
 async function viewHandoff(id) {
