@@ -384,6 +384,8 @@ function ticketRow(t) {
         <span class="bd2-dot">·</span>
         <span class="bd2-act">active ${ago(st.lastActivity)}</span>
         ${links ? `<span class="bd2-dot">·</span><span class="bd2-links">🔗 ${links} link${links === 1 ? '' : 's'}</span>` : ''}
+        ${t.dueDate ? `<span class="bd2-dot">·</span><span class="fld-duechip ${fldDueTone(t.dueDate)}" title="Due ${esc(t.dueDate)}">${esc(fldDueLabel(t.dueDate))}</span>` : ''}
+        ${t.bundle ? `<span class="bd2-dot">·</span><span class="fld-bundlechip" title="Bundle: ${esc(t.bundle)}">◈ ${esc(t.bundle)}</span>` : ''}
         ${t.kind && t.kind !== 'manual' ? `<span class="pill sm k-${t.kind}">${esc(cap(t.kind))}</span>` : ''}
       </div>
     </div>
@@ -401,16 +403,26 @@ function ticketRow(t) {
         </div>
       </div>
 
-      <!-- TYPE — quick-filter -->
+      <!-- TYPE — live editable (setMeta) -->
       <div class="bd2-ctrl">
         <span class="bd2-ctrl-k">Type</span>
-        <button class="bd2-pillbtn pill sm k-${t.kind}" title="Filter by type: ${esc(cap(t.type))}" onclick="setFilter('type','${t.type}')">${esc(cap(t.type))}</button>
+        <div class="fld-selwrap k-${t.type}">
+          <select class="fld-sel k-${t.type}" aria-label="Type for ${t.id}" onchange="setMeta('${t.id}','type',this.value)">
+            ${[['bug', 'Bug'], ['feature', 'Feature'], ['task', 'Task']].map(([v, l]) => `<option value="${v}" ${t.type === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          ${BD2_CHEVRON}
+        </div>
       </div>
 
-      <!-- PRIORITY (severity) — quick-filter -->
+      <!-- PRIORITY (severity) — live editable (setMeta) -->
       <div class="bd2-ctrl">
         <span class="bd2-ctrl-k">Priority</span>
-        <button class="bd2-pillbtn pill sm ${sevCls(t.severity)}" title="Filter by priority: ${t.severity}" onclick="setFilter('severity','${t.severity}')">${t.severity}</button>
+        <div class="fld-selwrap ${sevCls(t.severity)}">
+          <select class="fld-sel ${sevCls(t.severity)}" aria-label="Priority for ${t.id}" onchange="setMeta('${t.id}','severity',this.value)">
+            ${[['P0', 'P0'], ['P1', 'P1'], ['P2', 'P2']].map(([v, l]) => `<option value="${v}" ${t.severity === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+          ${BD2_CHEVRON}
+        </div>
       </div>
 
       <!-- ASSIGNEE — derived from status; chip filters by who-owns-it bucket -->
@@ -450,6 +462,20 @@ function sortTickets(arr, sort) {
   // default: last activity, newest first
   return a.sort((x, y) => new Date(y.state.lastActivity) - new Date(x.state.lastActivity));
 }
+
+// due-date chip label + tone — relative ("Due today", "Due in 3d", "5d overdue") and
+// severity-of-time colour (overdue = red, ≤3 days = amber, else neutral).
+function fldDayDelta(iso) { const d = new Date(iso + 'T00:00:00'); const t0 = new Date(); t0.setHours(0,0,0,0); return Math.round((d - t0) / 86400000); }
+function fldDueLabel(iso) {
+  const n = fldDayDelta(iso);
+  if (isNaN(n)) return 'Due ' + iso;
+  if (n < 0)  return `Due · ${Math.abs(n)}d overdue`;
+  if (n === 0) return 'Due · today';
+  if (n === 1) return 'Due · tomorrow';
+  if (n <= 14) return `Due · in ${n}d`;
+  return 'Due · ' + iso.slice(5);    // MM-DD for far-out
+}
+function fldDueTone(iso) { const n = fldDayDelta(iso); return isNaN(n) ? '' : n < 0 ? 'fld-due-over' : n <= 3 ? 'fld-due-soon' : 'fld-due-ok'; }
 
 // generic filter setter — search updates J.filter live WITHOUT re-rendering the whole
 // view (so the input keeps focus/caret); everything else re-routes.
@@ -568,11 +594,25 @@ function viewTicket(id) {
           <div class="sh">Details</div>
           <div class="kv"><span class="k">Status</span><span class="v"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></span></div>
           <div class="kv"><span class="k">Assignee</span><span class="v">${assignee === 'cc' ? 'CC — investigating' : 'John — needs judgment'}</span></div>
-          <div class="kv"><span class="k">Severity</span><span class="v">${t.severity}</span></div>
-          <div class="kv"><span class="k">Type</span><span class="v">${esc(cap(t.type))}</span></div>
+          <div class="kv fld-kv"><span class="k">Type</span><span class="v">
+            ${fldSelect(t.id, 'type', t.type, [['bug', 'Bug'], ['feature', 'Feature'], ['task', 'Task']], 'fld-type-' + t.type)}
+          </span></div>
+          <div class="kv fld-kv"><span class="k">Severity</span><span class="v">
+            ${fldSelect(t.id, 'severity', t.severity, [['P0', 'P0 · Critical'], ['P1', 'P1 · High'], ['P2', 'P2 · Normal']], sevCls(t.severity))}
+          </span></div>
+          <div class="kv fld-kv"><span class="k">Due date</span><span class="v">
+            <input type="date" class="fld-date${t.dueDate ? ' set' : ''}" value="${esc(t.dueDate || '')}"
+              onchange="setMeta('${t.id}','dueDate',this.value)" aria-label="Due date for ${t.id}">
+          </span></div>
+          <div class="kv fld-kv"><span class="k">Bundle</span><span class="v">
+            <input type="text" class="fld-bundle${t.bundle ? ' set' : ''}" list="fld-bundles" maxlength="60"
+              value="${esc(t.bundle || '')}" placeholder="e.g. Bundle 33"
+              onchange="setMeta('${t.id}','bundle',this.value)" aria-label="Bundle for ${t.id}">
+          </span></div>
           <div class="kv"><span class="k">Surface</span><span class="v">${esc(niceSurface(t.group))}</span></div>
           <div class="kv"><span class="k">Age</span><span class="v">${ago(st.opened)}</span></div>
         </div>
+        ${fldBundleDatalist()}
         ${(t.links || []).length ? `<div class="siderail"><div class="sh">Related</div>${t.links.map(l => `<div class="kv"><span class="k">${l.to.startsWith('SLY') ? `<a href="#/ticket/${l.to}">${esc(l.to)}</a>` : esc(l.to)}</span><span class="v" style="font-weight:400;color:var(--muted);font-size:12px;max-width:150px">${esc(l.why)}</span></div>`).join('')}</div>` : ''}
         ${sync.length ? `<div class="siderail" style="background:var(--green-bg);border-color:#a6e9c0"><div class="sh" style="color:var(--green)">Kept in sync on ship</div><div style="font-size:13px;color:#1a1d24;line-height:1.6">${sync.map(esc).join(', ')} — the reasoning stays here on the ticket.</div></div>` : ''}
         <div class="siderail">
@@ -609,6 +649,47 @@ function renderTrace(ev) {
 
 /* ── loop actions ─────────────────────────────────────────────────────── */
 async function refreshTicket(id) { await load(); route(); }
+
+/* ── EDITABLE TICKET METADATA (setMeta) ──────────────────────────────────────
+ * One generic setter calls the allowlisted server action and re-pulls truth, then
+ * re-renders whatever view is showing (ticket detail / board / planning / calendar)
+ * — same reload+re-render contract as comment()/changeStatus()/askDelete(). On a
+ * server rejection action() already toasts; we still reload so the control snaps
+ * back to the real value. */
+async function setMeta(id, field, value) {
+  const t = get(id);
+  const before = t ? (field === 'dueDate' ? t.dueDate : field === 'bundle' ? t.bundle : t[field]) : null;
+  const v = (value == null ? '' : String(value)).trim();
+  if ((before || '') === v) return;                 // no-op — nothing changed
+  try {
+    await action('setMeta', { id, field, value: v });
+    const LBL = { type: 'Type', severity: 'Severity', dueDate: 'Due date', bundle: 'Bundle' };
+    toast(`${id} · ${LBL[field]} ${v ? 'set to ' + v : 'cleared'}`, 'ok');
+  } catch (e) { /* action() already toasted the rejection */ }
+  await load();   // re-pull truth either way
+  route();        // re-render the current view (illegal/failed edit snaps back to truth)
+}
+
+// premium custom select for an editable meta field (matches .bd2-sel chrome).
+// `valCls` toggles a colour class so the closed select reads like the value pill.
+function fldSelect(id, field, value, opts, valCls) {
+  return `<span class="fld-selwrap ${valCls || ''}">
+    <select class="fld-sel ${valCls || ''}" aria-label="${esc(field)} for ${id}"
+      onchange="setMeta('${id}','${field}',this.value)">
+      ${opts.map(([val, lbl]) => `<option value="${esc(val)}" ${value === val ? 'selected' : ''}>${esc(lbl)}</option>`).join('')}
+    </select>
+    ${BD2_CHEVRON}
+  </span>`;
+}
+
+// existing bundles → a shared <datalist> so the Bundle input autocompletes what's
+// already in use (no free-for-all typos; still allows a brand-new bundle name).
+function fldBundles() {
+  return [...new Set((J.tickets || []).map(t => t.bundle).filter(Boolean))].sort();
+}
+function fldBundleDatalist() {
+  return `<datalist id="fld-bundles">${fldBundles().map(b => `<option value="${esc(b)}">`).join('')}</datalist>`;
+}
 async function comment(id) {
   const text = ($('cmt').value || '').trim(); if (!text) { toast('write something first', 'err'); return; }
   try { await action('addComment', { id, author: 'john', text }); toast('comment added', 'ok'); await refreshTicket(id); } catch (e) {}
@@ -1080,7 +1161,7 @@ function ladderRow(st) {
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 // tolerant date read — lights up the day the model gains a target/due field
-const ticketDate = t => (t && t.state && (t.state.target || t.state.due)) || (t && (t.due || t.target)) || null;
+const ticketDate = t => (t && t.dueDate) || (t && t.state && (t.state.target || t.state.due)) || (t && (t.due || t.target)) || null;
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
 function viewCalendar() {
@@ -1120,7 +1201,7 @@ function viewCalendar() {
 
   v.innerHTML = `
     <h1>Calendar</h1>
-    <p class="subtitle">Tickets and releases plotted against dates. Set a target date on a ticket and it lands on the day it's due — colour shows severity.</p>
+    <p class="subtitle">Tickets plotted against their due dates — colour shows severity, click any to open it. Set a due date on a ticket (its Details rail) and it lands on the day it's due.</p>
     <div class="cal-wrap">
       <div class="cal-bar">
         <div class="cal-title">${MONTHS[m]} ${y}</div>
@@ -1159,9 +1240,11 @@ function viewPlanning() {
   const candidates = ts
     .filter(t => t.type === 'bug' && ['P0', 'P1'].includes(t.severity) && t.state.status !== 'Shipped')
     .sort((a, b) => SEVRANK_P[a.severity] - SEVRANK_P[b.severity] || new Date(b.state.lastActivity || 0) - new Date(a.state.lastActivity || 0));
-  // bundles aren't in the model yet → group purely by what exists today
-  const bundles = {};  // future: ts.reduce by t.bundle
-  const hasBundles = Object.keys(bundles).length > 0;
+  // group tickets that carry a `bundle` (set via setMeta) into release lanes
+  const bundles = {};
+  ts.forEach(t => { if (t.bundle) (bundles[t.bundle] = bundles[t.bundle] || []).push(t); });
+  const bundleNames = Object.keys(bundles).sort();
+  const hasBundles = bundleNames.length > 0;
 
   const planCard = t => `<div class="plan-card" onclick="location.hash='#/ticket/${t.id}'">
     <div class="plan-card-top"><span class="pill sm k-${t.kind}">${esc(cap(t.type))}</span><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span></div>
@@ -1200,15 +1283,42 @@ function viewPlanning() {
     <h2 class="section-h">Releases</h2>
     <p class="meta" style="margin:-6px 0 14px">Group what ships together into a bundle. Bundles aren't in the ticket model yet — grouping is the next step.</p>
     <div class="plan-releases">
-      ${hasBundles ? '' /* future: render real bundle cards here */ : `
+      ${hasBundles
+        ? `<div class="fld-releasegrid">${bundleNames.map(b => fldReleaseCard(b, bundles[b])).join('')}</div>
+           <div class="fld-release-add"><button class="btn primary" onclick="planGroupRelease()">Group More Into A Release</button></div>`
+        : `
         <div class="plan-release-empty">
           <div class="plan-release-empty-l">
             <div class="plan-empty-t">No releases grouped yet</div>
-            <div class="plan-empty-b">A release is a set of tickets that ship together (a bundle). Once you group candidates into a release, they'll show here as a planned cycle with its own card.</div>
+            <div class="plan-empty-b">A release is a set of tickets that ship together (a bundle). Group ship-ready tickets into a bundle and they'll show here as a planned cycle with its own card.</div>
           </div>
           <button class="btn primary" onclick="planGroupRelease()">Group Into A Release</button>
         </div>`}
     </div>`;
+}
+
+// one release lane — all tickets sharing a `bundle`, with a ship-progress bar.
+function fldReleaseCard(name, tickets) {
+  const ts = tickets.slice().sort((a, b) => SEVRANK_P[a.severity] - SEVRANK_P[b.severity]);
+  const done = ts.filter(t => ['ConfirmedLive', 'Shipped'].includes(t.state.status)).length;
+  const pct = Math.round(done / Math.max(1, ts.length) * 100);
+  const earliestDue = ts.map(t => t.dueDate).filter(Boolean).sort()[0] || null;
+  return `<section class="fld-release">
+    <div class="fld-release-h">
+      <span class="fld-release-name">◈ ${esc(name)}</span>
+      <span class="fld-release-ct">${done}/${ts.length} shipped</span>
+    </div>
+    ${earliestDue ? `<div class="fld-release-due">First due ${esc(earliestDue)}</div>` : ''}
+    <div class="fld-release-track"><div class="fld-release-fill" style="width:${Math.max(pct ? 6 : 0, pct)}%"></div></div>
+    <div class="fld-release-list">
+      ${ts.map(t => `<div class="fld-release-row" onclick="location.hash='#/ticket/${t.id}'">
+        <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+        <span class="fld-release-tt">${esc(t.title)}</span>
+        <span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span>
+        <span class="meta">${t.id}</span>
+      </div>`).join('')}
+    </div>
+  </section>`;
 }
 function planGroupRelease() {
   const ts = J.tickets;
@@ -1219,17 +1329,48 @@ function planGroupRelease() {
   const shipReady = ts.filter(t => t.state.status === 'ConfirmedLive')
     .sort((a, b) => SEVRANK_P[a.severity] - SEVRANK_P[b.severity]
       || new Date(b.state.lastActivity || 0) - new Date(a.state.lastActivity || 0));
+  const existing = fldBundles();
   modal(`<h2>Group Into A Release</h2>
-    <p>Releases group tickets that ship together as a bundle — slyght's existing cadence (Bundle 30, 31, 32…). Only <b>ship-ready</b> tickets qualify: a ticket becomes ship-ready when its fix is <b>Confirmed Live</b> (verified in the running app). The ticket model doesn't carry a <code>bundle</code> field yet, so this is the honest next step rather than fake data.</p>
-    <div class="label" style="margin-top:8px">Ship-ready tickets a release would group</div>
+    <p>Releases group tickets that ship together as a bundle — slyght's existing cadence (Bundle 30, 31, 32…). Only <b>ship-ready</b> tickets qualify: a ticket becomes ship-ready when its fix is <b>Confirmed Live</b> (verified in the running app). Name the bundle, tick the tickets, and this writes the grouping — they'll appear in the Releases lane.</p>
     ${shipReady.length
-      ? `<p class="meta" style="margin:0 0 6px">The ${shipReady.length} ticket${shipReady.length === 1 ? '' : 's'} with a Confirmed Live fix, ready to ship:</p>
+      ? `<div class="label" style="margin-top:10px">Bundle name</div>
+    <input id="fldBundleName" list="fld-bundles" maxlength="60" placeholder="e.g. Bundle 33" autocomplete="off">
+    ${fldBundleDatalist()}
+    <div class="label" style="margin-top:14px">Ship-ready tickets — tick the ones to include</div>
     <div class="plan-modal-list">
-      ${shipReady.slice(0, 10).map(t => `<div class="plan-modal-row"><span class="pill sm ${sevCls(t.severity)}">${t.severity}</span><span class="tt">${esc(t.title)}</span><span class="meta">${t.id}</span></div>`).join('')}
+      ${shipReady.slice(0, 20).map(t => `<label class="plan-modal-row fld-pickrow">
+        <input type="checkbox" class="fld-pick" value="${t.id}" checked>
+        <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+        <span class="tt">${esc(t.title)}</span>
+        ${t.bundle ? `<span class="fld-bundlechip" title="Currently in ${esc(t.bundle)}">◈ ${esc(t.bundle)}</span>` : ''}
+        <span class="meta">${t.id}</span>
+      </label>`).join('')}
     </div>
-    <p class="meta" style="margin-top:12px">Next step: add a <code>bundle</code> field to the ticket model, then this button writes the grouping and the Releases lane fills with planned cycles.</p>`
-      : `<div class="plan-empty" style="margin-top:6px"><div class="plan-empty-icon">◇</div><div class="plan-empty-t">No tickets are ship-ready yet</div><div class="plan-empty-b">A ticket becomes ship-ready when its fix is Confirmed Live — verified in the running app. Move a ticket to Confirmed Live on the Board (it's earned: it needs walk evidence), and it'll show here as part of the next release.</div></div>`}
-    <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
+    <div class="btns" style="margin-top:16px">
+      <button class="btn primary" onclick="fldDoGroupRelease()">Group Into Release</button>
+      <button class="btn" onclick="closeModal()">Cancel</button>
+    </div>`
+      : `<div class="plan-empty" style="margin-top:6px"><div class="plan-empty-icon">◇</div><div class="plan-empty-t">No tickets are ship-ready yet</div><div class="plan-empty-b">A ticket becomes ship-ready when its fix is Confirmed Live — verified in the running app. Move a ticket to Confirmed Live on the Board (it's earned: it needs walk evidence), and it'll show here as part of the next release.</div></div>
+    <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`}`);
+  setTimeout(() => { const el = $('fldBundleName'); if (el) el.focus(); }, 30);
+}
+
+// write the bundle onto every ticked ship-ready ticket, then refresh Planning once.
+async function fldDoGroupRelease() {
+  const name = ($('fldBundleName').value || '').trim();
+  if (!name) { toast('name the bundle first', 'err'); const el = $('fldBundleName'); if (el) el.focus(); return; }
+  if (name.length > 60) { toast('bundle name too long (max 60)', 'err'); return; }
+  const ids = [...document.querySelectorAll('.fld-pick:checked')].map(c => c.value);
+  if (!ids.length) { toast('tick at least one ticket', 'err'); return; }
+  let ok = 0;
+  for (const id of ids) {
+    try { await action('setMeta', { id, field: 'bundle', value: name }); ok++; }
+    catch (e) { /* action() toasts each rejection; keep going */ }
+  }
+  closeModal();
+  toast(`Grouped ${ok} ticket${ok === 1 ? '' : 's'} into ${name}`, 'ok');
+  await load();
+  if ((location.hash || '').includes('/planning')) viewPlanning(); else route();
 }
 
 /* ════════════════════════ INSIGHTS (command-centre telemetry) ═══════════

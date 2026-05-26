@@ -251,6 +251,41 @@ const ACTIONS = {
 
     return { ok: true, id, kind: removedManual ? 'manual-removed' : 'tombstoned' };
   },
+  // John edits a ticket's METADATA — type/severity/dueDate/bundle. These live on the
+  // read-only spine (tickets.json), so we store OVERRIDES in ticket-state.json[id].meta
+  // and mergedTickets() layers them over the spine. ONE field per call, each validated;
+  // '' clears the field (falls back to the spine / no date / no bundle). Path-jailed to
+  // ticket-state.json via writeState; id pinned to ^SLY-\d+$ like every other ticket action.
+  setMeta: ({ id, field, value }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (!['type', 'severity', 'dueDate', 'bundle'].includes(field)) throw new Error('bad meta field: ' + field);
+    const v = String(value == null ? '' : value).trim();
+    // per-field validation — reject anything that isn't a legal value (or '' to clear)
+    let val = '';
+    if (field === 'type') {
+      if (v && !['bug', 'feature', 'task'].includes(v)) throw new Error('bad type: ' + v);
+      val = v;
+    } else if (field === 'severity') {
+      if (v && !['P0', 'P1', 'P2'].includes(v)) throw new Error('bad severity: ' + v);
+      val = v;
+    } else if (field === 'dueDate') {
+      if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error('dueDate must be YYYY-MM-DD or empty');
+      if (v) { const d = new Date(v + 'T00:00:00'); if (isNaN(d)) throw new Error('invalid date: ' + v); }
+      val = v;
+    } else { // bundle — short free string, capped
+      if (v.length > 60) throw new Error('bundle too long (max 60 chars)');
+      val = v;
+    }
+    // the ticket must exist somewhere in the merged spine (generated or manual)
+    if (![...TICKETS(), ...MANUAL()].some(t => t.id === id)) throw new Error('no such ticket: ' + id);
+    const st = readState();
+    const t = st[id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: null, lastActivity: null };
+    t.meta = t.meta || {};
+    if (val === '') delete t.meta[field]; else t.meta[field] = val;     // '' clears → falls back to spine
+    t.lastActivity = new Date().toISOString();
+    st[id] = t; writeState(st);
+    return { ok: true, id, field, value: val };
+  },
   // CC posts results BACK into the ticket — closes the loop. Optional transition.
   postResult: ({ id, found, fixed, evidence, to, propagate }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
@@ -370,7 +405,18 @@ function mergedTickets() {
   return {
     tickets: spine
       .filter(t => !(state[t.id] && state[t.id].deleted === true))   // tombstoned tickets are excluded everywhere
-      .map(t => ({ ...t, state: state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null } }))
+      .map(t => {
+        const s = state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null };
+        const m = s.meta || {};                                       // editable overrides + new fields (setMeta)
+        return {
+          ...t,
+          type:     m.type     || t.type,          // override the read-only spine type…
+          severity: m.severity || t.severity,      // …and severity, when John has set one
+          dueDate:  m.dueDate  || null,            // NEW — null when unset (Calendar reads this)
+          bundle:   m.bundle   || null,            // NEW — null when unset (Planning reads this)
+          state: s,
+        };
+      })
   };
 }
 // the COLLATE step — assemble the rich package John's alignment triggers.
