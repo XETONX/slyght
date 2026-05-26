@@ -184,3 +184,13 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .hublegend{display:flex;gap:20px;align-items:center;font-size:13px;color:var(--muted);padding:0 6px}
 .hublegend .dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .hublegend .dot.g{background:var(--green)} .hublegend .dot.a{background:var(--amber)} .hublegend .dot.r{background:var(--red)}
+
+/* ── Overview (the whole story) ─────────────────────────────────────────── */
+.ovgrid{display:grid;grid-template-columns:1.15fr 1fr;gap:16px;align-items:start}
+.ovrow{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:9px;cursor:pointer;transition:.1s;border:1px solid transparent}
+.ovrow:hover{background:var(--card2);border-color:var(--border)}
+.ovt{flex:1;font-size:14.5px;color:var(--head);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ovbar{display:flex;align-items:center;gap:10px;margin:8px 0}
+.ovbar .pill{min-width:96px;text-align:center;justify-content:center}
+.bartrack{flex:1;height:8px;background:var(--card2);border-radius:5px;overflow:hidden}
+.barfill{height:100%;background:var(--blue);border-radius:5px;transition:width .4s}

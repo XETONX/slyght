@@ -135,10 +135,53 @@ function openBugCases() {
   return out;
 }
 
+// ── App Map trace discoveries (Phase 1 grind, 2026-05-26) — new findings the
+//    IS-vs-SHOULD trace surfaced that weren't tickets yet. Appended LAST so the
+//    existing SLY-1..25 ids don't renumber. No walk evidence (found by trace).
+const TRACE_FINDINGS = [
+  {
+    id: 'settings-reset-unrecoverable', title: 'Reset is unrecoverable — the undo backup is deleted by the reset itself',
+    group: 'settings', surface: 'settings', severity: 'P0', status: 'confirmed', flow: null, openBug: null,
+    plain: "If you hit Reset there's no getting your data back — the 'undo' backup is stored inside the very blob the reset wipes, so the reset destroys its own safety net. And the warning screen says it'll delete your snapshots, but the code never actually removes them — the copy doesn't match what happens.",
+    mechanism: "saveUndoState() stashes the backup into S._prevState. S lives in localStorage 'slyght_v5'. _executeReset deletes slyght_v5 (+ seed flags + api key) then reloads — so the backup is gone before undoLastAction could ever read it. Separately, the Stage-2 screen lists 'Snapshots: N' as about to be lost, but _executeReset never touches the slyght_snapshots key.",
+    rootCause: "saveUndoState writes the backup to S._prevState (index.html:15276), which lives inside slyght_v5 — the exact key _executeReset deletes (index.html:14937-14944). No SNAPSHOTS.take before the wipe; the restore path (index.html:15315) has nothing to read. Stage-2 copy (index.html:14899-14900) overstates the deletion.",
+    fix: "Before the wipe, copy the backup OUT of slyght_v5 (use SNAPSHOTS.take or a separate key the reset preserves) so undo has something to restore. Fix the Stage-2 copy to match what _executeReset actually deletes (or delete snapshots if that's intended).",
+    files: ['index.html:15276 (saveUndoState → S._prevState)', 'index.html:14937-14944 (_executeReset deletes slyght_v5)', 'index.html:14899-14900 (Stage-2 copy overstates)', 'index.html:15315 (restore — nothing to read)'],
+  },
+  {
+    id: 'debts-no-partial-paydown', title: 'Debts: no partial pay-down (only full clear) + card/canvas total drift (FR-07)',
+    group: 'debts', surface: 'debts', severity: 'P1', status: 'confirmed', flow: null, openBug: null,
+    plain: "You can only mark a debt fully cleared — there's no way to log a partial payment toward one. And the debt total on the Debts card can disagree with the figure on the Payday canvas, so you see two different 'what I owe' numbers.",
+    mechanism: "The only pay action is markDebtPaid (full clear via BRAIN.debts.markPaid) — there's no payDownDebt/reduceDebt anywhere. Separately the Debts card headline sums all non-viaRent debts, while the canvas reader getActiveDebtsDueBeforePayday only counts debts with a delayDate inside the cycle — two readers, they drift (FR-07).",
+    rootCause: "No partial-payment writer exists. FR-07 dual-reader divergence: card total index.html:7857-7859 vs canvas reader getActiveDebtsDueBeforePayday index.html:3605-3632 (violates INV-11/INV-18).",
+    fix: "Add a partial pay-down path (log a Debt-repayment txn that reduces debt.amt without clearing it). Converge the two debt-total readers onto one canonical figure.",
+    files: ['index.html:8206 (markDebtPaid — full clear only, no partial path)', 'index.html:7857-7859 (card total reader)', 'index.html:3605-3632 (canvas reader — drifts)'],
+  },
+  {
+    id: 'nav-pin-gate-orphaned', title: 'PIN gate orphaned — a set PIN does not actually lock the app',
+    group: 'nav', surface: 'nav', severity: 'P1', status: 'confirmed', flow: null, openBug: null,
+    plain: "Setting a PIN doesn't actually lock anything. When the app opens, nothing checks the PIN or shows the PIN screen — so anyone who opens it is straight in. The lock exists in Settings but the front door never asks for it.",
+    mechanism: "splashTap() routes to onboarding or straight to the app but never checks S.pinHash and never shows #pin-screen. The pieces exist (verifyPIN, pinKey) but are unreachable on boot — the only references to #pin-screen are HIDE calls.",
+    rootCause: "splashTap (index.html:19917-19924) has no PIN branch; #pin-screen (index.html:828) is only ever hidden (index.html:3951, 4157); verifyPIN (index.html:2218) is unreachable on the boot path.",
+    fix: "In the splash/boot path, if S.pinHash is set, show #pin-screen and gate launchApp behind a successful verifyPIN.",
+    files: ['index.html:19917-19924 (splashTap — no PIN branch)', 'index.html:828 (#pin-screen, only hidden)', 'index.html:2218 (verifyPIN — unreachable on boot)'],
+  },
+  {
+    id: 'nav-boot-tdz', title: 'Boot TDZ — first-paint financial model falls back to a stub',
+    group: 'nav', surface: 'nav', severity: 'P1', status: 'confirmed', flow: null, openBug: null,
+    plain: "On boot the financial model briefly fails and falls back to a placeholder, because the startup code runs before the BRAIN engine is switched on — so the very first paint can show stub numbers before it settles.",
+    mechanism: "load() fires before const BRAIN and const PLAN are initialised. computeFinancialModel touches BRAIN/PLAN and throws 'Cannot access BRAIN before initialization'; refreshModel's try/catch swallows it and uses _modelStub for the first paint.",
+    rootCause: "Temporal dead zone: load() runs at index.html:19877, but const BRAIN is declared later at index.html:20294 (PLAN at :26142). The boot call precedes the engine it needs; caught + stubbed at index.html:4937-4942.",
+    fix: "Defer the boot load()/first refreshModel until after BRAIN/PLAN are initialised (move the boot call below the declarations, or guard the model build until the engine exists).",
+    files: ['index.html:19877 (load fires early)', 'index.html:20294 (const BRAIN declared after)', 'index.html:4937-4942 (stub fallback)'],
+  },
+];
+
 // ── build ────────────────────────────────────────────────────────────────────
 const walk = loadLatestWalk();
 const deep = SEED.map(c => ({ ...c, evidence: evidenceFor(c.flow, walk) }));
-const cases = [...deep, ...openBugCases()];
+const trace = TRACE_FINDINGS.map(c => ({ ...c, evidence: null }));
+const cases = [...deep, ...openBugCases(), ...trace];
 const out = {
   generatedAt: new Date().toISOString(),
   walkDir: walk ? walk.dir : null,

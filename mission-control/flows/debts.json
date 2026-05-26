@@ -2,66 +2,169 @@
   "id": "debts",
   "name": "Debts — clear a debt & add a new one",
   "surface": "debts",
-  "ticket": null,
+  "ticket": "SLY-27",
   "summary": "The journey a debt takes from the list, through a full clear (cash debits + a Debt-repayment txn logs), to gone. The pay-down rungs are healthy; the missing rung is what happens to a debt that's whittled to ~$0 — there's no clean archive, and the only exit (Delete) uses a native confirm.",
   "steps": [
-    { "n": 1, "title": "Open Debts", "is": "ok",
+    {
+      "n": 1,
+      "title": "Open Debts",
+      "is": "ok",
       "does": "You land on the Immediate Debts list (it lives on the Dashboard; the Analysis 'Debts →' link routes here too).",
-      "wired": "goPage('pg-dash') → renderDebtTiles()", "file": "index.html:1409, 7841",
-      "reads": ["S.debts", "S.debtStrategy"], "writes": [],
-      "plain": "Opening the Debts collection. The list is one of the cards on the home screen — there is no separate Debts page, the 'Debts →' link just scrolls you to the same card." },
-    { "n": 2, "title": "List renders (priority / strategy order)", "is": "ok",
+      "wired": "goPage('pg-dash') → renderDebtTiles()",
+      "file": "index.html:1409, 7841",
+      "reads": [
+        "S.debts",
+        "S.debtStrategy"
+      ],
+      "writes": [],
+      "plain": "Opening the Debts collection. The list is one of the cards on the home screen — there is no separate Debts page, the 'Debts →' link just scrolls you to the same card."
+    },
+    {
+      "n": 2,
+      "title": "List renders (priority / strategy order)",
+      "is": "ok",
       "does": "Active debts (paid + viaRent excluded from the headline total) render as tiles, sorted by priority; an IMMEDIATE total shows at the top.",
-      "wired": "renderDebtTiles() → S.debts.filter(!paid).sort(priority); imm-total = sum(!viaRent)", "file": "index.html:7850-7859",
-      "reads": ["S.debts"], "writes": [],
+      "wired": "renderDebtTiles() → S.debts.filter(!paid).sort(priority); imm-total = sum(!viaRent)",
+      "file": "index.html:7850-7859",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
       "plain": "A GET that returns every unpaid debt row and lays them out. The headline 'total' is the sum of the manual-pay rows. Avalanche/snowball ordering itself lives in getTopPriorityDebt (avalanche = highest rate first, snowball = smallest balance first).",
-      "ticket": null },
-    { "n": 3, "title": "Headline total can disagree with the Payday canvas", "is": "gap",
+      "ticket": null
+    },
+    {
+      "n": 3,
+      "title": "Headline total can disagree with the Payday canvas",
+      "is": "gap",
       "does": "The Debts-card headline sums ALL non-viaRent unpaid debts; the Payday canvas reads only debts with a due-date inside this cycle. Same concept, two readers — they drift.",
-      "wired": "card total: renderDebtTiles imm-total (sum of all !viaRent) vs canvas: getActiveDebtsDueBeforePayday (delayDate within cycle only)", "file": "index.html:7857-7859 vs index.html:3605-3632",
-      "reads": ["S.debts"], "writes": [],
+      "wired": "card total: renderDebtTiles imm-total (sum of all !viaRent) vs canvas: getActiveDebtsDueBeforePayday (delayDate within cycle only)",
+      "file": "index.html:7857-7859 vs index.html:3605-3632",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
       "plain": "FR-07. Two different Postman endpoints answer 'what do I owe?' off the same debts table but with different WHERE clauses — the card counts every manual debt, the canvas counts only ones due before payday. They return different numbers and no one reconciles them. Violates INV-11 / INV-18.",
-      "ticket": null },
-    { "n": 4, "title": "Tap a debt → modal opens", "is": "ok",
+      "ticket": "SLY-27"
+    },
+    {
+      "n": 4,
+      "title": "Tap a debt → modal opens",
+      "is": "ok",
       "does": "Tapping a tile opens the debt detail modal with name, amount, rate, due date, notes, and a payoff-ETA line.",
-      "wired": "openDebtModal(idx)", "file": "index.html:8140-8165",
-      "reads": ["S.debts"], "writes": [],
-      "plain": "Opening the detail view for one debt row so you can act on it." },
-    { "n": 5, "title": "Tap \"Mark Cleared\"", "is": "ok",
+      "wired": "openDebtModal(idx)",
+      "file": "index.html:8140-8165",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
+      "plain": "Opening the detail view for one debt row so you can act on it."
+    },
+    {
+      "n": 5,
+      "title": "Tap \"Mark Cleared\"",
+      "is": "ok",
       "does": "You declare this debt paid off in full.",
-      "wired": "markDebtPaid() (UI handler, debounced)", "file": "index.html:1772, 8206-8254",
-      "reads": ["S.debts"], "writes": [],
-      "plain": "Fires the 'clear this debt' request. Note there is NO partial pay-down anywhere — the only pay action is a full clear (or hand-editing the amount). One concept: clear-in-full." },
-    { "n": 6, "title": "markPaid composes cash + flag atomically", "is": "ok",
+      "wired": "markDebtPaid() (UI handler, debounced)",
+      "file": "index.html:1772, 8206-8254",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
+      "plain": "Fires the 'clear this debt' request. Note there is NO partial pay-down anywhere — the only pay action is a full clear (or hand-editing the amount). One concept: clear-in-full."
+    },
+    {
+      "n": 6,
+      "title": "markPaid composes cash + flag atomically",
+      "is": "ok",
       "does": "Records a 'Debt repayment' outflow txn for the full amount AND flips the debt to paid:true, inside one writer. Aborts (and leaves the debt un-cleared) if the txn fails.",
-      "wired": "BRAIN.debts.markPaid → BRAIN.transaction.recordWithAllocation('Debt repayment', outflow); debt.paid=true; debt._clearedTxnTs=rec.txnTs", "file": "index.html:8226, 25855-25882",
-      "reads": ["S.debts", "S.bal"], "writes": ["txn_record", "balance_apply_delta", "debt_mark_paid"],
-      "plain": "A composite endpoint: in one call it writes the cash-out transaction, debits the balance, and stamps the debt 'paid' with a back-reference to that txn (so it can be cleanly undone). CREATE-strict — if the txn write fails the whole thing rolls back, so you never get a 'paid' debt with no matching money movement." },
-    { "n": 7, "title": "Cash debited + Debt-repayment txn logged", "is": "ok",
+      "wired": "BRAIN.debts.markPaid → BRAIN.transaction.recordWithAllocation('Debt repayment', outflow); debt.paid=true; debt._clearedTxnTs=rec.txnTs",
+      "file": "index.html:8226, 25855-25882",
+      "reads": [
+        "S.debts",
+        "S.bal"
+      ],
+      "writes": [
+        "txn_record",
+        "balance_apply_delta",
+        "debt_mark_paid"
+      ],
+      "plain": "A composite endpoint: in one call it writes the cash-out transaction, debits the balance, and stamps the debt 'paid' with a back-reference to that txn (so it can be cleanly undone). CREATE-strict — if the txn write fails the whole thing rolls back, so you never get a 'paid' debt with no matching money movement."
+    },
+    {
+      "n": 7,
+      "title": "Cash debited + Debt-repayment txn logged",
+      "is": "ok",
       "does": "Balance drops by the debt amount; a Debt repayment transaction appears in history.",
-      "wired": "recordWithAllocation (inside markPaid)", "file": "index.html:24524",
-      "reads": ["S.bal"], "writes": ["balance_apply_delta", "txn_record"],
-      "plain": "The money side. Walk: bal 4800 → 4583 after clearing a $217 debt, one 'Debt repayment $217' txn in the ledger. This is the healthy rung — the cash and the record land together." },
-    { "n": 8, "title": "Debt drops off the list (paid:true)", "is": "ok",
+      "wired": "recordWithAllocation (inside markPaid)",
+      "file": "index.html:24524",
+      "reads": [
+        "S.bal"
+      ],
+      "writes": [
+        "balance_apply_delta",
+        "txn_record"
+      ],
+      "plain": "The money side. Walk: bal 4800 → 4583 after clearing a $217 debt, one 'Debt repayment $217' txn in the ledger. This is the healthy rung — the cash and the record land together."
+    },
+    {
+      "n": 8,
+      "title": "Debt drops off the list (paid:true)",
+      "is": "ok",
       "does": "renderDebtTiles re-runs; the cleared debt is filtered out (filter(!paid)); a celebration overlay + haptic fire; if the list is now empty the 'No Immediate Debts' congrats shows.",
-      "wired": "onStateChange('debt-paid') → renderDebtTiles(); debt-celebrate-overlay", "file": "index.html:8231-8253, 7860-7864",
-      "reads": ["S.debts"], "writes": [],
-      "plain": "After clearing, the GET no longer returns that row (the tile filter hides paid:true), so it simply vanishes from the grid. The row still exists in the table with paid:true — it's hidden, not deleted." },
-    { "n": 9, "title": "A whittled-down ($0-ish) debt has no archive affordance", "is": "gap",
+      "wired": "onStateChange('debt-paid') → renderDebtTiles(); debt-celebrate-overlay",
+      "file": "index.html:8231-8253, 7860-7864",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
+      "plain": "After clearing, the GET no longer returns that row (the tile filter hides paid:true), so it simply vanishes from the grid. The row still exists in the table with paid:true — it's hidden, not deleted."
+    },
+    {
+      "n": 9,
+      "title": "A whittled-down ($0-ish) debt has no archive affordance",
+      "is": "gap",
       "does": "SHOULD exist here: if you edit a debt's amount down to ~$0 over time (instead of one full Mark-Cleared), there's no 'this is done — archive it' button. It just sits at a near-zero amount in the active list.",
-      "wired": "(missing — no archive/clear-at-zero affordance; saveDebt only edits amt via BRAIN.debts.update, never auto-clears at 0)", "file": "index.html:8190-8194, 25930-25967",
-      "reads": ["S.debts"], "writes": [],
+      "wired": "(missing — no archive/clear-at-zero affordance; saveDebt only edits amt via BRAIN.debts.update, never auto-clears at 0)",
+      "file": "index.html:8190-8194, 25930-25967",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [],
       "plain": "The MISSING rung. Editing the amount to 0 is a valid path (the amount field is freely editable) but nothing detects 'this debt is effectively gone' and offers to file it away. A $0 row lingers in the active list with no clean exit — the only way out is Delete (next step), which is the wrong tool because it implies 'never happened' rather than 'paid off, keep the history'.",
-      "ticket": null },
-    { "n": 10, "title": "Delete uses a native confirm()", "is": "broken",
+      "ticket": "SLY-27"
+    },
+    {
+      "n": 10,
+      "title": "Delete uses a native confirm()",
+      "is": "broken",
       "does": "The only way to remove a lingering/cleared debt is Delete, which pops a browser-native confirm() dialog before routing to BRAIN.debts.delete.",
-      "wired": "deleteDebt(id) → confirm(...) → BRAIN.debts.delete", "file": "index.html:8313-8333, source confirm at 8316",
-      "reads": ["S.debts"], "writes": ["debt_delete"],
-      "plain": "CLAUDE.md §8 violation: financial flows must use the in-app EDIT_MODAL.openConfirm, not the OS-native confirm() box. (saveNewDebt's linked-liability prompt at 8285 is a second native confirm.) Delete also throws away the debt's history — wrong instrument for a paid-off debt, which is why the missing archive rung at step 9 matters." },
-    { "n": 11, "title": "Add a debt → it appears", "is": "ok",
+      "wired": "deleteDebt(id) → confirm(...) → BRAIN.debts.delete",
+      "file": "index.html:8313-8333, source confirm at 8316",
+      "reads": [
+        "S.debts"
+      ],
+      "writes": [
+        "debt_delete"
+      ],
+      "plain": "CLAUDE.md §8 violation: financial flows must use the in-app EDIT_MODAL.openConfirm, not the OS-native confirm() box. (saveNewDebt's linked-liability prompt at 8285 is a second native confirm.) Delete also throws away the debt's history — wrong instrument for a paid-off debt, which is why the missing archive rung at step 9 matters.",
+      "ticket": "SLY-27"
+    },
+    {
+      "n": 11,
+      "title": "Add a debt → it appears",
+      "is": "ok",
       "does": "From the '+ Add Debt' button you fill name/amount/rate/due/notes/type, save, and the new tile shows in the list.",
-      "wired": "openAddDebtModal() → saveNewDebt() → BRAIN.debts.add → onStateChange('debt_added') → renderDebtTiles()", "file": "index.html:956, 8256-8310, 25819-25849",
-      "reads": ["S.debts", "S.nextDebtId"], "writes": ["debt_add"],
-      "plain": "A POST that inserts a new debt row (with an ID-collision guard so two debts never share an id) and re-renders the list so the tile appears. Adding a debt does NOT move any cash — it just records the obligation. The 'is this linked to your car/credit card?' prompt mid-save is a native confirm() (§8 caveat, line 8285)." }
+      "wired": "openAddDebtModal() → saveNewDebt() → BRAIN.debts.add → onStateChange('debt_added') → renderDebtTiles()",
+      "file": "index.html:956, 8256-8310, 25819-25849",
+      "reads": [
+        "S.debts",
+        "S.nextDebtId"
+      ],
+      "writes": [
+        "debt_add"
+      ],
+      "plain": "A POST that inserts a new debt row (with an ID-collision guard so two debts never share an id) and re-renders the list so the tile appears. Adding a debt does NOT move any cash — it just records the obligation. The 'is this linked to your car/credit card?' prompt mid-save is a native confirm() (§8 caveat, line 8285)."
+    }
   ]
 }

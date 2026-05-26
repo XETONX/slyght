@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-26T11:49:50.123Z",
+  "generatedAt": "2026-05-26T12:14:15.445Z",
   "coverage": {
     "traced": 9,
     "total": 9
@@ -39,7 +39,7 @@
       "id": "debts",
       "name": "Debts",
       "traced": true,
-      "ticket": null
+      "ticket": "SLY-27"
     },
     {
       "id": "ai",
@@ -51,13 +51,13 @@
       "id": "settings",
       "name": "Settings",
       "traced": true,
-      "ticket": null
+      "ticket": "SLY-26"
     },
     {
       "id": "nav",
       "name": "Nav / onboarding",
       "traced": true,
-      "ticket": null
+      "ticket": "SLY-28"
     }
   ],
   "surfaces": [
@@ -641,7 +641,7 @@
       "id": "debts",
       "name": "Debts — clear a debt & add a new one",
       "surface": "debts",
-      "ticket": null,
+      "ticket": "SLY-27",
       "summary": "The journey a debt takes from the list, through a full clear (cash debits + a Debt-repayment txn logs), to gone. The pay-down rungs are healthy; the missing rung is what happens to a debt that's whittled to ~$0 — there's no clean archive, and the only exit (Delete) uses a native confirm.",
       "steps": [
         {
@@ -684,7 +684,7 @@
           ],
           "writes": [],
           "plain": "FR-07. Two different Postman endpoints answer 'what do I owe?' off the same debts table but with different WHERE clauses — the card counts every manual debt, the canvas counts only ones due before payday. They return different numbers and no one reconciles them. Violates INV-11 / INV-18.",
-          "ticket": null
+          "ticket": "SLY-27"
         },
         {
           "n": 4,
@@ -771,7 +771,7 @@
           ],
           "writes": [],
           "plain": "The MISSING rung. Editing the amount to 0 is a valid path (the amount field is freely editable) but nothing detects 'this debt is effectively gone' and offers to file it away. A $0 row lingers in the active list with no clean exit — the only way out is Delete (next step), which is the wrong tool because it implies 'never happened' rather than 'paid off, keep the history'.",
-          "ticket": null
+          "ticket": "SLY-27"
         },
         {
           "n": 10,
@@ -786,7 +786,8 @@
           "writes": [
             "debt_delete"
           ],
-          "plain": "CLAUDE.md §8 violation: financial flows must use the in-app EDIT_MODAL.openConfirm, not the OS-native confirm() box. (saveNewDebt's linked-liability prompt at 8285 is a second native confirm.) Delete also throws away the debt's history — wrong instrument for a paid-off debt, which is why the missing archive rung at step 9 matters."
+          "plain": "CLAUDE.md §8 violation: financial flows must use the in-app EDIT_MODAL.openConfirm, not the OS-native confirm() box. (saveNewDebt's linked-liability prompt at 8285 is a second native confirm.) Delete also throws away the debt's history — wrong instrument for a paid-off debt, which is why the missing archive rung at step 9 matters.",
+          "ticket": "SLY-27"
         },
         {
           "n": 11,
@@ -816,7 +817,7 @@
       "id": "nav",
       "name": "Nav / Onboarding / Boot — getting into the app",
       "surface": "nav",
-      "ticket": null,
+      "ticket": "SLY-28",
       "summary": "The startup journey from first paint to a usable tab — and the two rungs that misfire: the boot model crashes on a not-yet-ready variable (falls back to a stub), and the PIN lock is wired but never actually checked at entry.",
       "steps": [
         {
@@ -865,7 +866,8 @@
             "PLAN"
           ],
           "writes": [],
-          "plain": "This is the temporal-dead-zone bug: the variable's NAME exists but its value isn't initialised yet — like calling a dependency that's been declared in the manifest but whose container hasn't actually started. Touching it throws. The boot order puts the model-build (line 19877) ahead of the BRAIN/PLAN definitions (lines 20294 / 26142)."
+          "plain": "This is the temporal-dead-zone bug: the variable's NAME exists but its value isn't initialised yet — like calling a dependency that's been declared in the manifest but whose container hasn't actually started. Touching it throws. The boot order puts the model-build (line 19877) ahead of the BRAIN/PLAN definitions (lines 20294 / 26142).",
+          "ticket": "SLY-29"
         },
         {
           "n": 4,
@@ -878,7 +880,8 @@
           "writes": [
             "MODEL"
           ],
-          "plain": "Because the real build failed, the app substitutes a dummy record — bal 0, daysToPayday 1, empty bills/goals, and a warning 'model failed to compute — using stub'. First paint shows stub numbers until a later render (after BRAIN/PLAN do initialise) rebuilds MODEL correctly. It's a soft-fail that masks the ordering bug rather than fixing it."
+          "plain": "Because the real build failed, the app substitutes a dummy record — bal 0, daysToPayday 1, empty bills/goals, and a warning 'model failed to compute — using stub'. First paint shows stub numbers until a later render (after BRAIN/PLAN do initialise) rebuilds MODEL correctly. It's a soft-fail that masks the ordering bug rather than fixing it.",
+          "ticket": "SLY-29"
         },
         {
           "n": 5,
@@ -902,7 +905,8 @@
             "S.pinHash"
           ],
           "writes": [],
-          "plain": "THE MISSING RUNG, and it's security-relevant. The PIN lock is fully built — there's a SHA-256 hash stored, a verify function, a keypad — but nothing on the entry path ever opens the lock screen. So a set PIN does NOT actually gate entry: tap-to-continue walks straight past it. Like having auth middleware written but never registered on the route — every request sails through unauthenticated."
+          "plain": "THE MISSING RUNG, and it's security-relevant. The PIN lock is fully built — there's a SHA-256 hash stored, a verify function, a keypad — but nothing on the entry path ever opens the lock screen. So a set PIN does NOT actually gate entry: tap-to-continue walks straight past it. Like having auth middleware written but never registered on the route — every request sails through unauthenticated.",
+          "ticket": "SLY-28"
         },
         {
           "n": 7,
@@ -1260,7 +1264,7 @@
       "id": "settings",
       "name": "Settings — edit income/payday & the 3-stage Reset",
       "surface": "settings",
-      "ticket": null,
+      "ticket": "SLY-26",
       "summary": "Two journeys through Settings. (A) Editing income/payday flows cleanly into the daily budget and payday countdown — a healthy ladder. (B) The 3-stage Reset safely gates the wipe, but its 'last chance' screen mis-states what survives and its undo backup can't outlive the reload.",
       "steps": [
         {
@@ -1387,7 +1391,8 @@
             "S.debts"
           ],
           "writes": [],
-          "plain": "Second gate — honest in spirit but the snapshot line is misleading. It lists 'Snapshots: N' as something that will be permanently lost, but Step 11's wipe never touches the slyght_snapshots key. The user is told their backups die; in reality they survive. Copy promises a deletion the executor doesn't perform."
+          "plain": "Second gate — honest in spirit but the snapshot line is misleading. It lists 'Snapshots: N' as something that will be permanently lost, but Step 11's wipe never touches the slyght_snapshots key. The user is told their backups die; in reality they survive. Copy promises a deletion the executor doesn't perform.",
+          "ticket": "SLY-26"
         },
         {
           "n": 10,
@@ -1403,7 +1408,8 @@
           "writes": [
             "S._prevState (in-memory only)"
           ],
-          "plain": "The 'backup before a destructive migration' rung — but it backs up to the wrong place. saveUndoState() writes S._prevState INSIDE the S object. S lives in localStorage 'slyght_v5', which the very next line deletes, and then the page reloads (clearing memory too). The backup is destroyed by the same operation it's meant to protect against. There is no SNAPSHOTS.take here and no working undo."
+          "plain": "The 'backup before a destructive migration' rung — but it backs up to the wrong place. saveUndoState() writes S._prevState INSIDE the S object. S lives in localStorage 'slyght_v5', which the very next line deletes, and then the page reloads (clearing memory too). The backup is destroyed by the same operation it's meant to protect against. There is no SNAPSHOTS.take here and no working undo.",
+          "ticket": "SLY-26"
         },
         {
           "n": 11,
@@ -1428,7 +1434,8 @@
           "file": "index.html:15315",
           "reads": [],
           "writes": [],
-          "plain": "Never reachable. undoLastAction() depends on S._prevState, which the reset destroyed (Step 10), and the surviving snapshots (Step 11) are never surfaced as a post-reset 'restore?' offer. So the design intent of a recoverable wipe has no working rung — the loss, if a wipe was a mistake, is final."
+          "plain": "Never reachable. undoLastAction() depends on S._prevState, which the reset destroyed (Step 10), and the surviving snapshots (Step 11) are never surfaced as a post-reset 'restore?' offer. So the design intent of a recoverable wipe has no working rung — the loss, if a wipe was a mistake, is final.",
+          "ticket": "SLY-26"
         }
       ],
       "counts": {

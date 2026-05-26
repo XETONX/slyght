@@ -28,6 +28,53 @@ const sevCls = s => s === 'P0' ? 'p-p0' : s === 'P1' ? 'p-p1' : 'p-p2';
 async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
 const get = id => J.tickets.find(t => t.id === id);
 
+/* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
+const SEVRANK = { P0: 0, P1: 1, P2: 2 };
+async function viewOverview() {
+  if (!J.flows) J.flows = await api('/api/flows');
+  const v = $('view'); v.className = 'view maxw'; const ts = J.tickets;
+  const by = s => ts.filter(t => t.state.status === s).length;
+  const needsJohn = ts.filter(t => ['Open', 'Discussing'].includes(t.state.status)).sort((a, b) => SEVRANK[a.severity] - SEVRANK[b.severity]);
+  const inFlight = ts.filter(t => ['Aligned', 'Investigating'].includes(t.state.status)).length;
+  const confirmed = ts.filter(t => t.kind === 'confirmed').sort((a, b) => SEVRANK[a.severity] - SEVRANK[b.severity]);
+  const gaps = (J.flows.surfaces || []).reduce((n, s) => n + (s.counts ? s.counts.gaps : 0), 0);
+  const sevCount = x => ts.filter(t => t.severity === x).length;
+  v.innerHTML = `
+    <h1>Overview</h1>
+    <p class="subtitle">The whole slyght project in one place — ${ts.length} tickets, ${J.flows.coverage.traced}/${J.flows.coverage.total} surfaces mapped, ${gaps} gaps. What needs you, what's in flight, what's broken.</p>
+    <div class="stats">
+      <div class="statcard"><div class="n">${ts.length}</div><div class="l">Tickets</div></div>
+      <div class="statcard"><div class="n">${needsJohn.length}</div><div class="l">Need your judgment</div></div>
+      <div class="statcard"><div class="n">${inFlight}</div><div class="l">In flight (CC)</div></div>
+      <div class="statcard"><div class="n" style="color:var(--red)">${sevCount('P0')}</div><div class="l">P0 critical</div></div>
+      <div class="statcard"><div class="n">${by('Shipped')}</div><div class="l">Shipped</div></div>
+      <div class="statcard"><div class="n">${gaps}</div><div class="l">App-map gaps</div></div>
+    </div>
+    <div class="ovgrid">
+      <div class="panel"><div class="label">The app at a glance — tap a surface</div><svg id="hub" viewBox="0 0 940 600" width="100%"></svg>
+        <div class="hublegend" style="margin-top:8px"><span><i class="dot g"></i> clean</span><span><i class="dot a"></i> 1–2 gaps</span><span><i class="dot r"></i> 3+ gaps</span><a href="#/map" style="margin-left:auto">full map →</a></div></div>
+      <div class="panel">
+        <div class="label">Needs your judgment (${needsJohn.length})</div>
+        ${needsJohn.slice(0, 7).map(t => ovRow(t, true)).join('') || '<div class="empty">nothing waiting on you</div>'}
+        ${needsJohn.length > 7 ? `<a href="#/board" class="meta" style="display:inline-block;padding:8px 2px">+${needsJohn.length - 7} more on the Board →</a>` : ''}
+        <div class="label" style="margin-top:20px">Status breakdown</div>
+        ${STATUSES.map(s => { const c = by(s); return c ? `<div class="ovbar"><span class="pill sm s-${s}">${STATUS_LABEL[s]}</span><div class="bartrack"><div class="barfill" style="width:${Math.round(c / ts.length * 100)}%"></div></div><span class="meta">${c}</span></div>` : ''; }).join('')}
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="label">What the walk + map found — confirmed findings (${confirmed.length})</div>
+      ${confirmed.map(t => ovRow(t, false)).join('')}
+    </div>`;
+  drawHub(J.flows);
+}
+function ovRow(t, showStatus) {
+  return `<div class="ovrow" onclick="location.hash='#/ticket/${t.id}'">
+    <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+    <span class="ovt">${esc(t.title)}</span>
+    ${showStatus ? `<span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span>` : `<span class="pill sm k-${t.kind}">${esc(t.group)}</span>`}
+    <span class="meta">${t.id}</span></div>`;
+}
+
 /* ════════════════════════ BOARD ════════════════════════ */
 function viewBoard() {
   const v = $('view'); const ts = J.tickets;
@@ -293,16 +340,17 @@ function viewSoon(title, body) {
 
 /* ── router ───────────────────────────────────────────────────────────── */
 function route() {
-  const h = (location.hash || '#/board').slice(1);
+  const h = (location.hash || '#/overview').slice(1);
   const parts = h.split('/').filter(Boolean);
-  const r = parts[0] || 'board';
+  const r = parts[0] || 'overview';
   document.querySelectorAll('.rail a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
   if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
+  else if (r === 'board') viewBoard();
   else if (r === 'map') viewMap(parts[1]);
   else if (r === 'calendar') viewSoon('Calendar / Planning', 'Plan features (bank integration, Opal) and bundle fixes against dates and timelines. Tickets + bundles plotted on a calendar; releases group what ships together.');
-  else viewBoard();
+  else viewOverview();
   window.scrollTo(0, 0);
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
 window.addEventListener('hashchange', route);
-(async function boot() { await load(); if (!location.hash) location.hash = '#/board'; route(); })();
+(async function boot() { await load(); if (!location.hash) location.hash = '#/overview'; route(); })();
