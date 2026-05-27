@@ -129,12 +129,21 @@ test.describe('SLY-1 — Quick Log Savings routes to a goal (no silent money los
 
       const bucketAfter = +((BRAIN.savings.getBucket(target.name) || {}).saved) || 0;
       const latest = (S.txns || [])[(S.txns || []).length - 1];
+      // Source tags live in the AUDIT LOG, not on the txn object — record()
+      // tags the txn_record audit entry, never stamps S.txns[].source (0 of
+      // 212 real txns carry it; that's the architecture's convention per
+      // CLAUDE.md "audit-log every dollar move with source"). Assert the tag
+      // landed where it canonically lives, keyed to this txn's ts.
+      const auditEntry = (S._auditLog || [])
+        .filter(e => e.type === 'txn_record' && e.txnTs === (latest && latest.ts))
+        .slice(-1)[0] || null;
       return {
         amt, targetName: target.name,
         balDelta: parseFloat((S.bal - balBefore).toFixed(2)),
         bucketDelta: parseFloat((bucketAfter - bucketBefore).toFixed(2)),
         txnCountDelta: (S.txns || []).length - txnCountBefore,
-        latest: latest ? { cat: latest.cat, amt: latest.amt, source: latest.source, _balAffected: latest._balAffected } : null,
+        latest: latest ? { cat: latest.cat, amt: latest.amt, _balAffected: latest._balAffected } : null,
+        auditSource: auditEntry ? auditEntry.source : null,
       };
     });
     test.skip(result.skip === 'no-buckets-in-fixture', 'fixture has no savings buckets');
@@ -150,7 +159,7 @@ test.describe('SLY-1 — Quick Log Savings routes to a goal (no silent money los
     expect(result.latest).toBeTruthy();
     expect(result.latest.cat).toBe('Savings');
     expect(result.latest.amt).toBe(result.amt);
-    expect(result.latest.source).toBe('log-savings'); // canonical source tag
+    expect(result.auditSource).toBe('log-savings'); // canonical source tag (audit log, not txn)
     expect(result.latest._balAffected).toBe(true);
 
     await captureState(page, {
