@@ -1041,6 +1041,8 @@ function renderCaseFile(t) {
   const caRunning = !!(J.ccjobs && J.ccjobs[t.id + '#code-audit'] && J.ccjobs[t.id + '#code-audit'].status === 'running');
   const sb = cf.sandbox || null;              // sandbox-confirm verdict (the walk that gates ready-to-ship)
   const sbRunning = !!(J.ccjobs && J.ccjobs[t.id + '#sandbox'] && J.ccjobs[t.id + '#sandbox'].status === 'running');
+  const fixShot = cf.fixShot || null;         // captured preview of the fixed screen (#36)
+  const shotRunning = !!(J.ccjobs && J.ccjobs[t.id + '#fixshot'] && J.ccjobs[t.id + '#fixshot'].status === 'running');
 
   const rowsHtml = rows.map(r => {
     const v = sv[r.slotKey] || '';
@@ -1110,6 +1112,14 @@ function renderCaseFile(t) {
         ${sb && sb.verdict === 'PASS' ? `<button class="btn sm primary" onclick="markReadyToShip('${t.id}')">Mark ready to ship &rarr;</button>` : ''}
       </div>
     </div>` : '';
+  // What the fixed screen looks like (#36) — a captured preview from the FAKE-seeded fixed app.
+  const fixShotBlock = (fixShot || shotRunning || cf.fixImplemented) ? `
+    <div class="cf-fixshot">
+      <div class="cf-fs-h"><span aria-hidden="true">◇</span> What the fixed screen looks like</div>
+      ${fixShot ? `<a href="/api/fixshot?id=${t.id}&t=${encodeURIComponent(fixShot.ts)}" target="_blank" rel="noopener"><img class="cf-fs-img" src="/api/fixshot?id=${t.id}&t=${encodeURIComponent(fixShot.ts)}" alt="Fixed ${esc(t.id)} screen" loading="lazy"></a>`
+        : `<div class="cf-fs-empty">${shotRunning ? 'Capturing the fixed app (FAKE-seeded)…' : 'Capture a preview of the fix running in the sandbox.'}</div>`}
+      <div class="cf-fs-acts">${shotRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> capturing…</span>' : `<button class="btn sm" onclick="captureFixShot('${t.id}')">${fixShot ? 'Re-capture' : 'Capture fixed screen'}</button>`}</div>
+    </div>` : '';
 
   // Spin-off findings — split into THREE buckets so the list isn't noise (Stage 2c):
   //   • Potential tickets  (unmappedTerritory) — real out-of-scope findings → loggable, with "Log all"
@@ -1157,6 +1167,7 @@ function renderCaseFile(t) {
     </div>
     ${resolutionBlock}
     ${sandboxBlock}
+    ${fixShotBlock}
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
     ${merged}
@@ -1350,6 +1361,17 @@ async function confirmInSandbox(id) {
     toast(`Confirming ${id} in the sandbox — walking the fixed app (FAKE-seeded)`, 'ok');
     if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#sandbox'] = { status: 'running', id, task: 'sandbox', mode: 'fix', model: 'opus', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Capture the fixed screen (#36) — server drives the worktree's fixed app + screenshots the surface;
+// the ticket then shows "what the fixed screen looks like". Re-renders the ticket when it lands.
+async function captureFixShot(id) {
+  try {
+    await action('captureFixShot', { id, confirm: true });
+    toast(`Capturing the fixed screen for ${id}…`, 'ok');
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#fixshot'] = { status: 'running', id, task: 'fixshot', mode: 'capture', model: '—', started: Date.now() };
     J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
   } catch (e) { /* action() already toasted */ }
@@ -2356,7 +2378,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'fixshot': 'Screen capture', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {

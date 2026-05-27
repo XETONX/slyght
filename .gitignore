@@ -89,3 +89,6 @@ mission-control/triage-report.json
 
 # Jarvis write-token (per-machine secret, persists across restarts)
 mission-control/.mc-token
+
+# Jarvis fixed-screen previews (regenerated captures)
+mission-control/shots/

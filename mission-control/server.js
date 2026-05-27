@@ -1013,6 +1013,30 @@ const ACTIONS = {
     return { ok: true, status: 'ConfirmedLive', committed };
   },
 
+  // Capture the FIXED screen for a ticket (#36) — a deterministic Playwright capture (server-run, not a
+  // drone) serves the worktree's fixed app FAKE-seeded, drives the surface, screenshots it. The ticket
+  // then shows "what the fixed screen looks like". Stored at mission-control/shots/<id>.png (gitignored).
+  captureFixShot: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'captureFixShot needs confirm:true' };
+    if (!fs.existsSync(WORKTREE)) throw new Error('no fixed worktree yet — run execute-fix first');
+    const key = id + '#fixshot';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a capture is already running on ' + id };
+    const out = jail(path.join('mission-control', 'shots', id + '.png'));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    ccJobs[key] = { status: 'running', id, task: 'fixshot', mode: 'capture', model: '—', started: Date.now() };
+    const child = spawn(process.execPath, [path.join(MC, 'scripts', 'fixshot.js'), id, WORKTREE, out], { cwd: MC });
+    let err = '';
+    child.stderr.on('data', d => err += d);
+    child.on('exit', code => {
+      ccJobs[key].status = code === 0 ? 'done' : 'failed'; ccJobs[key].exit = code;
+      if (code === 0 && fs.existsSync(out)) {
+        try { const st = readState(); const t = st[id]; if (t) { t.caseFile = t.caseFile || {}; t.caseFile.fixShot = { ts: new Date().toISOString() }; t.thread.push({ author: 'cc', text: '**Fixed screen captured** — "what the new screen looks like" now shows on the ticket.', ts: new Date().toISOString() }); t.lastActivity = new Date().toISOString(); writeState(st); } } catch (_) {}
+      }
+    });
+    return { ok: true, capturing: id };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
@@ -2027,6 +2051,12 @@ const server = http.createServer((req, res) => {
       catch (e) { return send(res, 200, { prompts: PROMPT_DEFAULTS, seeded: true }); }
     }
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
+    if (p === '/api/fixshot') {   // the captured "fixed screen" preview for a ticket (#36)
+      const id = url.searchParams.get('id') || '';
+      if (!/^SLY-\d+$/.test(id)) return send(res, 400, { error: 'bad id' });
+      try { const buf = fs.readFileSync(jail(path.join('mission-control', 'shots', id + '.png'))); res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); res.end(buf); return; }
+      catch (e) { return send(res, 404, { error: 'no shot' }); }
+    }
     if (p === '/api/worktree') {   // the execute-fix main worktree: staged fix commits awaiting review + push
       if (!fs.existsSync(WORKTREE)) return send(res, 200, { exists: false });
       const sh = (c) => { try { return execSync(c, { cwd: WORKTREE }).toString().trim(); } catch (_) { return ''; } };
