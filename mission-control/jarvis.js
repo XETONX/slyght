@@ -94,6 +94,8 @@ async function loadAutoTickets() {
 /* ── data ─────────────────────────────────────────────────────────────── */
 async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
 const get = id => J.tickets.find(t => t.id === id);
+// the ticket id currently open in the detail view (null elsewhere) — drives the live drone banner
+const currentTicketId = () => { const m = (location.hash || '').match(/#\/ticket\/(SLY-\d+)/i); return m ? m[1] : null; };
 
 /* Topbar system-status strip — live mini-stats from J.tickets / J.flows.
  * Safe to call anytime: degrades gracefully before flows/tickets load. */
@@ -570,6 +572,138 @@ function bd2ToggleSelect(id, on) {
   if (row) row.classList.toggle('sel', on);
 }
 
+/* ════════════════════════ CASE FILE — evidence checklist + scoped drones ════════════
+ * The heart of the investigation workflow. Reads t.caseFile (drone-gathered slots) + the
+ * auditor verdict, shows what's gathered vs missing, and dispatches a scoped GATHER drone per
+ * slot. The auditor row is the funnel: COMPLETE → ready to align; GAP → one targeted re-dig. */
+function taskKeyFromDrone(d) {
+  d = String(d || '').toLowerCase();
+  if (d.includes('root')) return 'root-cause';
+  if (d.includes('surface') || d.includes('locate')) return 'locate-surface';
+  if (d.includes('fix')) return 'fix-proposal';
+  if (d.includes('conform')) return 'conformance';
+  if (d.includes('walk')) return 'walk';
+  return 'root-cause';
+}
+function renderCaseFile(t) {
+  const cf = t.caseFile || {};
+  const rc = cf.rootCause || {};
+  const audit = cf.audit || null;
+  // scoped drones running on THIS ticket right now (live), keyed by task
+  const running = {}; Object.values(J.ccjobs || {}).forEach(v => { if (v.id === t.id && v.status === 'running' && v.task) running[v.task] = true; });
+  const sv = (audit && audit.slots) || {};   // per-slot auditor verdicts
+
+  const rows = [
+    { task: 'root-cause', slotKey: 'rootCause', label: 'Root cause & mechanism', filled: !!rc.rootCause,
+      summary: rc.rootCause ? esc(String(rc.rootCause).slice(0, 150)) : '',
+      extra: (rc.files && rc.files.length) ? `<div class="cf-files">${rc.files.length} file${rc.files.length === 1 ? '' : 's'} · ledger: ${esc(String(rc.ledgerVerdict || 'n/a').slice(0, 40))}</div>` : '' },
+    { task: 'locate-surface', slotKey: 'surface', label: 'Surface (App Map)', filled: !!(cf.surface && cf.surface.surface),
+      summary: (cf.surface && cf.surface.surface) ? esc(cf.surface.surface) + (cf.surface.mapStale ? ' (map stale)' : '') : '' },
+    { task: 'fix-proposal', slotKey: 'fix', label: 'Proposed fix', filled: !!(cf.fix && cf.fix.fix),
+      summary: (cf.fix && cf.fix.fix) ? esc(String(cf.fix.fix).slice(0, 150)) : '', dep: !rc.rootCause ? 'needs root cause first' : '' },
+    { task: 'conformance', slotKey: 'conformance', label: 'Conformance (FIT)', filled: !!(cf.conformance && cf.conformance.driftVerdict),
+      summary: (cf.conformance && cf.conformance.driftVerdict) ? esc(cf.conformance.driftVerdict) + (cf.conformance.notes ? ' — ' + esc(String(cf.conformance.notes).slice(0, 90)) : '') : '', dep: !(cf.fix && cf.fix.fix) ? 'needs a proposed fix first' : '' },
+    { task: 'walk', slotKey: 'walk', label: 'Walk evidence (live proof)', filled: !!(t.rich && t.rich.evidence), walk: true,
+      summary: (t.rich && t.rich.evidence) ? 'walked' : '' },
+  ];
+  const filled = rows.filter(r => r.filled).length;
+
+  const rowsHtml = rows.map(r => {
+    const v = sv[r.slotKey] || '';
+    const dot = r.filled ? (v === 'THIN' ? 'cf-dot-thin' : v === 'CONTRADICTORY' ? 'cf-dot-bad' : 'cf-dot-done') : 'cf-dot-empty';
+    const badge = (r.filled && v) ? `<span class="cf-verdict cf-v-${v.toLowerCase()}">${esc(v)}</span>` : '';
+    let action;
+    if (running[r.task]) action = `<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> running…</span>`;
+    else if (r.walk) action = `<button class="btn sm" onclick="goWalkDrone('${esc(t.group || '')}')">${r.filled ? 'Re-walk' : 'Walk'}</button>`;
+    else action = `<button class="btn sm${r.filled ? '' : ' primary'}" onclick="digScoped('${t.id}','${r.task}')"${(r.dep && !r.filled) ? ` title="${esc(r.dep)}"` : ''}>${r.filled ? 'Re-dig' : 'Dig'}</button>`;
+    const body = r.filled
+      ? `<div class="cf-sum">${r.summary}</div>${r.extra || ''}`
+      : `<div class="cf-emptyrow">${r.dep ? `<span class="cf-dep">${esc(r.dep)}</span>` : 'not gathered yet'}</div>`;
+    return `<div class="cf-row${r.filled ? ' cf-filled' : ''}">
+      <span class="cf-dot ${dot}" aria-hidden="true"></span>
+      <div class="cf-bd"><div class="cf-name">${r.label}${badge}</div>${body}</div>
+      <div class="cf-act">${action}</div>
+    </div>`;
+  }).join('');
+
+  // The auditor funnel row
+  let auditHtml;
+  if (running['auditor']) {
+    auditHtml = `<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> auditor verifying…</span>`;
+  } else if (!audit) {
+    auditHtml = `<span class="cf-audit-msg">Not audited yet — the auditor verifies completeness, merges findings, and decides if a targeted re-dig is needed.</span><button class="btn sm" onclick="runAudit('${t.id}')">Audit case</button>`;
+  } else if (audit.verdict === 'COMPLETE') {
+    auditHtml = `<span><span class="cf-audit-tag cf-v-complete">✓ Complete</span> ready to align${(audit.caveats && audit.caveats.length) ? ` · ${audit.caveats.length} caveat(s)` : ''}</span><button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
+  } else {
+    const nd = audit.nextDig || null;
+    auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` +
+      (nd && nd.drone ? `<button class="btn sm primary" onclick="digScoped('${t.id}','${esc(taskKeyFromDrone(nd.drone))}')">Run suggested dig</button>` : `<button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`);
+  }
+  const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
+
+  const sw = (J.sweeps || {})[t.id];
+  const sweepRunning = sw && sw.status === 'running';
+  return `<div class="card cf-card">
+    <div class="cf-cardhead">
+      <div class="label">Case file — evidence</div>
+      <div class="cf-headright">
+        <span class="cf-progress">${filled}/5 gathered</span>
+        ${sweepRunning
+          ? `<span class="cf-sweep"><span class="cf-spin" aria-hidden="true"></span> Building · ${esc(sw.step)}${sw.cycle ? ` (audit ${sw.cycle})` : ''}</span>`
+          : `<button class="btn sm primary" onclick="buildCase('${t.id}')">⚡ Build the case</button>`}
+      </div>
+    </div>
+    <div class="cf-list">${rowsHtml}</div>
+    <div class="cf-auditrow">${auditHtml}</div>
+    ${merged}
+  </div>`;
+}
+// Dispatch a scoped GATHER drone (light confirm — it's read-only + on your plan, no cost-cap friction).
+function digScoped(id, task) {
+  const labels = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor' };
+  const lbl = labels[task] || task;
+  modal(`<h2>Dispatch ${esc(lbl)} drone</h2>
+    <p>Spawns a <b>read-only</b> CC drone scoped to <b>${esc(lbl.toLowerCase())}</b> on ${esc(id)}. It edits nothing, runs on your plan, takes a few minutes, and <b>auto-fills the case file</b> when done.</p>
+    <div class="btns"><button class="btn primary" onclick="doDigScoped('${id}','${task}')"><span aria-hidden="true">▶</span> Dispatch</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doDigScoped(id, task) {
+  closeModal();
+  try {
+    await action('dispatchScoped', { id, task, confirm: true });
+    toast(`${task} drone dispatched on ${id}`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {};
+    J.ccjobs[id + '#' + task] = { status: 'running', id, task, mode: 'gather', model: 'sonnet', reasoning: 'off', started: Date.now() };
+    await load();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+function runAudit(id) {
+  modal(`<h2>Run the auditor</h2>
+    <p>The auditor verifies the gathered evidence, <b>merges &amp; dedupes</b> findings into one case, and decides: <b>Complete</b> (ready to align) or <b>Gap</b> — and if a gap, names exactly one targeted re-dig. Hard-capped so it always converges. Read-only; runs on your plan.</p>
+    <div class="btns"><button class="btn primary" onclick="doDigScoped('${id}','auditor')"><span aria-hidden="true">▶</span> Run auditor</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+// "Build the case" — the parallel sweep. Fans out the scoped drones in a converging DAG + auditor.
+function buildCase(id) {
+  modal(`<h2><span aria-hidden="true">⚡</span> Build the case — ${esc(id)}</h2>
+    <p>Fans out the scoped drones — <b>root cause + surface</b> (parallel), then <b>fix</b>, <b>conformance</b>, and the <b>auditor</b>. On a gap it runs one targeted re-dig and re-audits, then converges. Fills the whole case file so you can align in one read.</p>
+    <p class="cf-sweep-note">~5–7 read-only drones · runs on your plan · ~20–30 min · converges automatically · never pushes or deploys.</p>
+    <div class="btns"><button class="btn primary" onclick="doBuildCase('${id}')"><span aria-hidden="true">⚡</span> Build the case</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doBuildCase(id) {
+  closeModal();
+  try {
+    await action('buildCase', { id, confirm: true });
+    toast(`Building the case on ${id} — drones dispatched`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.dspWatch = id;
+    await load();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+
 /* ════════════════════════ TICKET DETAIL (the case-view skin) ════════════ */
 function viewTicket(id) {
   const t = get(id); const v = $('view');
@@ -593,6 +727,7 @@ function viewTicket(id) {
         <h1>${esc(t.title)}</h1>
       </div>
     </div>
+    <div id="dspTicketBanner"></div>
     <div class="ticketgrid">
       <div class="ticketmain">
         <div class="card">
@@ -611,17 +746,36 @@ function viewTicket(id) {
           </div></details>` : ''}
           ${t.group && t.group !== 'tracked' && t.group !== 'planning' ? `<div style="margin-top:14px"><a class="btn sm" href="#/map/${t.group}">View this surface on the App Map →</a></div>` : ''}
         </div>
+        ${renderCaseFile(t)}
         <div class="card">
-          <div class="label">Discuss with Jarvis — then align to hand to CC</div>
-          <div class="thread" id="thread">${renderThread(st.thread)}</div>
+          <div class="cf-cardhead">
+            <div class="label">Discuss with Jarvis — then align to hand to CC</div>
+            ${(st.thread || []).length > 1 ? `<button class="btn sm" onclick="toggleThreadSort()" title="Toggle comment order">${threadSort === 'newest' ? 'Newest first' : 'Oldest first'} ⇅</button>` : ''}
+          </div>
+          <div class="thread" id="thread">${renderThread(st.thread, t.id)}</div>
+          <div class="fmtbar" role="toolbar" aria-label="Formatting">
+            <button type="button" class="fmtbtn" title="Bold" onclick="fmtCmt('bold')"><b>B</b></button>
+            <button type="button" class="fmtbtn" title="Italic" onclick="fmtCmt('italic')"><i>I</i></button>
+            <button type="button" class="fmtbtn" title="Heading" onclick="fmtCmt('h')">H</button>
+            <button type="button" class="fmtbtn" title="Bulleted list" onclick="fmtCmt('ul')">• List</button>
+            <button type="button" class="fmtbtn" title="Numbered list" onclick="fmtCmt('ol')">1. List</button>
+            <button type="button" class="fmtbtn fmtbtn-mono" title="Inline / block code" onclick="fmtCmt('code')">&lt;/&gt;</button>
+            <span class="fmtbar-sep"></span>
+            <button type="button" class="fmtbtn fmtbtn-attach" title="Attach a file (image, CSV, txt, pdf…)" onclick="pickAttach('${t.id}')"><span aria-hidden="true">📎</span> Attach</button>
+            <input type="file" id="attachInput" class="att-input" accept="image/*,.csv,.txt,.log,.json,.md,.pdf" onchange="doAttach('${t.id}', this)">
+            <span class="fmtbar-hint">Markdown — renders when posted</span>
+          </div>
           <div class="composer">
-            <textarea id="cmt" placeholder="Refine the fix, add a constraint, ask a question…"></textarea>
-            <div class="summary-bubble"><div class="h">This ticket, in short</div>${esc((t.summary || '').slice(0, 200))}…</div>
+            <textarea id="cmt" placeholder="Refine the fix, add a constraint, ask a question…  (toolbar above inserts Markdown)"></textarea>
+          </div>
+          <div class="composer-actions">
+            <span class="composer-hint">Type a note, then post it — or ask Jarvis (he reads the ticket + evidence and replies in the thread).</span>
+            <div class="composer-btns">
+              <button class="btn" onclick="comment('${t.id}')">Post comment</button>
+              <button class="btn primary" onclick="askJarvis('${t.id}')"><span aria-hidden="true">✦</span> Ask Jarvis</button>
+            </div>
           </div>
           <div class="btns">
-            <button class="btn" onclick="comment('${t.id}')">Comment</button>
-            <button class="btn" onclick="jarvisTake('${t.id}')">Get Jarvis's take</button>
-            <button class="btn" onclick="goDeeper('${t.id}')">Go deeper</button>
             ${['Open', 'Discussing'].includes(status)
               ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>
                  <button class="btn dsp-btn dsp-btn-locked" type="button" disabled
@@ -677,14 +831,72 @@ function viewTicket(id) {
         </div>
       </div>
     </div>`;
+  dspRenderTicketBanner(t.id);        // paint the live "drone out" strip if one is running on this ticket
+  dspEnsureBannerTimer();             // keep the elapsed clock ticking while it runs
 }
-function renderThread(thread) {
+/* Minimal, dependency-free, XSS-safe Markdown → HTML for thread comments.
+ * CC drones post Markdown (## headings, **bold**, lists, `code`, --- rules); John/Jarvis
+ * comments are usually plain text (which renders unchanged). SECURITY: we esc() the whole
+ * string FIRST, then re-introduce ONLY the specific tags we generate below — so any literal
+ * HTML in a comment stays inert (&lt;script&gt;), and no untrusted attribute/URL is emitted. */
+function mdInline(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>');
+}
+function mdToHtml(raw) {
+  const lines = esc(String(raw || '')).split('\n');
+  let html = '', inUl = false, inOl = false, inCode = false, code = [];
+  const closeLists = () => { if (inUl) { html += '</ul>'; inUl = false; } if (inOl) { html += '</ol>'; inOl = false; } };
+  for (const line of lines) {
+    if (/^```/.test(line.trim())) {
+      if (inCode) { html += '<pre class="md-pre">' + code.join('\n') + '</pre>'; code = []; inCode = false; }
+      else { closeLists(); inCode = true; }
+      continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    const t = line.trim();
+    if (t === '') { closeLists(); continue; }
+    if (/^(---+|___+|\*\*\*+)$/.test(t)) { closeLists(); html += '<hr class="md-hr">'; continue; }
+    let m;
+    if ((m = t.match(/^#{1,6}\s+(.*)$/))) { closeLists(); html += '<div class="md-h">' + mdInline(m[1]) + '</div>'; continue; }
+    if ((m = t.match(/^[-*+]\s+(.*)$/))) { if (inOl) { html += '</ol>'; inOl = false; } if (!inUl) { html += '<ul class="md-ul">'; inUl = true; } html += '<li>' + mdInline(m[1]) + '</li>'; continue; }
+    if ((m = t.match(/^\d+\.\s+(.*)$/))) { if (inUl) { html += '</ul>'; inUl = false; } if (!inOl) { html += '<ol class="md-ol">'; inOl = true; } html += '<li>' + mdInline(m[1]) + '</li>'; continue; }
+    closeLists(); html += '<p class="md-p">' + mdInline(t) + '</p>';
+  }
+  if (inCode) html += '<pre class="md-pre">' + code.join('\n') + '</pre>';
+  closeLists();
+  return html;
+}
+// Render one attachment inside a comment bubble. Image → inline preview (click to open full),
+// anything else → a download chip. The <img src>/<a href> are built by us from the server's
+// fixed /api/attachment route with an encoded id+filename — no untrusted URL is emitted.
+function fmtBytes(n) { return n == null ? '' : n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB'; }
+function renderAttach(att, id) {
+  if (!att || !att.file) return '';
+  const url = '/api/attachment?id=' + encodeURIComponent(id) + '&name=' + encodeURIComponent(att.file);
+  const size = fmtBytes(att.size);
+  if (/^image\//.test(att.mime || '')) {
+    return `<a class="att-img" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(att.name)}" loading="lazy"></a>` +
+           `<div class="att-cap">${esc(att.name)}${size ? ' · ' + size : ''}</div>`;
+  }
+  return `<a class="att-file" href="${esc(url)}" target="_blank" rel="noopener" download="${esc(att.name)}">` +
+         `<span class="att-file-ic" aria-hidden="true">📎</span><span class="att-file-n">${esc(att.name)}</span>` +
+         `${size ? `<span class="att-file-s">${size}</span>` : ''}</a>`;
+}
+let threadSort = 'newest';   // 'newest' (top) | 'oldest'
+function toggleThreadSort() { threadSort = threadSort === 'newest' ? 'oldest' : 'newest'; const cur = currentTicketId(); if (cur) viewTicket(cur); }
+function renderThread(thread, id) {
   if (!thread || !thread.length) return '<div class="empty">No discussion yet. Add a comment, or get Jarvis\'s take.</div>';
-  return thread.map(c => {
+  const items = threadSort === 'newest' ? thread.slice().reverse() : thread.slice();
+  return items.map(c => {
     const av = c.author === 'john' ? 'J' : c.author === 'jarvis' ? 'Jv' : 'CC';
     const name = c.author === 'john' ? 'John' : c.author === 'jarvis' ? 'Jarvis' : 'CC';
-    const align = /ALIGNED/.test(c.text) ? ' align' : '';
-    return `<div class="cmt ${c.author}${align}"><div class="av">${av}</div><div class="bub"><span class="who">${name}<span class="ts">${when(c.ts)}</span></span><div class="txt">${esc(c.text)}</div></div></div>`;
+    const align = /ALIGNED/.test(c.text || '') ? ' align' : '';
+    const body = (c.text && c.text.trim()) ? `<div class="txt md">${mdToHtml(c.text)}</div>` : '';
+    const at = c.attach ? `<div class="att">${renderAttach(c.attach, id)}</div>` : '';
+    return `<div class="cmt ${c.author}${align}"><div class="av">${av}</div><div class="bub"><span class="who">${name}<span class="ts">${when(c.ts)}</span></span>${body}${at}</div></div>`;
   }).join('');
 }
 function renderTrace(ev) {
@@ -742,27 +954,84 @@ async function comment(id) {
   const text = ($('cmt').value || '').trim(); if (!text) { toast('write something first', 'err'); return; }
   try { await action('addComment', { id, author: 'john', text }); toast('comment added', 'ok'); await refreshTicket(id); } catch (e) {}
 }
-function jarvisTake(id) {
-  const t = get(id);
-  const prompt = `Jarvis discussion on ${t.id} — ${t.title}\n\nSummary: ${t.summary}\nRoot cause: ${t.rich.rootCause}\nProposed fix: ${t.rich.fix}\n\nThread so far:\n${(t.state.thread || []).map(c => `${c.author}: ${c.text}`).join('\n') || '(none)'}\n\nGive your take on the fix / what to watch for.`;
-  modal(`<h2>Get Jarvis's take</h2>
-    <p>This routes the thread to CC/Opus (no always-on LLM, no key). Copy it, get the take, then paste the reply below — it posts back into the thread as a <b>Jarvis</b> comment. The ALIGN gate is still the formal handoff.</p>
-    <pre id="jt">${esc(prompt)}</pre>
-    <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('jt').textContent);toast('copied','ok')">Copy prompt</button>
-    <div class="label" style="margin-top:16px">Paste Jarvis's reply to post it into the thread</div>
-    <textarea id="jtReply" placeholder="Jarvis's take…"></textarea>
-    <div class="btns"><button class="btn primary" onclick="postTake('${id}')">Post as Jarvis</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+
+/* ── Composer formatting toolbar ──────────────────────────────────────────────
+ * Inserts Markdown around the textarea selection (which renderThread now renders).
+ * applyFmt is pure (value+selection in → value+selection out) so it's testable; fmtCmt
+ * just wires it to the #cmt element and restores the selection. */
+function applyFmt(v, s, e, kind) {
+  const sel = v.slice(s, e);
+  const wrap = (tok) => ({ value: v.slice(0, s) + tok + sel + tok + v.slice(e), selStart: s + tok.length, selEnd: s + tok.length + sel.length });
+  if (kind === 'bold') return wrap('**');
+  if (kind === 'italic') return wrap('*');
+  if (kind === 'code') {
+    if (sel.includes('\n')) { const nv = v.slice(0, s) + '```\n' + sel + '\n```' + v.slice(e); return { value: nv, selStart: s + 4, selEnd: s + 4 + sel.length }; }
+    return wrap('`');
+  }
+  // block kinds (ul / ol / h): rewrite every line the selection touches
+  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+  const base = (e > s && v[e - 1] === '\n') ? e - 1 : e;
+  const nlAfter = v.indexOf('\n', base);
+  const lineEnd = nlAfter === -1 ? v.length : nlAfter;
+  let n = 1;
+  const mapped = v.slice(lineStart, lineEnd).split('\n').map(l => {
+    const m = l.match(/^(\s*)(.*)$/);
+    const rest = m[2].replace(/^([-*+]\s+|\d+\.\s+|#{1,6}\s+)/, '');   // strip any existing prefix first
+    if (kind === 'ul') return m[1] + '- ' + rest;
+    if (kind === 'ol') return m[1] + (n++) + '. ' + rest;
+    return m[1] + '## ' + rest;
+  }).join('\n');
+  return { value: v.slice(0, lineStart) + mapped + v.slice(lineEnd), selStart: lineStart, selEnd: lineStart + mapped.length };
 }
-async function postTake(id) {
-  const text = ($('jtReply').value || '').trim(); if (!text) { toast('paste the reply first', 'err'); return; }
-  try { await action('addComment', { id, author: 'jarvis', text }); closeModal(); toast('Jarvis comment posted', 'ok'); await refreshTicket(id); } catch (e) {}
+function fmtCmt(kind) {
+  const ta = $('cmt'); if (!ta) return;
+  const r = applyFmt(ta.value, ta.selectionStart, ta.selectionEnd, kind);
+  ta.value = r.value; ta.focus(); ta.setSelectionRange(r.selStart, r.selEnd);
 }
-function goDeeper(id) {
-  const t = get(id);
-  const prompt = `Go deeper on slyght ${t.id} — ${t.title}.\nRoot cause: ${t.rich.rootCause}\nFiles: ${(t.rich.files || []).join('; ')}\n\nQuestion: `;
-  modal(`<h2>Go deeper</h2><p>A focused prompt to dig further on this finding. Add your question, copy, ask CC.</p>
-    <pre id="gd">${esc(prompt)}</pre>
-    <div class="btns"><button class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('gd').textContent);toast('copied','ok')">Copy</button><button class="btn" onclick="closeModal()">Close</button></div>`);
+
+/* ── File attachments ─────────────────────────────────────────────────────────
+ * The composer's caption text rides along, so John can write a note AND attach a
+ * screenshot in one bubble. File → base64 → attachFile action → server jails + stores
+ * + records a thread entry; we refresh to show it. 12MB client guard mirrors the server. */
+function pickAttach(id) { const inp = $('attachInput'); if (inp) { inp.value = ''; inp.click(); } }
+function fileToB64(f) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => { const s = String(r.result || ''); resolve(s.slice(s.indexOf(',') + 1)); };
+    r.onerror = () => reject(new Error('could not read file'));
+    r.readAsDataURL(f);
+  });
+}
+async function doAttach(id, input) {
+  const f = input && input.files && input.files[0]; if (!f) return;
+  if (f.size > 12 * 1024 * 1024) { toast('file too large (max 12MB)', 'err'); return; }
+  toast('uploading ' + f.name + '…', 'ok');
+  let b64; try { b64 = await fileToB64(f); } catch (e) { toast(e.message, 'err'); return; }
+  const caption = (($('cmt') && $('cmt').value) || '').trim();
+  try {
+    await action('attachFile', { id, name: f.name, dataB64: b64, caption });
+    if ($('cmt')) $('cmt').value = '';
+    toast('attached', 'ok'); await refreshTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Live Jarvis chat — posts John's message, then spawns a read-only headless-Claude Jarvis that reads
+// the ticket + evidence + thread and replies as a 'jarvis' comment. Folds in the old "Go deeper".
+async function askJarvis(id) {
+  const ta = $('cmt'); const text = ((ta && ta.value) || '').trim();
+  if (!text) { toast('write your question first', 'err'); return; }
+  try {
+    await action('addComment', { id, author: 'john', text });
+    if (ta) ta.value = '';
+    await action('jarvisChat', { id, confirm: true });
+    toast('Jarvis is thinking…', 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {};
+    J.ccjobs[id + '#jarvis-chat'] = { status: 'running', id, task: 'jarvis-chat', mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = id;
+    await load();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
 }
 function align(id) {
   const t = get(id);
@@ -864,12 +1133,18 @@ function renderWalkVerdicts(flows) {
   }).join('')}</div>`;
 }
 
-// Jump to the Command deck (where the Walk Drone lives) to deploy a walk for this surface.
-// The deck already validates the scope server-side; we just route there + hint via toast.
-function goWalkDrone(surface) {
+// Deploy the Walk Drone for this surface, then route to the Command deck for the live log.
+// Runs directly when the surface is a known walkable group; otherwise sends you to the deck to pick one.
+async function goWalkDrone(surface) {
   closeModal();
+  const walkable = (typeof CMD_WALK_GROUPS !== 'undefined') && CMD_WALK_GROUPS.some(([v]) => v && v === surface);
+  if (!walkable) { location.hash = '#/command'; toast('Pick a walkable surface on the Command deck', 'ok'); return; }
+  try {
+    const r = await action('runWalk', { group: surface });
+    if (r && r.started) toast(`Walk Drone deployed · ${niceSurface(surface)} — live log on the Command deck`, 'ok');
+    else toast((r && r.reason) || 'walk not started', 'err');
+  } catch (e) { /* action() already toasted */ }
   location.hash = '#/command';
-  toast(surface ? `Deploy the Walk Drone scoped to ${niceSurface(surface)}` : 'Deploy the Walk Drone for this surface', 'ok');
 }
 
 // The earn — call confirmFromWalk({id}). NO evidence param. On success: toast + refresh
@@ -984,15 +1259,14 @@ function dspSetReasoning(v) { dspReasoning = ['off', 'think', 'deep'].includes(v
 // token use within the same hard cap). Always shows the budget that WILL apply.
 function dspRenderCost() {
   const host = $('dspCost'); if (!host) return;
-  const cap = dspModel === 'opus' ? '3.00' : '1.50';
   const modelLbl = dspModel === 'opus' ? 'Opus' : 'Sonnet';
   const rsnLbl = dspReasoning === 'deep' ? 'deep thinking' : dspReasoning === 'think' ? 'step-by-step thinking' : 'no extra thinking';
-  const heavy = dspModel === 'opus' || dspReasoning === 'deep';
-  host.className = 'dsp-cost' + (heavy ? ' dsp-cost-heavy' : '');
+  // No $ cap here on purpose — spend rides your plan, and showing a cap just discourages dispatch.
+  // Usage awareness lives in the topbar meter. Keep only the safety reassurance.
+  host.className = 'dsp-cost';
   host.innerHTML =
-    `<span class="dsp-cost-ic" aria-hidden="true">$</span>` +
-    `<span><b>${modelLbl}</b> · ${esc(rsnLbl)} — hard cap <b>$${cap}</b> / <b>40 turns</b>. ` +
-    `${heavy ? 'Deeper + costlier; ' : ''}never pushes or deploys.</span>`;
+    `<span class="dsp-cost-ic" aria-hidden="true">▶</span>` +
+    `<span><b>${modelLbl}</b> · ${esc(rsnLbl)} — runs on your plan; <b>never pushes or deploys</b>.</span>`;
 }
 
 async function doDispatch(id) {
@@ -1004,10 +1278,17 @@ async function doDispatch(id) {
     closeModal();
     const rsnTag = reasoning === 'deep' ? ' · deep think' : reasoning === 'think' ? ' · think' : '';
     toast(`CC drone dispatched on ${id} — ${mode === 'fix' ? 'Fix' : 'Investigate'} · ${model === 'opus' ? 'Opus' : 'Sonnet'}${rsnTag}`, 'ok');
+    // ask for desktop-notification permission on this click (a user gesture); harmless if already set
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    // optimistically seed the job so the live banner shows instantly (the poll corrects it in ~1.5s)
+    J.ccjobs = J.ccjobs || {};
+    J.ccjobs[id] = { status: 'running', id, mode, model, reasoning, started: Date.now() };
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);   // status flips to Investigating live
     dspStartPoll(id);          // watch THIS ticket's job; reload+re-render on done/failed
     dspRenderTopbar();         // light up the Agents-Running indicator immediately
+    dspRenderTicketBanner(id); // and the in-ticket "drone out" strip
+    dspEnsureBannerTimer();    // start the elapsed clock
   } catch (e) { /* action() already toasted the rejection */ }
 }
 
@@ -1016,25 +1297,43 @@ async function doDispatch(id) {
 function dspStartPoll(watchId) {
   if (watchId) J.dspWatch = watchId;
   if (dspPoll) return;         // single shared poller
-  let lastWatchStatus = null;
+  let lastWatchRunning = 0;    // running-drone count on the watched ticket last tick
+  let lastSig = '';            // signature of the job/sweep set — re-render live views when it changes
   dspPoll = setInterval(async () => {
     let resp; try { resp = await api('/api/ccjobs'); } catch (_) { return; }
     const jobs = (resp && resp.jobs) || {};
     J.ccjobs = jobs;
-    J.ccspend = (resp && resp.spend) || J.ccspend || null;   // cache running total for the chip
+    J.ccspend = (resp && resp.spend) || J.ccspend || null;   // cache running total for the meter
+    J.sweeps = (resp && resp.sweeps) || J.sweeps || {};      // cache sweep progress
     dspRenderTopbar();
-    // if the watched ticket's drone just finished, reload + re-render so the posted comment shows
-    const w = J.dspWatch, wj = w && jobs ? jobs[w] : null;
-    if (w && wj && wj.status !== 'running' && lastWatchStatus === 'running') {
-      toast(`CC drone on ${w} ${wj.status === 'done' ? 'finished' : 'failed'} — result posted`, wj.status === 'done' ? 'ok' : 'err');
+    dspRenderTicketBanner(currentTicketId());                // keep the in-ticket banner live
+
+    // Job/sweep set changed (a drone started/finished, or the sweep advanced) → refresh data and
+    // re-render whichever live view is showing, so case-file slots fill in slot-by-slot.
+    const sig = Object.entries(jobs).map(([k, v]) => k + ':' + v.status).sort().join('|') + '#' + JSON.stringify(J.sweeps);
+    if (sig !== lastSig) {
+      lastSig = sig;
       await load();
-      if ((location.hash || '').includes('/ticket/' + w)) viewTicket(w);
+      const cur = currentTicketId();
+      if (cur) viewTicket(cur);
+      else if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();
+    }
+
+    // Watch a TICKET: when its last running drone finishes AND no sweep is mid-flight, toast + notify.
+    const w = J.dspWatch;
+    const wRunning = w ? Object.values(jobs).filter(v => v.id === w && v.status === 'running').length : 0;
+    const wSweeping = w && (J.sweeps || {})[w] && J.sweeps[w].status === 'running';
+    if (w && wRunning === 0 && lastWatchRunning > 0 && !wSweeping) {
+      toast(`CC drones on ${w} finished — results posted`, 'ok');
+      dspNotify(`CC drones on ${w} finished`, 'Evidence posted to the ticket.');
       J.dspWatch = null;
     }
-    if (wj) lastWatchStatus = wj.status;
-    // stop polling once nothing is running (topbar already reflects final state)
+    lastWatchRunning = wRunning;
+
+    // Keep polling while anything runs OR a sweep is mid-flight (drones launch between ticks).
     const anyRunning = Object.values(jobs || {}).some(v => v.status === 'running');
-    if (!anyRunning && !J.dspWatch) { clearInterval(dspPoll); dspPoll = null; }
+    const sweepRunning = Object.values(J.sweeps || {}).some(s => s.status === 'running');
+    if (!anyRunning && !J.dspWatch && !sweepRunning) { clearInterval(dspPoll); dspPoll = null; }
   }, 1500);
 }
 
@@ -1046,26 +1345,17 @@ function dspRenderTopbar() {
   const jobs = J.ccjobs || {};
   const running = Object.entries(jobs).filter(([, v]) => v.status === 'running');
 
-  // Lifetime CC-spend chip — shown whenever there's a recorded total, running or not.
-  // Defensive: missing/null total → "$—"; missing count → 0. Reuses the .sys-stat language.
-  const sp = J.ccspend;
-  const spendChip = (sp && (sp.total_usd != null || sp.count))
-    ? `<span class="sys-sep"></span>` +
-      `<span class="dsp-spend" title="Total spend across all CC dispatches (cc-spend.json)">` +
-        `<span class="dsp-spend-ic" aria-hidden="true">$</span>` +
-        `<b class="dsp-spend-n">${sp.total_usd != null ? sp.total_usd.toFixed(2) : '—'}</b>` +
-        `<span class="dsp-spend-l">CC spend · ${(+sp.count || 0)} run${(+sp.count === 1) ? '' : 's'}</span>` +
-      `</span>`
-    : '';
+  // Usage meter (replaces the old $-spend chip) — estimated spend this month vs a tunable
+  // budget, green→amber→red. Persists at rest so usage is always glanceable.
+  const meter = dspUsageMeter(J.ccspend);
 
-  if (!running.length) { host.innerHTML = spendChip; return; }   // chip persists at rest
+  if (!running.length) { host.innerHTML = meter; return; }
 
-  const chips = running.slice(0, 4).map(([id, v]) => {
-    // per-running-drone chip now carries live cost if Claude has reported it (usually only at exit,
-    // so this is "$—" while running — that's expected; the comment + spend chip show final cost).
-    const c = (v.cost != null) ? ' · $' + v.cost.toFixed(2) : '';
-    return `<button type="button" class="dsp-chip" title="${esc(id)} · ${esc(v.mode)} mode${esc(c)} — open ticket"
-       onclick="location.hash='#/ticket/${esc(id)}'">${esc(id)}</button>`;
+  const chips = running.slice(0, 4).map(([key, v]) => {
+    // chip links to the TICKET (v.id), not the id#task key; shows the scoped task when present
+    const label = v.task ? `${v.id} · ${TASK_LABEL[v.task] || v.task}` : v.id;
+    return `<button type="button" class="dsp-chip" title="${esc(label)} — open ticket"
+       onclick="location.hash='#/ticket/${esc(v.id)}'">${esc(label)}</button>`;
   }).join('');
   const more = running.length > 4 ? `<span class="dsp-chip-more">+${running.length - 4}</span>` : '';
   host.innerHTML =
@@ -1076,7 +1366,80 @@ function dspRenderTopbar() {
        <span class="dsp-agents-l">Agent${running.length === 1 ? '' : 's'} Running</span>
        <span class="dsp-chips">${chips}${more}</span>
      </span>` +
-    spendChip;
+    meter;
+}
+// The topbar usage gauge + its detail modal. Estimated $ (API list prices) this month vs a tunable
+// budget anchor — a rough awareness gauge, NOT a read of the real Anthropic plan quota.
+function dspUsageMeter(sp) {
+  if (!sp || (sp.month_usd == null && sp.total_usd == null)) return '';
+  const month = +sp.month_usd || 0, today = +sp.today_usd || 0, budget = +sp.monthBudget || 600;
+  const pct = budget > 0 ? Math.max(0, Math.min(100, (month / budget) * 100)) : 0;
+  const tone = pct >= 85 ? 'red' : pct >= 60 ? 'amber' : 'green';
+  return `<span class="sys-sep"></span>` +
+    `<button type="button" class="usage-meter usage-${tone}" onclick="usageDetail()"
+       title="Estimated Claude usage this month — a rough gauge, not your real plan quota. Today ~$${today.toFixed(2)} · Month ~$${month.toFixed(2)} of ~$${budget}.">` +
+      `<span class="usage-bar"><span class="usage-fill" style="width:${pct.toFixed(0)}%"></span></span>` +
+      `<span class="usage-lbl">~$${month.toFixed(0)}<span class="usage-sub">est./mo</span></span>` +
+    `</button>`;
+}
+function usageDetail() {
+  const sp = J.ccspend || {};
+  const month = +sp.month_usd || 0, today = +sp.today_usd || 0, total = +sp.total_usd || 0;
+  const budget = +sp.monthBudget || 600, dayB = +sp.dayBudget || 60, runs = +sp.count || 0;
+  modal(`<h2>Claude usage — estimate</h2>
+    <p>A rough awareness gauge of CC-drone usage, valued at API list prices. <b>This is an estimate, not your real plan quota</b> — there's no local way to read your actual Anthropic limit, so the bands sit against a budget you can tune (you're on Max 20x, so there's plenty of headroom).</p>
+    <div class="kv"><span class="k">Today</span><span class="v">~$${today.toFixed(2)} <span style="color:var(--muted)">of ~$${dayB}</span></span></div>
+    <div class="kv"><span class="k">This month</span><span class="v">~$${month.toFixed(2)} <span style="color:var(--muted)">of ~$${budget}</span></span></div>
+    <div class="kv"><span class="k">Lifetime</span><span class="v">~$${total.toFixed(2)} · ${runs} run${runs === 1 ? '' : 's'}</span></div>
+    <p style="color:var(--muted);font-size:13px;margin-top:12px">Tune the bands in <code>server.js</code> (<code>MONTH_BUDGET_USD</code> / <code>DAY_BUDGET_USD</code>).</p>
+    <div class="btns"><button class="btn" onclick="closeModal()">Close</button></div>`);
+}
+
+// Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
+// Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
+// done (the posted result comment is the durable record). No-op when nothing is running here.
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis' };
+function dspRenderTicketBanner(id) {
+  const host = $('dspTicketBanner'); if (!host) return;
+  if (!id) { host.innerHTML = ''; return; }
+  // ALL running drones on this ticket (a "Build the case" sweep runs several at once, keyed id#task)
+  const mine = Object.values(J.ccjobs || {}).filter(v => v.id === id && v.status === 'running');
+  if (!mine.length) { host.innerHTML = ''; return; }
+  const rows = mine.map(j => {
+    const ms = j.started ? Date.now() - j.started : 0;
+    const clock = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+    const what = j.task ? (TASK_LABEL[j.task] || j.task) : (j.mode === 'fix' ? 'Fix on branch' : 'Investigate');
+    const model = j.model === 'opus' ? 'Opus' : 'Sonnet';
+    const turns = j.turns != null ? ' · ' + j.turns + ' turns' : '';
+    return `<span class="dsp-banner-job"><span class="dsp-banner-jobname">${esc(what)}</span> <span class="dsp-banner-jobmeta">${model}${turns} · <span class="dsp-banner-clock">${clock}</span></span></span>`;
+  }).join('');
+  host.innerHTML =
+    `<div class="dsp-banner">
+       <span class="dsp-banner-dot" aria-hidden="true"></span>
+       <span class="dsp-banner-main"><b>${mine.length} drone${mine.length === 1 ? '' : 's'} out</b> on ${esc(id)}</span>
+       <span class="dsp-banner-jobs">${rows}</span>
+       <span class="dsp-banner-cap">never pushes or deploys</span>
+     </div>`;
+}
+let dspBannerTimer = null;
+// Tick the banner clock once a second while any drone runs; self-stops when none remain.
+function dspEnsureBannerTimer() {
+  if (dspBannerTimer) return;
+  dspBannerTimer = setInterval(() => {
+    const id = currentTicketId();
+    if (id) dspRenderTicketBanner(id);
+    else if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();   // tick the fleet clocks
+    if (!Object.values(J.ccjobs || {}).some(v => v.status === 'running')) { clearInterval(dspBannerTimer); dspBannerTimer = null; }
+  }, 1000);
+}
+// Desktop notification when a drone finishes — fires even if you're on another tab or app.
+function dspNotify(title, body) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const n = new Notification(title, { body, tag: 'mc-drone', renotify: true });
+      n.onclick = () => { window.focus(); n.close(); };
+    }
+  } catch (_) {}
 }
 
 // On boot, do one /api/ccjobs read so a drone started in a previous page-load still shows in the
@@ -1087,7 +1450,8 @@ async function dspBootPoll() {
   J.ccjobs = jobs;
   J.ccspend = (resp && resp.spend) || null;
   dspRenderTopbar();
-  if (Object.values(jobs).some(v => v.status === 'running')) dspStartPoll();
+  dspRenderTicketBanner(currentTicketId());
+  if (Object.values(jobs).some(v => v.status === 'running')) { dspStartPoll(); dspEnsureBannerTimer(); }
 }
 
 function newTicket() {
@@ -3733,6 +4097,66 @@ async function cpRunWalk() {
   }, 700);
 }
 
+/* ════════════════════════ AGENTS FLEET — live drone tracking ════════════════
+ * Built for a heavy day: every running + recent CC drone across all tickets, sweeps in
+ * progress, and today's usage. The "Running now" list is the hero (pulsing, ticking clocks).
+ * Reads the J.ccjobs / J.sweeps / J.ccspend caches kept fresh by the poll (+1s clock tick). */
+const FLEET_STEP_LABEL = { gather: 'Gathering — root cause + surface', fix: 'Proposing fix', conformance: 'Checking conformance', audit: 'Auditing', redig: 'Targeted re-dig', complete: 'Complete' };
+function viewAgentsFleet() {
+  const v = $('view'); v.className = 'view maxw';
+  const all = Object.values(J.ccjobs || {});
+  const running = all.filter(j => j.status === 'running').sort((a, b) => (a.started || 0) - (b.started || 0));
+  const done = all.filter(j => j.status === 'done');
+  const failed = all.filter(j => j.status === 'failed');
+  const sweepsRunning = Object.entries(J.sweeps || {}).map(([id, s]) => ({ id, ...s })).filter(s => s.status === 'running');
+  const todayUsd = (+(J.ccspend || {}).today_usd || 0).toFixed(2);
+  const clockOf = j => { const ms = j.started ? Date.now() - j.started : 0; return Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); };
+  const taskLbl = t => TASK_LABEL[t] || t || 'investigate';
+  const stat = (n, label, tone) => `<div class="fleet-stat fleet-${tone}"><div class="fleet-stat-n">${n}</div><div class="fleet-stat-l">${label}</div></div>`;
+
+  const runRows = running.length ? running.map(j => `
+    <div class="fleet-row fleet-runrow">
+      <span class="fleet-dot" aria-hidden="true"></span>
+      <a class="fleet-tkt" href="#/ticket/${esc(j.id)}">${esc(j.id)}</a>
+      <span class="fleet-task">${esc(taskLbl(j.task))}</span>
+      <span class="fleet-meta">${j.model === 'opus' ? 'Opus' : 'Sonnet'}${j.turns != null ? ' · ' + j.turns + ' turns' : ''}</span>
+      <span class="fleet-clock">${clockOf(j)}</span>
+    </div>`).join('') : `<div class="fleet-empty">No drones in the air right now.</div>`;
+
+  const recent = done.concat(failed).sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 20);
+  const recentRows = recent.length ? recent.map(j => `
+    <div class="fleet-row">
+      <a class="fleet-tkt" href="#/ticket/${esc(j.id)}">${esc(j.id)}</a>
+      <span class="fleet-task">${esc(taskLbl(j.task))}</span>
+      <span class="fleet-meta">${j.turns != null ? j.turns + ' turns' : ''}${j.durationMs != null ? ' · ' + (j.durationMs / 60000).toFixed(1) + ' min' : ''}</span>
+      <span class="pill sm ${j.status === 'done' ? 's-ConfirmedLive' : 'p-p0'}">${j.status === 'done' ? 'done' : 'failed'}</span>
+    </div>`).join('') : `<div class="fleet-empty">No runs yet this session.</div>`;
+
+  const sweepRows = sweepsRunning.map(s => `
+    <div class="fleet-sweep">
+      <a class="fleet-tkt" href="#/ticket/${esc(s.id)}">${esc(s.id)}</a>
+      <span class="fleet-sweep-step"><span class="cf-spin" aria-hidden="true"></span> ${esc(FLEET_STEP_LABEL[s.step] || s.step)}${s.cycle ? ' · audit ' + s.cycle : ''}</span>
+    </div>`).join('');
+
+  v.innerHTML = `
+    <header class="cmd-head"><div><h1>Drone Fleet</h1><p class="subtitle">Live and recent CC drones across every ticket — what's in the air, and what's landed.</p></div></header>
+    <section class="fleet-stats">
+      ${stat(running.length, 'In the air', 'run')}
+      ${stat(done.length, 'Landed (session)', 'done')}
+      ${stat(failed.length, 'Failed', failed.length ? 'fail' : 'mute')}
+      ${stat('$' + todayUsd, 'Est. usage today', 'mute')}
+    </section>
+    ${sweepsRunning.length ? `<div class="card fleet-card"><div class="label">Building the case — sweeps in progress</div>${sweepRows}</div>` : ''}
+    <div class="card fleet-card">
+      <div class="label">Running now ${running.length ? `<span class="fleet-live">● live</span>` : ''}</div>
+      <div class="fleet-list">${runRows}</div>
+    </div>
+    <div class="card fleet-card">
+      <div class="label">Recent runs</div>
+      <div class="fleet-list">${recentRows}</div>
+    </div>`;
+}
+
 /* ── router ───────────────────────────────────────────────────────────── */
 function route() {
   const raw = (location.hash || '#/overview').slice(1);
@@ -3769,6 +4193,7 @@ function route() {
   else if (r === 'roadmap') viewRoadmap();
   else if (r === 'recommend') viewRecommend();
   else if (r === 'deploy') viewDeploy();
+  else if (r === 'agents-fleet') viewAgentsFleet();
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
   renderTopbarStatus();

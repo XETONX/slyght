@@ -30,6 +30,31 @@ const HOST = '127.0.0.1';                              // RULE 1 — loopback on
 const REPO = path.resolve(__dirname, '..');            // the slyght repo root (server lives in mission-control/)
 const MC = __dirname;
 const TOKEN = crypto.randomBytes(24).toString('base64url'); // RULE 4 — fresh per start
+// Resolve the DIR holding claude.cmd so we can inject it into each drone's PATH. We must spawn the
+// BARE name `claude.cmd` via cmd.exe (cmd parses a bare command cleanly) — passing the ABSOLUTE .cmd
+// path to `cmd.exe /c` mis-parses once later args contain spaces/parens (e.g. `Bash(git push:*)`),
+// yielding "not recognized" + an instant exit-1 cascade. Bare-name needs the dir on PATH, which is
+// present in some launch contexts but not others — so we add it explicitly via droneEnv().
+const CLAUDE_DIR = (() => {
+  if (process.platform !== 'win32') return null;
+  const home = process.env.USERPROFILE || process.env.HOMEPATH || '';
+  const cands = [
+    path.join(process.env.APPDATA || '', 'npm'),
+    home && path.join(home, 'AppData', 'Roaming', 'npm'),   // USERPROFILE-derived (APPDATA can be absent in spawned envs)
+    path.join(process.env.LOCALAPPDATA || '', 'npm'),
+    home && path.join(home, 'AppData', 'Local', 'npm'),
+    path.join(process.env.ProgramFiles || '', 'nodejs'),
+  ].filter(Boolean);
+  for (const d of cands) { try { if (d && fs.existsSync(path.join(d, 'claude.cmd'))) return d; } catch (_) {} }
+  return null;
+})();
+function droneEnv() {
+  if (!CLAUDE_DIR) return process.env;
+  const e = Object.assign({}, process.env);
+  const pk = Object.keys(e).find(k => k.toUpperCase() === 'PATH') || 'Path';
+  e[pk] = (e[pk] || '') + path.delimiter + CLAUDE_DIR;
+  return e;
+}
 const ALLOWED_ORIGINS = new Set([`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`]);
 
 // ── RULE 3: path-jail. Resolve the absolute target; reject anything that is not
@@ -120,6 +145,9 @@ const ACTIONS = {
     walkChild.stdout.on('data', cap);
     walkChild.stderr.on('data', cap);
     walkChild.on('exit', (code) => { walkLog.push('@@WALK_EXIT ' + code); walkChild = null; });
+    // CRITICAL: clear walkChild on spawn error too — otherwise a failed launch leaks a non-null
+    // handle and every future runWalk returns "a walk is already running" until a server restart.
+    walkChild.on('error', (err) => { walkLog.push('@@WALK_ERROR ' + ((err && err.message) || err)); walkChild = null; });
     return { ok: true, started: true, scope: group || spec || 'all' };
   },
 
@@ -179,6 +207,34 @@ const ACTIONS = {
     logTransition(id, from, t.status, author);                                                          // ← log Open→Discussing (no-op if unchanged)
     t.lastActivity = new Date().toISOString(); writeState(st);
     return { ok: true, status: t.status, comments: t.thread.length };
+  },
+  // Attach a file to a ticket → written to mission-control/attachments/<id>/, recorded as a
+  // thread entry (optional caption = the composer text). SECURITY: extension allowlist (no
+  // executables), 12MB hard cap, slug+stamp filename (no caller-controlled path), and the final
+  // path is re-jailed under the attachments dir. Bytes arrive base64 in the JSON action body.
+  attachFile: ({ id, name, dataB64, caption }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', csv: 'text/csv', txt: 'text/plain', log: 'text/plain', json: 'application/json', md: 'text/markdown', pdf: 'application/pdf' };
+    const ext = (String(name || '').match(/\.([a-z0-9]{1,8})$/i) || [, ''])[1].toLowerCase();
+    if (!TYPES[ext]) throw new Error('file type not allowed: .' + (ext || '?') + ' (allowed: ' + Object.keys(TYPES).join(', ') + ')');
+    const data = Buffer.from(String(dataB64 || ''), 'base64');
+    if (!data.length) throw new Error('empty file');
+    if (data.length > 12 * 1024 * 1024) throw new Error('file too large (' + Math.round(data.length / 1048576) + 'MB; max 12MB)');
+    const stamp = Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
+    const fname = slug(String(name || 'file').replace(/\.[^.]*$/, '')) + '-' + stamp + '.' + ext;
+    const attRoot = jail(path.join('mission-control', 'attachments'));
+    const dir = jail(path.join('mission-control', 'attachments', id));
+    const abs = path.join(dir, fname);
+    if (!abs.startsWith(attRoot + path.sep)) throw new Error('path escape rejected');   // defense in depth
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(abs, data);
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    const from = t.status;
+    t.thread.push({ author: 'john', text: String(caption || '').slice(0, 8000), attach: { name: String(name || fname).slice(0, 120), file: fname, mime: TYPES[ext], size: data.length }, ts: new Date().toISOString() });
+    if (t.status === 'Open') { t.status = 'Discussing'; t.assignee = 'john'; }
+    logTransition(id, from, t.status, 'john');
+    t.lastActivity = new Date().toISOString(); writeState(st);
+    return { ok: true, file: fname, size: data.length, comments: t.thread.length };
   },
   // earned state transition — validated against the state machine; ConfirmedLive
   // cannot be a typed label, it must carry walk evidence.
@@ -436,8 +492,9 @@ const ACTIONS = {
       think: ' Think carefully, step by step, before answering.',
       deep:  ' Ultrathink — reason deeply and consider edge cases before acting.',
     };
-    // Cost cap RISES for the heavier model but stays a HARD cap (opus → $3, sonnet → $1.5).
-    const budget = mdl === 'opus' ? '3' : '1.5';
+    // Safety guard against a runaway drone (NOT a bill — spend rides John's plan). Raised so it
+    // rarely cuts off legitimate deep work; the 40-turn cap is the real runaway stop. Opus→$6, Sonnet→$3.
+    const budget = mdl === 'opus' ? '6' : '3';
 
     const directive = (m === 'fix'
       ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. NEVER run git push or deploy. End with a concise RESULT section: what you found, what you changed (files), and the evidence.'
@@ -445,7 +502,7 @@ const ACTIONS = {
       + REASON_SUFFIX[rsn];
     const prompt = handoff + '\n\n---\n' + directive;
 
-    const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+    const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';   // bare name; droneEnv() puts its dir on PATH
     const args = ['-p', '--output-format', 'json', '--model', mdl, '--max-turns', '40', '--max-budget-usd', budget, '--permission-mode', (m === 'fix' ? 'acceptEdits' : 'plan'), '--disallowedTools', 'Bash(git push:*)', 'Bash(git push)'];
 
     // Spawn WITHOUT a shell (no shell-injection surface); feed the prompt via STDIN.
@@ -454,7 +511,7 @@ const ACTIONS = {
     // shell:false (no shell-metachar interpolation of OUR args), args are fixed/validated flags,
     // and the prompt goes via STDIN, never argv → no injection vector. Non-win32 path unchanged.
     const child = process.platform === 'win32'
-      ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: REPO })
+      ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: REPO, env: droneEnv() })
       : spawn(claudeBin, args, { cwd: REPO });
     child.stdin.write(prompt); child.stdin.end();
 
@@ -495,12 +552,13 @@ const ACTIONS = {
       job.spend = led ? led.total_usd : null;
       job.spendCount = led ? led.count : null;
 
-      // Telemetry suffix for the comment header — "· $0.72 · 10 turns · 4.5 min".
-      // Each piece degrades independently: missing cost → "$—", missing turns/dur omitted.
-      const costStr = (costUsd != null) ? '$' + costUsd.toFixed(2) : '$—';
+      // Telemetry suffix for the comment header — "· 10 turns · 4.5 min". Cost is intentionally
+      // NOT shown per-drone (it discourages dispatch and isn't a real bill); usage lives only in
+      // the topbar meter now. costUsd is still recorded to the ledger below (the meter's data).
       const turnStr = (numTurns != null) ? numTurns + ' turn' + (numTurns === 1 ? '' : 's') : null;
       const minStr  = (durationMs != null) ? (durationMs / 60000).toFixed(1) + ' min' : null;
-      const telem = ' · ' + [costStr, turnStr, minStr].filter(Boolean).join(' · ');
+      const telemParts = [turnStr, minStr].filter(Boolean);
+      const telem = telemParts.length ? ' · ' + telemParts.join(' · ') : '';
 
       // post the drone's result back INTO the ticket thread (closes the loop)
       const st = readState();
@@ -524,6 +582,59 @@ const ACTIONS = {
     }
 
     return { ok: true, dispatched: id, mode: m, model: mdl, reasoning: rsn, budget };
+  },
+
+  // ── Scoped GATHER drone — one tightly-scoped evidence job (root-cause / locate-surface /
+  // fix-proposal / conformance / auditor), keyed `<id>#<task>` so several run on one ticket
+  // concurrently. Each uses a PRISTINE non-overlapping prompt (see CASE-FILE-REDESIGN.md §5),
+  // returns a structured JSON block we parse into the ticket's caseFile slot (auto-fill, not
+  // append), and posts a short comment. Additive — never touches the generic dispatchCC path.
+  dispatchScoped: ({ id, task, confirm, model, reasoning }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'dispatch needs confirm:true' };
+    if (!SCOPED_TASKS[task]) throw new Error('unknown scoped task: ' + task + ' (allowed: ' + Object.keys(SCOPED_TASKS).join(', ') + ')');
+    const r = launchScoped(id, task, null, { model, reasoning });
+    if (!r.ok) return r;
+    return { ok: true, dispatched: r.key, id, task };
+  },
+
+  // ── "Build the case" — fan out the scoped GATHER drones in a converging DAG (concurrency cap 3),
+  // then the auditor; on GAP, ONE targeted re-dig + a final audit (hard-capped at cycle 2). Turns a
+  // blank/thin ticket into a full case file so John aligns in one read. See CASE-FILE-REDESIGN.md §6.
+  buildCase: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'build-the-case needs confirm:true' };
+    return sweepCase(id);
+  },
+
+  // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
+  // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
+  jarvisChat: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'jarvisChat needs confirm:true' };
+    const key = id + '#jarvis-chat';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'Jarvis is already replying on ' + id };
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const st0 = readState();
+    const cf = (st0[id] && st0[id].caseFile) || {};
+    const thread = (st0[id] && st0[id].thread) || [];
+    const threadTxt = thread.map(c => c.author + ': ' + String(c.text || '').replace(/\s+/g, ' ').slice(0, 800)).join('\n').slice(-6000);
+    const prompt = [
+      'You are Jarvis — John\'s sharp, plain-spoken engineering advisor on slyght (a single-file PWA: index.html ~24k lines; global S persisted to localStorage; BRAIN bubbles are the canonical writers).',
+      'You are discussing ticket ' + id + ' with John in a thread. Answer his LATEST message directly and concisely — your take, what to watch for, your recommendation. Push back if he is wrong (he wants that, not flattery; never "great question"). You MAY read the codebase to ground your answer; do NOT edit files.',
+      '',
+      '## Ticket', ticket.title, String(ticket.summary || ''),
+      '## Evidence gathered so far', caseFileDump(ticket, cf),
+      '## Discussion thread (most recent last)', threadTxt || '(none yet)',
+      '',
+      'Reply as Jarvis now — direct, plain English, no preamble. Stop when you have made your point.',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'jarvis-chat', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'off', budget: '3', maxTurns: 12,
+      onResult: ({ job, resultText }) => postJarvisReply(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
   },
 
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
@@ -756,12 +867,15 @@ function mergedTickets() {
       .map(t => {
         const s = state[t.id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, opened: null, lastActivity: null };
         const m = s.meta || {};                                       // editable overrides + new fields (setMeta)
+        const cf = s.caseFile || {};                                  // drone-gathered evidence (dispatchScoped)
         return {
           ...t,
           type:     m.type     || t.type,          // override the read-only spine type…
           severity: m.severity || t.severity,      // …and severity, when John has set one
           dueDate:  m.dueDate  || null,            // NEW — null when unset (Calendar reads this)
           bundle:   m.bundle   || null,            // NEW — null when unset (Planning reads this)
+          rich:     mergeRich(t.rich, cf),         // drone evidence overlays the spine rich (filled slots only)
+          caseFile: cf,                            // raw slot-level evidence for the case-file panel
           state: s,
         };
       })
@@ -823,6 +937,33 @@ const SNAPSHOTS_FILE = path.join('mission-control', 'snapshots.json');
 // the dispatch it rides inside (it swallows its own errors, like logTransition).
 const SPEND_FILE = path.join('mission-control', 'cc-spend.json');
 
+// Rough usage-budget anchors for the topbar meter. IMPORTANT: there is NO local source for
+// John's real Anthropic plan quota, so these are tunable best-guess ceilings (he's on Max 20x)
+// used ONLY to colour the estimated-spend gauge green→amber→red. Estimated $ are at API list
+// prices — a usage awareness gauge, not a bill. Bump these freely; they don't gate anything.
+const MONTH_BUDGET_USD = 600;
+const DAY_BUDGET_USD = 60;
+// Sum the ledger's per-run costs within the current LOCAL day / month (server runs on John's box,
+// so local time = his time). Used by /api/ccjobs to drive the usage meter.
+function spendWindows() {
+  const led = readSpend();
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  const ym = ymd.slice(0, 7);
+  let today = 0, month = 0;
+  for (const j of led.jobs || []) {
+    const c = (typeof j.cost === 'number') ? j.cost : 0;
+    const d = new Date(j.ts); if (isNaN(d)) continue;
+    const jymd = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    if (jymd === ymd) today += c;
+    if (jymd.slice(0, 7) === ym) month += c;
+  }
+  return { total_usd: led.total_usd, count: led.count,
+           today_usd: +today.toFixed(4), month_usd: +month.toFixed(4),
+           dayBudget: DAY_BUDGET_USD, monthBudget: MONTH_BUDGET_USD };
+}
+
 // Read the spend ledger (jail()'d, missing/corrupt → empty zeroed ledger).
 function readSpend() {
   try {
@@ -853,6 +994,282 @@ function recordSpend(id, cost, turns, durationMs) {
     fs.writeFileSync(abs, JSON.stringify(led, null, 2));       // string → utf8 by default
     return led;
   } catch (_) { return null; }   // ledger is best-effort — never break the dispatch
+}
+
+// ════════════════ SCOPED GATHER DRONES — pristine, non-overlapping prompts ════════════════
+// Mirrors docs/PIPELINE.md (Tier-1 Gather discipline) + CASE-FILE-REDESIGN.md §5. Each drone owns
+// ONE caseFile slot; each prompt names the OTHER drones' jobs in a DO-NOT list so nothing overlaps;
+// each is fed the existing case file and told add/correct/fill only, so nothing repeats.
+const REASON_SUFFIX_SC = {
+  off:   '',
+  think: ' Think carefully, step by step, before answering.',
+  deep:  ' Ultrathink — reason deeply and consider edge cases before answering.',
+};
+function GATHER_PREAMBLE(id, richDump) {
+  return [
+    'You are a Gather drone for slyght Mission Control, dispatched on ticket ' + id + ' for ONE scoped job.',
+    'slyght is a single-file PWA (index.html ~24k lines; global S persisted to localStorage.slyght_v5; BRAIN bubbles are the canonical writers; every write carries a source tag and hits the audit log; S._auditLog is forensic truth).',
+    '',
+    'Pipeline Tier-1 Gather rules — NON-NEGOTIABLE:',
+    '1. Report in assumption-shape with file:line evidence. You are GATHERING, not concluding — no policy calls, no "we should".',
+    '2. Never claim a count you did not enumerate. Banned: "12+ consumers". Required: list every one with its file:line.',
+    '3. Stay strictly inside your scope. Relevant-but-out-of-scope findings go in unmappedTerritory — do NOT chase them.',
+    '4. Read the EXISTING CASE FILE below. Do NOT re-derive or repeat anything already established — only ADD, CORRECT (with reason), or FILL a gap. If established evidence looks wrong, flag it in one line; do not redo it.',
+    '5. End with EXACTLY ONE fenced code block tagged json, matching the schema in your job. Keep prose above it under 200 words.',
+    '',
+    'EXISTING CASE FILE (do not repeat):',
+    richDump,
+  ].join('\n');
+}
+const SCOPED_TASKS = {
+  'root-cause': {
+    label: 'Root-cause dig', slot: 'rootCause + mechanism + files', mode: 'plan',
+    directive: [
+      'Find the MECHANISM (how the wrong behaviour is produced, step by step in code) and the ROOT CAUSE (why it exists), and ENUMERATE every file:line on the causal path.',
+      'If this ticket touches money (balance, buckets, debts, bills, allocation, forecast): do a LEDGER WALK first — trace S.txns forward; never trust a paid/flag value the ledger does not back (paid:true + matching txn = BACKED; paid:true + no txn = ORPHAN, treat suspect). State the verdict for any flag on your path.',
+      'DO NOT: propose or design a fix (that is the fix-proposal drone); assess architectural fit (conformance drone); identify the App-Map surface (locate-surface drone); run or screenshot the app (walk drone). Leave those — producing them is duplicate work.',
+      'JSON schema: {"task":"root-cause","slot":"rootCause+mechanism+files","findings":{"mechanism":"...","rootCause":"...","files":[{"path":"index.html","line":0,"role":"..."}],"ledgerVerdict":"BACKED|ORPHAN|AMBIGUOUS|n/a"},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'locate-surface': {
+    label: 'Locate surface', slot: 'surface + mapVerdict', mode: 'plan',
+    directive: [
+      'Decide which App-Map surface(s) this ticket belongs to, using FEATURE-MAP.md plus the files in the case file. Return the surface id(s) with file:line evidence and whether it is mapped / orphaned / map-stale.',
+      'DO NOT: investigate root cause, propose a fix, or judge conformance beyond the mapped/orphaned question.',
+      'JSON schema: {"task":"locate-surface","slot":"surface+mapVerdict","findings":{"surface":"...","alsoTouches":[],"mappedInFeatureMap":true,"mapStale":false,"evidence":[{"path":"...","line":0}]},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'fix-proposal': {
+    label: 'Fix proposal', slot: 'fix + invariants', mode: 'plan', reasoning: 'think',
+    directive: [
+      'Given the ALREADY-ESTABLISHED root cause in the case file above, design the MINIMAL correct fix: the change, before->after behaviour, the exact change-site file:lines, and which INV-NN invariants it preserves (and any it risks). Use canonical writers (BRAIN.<domain>.<verb>, source tags) — never a parallel calc.',
+      'DO NOT: re-derive the root cause (it is given — if you believe it is wrong, set rootCauseDisagreement to one sentence and stop, do not re-investigate); edit or implement files; judge surface mapping.',
+      'JSON schema: {"task":"fix-proposal","slot":"fix+invariants","findings":{"fix":"...","before":"...","after":"...","changeSites":[{"path":"...","line":0}],"invariantsPreserved":[],"invariantsAtRisk":[],"rootCauseDisagreement":null},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'conformance': {
+    label: 'Conformance', slot: 'conformance', mode: 'plan',
+    directive: [
+      'Run the Conformance (FIT) checks on the proposed fix in the case file above. Answer each with file:line evidence: Mapped? (in FEATURE-MAP) · Labelled? (vocabulary registry — no new meaning for an overloaded word) · Linked? (wired to canonical readers/writers) · Canonical-or-parallel? (reuses surplus/headroom/daily-living/isPaidInCycle, or invents a drifting parallel) · Invariant coverage? (which INV-NN; need a new one?) · Fits current + planned architecture? (collides with a queued bundle?).',
+      'Severity-gate the verdict: NEW drift this fix introduces = block; distant pre-existing drift = flag; adjacent same-shape cheap drift = correct.',
+      'DO NOT: re-derive root cause or re-propose the fix.',
+      'JSON schema: {"task":"conformance","slot":"conformance","findings":{"mapped":true,"labelled":true,"linked":true,"canonicalOrParallel":"canonical|parallel","invariants":[],"fitsArchitecture":true,"driftVerdict":"block|flag|correct|clean","notes":"..."},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'auditor': {
+    label: 'Auditor', slot: 'audit', mode: 'plan', reasoning: 'think',
+    directive: [
+      'You are the AUDITOR. The case file above is everything gathered so far. Do three things, nothing else:',
+      '1. Verdict each slot: BACKED (evidence supports it) / THIN (present but weak) / MISSING / CONTRADICTORY (slots disagree).',
+      '2. Merge and dedupe: fold overlapping findings into one coherent case. If two passes found the same issue, state it ONCE. If a later pass found an additional issue, add it — do not restate the first.',
+      '3. Decide: COMPLETE (ready for John to align) or GAP — and if GAP, name EXACTLY ONE targeted follow-up: which drone, what specific question, why. Never a blind full re-run; never more than one.',
+      'If the case file shows a prior audit at cycle 2, you MUST return COMPLETE (with caveats for anything still thin) — convergence is mandatory, there is no cycle 3.',
+      'DO NOT investigate yourself, request multiple digs, or loop.',
+      'JSON schema: {"task":"auditor","cycle":1,"slots":{"rootCause":"BACKED","files":"BACKED","fix":"THIN","surface":"BACKED","conformance":"MISSING","walk":"MISSING"},"merged":"one-paragraph converged case","verdict":"COMPLETE|GAP","nextDig":null,"caveats":[]}',
+    ].join('\n'),
+  },
+};
+
+// Readable dump of a ticket's CURRENT evidence — fed to every drone so it never re-derives.
+function caseFileDump(ticket, cf) {
+  const rich = (ticket && ticket.rich) || {};
+  const rc = cf.rootCause || {};
+  const fileList = (rc.files && rc.files.length)
+    ? rc.files.map(x => typeof x === 'string' ? x : (x.path + ':' + x.line)).join(', ')
+    : (rich.files || []).join(', ');
+  const lines = [
+    '- Symptom: ' + ((ticket && ticket.summary) || '(none)'),
+    '- Root cause: ' + (rc.rootCause || rich.rootCause || '(EMPTY — needs root-cause drone)'),
+    '- Mechanism: ' + (rc.mechanism || rich.mechanism || '(EMPTY)'),
+    '- Files: ' + (fileList || '(EMPTY)'),
+    '- Surface: ' + ((cf.surface && cf.surface.surface) || (ticket && ticket.group) || '(EMPTY — needs locate-surface drone)'),
+    '- Proposed fix: ' + ((cf.fix && cf.fix.fix) || rich.fix || '(EMPTY — needs fix-proposal drone)'),
+    '- Conformance: ' + ((cf.conformance && cf.conformance.driftVerdict) || '(EMPTY — needs conformance drone)'),
+    '- Walk evidence: ' + (rich.evidence ? 'present' : '(EMPTY — needs walk drone)'),
+  ];
+  if (cf.audit) lines.push('- Last audit: cycle ' + (cf.audit.cycle || 1) + ' -> ' + cf.audit.verdict + (cf.audit.nextDig ? ' (gap: ' + (cf.audit.nextDig.scope || cf.audit.nextDig.why || '') + ')' : ''));
+  return lines.join('\n');
+}
+
+// Extract the LAST fenced ```json block (a drone may show a schema example then the real one);
+// fall back to the last balanced {...}. Returns a parsed object or null (degrade, never throw).
+function extractJsonBlock(text) {
+  if (!text) return null;
+  const fences = [...String(text).matchAll(/```json\s*([\s\S]*?)```/gi)];
+  let raw = fences.length ? fences[fences.length - 1][1] : null;
+  if (raw == null) { const i = String(text).lastIndexOf('{'); if (i >= 0) raw = String(text).slice(i); }
+  if (raw == null) return null;
+  raw = raw.trim();
+  try { return JSON.parse(raw); } catch (_) {}
+  try { const end = raw.lastIndexOf('}'); if (end > 0) return JSON.parse(raw.slice(0, end + 1)); } catch (_) {}
+  return null;
+}
+
+// Write a scoped drone's parsed evidence into its OWNING caseFile slot (overwrite, not append) AND
+// post one short thread comment — single read/modify/write. Best-effort; never throws.
+function recordScopedResult(id, task, spec, parsed, job, resultText) {
+  try {
+    const st = readState(); const t = st[id]; if (!t) return;
+    const ts = new Date().toISOString();
+    t.caseFile = t.caseFile || {};
+    if (parsed) {
+      const f = parsed.findings || {};
+      const meta = { ts, model: job.model, confidence: parsed.confidence || null, openQuestions: parsed.openQuestions || [], unmappedTerritory: parsed.unmappedTerritory || [] };
+      if (task === 'root-cause') t.caseFile.rootCause = Object.assign({}, f, meta);
+      else if (task === 'locate-surface') t.caseFile.surface = Object.assign({}, f, meta);
+      else if (task === 'fix-proposal') t.caseFile.fix = Object.assign({}, f, meta);
+      else if (task === 'conformance') t.caseFile.conformance = Object.assign({}, f, meta);
+      else if (task === 'auditor') t.caseFile.audit = { ts, model: job.model, verdict: parsed.verdict || null, nextDig: parsed.nextDig || null, slots: parsed.slots || {}, merged: parsed.merged || '', cycle: parsed.cycle || 1, caveats: parsed.caveats || [] };
+    }
+    const telem = [job.turns != null ? job.turns + ' turns' : null, job.durationMs != null ? (job.durationMs / 60000).toFixed(1) + ' min' : null].filter(Boolean).join(' · ');
+    const head = '**' + spec.label + ' drone — ' + job.model + (telem ? ' · ' + telem : '') + '**';
+    const note = parsed ? ' -> filled ' + spec.slot : ' -> could not parse structured output; raw below';
+    const detail = parsed ? scopedSummary(task, parsed) : '\n\n' + (resultText || '(no output)').slice(0, 4000);
+    t.thread.push({ author: 'cc', text: head + note + (detail ? (parsed ? '\n\n' + detail : detail) : ''), ts });
+    t.lastActivity = ts;
+    writeState(st);
+  } catch (_) {}
+}
+
+// Post a live-Jarvis reply into the thread as a 'jarvis' comment. Best-effort; never throws.
+function postJarvisReply(id, resultText, job) {
+  try {
+    const st = readState(); const t = st[id]; if (!t) return;
+    const reply = String(resultText || '').trim() || '(Jarvis returned no reply — try again or rephrase.)';
+    t.thread.push({ author: 'jarvis', text: reply.slice(0, 9000), ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString();
+    writeState(st);
+  } catch (_) {}
+}
+// One- to three-line human summary of a parsed scoped result, for the thread comment.
+function scopedSummary(task, parsed) {
+  const f = parsed.findings || {};
+  const files = Array.isArray(f.files) ? f.files.map(x => typeof x === 'string' ? x : (x.path + ':' + x.line)).join(', ') : '';
+  if (task === 'root-cause') return (f.rootCause ? '**Root cause.** ' + f.rootCause : '') + (files ? '\n\n**Files:** ' + files : '');
+  if (task === 'locate-surface') return f.surface ? '**Surface:** ' + f.surface + (f.mapStale ? ' (map stale)' : '') : '';
+  if (task === 'fix-proposal') return f.fix ? '**Proposed fix.** ' + f.fix : '';
+  if (task === 'conformance') return f.driftVerdict ? '**Conformance:** ' + f.driftVerdict + (f.notes ? ' — ' + f.notes : '') : '';
+  if (task === 'auditor') return '**Audit:** ' + (parsed.verdict || '?') + (parsed.nextDig ? ' — next: ' + (parsed.nextDig.drone || '') + ' (' + (parsed.nextDig.why || '') + ')' : '') + (parsed.merged ? '\n\n' + parsed.merged : '');
+  return '';
+}
+
+// Overlay drone-gathered caseFile evidence onto the spine rich (FILLED slots only — never blanks).
+function mergeRich(rich, cf) {
+  const r = Object.assign({}, rich || {});
+  const rc = (cf && cf.rootCause) || null;
+  if (rc) {
+    if (rc.rootCause) r.rootCause = rc.rootCause;
+    if (rc.mechanism) r.mechanism = rc.mechanism;
+    if (Array.isArray(rc.files) && rc.files.length) r.files = rc.files.map(x => typeof x === 'string' ? x : (x.path + ':' + x.line + (x.role ? ' — ' + x.role : '')));
+  }
+  if (cf && cf.fix && cf.fix.fix) r.fix = cf.fix.fix;
+  return r;
+}
+
+// Spawn ONE headless claude drone (shared by scoped tasks; mirrors dispatchCC's proven spawn +
+// UTF-8 chunk handling + telemetry/spend). onResult({job,resultText,code}) does the task-specific
+// post-processing and must never throw into the exit handler.
+function spawnDrone({ key, id, task, prompt, mode, mdl, rsn, budget, onResult, maxTurns }) {
+  const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';   // bare name; droneEnv() puts its dir on PATH
+  // 'gather' = read-only investigation that MUST emit its JSON as the final result, so it uses
+  // 'default' mode (NOT plan — plan mode routes the substantive output into a plan artifact and the
+  // result field becomes a sign-off, which loses our structured block). Edits are blocked outright.
+  const isFix = mode === 'fix';
+  const permMode = isFix ? 'acceptEdits' : (mode === 'gather' ? 'default' : 'plan');
+  const disallow = isFix
+    ? ['Bash(git push:*)', 'Bash(git push)']
+    : ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash(git push:*)', 'Bash(git push)'];   // gather/plan: read-only
+  const args = ['-p', '--output-format', 'json', '--model', mdl, '--max-turns', String(maxTurns || 40), '--max-budget-usd', budget, '--permission-mode', permMode, '--disallowedTools', ...disallow];
+  const child = process.platform === 'win32'
+    ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: REPO, env: droneEnv() })
+    : spawn(claudeBin, args, { cwd: REPO });
+  child.stdin.write(prompt); child.stdin.end();
+  const job = ccJobs[key] = { status: 'running', id, task, mode, model: mdl, reasoning: rsn, started: Date.now(), out: '', _chunks: [] };
+  child.stdout.on('data', d => job._chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+  child.stderr.on('data', d => job._chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
+  child.on('exit', code => {
+    job.exit = code;
+    job.out = Buffer.concat(job._chunks).toString('utf8'); job._chunks = null;
+    let resultText = '', costUsd = null, numTurns = null, durationMs = null;
+    try { const j = JSON.parse(job.out); resultText = j.result || j.text || ''; if (typeof j.total_cost_usd === 'number') costUsd = j.total_cost_usd; if (typeof j.num_turns === 'number') numTurns = j.num_turns; if (typeof j.duration_ms === 'number') durationMs = j.duration_ms; }
+    catch (_) { resultText = job.out.slice(-4000); }
+    job.result = resultText; job.cost = costUsd; job.turns = numTurns; job.durationMs = durationMs;
+    job.status = code === 0 ? 'done' : 'failed';
+    const led = recordSpend(id, costUsd, numTurns, durationMs);
+    job.spend = led ? led.total_usd : null; job.spendCount = led ? led.count : null;
+    try { if (onResult) onResult({ job, resultText, code }); } catch (_) {}
+  });
+  return job;
+}
+
+// Sweep registry (RUNTIME, in-memory) — ticket id -> { status, step, cycle, startedAt, finishedAt }.
+const sweeps = {};
+// server-side drone-name -> scoped task key ('' for walk/unknown — those aren't launchScoped tasks).
+function taskKeyFromDroneServer(d) {
+  d = String(d || '').toLowerCase();
+  if (d.includes('root')) return 'root-cause';
+  if (d.includes('surface') || d.includes('locate')) return 'locate-surface';
+  if (d.includes('fix')) return 'fix-proposal';
+  if (d.includes('conform')) return 'conformance';
+  return '';   // walk (manual) or unknown
+}
+// Build the scoped prompt + spawn ONE gather drone; record its evidence; then optionally chain
+// (afterResult — used by the sweep). Returns {ok,key} or {ok:false,reason}.
+function launchScoped(id, task, afterResult, opts) {
+  opts = opts || {};
+  const spec = SCOPED_TASKS[task];
+  if (!spec) return { ok: false, reason: 'unknown scoped task: ' + task };
+  const key = id + '#' + task;
+  if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a ' + spec.label + ' drone is already on ' + id };
+  let handoff = '';
+  try { handoff = fs.readFileSync(jail(path.join('mission-control', 'handoffs', id + '.md')), 'utf8'); } catch (_) {}
+  const st0 = readState();
+  const cf = (st0[id] && st0[id].caseFile) || {};
+  const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+  if (!ticket) return { ok: false, reason: 'no such ticket: ' + id };
+  const mdl = opts.model === 'opus' ? 'opus' : 'sonnet';
+  const rsn = ['off', 'think', 'deep'].includes(opts.reasoning) ? opts.reasoning : (spec.reasoning || 'off');
+  const budget = mdl === 'opus' ? '6' : '3';
+  const prompt =
+    (handoff ? handoff + '\n\n---\n' : '') +
+    GATHER_PREAMBLE(id, caseFileDump(ticket, cf)) +
+    '\n## YOUR SCOPED JOB — ' + spec.label + '\n' + spec.directive + REASON_SUFFIX_SC[rsn];
+  spawnDrone({
+    key, id, task, prompt, mode: 'gather', mdl, rsn, budget,
+    onResult: ({ job, resultText }) => {
+      const parsed = extractJsonBlock(resultText);
+      recordScopedResult(id, task, spec, parsed, job, resultText);
+      if (afterResult) { try { afterResult({ job, parsed }); } catch (_) {} }
+    },
+  });
+  return { ok: true, key };
+}
+// The converging DAG. root-cause ∥ locate-surface -> fix-proposal -> conformance -> auditor;
+// GAP -> ONE targeted re-dig -> auditor(2) -> done. Each step advances on the prior drone's
+// onResult. A failed launch (e.g. already running) still advances the chain so it never stalls.
+function sweepCase(id) {
+  if (!/^SLY-\d+$/.test(id)) return { ok: false, reason: 'bad ticket id' };
+  if (sweeps[id] && sweeps[id].status === 'running') return { ok: false, reason: 'a sweep is already running on ' + id };
+  const sw = sweeps[id] = { status: 'running', step: 'gather', cycle: 0, startedAt: Date.now(), finishedAt: null };
+  const launch = (task, after) => { const r = launchScoped(id, task, after); if (!r.ok && after) { try { after({ skipped: true }); } catch (_) {} } };
+  const finish = () => { sw.status = 'done'; sw.step = 'complete'; sw.finishedAt = Date.now(); };
+  const audit = (cycle) => {
+    sw.step = 'audit'; sw.cycle = cycle;
+    launch('auditor', () => {
+      const st = readState();
+      const a = (st[id] && st[id].caseFile && st[id].caseFile.audit) || {};
+      const next = (a.verdict === 'GAP' && a.nextDig && cycle < 2) ? taskKeyFromDroneServer(a.nextDig.drone) : '';
+      if (next && SCOPED_TASKS[next]) { sw.step = 'redig'; launch(next, () => audit(2)); }
+      else { finish(); }
+    });
+  };
+  const phase3 = () => { sw.step = 'conformance'; launch('conformance', () => audit(1)); };
+  const phase2 = () => { sw.step = 'fix'; launch('fix-proposal', phase3); };
+  let pending = 2;
+  const onGather = () => { if (--pending === 0) phase2(); };
+  launch('root-cause', onGather);       // phase 1: two independent gather drones in parallel (2 <= cap 3)
+  launch('locate-surface', onGather);
+  return { ok: true, swept: id };
 }
 
 function logTransition(ticketId, from, to, by) {
@@ -894,7 +1311,7 @@ function snapshotToday() {
 // ── HTTP ────────────────────────────────────────────────────────────────────
 const send = (res, code, body, type = 'application/json') => {
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store' });
-  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+  res.end(Buffer.isBuffer(body) ? body : typeof body === 'string' ? body : JSON.stringify(body));
 };
 
 const server = http.createServer((req, res) => {
@@ -911,6 +1328,18 @@ const server = http.createServer((req, res) => {
     if (/^\/[a-z0-9_-]+\.(css|js)$/i.test(p)) {                 // static assets: any .css/.js basename in MC dir (path.basename strips any traversal)
       try { return send(res, 200, fs.readFileSync(path.join(MC, path.basename(p)), 'utf8'), p.endsWith('.css') ? 'text/css; charset=utf-8' : 'application/javascript; charset=utf-8'); }
       catch (e) { return send(res, 404, { error: e.message }); }
+    }
+    if (p === '/api/attachment') {                              // serve a ticket attachment (read-only, loopback)
+      const id = url.searchParams.get('id') || '';
+      const name = path.basename(url.searchParams.get('name') || '');   // basename strips any traversal
+      if (!/^SLY-\d+$/.test(id)) return send(res, 400, { error: 'bad id' });
+      if (!/^[a-z0-9._-]+$/i.test(name)) return send(res, 400, { error: 'bad name' });
+      try {
+        const buf = fs.readFileSync(jail(path.join('mission-control', 'attachments', id, name)));
+        const ext = (name.match(/\.([a-z0-9]+)$/i) || [, ''])[1].toLowerCase();
+        const T = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', csv: 'text/csv; charset=utf-8', txt: 'text/plain; charset=utf-8', log: 'text/plain; charset=utf-8', json: 'application/json', md: 'text/markdown; charset=utf-8', pdf: 'application/pdf' };
+        return send(res, 200, buf, T[ext] || 'application/octet-stream');
+      } catch (e) { return send(res, 404, { error: e.message }); }
     }
     if (p === '/api/cases') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'cases.json'), 'utf8'))); } catch (e) { return send(res, 200, { cases: [], counts: {}, error: 'run: node scripts/mc/build-cases.js' }); } }
     if (p === '/api/specs') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'specs.json'), 'utf8'))); } catch (e) { return send(res, 404, { error: e.message }); } }
@@ -1022,15 +1451,17 @@ const server = http.createServer((req, res) => {
     if (p === '/api/ccjobs') {
       const jobs = Object.fromEntries(Object.entries(ccJobs).map(([k, v]) => [k, {
         status: v.status, mode: v.mode, model: v.model, reasoning: v.reasoning,
+        id: (v.id != null ? v.id : k.split('#')[0]),       // ticket id (back-compat: derive from key)
+        task: (v.task != null ? v.task : null),            // scoped task (null for generic dispatchCC jobs)
         started: v.started, exit: v.exit,
         cost: (v.cost != null ? v.cost : null),            // number | null (per-job total_cost_usd)
         turns: (v.turns != null ? v.turns : null),         // number | null
         durationMs: (v.durationMs != null ? v.durationMs : null),
       }]));
-      // Running spend ledger (persisted across restarts) — UI shows "CC spend: $X.XX (N runs)".
-      // Read fresh from the jail()'d file so a server restart still reports the lifetime total.
-      const led = readSpend();
-      return send(res, 200, { jobs, spend: { total_usd: led.total_usd, count: led.count } });
+      // Spend windows (today / month / lifetime + budget anchors) drive the topbar usage meter.
+      // Computed fresh from the jail()'d ledger so a restart still reports correctly.
+      const sw = Object.fromEntries(Object.entries(sweeps).map(([k, v]) => [k, { status: v.status, step: v.step, cycle: v.cycle, startedAt: v.startedAt, finishedAt: v.finishedAt }]));
+      return send(res, 200, { jobs, spend: spendWindows(), sweeps: sw });
     }
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
@@ -1046,7 +1477,9 @@ const server = http.createServer((req, res) => {
     const origin = req.headers.origin;
     if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, { error: 'origin not allowed: ' + origin });
     let raw = '';
-    req.on('data', c => { raw += c; if (raw.length > 2e6) req.destroy(); });
+    // 15MB cap — base64 inflates files ~33%, so this admits ~11MB attachments (attachFile).
+    // Safe to be this large: loopback-only bind + per-start token + single user.
+    req.on('data', c => { raw += c; if (raw.length > 15e6) req.destroy(); });
     req.on('end', async () => {
       let body; try { body = JSON.parse(raw || '{}'); } catch { return send(res, 400, { error: 'bad json' }); }
       if (body.token !== TOKEN) return send(res, 401, { error: 'bad or missing token' });
@@ -1067,6 +1500,7 @@ server.listen(PORT, HOST, () => {
   console.log('  ──────────────────────────────────────────────');
   console.log('  open:   http://' + HOST + ':' + PORT + '   (localhost-only)');
   console.log('  token:  ' + TOKEN + '   (auto-injected into the page)');
+  console.log('  claude: ' + (CLAUDE_DIR ? CLAUDE_DIR + '  (on drone PATH)' : 'UNRESOLVED — drones rely on inherited PATH'));
   console.log('  writes: allowlisted actions only, path-jailed to ' + REPO);
   console.log('  deploy: git push — needs typed confirm, never fires on its own');
   console.log('  dispatch: CC drone (claude headless) — confirm-gated, no-push, cost-capped $1.50 sonnet / $3 opus, 40-turn, plan-default');
