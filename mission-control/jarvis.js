@@ -234,11 +234,11 @@ function fdDone(t) { return ['ConfirmedLive', 'Shipped'].includes(t.state.status
 function fdCaseComplete(t) { return ((t.caseFile && t.caseFile.audit && t.caseFile.audit.verdict) || '') === 'COMPLETE'; }
 function fdOpenQ(t) { const cf = t.caseFile || {}; let n = 0; ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) n += s.openQuestions.length; }); return n; }
 const FD_COLS = [
-  { key: 'needs',  lbl: 'NEEDS YOU',        sub: 'your call',      tone: 'needs'  },
-  { key: 'bundle', lbl: 'CAN BUNDLE',       sub: 'group & sweep',  tone: 'bundle' },
-  { key: 'fix',    lbl: 'READY TO FIX',     sub: 'hand to CC',     tone: 'fix'    },
-  { key: 'flight', lbl: 'IN FLIGHT',        sub: 'drones working', tone: 'flight' },
-  { key: 'deploy', lbl: 'READY TO DEPLOY',  sub: 'your push',      tone: 'deploy' },
+  { key: 'needs',  lbl: 'NEEDS YOU',        sub: 'your call',        tone: 'needs'  },
+  { key: 'bundle', lbl: 'EPICS',            sub: 'grouped work',     tone: 'bundle' },
+  { key: 'fix',    lbl: 'READY TO FIX',     sub: 'hand to CC',       tone: 'fix'    },
+  { key: 'flight', lbl: 'IN FLIGHT',        sub: 'drones working',   tone: 'flight' },
+  { key: 'deploy', lbl: 'READY TO DEPLOY',  sub: 'your push',        tone: 'deploy' },
 ];
 function viewFlightdeck() {
   const v = $('view'); v.className = 'view fdeck';
@@ -323,7 +323,7 @@ function viewFlightdeck() {
 
   const cols = FD_COLS.map((c, i) => {
     const items = sets[c.key];
-    const body = items.length ? items.map(renderers[c.key]).join('') : `<div class="fd-col-empty">${c.key === 'needs' ? 'All clear.' : c.key === 'flight' ? 'No drones in the air.' : c.key === 'deploy' ? 'Nothing ready.' : c.key === 'bundle' ? 'No active bundles.' : 'Nothing yet.'}</div>`;
+    const body = items.length ? items.map(renderers[c.key]).join('') : `<div class="fd-col-empty">${c.key === 'needs' ? 'All clear.' : c.key === 'flight' ? 'No drones in the air.' : c.key === 'deploy' ? 'Nothing ready.' : c.key === 'bundle' ? 'No epics with open work.' : 'Nothing yet.'}</div>`;
     return `<section class="fd-col fd-${c.tone}" id="fdcol-${c.key}" style="--d:${i * 70}ms">
         <div class="fd-col-h"><div class="fd-col-htext"><span class="fd-col-lbl">${c.lbl}</span><span class="fd-col-sub">${c.sub}</span></div><span class="fd-col-n">${items.length}</span></div>
         <div class="fd-col-rail"></div>

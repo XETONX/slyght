@@ -50,6 +50,15 @@ button{font-family:inherit;cursor:pointer}
 .rail a .ic{width:18px;text-align:center}
 .rail a .soon{margin-left:auto;font-size:10px;color:var(--muted);background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;font-weight:500}
 .rail .sect{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;padding:14px 14px 6px}
+/* Responsive rail — collapse to an icon strip on narrow widths so content gets the room (well-built, not crushed). */
+@media(max-width:900px){
+  .rail{width:54px;flex:0 0 54px;padding:14px 7px}
+  .rail a{justify-content:center;padding:12px 0;gap:0;font-size:0;margin-bottom:5px}
+  .rail a .ic{font-size:19px;width:auto}
+  .rail a .soon{display:none}
+  .rail .sect{font-size:0;padding:0;margin:12px 6px 8px;border-top:1px solid var(--border)}
+}
+@media(max-width:560px){ .topbar{padding:0 14px} .topbar .brand small{display:none} }
 main{flex:1;min-width:0;padding:26px 32px 80px}
 
 /* ── headings ────────────────────────────────────────────────────────────── */
