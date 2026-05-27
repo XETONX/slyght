@@ -86,3 +86,6 @@ mission-control/cc-spend.json
 # Jarvis runtime audit/triage artifacts (regenerated per run)
 mission-control/system-audit.json
 mission-control/triage-report.json
+
+# Jarvis write-token (per-machine secret, persists across restarts)
+mission-control/.mc-token

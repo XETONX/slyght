@@ -295,9 +295,14 @@ function viewFlightdeck() {
       return card(t, handoff + resBtn, { tag: res ? '<span class="fd-restag">&check; resolution</span>' : '<span class="fd-statetag">case complete</span>' });
     },
     flight: t => {
-      const s = (J.sweeps || {})[t.id]; const cs = caseScore(t);
-      const lbl = s && s.status === 'running' ? 'scoping &middot; ' + esc(s.step || 'gather') : t.state.status === 'Investigating' ? 'CC investigating' : 'working';
-      return card(t, `<span class="fd-liveact"><span class="fd-livedot"></span> ${lbl}</span>`, { cls: 'fd-card-live', prog: Math.round(cs / 5 * 100), tag: '<span class="fd-statetag">' + cs + '/5</span>' });
+      const s = (J.sweeps || {})[t.id]; const cs = caseScore(t); const livenow = fdLive(t.id);
+      // Only claim activity when a drone is GENUINELY running. An Investigating ticket with no live
+      // drone (CC finished without posting back, or a restart killed it) shows as idle — not a false pulse.
+      if (livenow) {
+        const lbl = s && s.status === 'running' ? 'scoping &middot; ' + esc(s.step || 'gather') : 'drones working';
+        return card(t, `<span class="fd-liveact"><span class="fd-livedot"></span> ${lbl}</span>`, { cls: 'fd-card-live', prog: Math.round(cs / 5 * 100), tag: '<span class="fd-statetag">' + cs + '/5</span>' });
+      }
+      return card(t, `<span class="fd-liveact fd-idle">awaiting CC &middot; no drone running</span><button class="fd-btn" onclick="dispatchToCC('${t.id}')">Re-dispatch</button>`, { tag: '<span class="fd-statetag">idle</span>' });
     },
     deploy: t => card(t, `<a class="fd-btn fd-btn-ship" href="#/deploy" onclick="event.stopPropagation()">Review &amp; push &rarr;</a>`, { tag: '<span class="fd-restag">&check; ready</span>' }),
     bundle: g => `<div class="fd-card fd-bundle${g.hot ? ' fd-card-live' : ''}" onclick="location.hash='#/epic/${g.e.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/epic/${g.e.id}'">
@@ -515,6 +520,7 @@ const BOARD_VIEWS = [
   { id: 'p0',        label: 'P0 Critical',    match: t => t.severity === 'P0' },
 ];
 const BOARD_SORTS = [
+  { id: 'leverage', label: 'Leverage (what to do next)' },
   { id: 'activity', label: 'Last activity' },
   { id: 'opened',   label: 'Newest' },
   { id: 'oldest',   label: 'Oldest' },
@@ -585,6 +591,7 @@ function viewBoard() {
             <option value="epic"${f.group === 'epic' ? ' selected' : ''}>Epic</option>
             <option value="severity"${f.group === 'severity' ? ' selected' : ''}>Priority</option>
             <option value="surface"${f.group === 'surface' ? ' selected' : ''}>Surface</option>
+            <option value="status"${f.group === 'status' ? ' selected' : ''}>Status</option>
           </select>
           ${BD2_CHEVRON}
         </div>
@@ -630,6 +637,7 @@ function boardGroups(shown, mode) {
   }
   if (mode === 'severity') return ['P0', 'P1', 'P2'].map(s => ({ key: s, label: s + (s === 'P0' ? ' · Critical' : s === 'P1' ? ' · High' : ' · Normal'), tickets: shown.filter(t => t.severity === s) })).filter(g => g.tickets.length);
   if (mode === 'surface') return [...new Set(shown.map(t => t.group))].filter(Boolean).sort().map(s => ({ key: s, label: niceSurface(s), tickets: shown.filter(t => t.group === s) }));
+  if (mode === 'status') return STATUSES.map(s => ({ key: s, label: (STATUS_LABEL[s] || s) + (STATUS_INFO[s] ? ' · ' + STATUS_INFO[s].need : ''), tickets: shown.filter(t => t.state.status === s) })).filter(g => g.tickets.length);   // absorbed from Roadmap
   return [];
 }
 function renderGroupedBoard(groups) {
@@ -789,6 +797,7 @@ function sortTickets(arr, sort) {
   if (sort === 'oldest')   return a.sort((x, y) => new Date(x.state.opened) - new Date(y.state.opened));
   if (sort === 'severity') return a.sort((x, y) => (SEVRANK_BD[x.severity] - SEVRANK_BD[y.severity]) || (new Date(y.state.lastActivity) - new Date(x.state.lastActivity)));
   if (sort === 'status')   return a.sort((x, y) => (STATUSRANK[x.state.status] - STATUSRANK[y.state.status]) || (SEVRANK_BD[x.severity] - SEVRANK_BD[y.severity]));
+  if (sort === 'leverage') return a.sort((x, y) => (scoreTicket(y).total - scoreTicket(x).total) || (SEVRANK_BD[x.severity] - SEVRANK_BD[y.severity]));   // absorbed from Recommends
   // default: last activity, newest first
   return a.sort((x, y) => new Date(y.state.lastActivity) - new Date(x.state.lastActivity));
 }
@@ -5648,10 +5657,12 @@ function route() {
   else if (r === 'calendar') viewCalendar();
   else if (r === 'planning') viewPlanning();
   else if (r === 'insights') viewInsights();
-  else if (r === 'roadmap') viewRoadmap();
-  else if (r === 'recommend') viewRecommend();
+  // Retired tabs (consolidated into Board / Command Centre) — routes kept as redirects so old links + the
+  // Now bar don't dead-end. Roadmap → Board grouped by status; Recommends → Board sorted by leverage.
+  else if (r === 'roadmap') { J.filter = { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all', group: 'status' }; location.hash = '#/board'; return; }
+  else if (r === 'recommend') { J.filter = { surface: '', severity: '', type: '', status: '', search: '', sort: 'leverage', view: 'all', group: '' }; location.hash = '#/board'; return; }
   else if (r === 'deploy') viewDeploy();
-  else if (r === 'agents-fleet') viewAgentsFleet();
+  else if (r === 'agents-fleet') { location.hash = '#/command'; return; }
   else if (r === 'architecture') viewArchitecture();
   else if (r === 'briefing') viewBriefing();
   else if (r === 'epic' && parts[1]) viewEpic(parts[1]);

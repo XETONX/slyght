@@ -2449,6 +2449,7 @@ body{ background-image:
 .fd-btn-q{color:var(--cy);border-color:rgba(45,226,230,.4)}
 .fd-livedot{width:8px;height:8px;border-radius:50%;background:var(--am);box-shadow:0 0 9px var(--am);animation:ccBlink 1.1s infinite;flex-shrink:0}
 .fd-liveact{display:inline-flex;align-items:center;gap:7px;font-family:ui-monospace,monospace;font-size:11.5px;color:var(--am)}
+.fd-liveact.fd-idle{color:var(--ink3)}
 .fd-bundle-ic{color:var(--vi)}
 .fd-bundle-open{margin-left:auto;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--ink3)}
 .fd-resok{font-family:ui-monospace,monospace;font-size:11px;color:var(--gn)}

@@ -29,7 +29,17 @@ const PORT = 5050;
 const HOST = '127.0.0.1';                              // RULE 1 — loopback only, hard-coded
 const REPO = path.resolve(__dirname, '..');            // the slyght repo root (server lives in mission-control/)
 const MC = __dirname;
-const TOKEN = crypto.randomBytes(24).toString('base64url'); // RULE 4 — fresh per start
+// RULE 4 — origin+token gate the write path. The token PERSISTS across restarts (cached in a
+// gitignored file) so a server restart no longer rotates it out from under an open page (which
+// surfaced as a confusing "missing token" on every action until refresh). Still localhost-only +
+// per-machine secret; delete the file to rotate. First run generates + writes it.
+const TOKEN = (() => {
+  const tf = path.join(__dirname, '.mc-token');
+  try { const t = fs.readFileSync(tf, 'utf8').trim(); if (/^[A-Za-z0-9_-]{16,}$/.test(t)) return t; } catch (_) {}
+  const t = crypto.randomBytes(24).toString('base64url');
+  try { fs.writeFileSync(tf, t); } catch (_) {}
+  return t;
+})();
 // Resolve the DIR holding claude.cmd so we can inject it into each drone's PATH. We must spawn the
 // BARE name `claude.cmd` via cmd.exe (cmd parses a bare command cleanly) — passing the ABSOLUTE .cmd
 // path to `cmd.exe /c` mis-parses once later args contain spaces/parens (e.g. `Bash(git push:*)`),
@@ -541,7 +551,8 @@ const ACTIONS = {
       ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. Reuse canonical writers (BRAIN.<domain>.<verb>, source tags) — never a parallel calc. When the change is complete and Guardian passes, COMMIT it with a message that STARTS with "' + id + ': " (one commit for this ticket, so Deploy can surface it). NEVER run git push or deploy — committing is allowed, pushing is not. End with a concise RESULT section: what you found, what you changed (files + the commit), and the evidence.'
       : 'You are a CC drone dispatched by Jarvis on ' + id + '. INVESTIGATE ONLY — read + analyse, propose the precise fix with file:line + evidence. Do NOT edit files. End with a concise RESULT section.')
       + REASON_SUFFIX[rsn];
-    const prompt = handoff + '\n\n---\n' + directive;
+    // Feed the drone the handoff CONTENT inline + its file PATH (so it can re-read the full package).
+    const prompt = handoff + '\n\n---\n(This handoff package is saved at mission-control/handoffs/' + id + '.md — re-read it any time.)\n' + directive;
 
     const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';   // bare name; droneEnv() puts its dir on PATH
     const args = ['-p', '--output-format', 'json', '--model', mdl, '--max-turns', '40', '--max-budget-usd', budget, '--permission-mode', (m === 'fix' ? 'acceptEdits' : 'plan'), '--disallowedTools', 'Bash(git push:*)', 'Bash(git push)'];
