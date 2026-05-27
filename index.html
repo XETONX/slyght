@@ -2039,6 +2039,16 @@ button:not([class]):not([style*="background"]){background:transparent;border:non
       </div>
       <input type="hidden" id="ql-txn-type" value="expense">
     </div>
+    <!-- SLY-1: savings destination picker. Hidden by default; shown only when
+         Type=Savings (see selectTxnType). REQUIRED — quickLogTxn blocks the
+         save if no goal is chosen, so "Savings" money can never land nowhere
+         (pre-fix, savings debited cash but credited no goal — OPEN-BUGS #11). -->
+    <div class="modal-field" id="ql-goal-field" style="display:none">
+      <label>Goal</label>
+      <select class="modal-input" id="ql-goal-dest">
+        <option value="">Choose goal…</option>
+      </select>
+    </div>
     <div class="modal-checkbox-row">
       <input type="checkbox" class="modal-checkbox" id="ql-recurring" onchange="document.getElementById('ql-recurring-fields').style.display=this.checked?'block':'none'">
       <label for="ql-recurring">🔁 Recurring — add to bills list</label>
@@ -10170,6 +10180,10 @@ function openQuickLogModal() {
   // prior session might have left it hidden via type=income/savings).
   const _qlcf = $('ql-cat-field'); if (_qlcf) _qlcf.style.display = '';
   const _qltt = $('ql-txn-type'); if (_qltt) _qltt.value = 'expense'; // default type
+  // SLY-1: reset the savings goal-picker on every open (default type is
+  // expense → field hidden; selectTxnType re-shows + populates it for savings).
+  const _qlgf = $('ql-goal-field'); if (_qlgf) _qlgf.style.display = 'none';
+  const _qlgd = $('ql-goal-dest'); if (_qlgd) _qlgd.value = '';
   const _qlrec = $('ql-recurring'); if (_qlrec) _qlrec.checked = false;
   const _qlrf = $('ql-recurring-fields'); if (_qlrf) _qlrf.style.display = 'none';
   if ($('ql-day')) $('ql-day').value = '';
@@ -10371,6 +10385,50 @@ function quickLogTxn() {
     return;
   }
 
+  // SLY-1: Savings — route through the bucket-destination envelope so cash
+  // debits AND the chosen goal credits atomically (recordWithAllocation Phase
+  // 2.A, with the INV-28 free-money gate + INV-27 negative guard). Pre-fix the
+  // savings type fell through to the expense path below with NO destination, so
+  // cash dropped, no goal rose, and the money vanished (OPEN-BUGS #11). The
+  // chip + auto-category were wired in Bundle 28 r38 but this handler branch was
+  // never written. A goal pick is required; we refuse (no money moved) if blank.
+  if (txnType === 'savings') {
+    const _qlgd = $('ql-goal-dest');
+    const destName = _qlgd ? _qlgd.value : '';
+    if (!destName) {
+      EDIT_MODAL.openInfo({
+        title: 'Choose a goal',
+        body: 'Pick which savings goal this money is for before saving — otherwise it has nowhere to land.',
+      });
+      return;
+    }
+    const _savRes = BRAIN.transaction.recordWithAllocation(
+      { amt, note: note || 'Savings', cat: 'Savings', direction: 'outflow', _txnType: 'savings',
+        destination: { type: 'bucket', id: destName } },
+      BRAIN.SOURCES.LOG_SAVINGS
+    );
+    if (!_savRes.ok) {
+      // Surface the refusal in plain English (§8 — no native alert; map the raw
+      // reason code). Nothing was moved — recordWithAllocation rolls back.
+      let _msg;
+      if (_savRes.reason === 'insufficient-free-money') {
+        _msg = 'You’ve only got ' + fmtC(_savRes.available || 0) + ' free to save right now. Try a smaller amount.';
+      } else if (_savRes.reason === 'negative-warning-required') {
+        _msg = 'Saving ' + fmtC(amt) + ' would push your cash below zero. Lower the amount first.';
+      } else {
+        _msg = 'Couldn’t save to that goal — nothing was moved. (' + (_savRes.reason || 'unknown') + ')';
+      }
+      EDIT_MODAL.openInfo({ title: 'Can’t save that', body: _msg });
+      return;
+    }
+    BRAIN.bills.clearPendingPay();
+    closeModal('quick-log-modal');
+    document.querySelectorAll('.cat-chip').forEach(c => c.classList.remove('active'));
+    onStateChange('log-savings');
+    showUndoToast('-$' + amt.toFixed(2) + ' · Savings → ' + destName + ' · ' + (note || '—'));
+    return;
+  }
+
   // Expense / Transfer / One-off: deduct from balance immediately
   const flag = getHabitFlag(note, amt);
   // Bundle 30 Phase 1.B (FR-01) — composed writer eliminates the
@@ -10549,6 +10607,30 @@ function selectTxnType(btn, type) {
   } else {
     // Expense / Transfer — show category row so user can pick sub-category
     if (catField) catField.style.display = '';
+  }
+
+  // SLY-1: savings goal destination picker. Show + (re)populate only when
+  // type=savings; hide for every other type. Options are built via DOM nodes
+  // (not innerHTML) so user-named goals can't break the markup. The blank
+  // first option keeps the save guarded — quickLogTxn refuses an empty pick.
+  const goalField = document.getElementById('ql-goal-field');
+  const goalSel = document.getElementById('ql-goal-dest');
+  if (type === 'savings') {
+    if (goalSel) {
+      goalSel.innerHTML = '';
+      const blank = document.createElement('option');
+      blank.value = ''; blank.textContent = 'Choose goal…';
+      goalSel.appendChild(blank);
+      const _buckets = (BRAIN.savings && BRAIN.savings.getBuckets) ? BRAIN.savings.getBuckets() : [];
+      _buckets.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.name; opt.textContent = b.name;
+        goalSel.appendChild(opt);
+      });
+    }
+    if (goalField) goalField.style.display = '';
+  } else if (goalField) {
+    goalField.style.display = 'none';
   }
 }
 
@@ -20315,6 +20397,7 @@ const BRAIN = {
     LOG_EXPENSE:     'log-expense',
     LOG_INCOME:      'log-income',
     LOG_FROM_PERSON: 'log-from-person',
+    LOG_SAVINGS:     'log-savings', // SLY-1: Quick Log → Savings goal-destination path
     PAY_BILL_NOW:    'pay-bill-now',
     MARK_BILL_PAID:  'mark-bill-paid',
     BUCKET_QUICK_ADD: 'bucket-quick-add',
@@ -20439,7 +20522,7 @@ const BRAIN = {
   _SOURCE_SET: new Set([
     'roundup', 'undo-roundup', 'plan-add', 'plan-edit', 'manual',
     'reconcile', 'migration', 'chat',
-    'log-expense', 'log-income', 'log-from-person', 'pay-bill-now',
+    'log-expense', 'log-income', 'log-from-person', 'log-savings', 'pay-bill-now',
     'mark-bill-paid', 'bucket-quick-add',
     'unmark-bill', 'auto-match', 'auto-detect',
     'add-debt', 'clear-debt', 'unmark-debt', 'update-debt',
