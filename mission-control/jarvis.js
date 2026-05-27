@@ -655,7 +655,8 @@ function renderCaseFile(t) {
     (slot.unmappedTerritory || []).forEach(u => { const x = (typeof u === 'string' ? u : JSON.stringify(u)).trim(); if (x) spin.push(x); });
   });
   if (cf.audit && Array.isArray(cf.audit.caveats)) cf.audit.caveats.forEach(c => { const x = String(c || '').trim(); if (x) spin.push(x); });
-  const spinUniq = [...new Set(spin)].slice(0, 8);
+  const logged = cf.spinoffLogged || [];
+  const spinUniq = [...new Set(spin)].filter(x => !logged.includes(x)).slice(0, 8);   // drop ones already logged as tickets
   J._spin = J._spin || {}; J._spin[t.id] = spinUniq;   // referenced by index in logSpinoff (avoids attr-escaping)
   const spinoffBlock = spinUniq.length ? `
     <div class="cf-spinoff">
@@ -731,6 +732,7 @@ async function doBuildCase(id) {
 function logSpinoff(parentId, idx) {
   const text = ((J._spin || {})[parentId] || [])[idx] || '';
   if (!text) { toast('finding not found', 'err'); return; }
+  J._pendingSpinoff = { parentId, text };   // original text → recorded as logged so the list clears
   const title = text.length > 90 ? text.slice(0, 87) + '…' : text;
   modal(`<h2>Log as new ticket</h2>
     <p>Create a ticket from this spin-off finding, auto-linked back to <b>${esc(parentId)}</b>. Edit before creating.</p>
@@ -748,7 +750,7 @@ async function doLogSpinoff(parentId) {
   const type = ($('soType') ? $('soType').value : 'bug'); const severity = ($('soSev') ? $('soSev').value : 'P2');
   const parent = get(parentId);
   try {
-    const r = await action('createTicket', { title, summary, type, severity, surface: parent ? parent.group : null, parent: parentId });
+    const r = await action('createTicket', { title, summary, type, severity, surface: parent ? parent.group : null, parent: parentId, spinoffText: (J._pendingSpinoff || {}).text });
     closeModal(); toast(`Created ${r.id} — linked to ${parentId}`, 'ok');
     await load();
     if ((location.hash || '').includes('/ticket/' + parentId)) viewTicket(parentId);

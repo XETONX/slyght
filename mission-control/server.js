@@ -352,7 +352,7 @@ const ACTIONS = {
     return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.` };
   },
   // John (or a walk) creates a ticket → manual store (never clobbered by regen).
-  createTicket: ({ title, summary, surface, severity, type, parent }) => {
+  createTicket: ({ title, summary, surface, severity, type, parent, spinoffText }) => {
     if (!title) throw new Error('title required');
     if (type && !['bug', 'feature', 'task'].includes(type)) throw new Error('bad type');
     const all = [...TICKETS(), ...MANUAL()]; const nextN = Math.max(0, ...all.map(t => +(t.id.replace('SLY-', '') || 0))) + 1; const id = 'SLY-' + nextN;
@@ -362,8 +362,16 @@ const ACTIONS = {
     const links = (parent && /^SLY-\d+$/.test(parent)) ? [{ to: parent, why: 'spun off from this investigation' }] : [];
     m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links });
     fs.mkdirSync(path.dirname(manualPath), { recursive: true }); fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
-    const stt = readState(); const now = new Date().toISOString(); stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now }; writeState(stt);
-    return { ok: true, id };
+    const stt = readState(); const now = new Date().toISOString();
+    stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now };
+    // mark the spin-off as logged on the PARENT so the case-file spin-off list clears it (now it's a ticket)
+    if (parent && /^SLY-\d+$/.test(parent) && spinoffText && stt[parent]) {
+      stt[parent].caseFile = stt[parent].caseFile || {};
+      const sl = stt[parent].caseFile.spinoffLogged = stt[parent].caseFile.spinoffLogged || [];
+      if (!sl.includes(spinoffText)) sl.push(String(spinoffText).slice(0, 600));
+    }
+    writeState(stt);
+    return { ok: true, id, spawnedFrom: parent || null };
   },
   // John removes a ticket. MANUAL tickets (tickets-manual.json) are deleted outright;
   // GENERATED tickets (the read-only spine) can't be removed from the spine, so we
@@ -1290,8 +1298,20 @@ function launchScoped(id, task, afterResult, opts) {
 function sweepCase(id) {
   if (!/^SLY-\d+$/.test(id)) return { ok: false, reason: 'bad ticket id' };
   if (sweeps[id] && sweeps[id].status === 'running') return { ok: false, reason: 'a sweep is already running on ' + id };
-  const sw = sweeps[id] = { status: 'running', step: 'gather', cycle: 0, startedAt: Date.now(), finishedAt: null };
+  // Only dig MISSING slots. Filled ones (shown as "Re-dig" in the UI) are SKIPPED so a re-run never
+  // burns a drone re-doing finished work — exactly John's "only Dig status, not Re-dig".
+  const st0 = readState(); const cf0 = (st0[id] && st0[id].caseFile) || {};
+  const ticket0 = (mergedTickets().tickets || []).find(t => t.id === id);
+  const has = {
+    'root-cause': !!(cf0.rootCause && cf0.rootCause.rootCause),
+    'locate-surface': !!(cf0.surface && cf0.surface.surface),
+    'fix-proposal': !!(cf0.fix && cf0.fix.fix),
+    'conformance': !!(cf0.conformance && cf0.conformance.driftVerdict),
+  };
+  const sw = sweeps[id] = { status: 'running', step: 'gather', cycle: 0, startedAt: Date.now(), finishedAt: null, skipped: [] };
   const launch = (task, after) => { const r = launchScoped(id, task, after); if (!r.ok && after) { try { after({ skipped: true }); } catch (_) {} } };
+  // run `task` only if its slot is empty; a filled slot skips straight to `after` (no drone spawned)
+  const maybe = (task, after) => { if (has[task]) { sw.skipped.push(task); try { after({ skipped: true }); } catch (_) {} } else { launch(task, after); } };
   const finish = () => { sw.status = 'done'; sw.step = 'complete'; sw.finishedAt = Date.now(); };
   const audit = (cycle) => {
     sw.step = 'audit'; sw.cycle = cycle;
@@ -1303,12 +1323,12 @@ function sweepCase(id) {
       else { finish(); }
     });
   };
-  const phase3 = () => { sw.step = 'conformance'; launch('conformance', () => audit(1)); };
-  const phase2 = () => { sw.step = 'fix'; launch('fix-proposal', phase3); };
+  const phaseConf = () => { sw.step = 'conformance'; maybe('conformance', () => audit(1)); };
+  const phaseFix = () => { sw.step = 'fix'; maybe('fix-proposal', phaseConf); };
   let pending = 2;
-  const onGather = () => { if (--pending === 0) phase2(); };
-  launch('root-cause', onGather);       // phase 1: two independent gather drones in parallel (2 <= cap 3)
-  launch('locate-surface', onGather);
+  const onGather = () => { if (--pending === 0) phaseFix(); };
+  maybe('root-cause', onGather);        // phase 1: two independent gather drones in parallel, each skipped if already filled
+  maybe('locate-surface', onGather);
   return { ok: true, swept: id };
 }
 
