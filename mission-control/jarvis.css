@@ -2449,3 +2449,56 @@ body{ background-image:
 @keyframes fdUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
 .fd-flash{animation:fdFlash 1s var(--ease)}
 @keyframes fdFlash{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--cy),0 0 26px rgba(45,226,230,.3)}}
+
+/* ════════════════════════ FEATURE MAP — the constellation ════════════════════ */
+.fmap{position:relative;display:flex;gap:0;height:calc(100vh - 108px);min-height:560px;border-radius:16px;overflow:hidden;border:1px solid #16202f;--cy:#2de2e6;--am:#ffb454;--gn:#49d18b;--vi:#a98bf5;--rd:#f4767e}
+.fmap .cc-bg{inset:0;border-radius:0}
+.fmap > *:not(.cc-bg){position:relative;z-index:1}
+.fmap-side{width:236px;flex:0 0 236px;background:rgba(10,14,22,.78);border-right:1px solid #16202f;padding:18px 16px;overflow-y:auto;backdrop-filter:blur(3px)}
+.fmap-brand{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:800;letter-spacing:.16em;color:#eef6fb}
+.fmap-brand-glow{color:var(--cy);text-shadow:0 0 16px rgba(45,226,230,.6)}
+.fmap-sub{font-size:12px;color:#5e7491;line-height:1.5;margin:6px 0 18px}
+.fmap-side-h{font-family:ui-monospace,monospace;font-size:10px;font-weight:800;letter-spacing:.14em;color:#5e7491;text-transform:uppercase;margin:16px 0 8px}
+.fmap-surfaces{display:flex;flex-direction:column;gap:4px}
+.fmap-srow{display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:1px solid transparent;border-radius:8px;padding:7px 10px;cursor:pointer;font:inherit;font-size:13px;color:#bdd0e0;text-align:left;transition:background .14s,border-color .14s}
+.fmap-srow:hover{background:rgba(45,226,230,.08);border-color:rgba(45,226,230,.3);color:#eef6fb}
+.fmap-srow.hot{color:#f4a0a6}
+.fmap-sgaps{font-family:ui-monospace,monospace;font-size:11px;color:var(--rd);font-weight:700}
+.fmap-legend{display:flex;flex-direction:column;gap:6px}
+.fmap-lg{display:flex;align-items:center;gap:8px;font-size:12px;color:#8aa0b8}
+.fmap-dot{width:11px;height:11px;border-radius:50%;flex-shrink:0;border:1px solid rgba(255,255,255,.15)}
+.fdh-surface{background:var(--cy);box-shadow:0 0 7px var(--cy)}.fdh-epic{background:var(--vi);box-shadow:0 0 7px var(--vi)}
+.fdh-p0{background:var(--rd)}.fdh-p1{background:var(--am)}.fdh-p2{background:#6b7d96}.fdh-done{background:#2c3a4e}
+.fdh-live{background:var(--am);box-shadow:0 0 9px var(--am)}
+.fmap-stage{flex:1;position:relative;min-width:0}
+.fmap-svg{width:100%;height:100%;cursor:grab;display:block}
+.fmap-svg.grabbing{cursor:grabbing}
+.fmap-controls{position:absolute;top:14px;right:14px;z-index:3;display:flex;gap:6px}
+.fmap-ctrl{width:34px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(14,20,32,.8);border:1px solid #243349;border-radius:8px;color:#bdd0e0;font:inherit;font-size:15px;font-weight:700;cursor:pointer}
+.fmap-ctrl:hover{border-color:var(--cy);color:var(--cy)}
+.fmap-tip{position:absolute;left:14px;bottom:14px;z-index:3;background:rgba(10,14,22,.92);border:1px solid #243349;border-radius:10px;padding:9px 13px;display:none;max-width:300px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.fmap-tip b{display:block;font-size:13.5px;color:#eef6fb;font-family:ui-monospace,monospace}
+.fmap-tip span{font-size:12px;color:#8aa0b8}
+/* edges */
+.fmap-edge{stroke:#22324a;stroke-width:1}
+.fmap-edge-epic{stroke:rgba(169,139,245,.28)}
+.fmap-edge.fmap-hi{stroke:var(--cy);stroke-width:1.6;opacity:.9}
+/* nodes */
+.fmap-node{cursor:pointer}
+.fmap-node circle{transition:r .12s var(--ease),opacity .15s}
+.fn-ticket.fn-P0 circle{fill:var(--rd);stroke:#2a0e12;stroke-width:1}
+.fn-ticket.fn-P1 circle{fill:var(--am);stroke:#2a1c08;stroke-width:1}
+.fn-ticket.fn-P2 circle{fill:#6b7d96;stroke:#141c28;stroke-width:1}
+.fn-ticket.fn-done circle{fill:#2c3a4e;stroke:none}
+.fn-ticket.fn-live circle{stroke:var(--am);stroke-width:2;filter:drop-shadow(0 0 5px rgba(255,180,84,.8))}
+.fn-surface circle{fill:#0c1622;stroke:var(--cy);stroke-width:2;filter:drop-shadow(0 0 8px rgba(45,226,230,.45))}
+.fn-surface.fn-hot circle{stroke:var(--rd);filter:drop-shadow(0 0 9px rgba(244,118,126,.5))}
+.fn-epic circle{fill:#160f28;stroke:var(--vi);stroke-width:2;filter:drop-shadow(0 0 7px rgba(169,139,245,.5))}
+.fmap-nlabel{text-anchor:middle;font-size:11px;font-weight:600;fill:#aebfd2;font-family:-apple-system,"Segoe UI",sans-serif;pointer-events:none}
+.fn-surface .fmap-nlabel{fill:#cfeef2;font-size:12px}
+.fn-epic .fmap-nlabel{fill:#cbbcf6}
+/* hover focus */
+.fmap-focus .fmap-node:not(.fmap-hi){opacity:.18}
+.fmap-node.fmap-hi circle{filter:drop-shadow(0 0 10px currentColor)}
+.fmap-node.fmap-hi{opacity:1}
+@media(max-width:760px){.fmap-side{display:none}.fmap{height:calc(100vh - 96px)}}

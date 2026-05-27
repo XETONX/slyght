@@ -2427,6 +2427,131 @@ const RELATIONSHIPS = {
 };
 
 /* ════════════════════════ APP MAP — relationship graph ════════════════════ */
+/* ════════════════════════ FEATURE MAP — the constellation ════════════════════
+ * A force-directed graph of how slyght fits together: surfaces are hubs, tickets orbit their
+ * surface (colour = severity, dim = done), epics gather their stories. Cooling physics sim in
+ * vanilla JS + SVG; pan / zoom / hover-highlight / click-through. Per John's reference image. */
+const SVGNS = 'http://www.w3.org/2000/svg';
+async function viewGraphMap() {
+  if (!J.flows) J.flows = await api('/api/flows');
+  const v = $('view'); v.className = 'view fmap';
+  v.innerHTML = `
+    <div class="cc-bg" aria-hidden="true"></div>
+    <aside class="fmap-side">
+      <div class="fmap-brand"><span class="fmap-brand-glow">FEATURE</span> MAP</div>
+      <div class="fmap-sub">how slyght fits together — surfaces, tickets &amp; epics by relationship</div>
+      <div class="fmap-side-h">Surfaces</div>
+      <div class="fmap-surfaces" id="fmapSurfaces"></div>
+      <div class="fmap-side-h">Legend</div>
+      <div class="fmap-legend">
+        <span class="fmap-lg"><i class="fmap-dot fdh-surface"></i> Surface</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-epic"></i> Epic</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-p0"></i> P0</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-p1"></i> P1</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-p2"></i> P2</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-done"></i> Done</span>
+        <span class="fmap-lg"><i class="fmap-dot fdh-live"></i> Drones in</span>
+      </div>
+    </aside>
+    <div class="fmap-stage">
+      <div class="fmap-controls">
+        <button class="fmap-ctrl" onclick="fmapZoom(1.25)" title="Zoom in">+</button>
+        <button class="fmap-ctrl" onclick="fmapZoom(0.8)" title="Zoom out">&minus;</button>
+        <button class="fmap-ctrl" onclick="fmapReset()" title="Re-centre">reset</button>
+      </div>
+      <svg id="fmapSvg" class="fmap-svg" viewBox="0 0 1000 720" preserveAspectRatio="xMidYMid meet" role="img" aria-label="slyght feature map"><g id="fmapView"></g></svg>
+      <div class="fmap-tip" id="fmapTip"></div>
+    </div>`;
+  fmapBuild();
+}
+function fmapBuild() {
+  const ts = (J.tickets || []).filter(t => t.state.status !== 'Shipped');
+  const surfaceIds = [...new Set([...(J.flows.surfaces || []).map(s => s.id), ...ts.map(t => t.group).filter(Boolean)])];
+  const gapOf = id => { const s = (J.flows.surfaces || []).find(x => x.id === id); return s && s.counts ? s.counts.gaps : 0; };
+  const nodes = [], idx = {};
+  const add = n => { n.i = nodes.length; idx[n.key] = n.i; nodes.push(n); return n.i; };
+  surfaceIds.forEach(id => add({ key: 's:' + id, type: 'surface', label: niceSurface(id), surface: id, gaps: gapOf(id), r: 16 }));
+  ts.filter(t => t.type === 'epic').forEach(t => add({ key: 'e:' + t.id, type: 'epic', label: t.id, ref: t, r: 11 }));
+  ts.filter(t => t.type !== 'epic').forEach(t => add({ key: 't:' + t.id, type: 'ticket', label: t.id, ref: t, sev: t.severity, done: ['ConfirmedLive'].includes(t.state.status), live: fdLive(t.id), r: t.severity === 'P0' ? 8 : t.severity === 'P1' ? 6.5 : 5.5 }));
+  const edges = [];
+  ts.filter(t => t.type !== 'epic').forEach(t => {
+    if (t.group && idx['s:' + t.group] != null) edges.push({ s: idx['t:' + t.id], t: idx['s:' + t.group], k: 'surf' });
+    if (t.epic && idx['e:' + t.epic] != null) edges.push({ s: idx['t:' + t.id], t: idx['e:' + t.epic], k: 'epic' });
+  });
+  // init positions: surfaces on an inner ring, others scattered around
+  const W = 1000, H = 720, cx = W / 2, cy = H / 2;
+  const surf = nodes.filter(n => n.type === 'surface');
+  surf.forEach((n, k) => { const a = k / surf.length * Math.PI * 2; n.x = cx + Math.cos(a) * 180; n.y = cy + Math.sin(a) * 150; });
+  nodes.forEach(n => { if (n.x == null) { const a = Math.random() * Math.PI * 2, rr = 120 + Math.random() * 260; n.x = cx + Math.cos(a) * rr; n.y = cy + Math.sin(a) * rr; } n.vx = 0; n.vy = 0; });
+
+  const g = $('fmapView'); g.innerHTML = '';
+  const eEls = edges.map(e => { const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('class', 'fmap-edge fmap-edge-' + e.k); g.appendChild(ln); return ln; });
+  const nEls = nodes.map(n => {
+    const grp = document.createElementNS(SVGNS, 'g');
+    grp.setAttribute('class', 'fmap-node fn-' + n.type + (n.type === 'ticket' ? ' fn-' + n.sev + (n.done ? ' fn-done' : '') + (n.live ? ' fn-live' : '') : (n.type === 'surface' && n.gaps >= 3 ? ' fn-hot' : '')));
+    const c = document.createElementNS(SVGNS, 'circle'); c.setAttribute('r', n.r); grp.appendChild(c);
+    if (n.type !== 'ticket') { const tx = document.createElementNS(SVGNS, 'text'); tx.setAttribute('class', 'fmap-nlabel'); tx.setAttribute('y', n.r + 13); tx.textContent = n.label; grp.appendChild(tx); }
+    grp.addEventListener('mouseenter', () => fmapHover(n.i, true));
+    grp.addEventListener('mouseleave', () => fmapHover(n.i, false));
+    grp.addEventListener('click', (ev) => { ev.stopPropagation(); fmapClick(n); });
+    g.appendChild(grp); return grp;
+  });
+
+  J._fmap = { nodes, edges, eEls, nEls, alpha: 1, tx: 0, ty: 0, scale: 1, W, H, cx, cy, adj: buildAdj(nodes, edges) };
+  // sidebar surfaces
+  const sd = $('fmapSurfaces');
+  if (sd) sd.innerHTML = surf.sort((a, b) => b.gaps - a.gaps).map(n => `<button class="fmap-srow${n.gaps >= 3 ? ' hot' : ''}" onmouseenter="fmapHover(${n.i},true)" onmouseleave="fmapHover(${n.i},false)" onclick="location.hash='#/map/${n.surface}'"><span class="fmap-sname">${esc(n.label)}</span><span class="fmap-sgaps">${n.gaps || ''}</span></button>`).join('');
+  fmapBindStage();
+  fmapTick();
+}
+function buildAdj(nodes, edges) { const a = nodes.map(() => new Set()); edges.forEach(e => { a[e.s].add(e.t); a[e.t].add(e.s); }); return a; }
+function fmapTick() {
+  const M = J._fmap; if (!M || !document.getElementById('fmapSvg')) return;   // auto-stop when view changes
+  const { nodes, edges } = M;
+  if (M.alpha > 0.02) {
+    const REP = 2600, GRAV = 0.015;
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j]; let dx = a.x - b.x, dy = a.y - b.y; let d2 = dx * dx + dy * dy || 0.1;
+      const f = REP / d2; const d = Math.sqrt(d2); const ux = dx / d, uy = dy / d;
+      a.vx += ux * f; a.vy += uy * f; b.vx -= ux * f; b.vy -= uy * f;
+    }
+    edges.forEach(e => {
+      const a = nodes[e.s], b = nodes[e.t]; const L = e.k === 'epic' ? 70 : 64; const K = 0.02;
+      let dx = b.x - a.x, dy = b.y - a.y; const d = Math.sqrt(dx * dx + dy * dy) || 0.1; const f = (d - L) * K;
+      const ux = dx / d, uy = dy / d; a.vx += ux * f; a.vy += uy * f; b.vx -= ux * f; b.vy -= uy * f;
+    });
+    nodes.forEach(n => {
+      n.vx += (M.cx - n.x) * GRAV; n.vy += (M.cy - n.y) * GRAV;
+      n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx * M.alpha; n.y += n.vy * M.alpha;
+    });
+    M.alpha *= 0.99;
+  }
+  // paint
+  M.edges.forEach((e, k) => { const a = M.nodes[e.s], b = M.nodes[e.t]; const ln = M.eEls[k]; ln.setAttribute('x1', a.x); ln.setAttribute('y1', a.y); ln.setAttribute('x2', b.x); ln.setAttribute('y2', b.y); });
+  M.nodes.forEach((n, k) => M.nEls[k].setAttribute('transform', `translate(${n.x.toFixed(1)},${n.y.toFixed(1)})`));
+  requestAnimationFrame(fmapTick);
+}
+function fmapApplyView() { const M = J._fmap; if (!M) return; $('fmapView').setAttribute('transform', `translate(${M.tx},${M.ty}) scale(${M.scale})`); }
+function fmapZoom(f) { const M = J._fmap; if (!M) return; M.scale = Math.max(0.3, Math.min(3, M.scale * f)); fmapApplyView(); }
+function fmapReset() { const M = J._fmap; if (!M) return; M.tx = 0; M.ty = 0; M.scale = 1; M.alpha = Math.max(M.alpha, 0.3); fmapApplyView(); }
+function fmapBindStage() {
+  const svg = $('fmapSvg'); if (!svg) return;
+  let dragging = false, lx = 0, ly = 0;
+  svg.onmousedown = e => { dragging = true; lx = e.clientX; ly = e.clientY; svg.classList.add('grabbing'); };
+  window.addEventListener('mousemove', e => { if (!dragging || !J._fmap) return; J._fmap.tx += e.clientX - lx; J._fmap.ty += e.clientY - ly; lx = e.clientX; ly = e.clientY; fmapApplyView(); });
+  window.addEventListener('mouseup', () => { dragging = false; svg.classList.remove('grabbing'); });
+  svg.onwheel = e => { e.preventDefault(); fmapZoom(e.deltaY < 0 ? 1.12 : 0.89); };
+}
+function fmapHover(i, on) {
+  const M = J._fmap; if (!M) return; const g = $('fmapView'); if (!g) return;
+  if (!on) { g.classList.remove('fmap-focus'); M.nEls.forEach(el => el.classList.remove('fmap-hi', 'fmap-dim')); M.eEls.forEach(el => el.classList.remove('fmap-hi')); const tip = $('fmapTip'); if (tip) tip.style.display = 'none'; return; }
+  const near = M.adj[i]; g.classList.add('fmap-focus');
+  M.nEls.forEach((el, k) => { if (k === i || near.has(k)) { el.classList.add('fmap-hi'); el.classList.remove('fmap-dim'); } else { el.classList.add('fmap-dim'); el.classList.remove('fmap-hi'); } });
+  M.eEls.forEach((el, k) => el.classList.toggle('fmap-hi', M.edges[k].s === i || M.edges[k].t === i));
+  const n = M.nodes[i]; const tip = $('fmapTip');
+  if (tip) { const r = n.ref; tip.innerHTML = n.type === 'surface' ? `<b>${esc(n.label)}</b><span>surface · ${n.gaps} gap${n.gaps === 1 ? '' : 's'}</span>` : n.type === 'epic' ? `<b>${esc(r.id)}</b><span>epic · ${esc(String(r.title || '').slice(0, 40))}</span>` : `<b>${esc(r.id)} · ${r.severity}</b><span>${esc(String(r.title || '').slice(0, 46))}</span>`; tip.style.display = 'block'; }
+}
+function fmapClick(n) { if (n.type === 'surface') location.hash = '#/map/' + n.surface; else if (n.ref) location.hash = (n.type === 'epic' ? '#/epic/' : '#/ticket/') + n.ref.id; }
 async function viewMap(surfaceId) {
   if (!J.flows) J.flows = await api('/api/flows');
   if (!J.autotickets) await loadAutoTickets();
@@ -5452,7 +5577,7 @@ function route() {
   document.querySelectorAll('.rail a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
   if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
   else if (r === 'board') viewBoard();
-  else if (r === 'map') viewMap(parts[1]);
+  else if (r === 'map') { if (parts[1]) viewMap(parts[1]); else viewGraphMap(); }
   else if (r === 'knowledge') viewKnowledge(parts[1]);
   else if (r === 'calendar') viewCalendar();
   else if (r === 'planning') viewPlanning();
