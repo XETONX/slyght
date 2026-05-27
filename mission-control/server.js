@@ -737,6 +737,31 @@ const ACTIONS = {
     return { ok: true, dispatched: key, id };
   },
 
+  // Answer ALL of a ticket's open questions in ONE Jarvis reply (vs one-by-one). Reads the
+  // open-question lists across every case-file slot, asks Jarvis to work them, posts a 'jarvis' comment.
+  jarvisAskAll: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'jarvisAskAll needs confirm:true' };
+    const key = id + '#jarvis-chat';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'Jarvis is already replying on ' + id };
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const cf = (readState()[id] || {}).caseFile || {};
+    const qs = [];
+    ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) s.openQuestions.forEach(q => { const x = String(q || '').trim(); if (x) qs.push(x); }); });
+    const uniq = [...new Set(qs)];
+    if (!uniq.length) return { ok: false, reason: 'no open questions on ' + id };
+    const prompt = [
+      'You are Jarvis, advising John on slyght ticket ' + id + '. The investigation surfaced these OPEN QUESTIONS. Answer ALL of them, each clearly, in plain English — your recommendation + the why. Push back where a question rests on a wrong assumption. You MAY read the codebase; do NOT edit files.',
+      '## Ticket', ticket.title, String(ticket.summary || ''),
+      '## Evidence', caseFileDump(ticket, cf),
+      '## Open questions', uniq.map((q, i) => (i + 1) + '. ' + q).join('\n'),
+      '', 'Answer each as "**Q1.** <question> — <your answer>". Plain English, no preamble.',
+    ].join('\n');
+    spawnDrone({ key, id, task: 'jarvis-chat', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'think', budget: '3', maxTurns: 12, onResult: ({ job, resultText }) => postJarvisReply(id, resultText, job) });
+    return { ok: true, dispatched: key, id, questions: uniq.length };
+  },
+
   // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
   // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
   jarvisChat: ({ id, confirm }) => {

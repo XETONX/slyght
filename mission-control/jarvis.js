@@ -177,6 +177,128 @@ function goHash(h) {
 
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
 const SEVRANK = { P0: 0, P1: 1, P2: 2 };
+/* ════════════════════════ FLIGHTDECK — the management home ════════════════════
+ * One screen to run it all: tickets grouped by ACTION NEEDED (the pipeline stage), not a flat
+ * list — so parallel work never feels endless. Columns flow left->right: NEEDS YOU -> CAN BUNDLE
+ * -> READY TO FIX -> IN FLIGHT -> READY TO DEPLOY. See FLIGHTDECK-RETHINK.md. */
+function fdLive(id) { const s = (J.sweeps || {})[id]; return (s && s.status === 'running') || Object.values(J.ccjobs || {}).some(j => j.id === id && j.status === 'running'); }
+function fdDone(t) { return ['ConfirmedLive', 'Shipped'].includes(t.state.status); }
+function fdCaseComplete(t) { return ((t.caseFile && t.caseFile.audit && t.caseFile.audit.verdict) || '') === 'COMPLETE'; }
+function fdOpenQ(t) { const cf = t.caseFile || {}; let n = 0; ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) n += s.openQuestions.length; }); return n; }
+const FD_COLS = [
+  { key: 'needs',  lbl: 'NEEDS YOU',        sub: 'your call',      tone: 'needs'  },
+  { key: 'bundle', lbl: 'CAN BUNDLE',       sub: 'group & sweep',  tone: 'bundle' },
+  { key: 'fix',    lbl: 'READY TO FIX',     sub: 'hand to CC',     tone: 'fix'    },
+  { key: 'flight', lbl: 'IN FLIGHT',        sub: 'drones working', tone: 'flight' },
+  { key: 'deploy', lbl: 'READY TO DEPLOY',  sub: 'your push',      tone: 'deploy' },
+];
+function viewFlightdeck() {
+  const v = $('view'); v.className = 'view fdeck';
+  const ts = J.tickets || [];
+  const bySev = a => a.slice().sort((x, y) => SEVRANK[x.severity] - SEVRANK[y.severity]);
+
+  // Assign each non-shipped, non-epic ticket to ONE column, by pipeline priority.
+  const live = [], deploy = [], fix = [], needs = [];
+  ts.filter(t => t.type !== 'epic' && t.state.status !== 'Shipped').forEach(t => {
+    if (fdLive(t.id) || t.state.status === 'Investigating') live.push(t);
+    else if (t.state.status === 'ConfirmedLive') deploy.push(t);
+    else if (t.state.status === 'Aligned' || fdCaseComplete(t)) fix.push(t);
+    else needs.push(t);
+  });
+  const bundles = ts.filter(t => t.type === 'epic').map(e => {
+    const kids = ts.filter(k => k.epic === e.id && k.type !== 'epic');
+    return { e, total: kids.length, done: kids.filter(fdDone).length, open: kids.filter(k => !fdDone(k)).length, hot: kids.some(k => fdLive(k.id)) };
+  }).filter(g => g.open > 0).sort((a, b) => b.open - a.open);
+  const sets = { needs: bySev(needs), bundle: bundles, fix: bySev(fix), flight: bySev(live), deploy: bySev(deploy) };
+
+  const airborne = ts.filter(t => fdLive(t.id)).length;
+  const tri = (J._triage && J._triage.plan) || null;
+  const sitrepLine = tri && tri.summaryForJohn ? esc(tri.summaryForJohn)
+    : 'Ask Jarvis to read your whole backlog — architecture, invariants, live numbers — and tell you what actually matters.';
+  const triMeta = (J._triage && J._triage.ts) ? 'Jarvis read this ' + when(J._triage.ts) : 'no triage yet';
+
+  // severity spark on a card (left stripe handled in CSS via data-sev)
+  const card = (t, actions, opts = {}) => `<div class="fd-card${opts.cls ? ' ' + opts.cls : ''}" data-sev="${t.severity}" onclick="location.hash='#/ticket/${t.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/ticket/${t.id}'">
+      <div class="fd-card-top">
+        <span class="fd-id">${t.id}</span>
+        <span class="fd-sevtag s-${t.severity}">${t.severity}</span>
+        ${opts.tag || ''}
+      </div>
+      <div class="fd-title">${esc(String(t.title || '').slice(0, 76))}</div>
+      ${opts.prog != null ? `<div class="fd-prog"><span style="width:${opts.prog}%"></span></div>` : ''}
+      ${actions ? `<div class="fd-card-acts" onclick="event.stopPropagation()">${actions}</div>` : ''}
+    </div>`;
+
+  const renderers = {
+    needs: t => {
+      const q = fdOpenQ(t);
+      const started = fdCaseComplete(t) || (t.caseFile && Object.keys(t.caseFile).length);
+      const act = (t.state.status === 'Open' && !started)
+        ? `<button class="fd-btn fd-btn-go" onclick="boardBuildCase('${t.id}')">&#9889; Build case</button>`
+        : `<button class="fd-btn" onclick="align('${t.id}')">&check; Align</button>`;
+      return card(t, act + (q ? `<button class="fd-btn fd-btn-q" onclick="askQuestionAll('${t.id}')" title="Ask Jarvis all ${q} open question${q === 1 ? '' : 's'}">Ask Jarvis &middot; ${q}Q</button>` : ''),
+        { tag: `<span class="fd-statetag">${esc(STATUS_LABEL[t.state.status] || t.state.status)}</span>` });
+    },
+    fix: t => {
+      const res = t.caseFile && t.caseFile.resolution;
+      const handoff = t.state.status === 'Aligned'
+        ? `<button class="fd-btn fd-btn-go" onclick="dispatchToCC('${t.id}')">Hand to CC &rarr;</button>`
+        : `<button class="fd-btn" onclick="align('${t.id}')">&check; Align</button>`;
+      const resBtn = res ? '' : `<button class="fd-btn fd-btn-q" onclick="composeResolution('${t.id}')">Compose resolution</button>`;
+      return card(t, handoff + resBtn, { tag: res ? '<span class="fd-restag">&check; resolution</span>' : '<span class="fd-statetag">case complete</span>' });
+    },
+    flight: t => {
+      const s = (J.sweeps || {})[t.id]; const cs = caseScore(t);
+      const lbl = s && s.status === 'running' ? 'scoping &middot; ' + esc(s.step || 'gather') : t.state.status === 'Investigating' ? 'CC investigating' : 'working';
+      return card(t, `<span class="fd-liveact"><span class="fd-livedot"></span> ${lbl}</span>`, { cls: 'fd-card-live', prog: Math.round(cs / 5 * 100), tag: '<span class="fd-statetag">' + cs + '/5</span>' });
+    },
+    deploy: t => card(t, `<a class="fd-btn fd-btn-ship" href="#/deploy" onclick="event.stopPropagation()">Review &amp; push &rarr;</a>`, { tag: '<span class="fd-restag">&check; ready</span>' }),
+    bundle: g => `<div class="fd-card fd-bundle${g.hot ? ' fd-card-live' : ''}" onclick="location.hash='#/epic/${g.e.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/epic/${g.e.id}'">
+        <div class="fd-card-top"><span class="fd-id">${g.e.id}</span><span class="fd-bundle-n">${g.done}/${g.total}</span>${g.hot ? '<span class="fd-livedot"></span>' : ''}</div>
+        <div class="fd-title">${esc(String(g.e.title || '').slice(0, 64))}</div>
+        <div class="fd-prog fd-prog-bundle"><span style="width:${g.total ? Math.round(g.done / g.total * 100) : 0}%"></span></div>
+        <div class="fd-card-acts" onclick="event.stopPropagation()"><a class="fd-btn" href="#/epic/${g.e.id}">Open workspace &rarr;</a><span class="fd-bundle-open">${g.open} open</span></div>
+      </div>`,
+  };
+
+  const telem = FD_COLS.map((c, i) => {
+    const n = sets[c.key].length;
+    return `<button class="fd-tm fd-tm-${c.tone}${n ? ' on' : ''}" onclick="fdScrollTo('${c.key}')" style="--d:${i * 50}ms">
+        <b class="fd-tm-n">${n}</b><span class="fd-tm-l">${c.lbl.toLowerCase()}</span>
+      </button>`;
+  }).join('<span class="fd-tm-flow" aria-hidden="true">&rsaquo;</span>');
+
+  const cols = FD_COLS.map((c, i) => {
+    const items = sets[c.key];
+    const body = items.length ? items.map(renderers[c.key]).join('') : `<div class="fd-col-empty">${c.key === 'needs' ? 'All clear.' : c.key === 'flight' ? 'No drones in the air.' : c.key === 'deploy' ? 'Nothing ready.' : c.key === 'bundle' ? 'No active bundles.' : 'Nothing yet.'}</div>`;
+    return `<section class="fd-col fd-${c.tone}" id="fdcol-${c.key}" style="--d:${i * 70}ms">
+        <div class="fd-col-h"><div class="fd-col-htext"><span class="fd-col-lbl">${c.lbl}</span><span class="fd-col-sub">${c.sub}</span></div><span class="fd-col-n">${items.length}</span></div>
+        <div class="fd-col-rail"></div>
+        <div class="fd-col-list">${body}</div>
+      </section>`;
+  }).join('');
+
+  v.innerHTML = `
+    <div class="cc-bg" aria-hidden="true"></div>
+    <header class="fd-hero">
+      <div class="fd-hero-top">
+        <div class="fd-brandwrap">
+          <div class="fd-brand"><span class="fd-brand-glow">FLIGHT</span>DECK</div>
+          <div class="fd-air ${airborne ? 'on' : ''}"><span class="fd-radar"></span> ${airborne} drone${airborne === 1 ? '' : 's'} in the air</div>
+        </div>
+        <div class="fd-hero-acts">
+          <button class="fd-cta" onclick="askJarvisTriage()"><span aria-hidden="true">&#10022;</span> Ask Jarvis what matters</button>
+          <a class="fd-ghost" href="#/briefing">Briefing &rarr;</a>
+          <a class="fd-ghost" href="#/board">Board &rarr;</a>
+        </div>
+      </div>
+      <div class="fd-read"><span class="fd-read-k">JARVIS&rsquo;S READ</span> ${sitrepLine} <span class="fd-read-meta">&middot; ${triMeta}</span></div>
+      <div class="fd-telem">${telem}</div>
+    </header>
+    <div class="fd-board">${cols}</div>`;
+  dspEnsureBannerTimer();
+}
+function fdScrollTo(key) { const el = document.getElementById('fdcol-' + key); if (el) { el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); el.classList.remove('fd-flash'); void el.offsetWidth; el.classList.add('fd-flash'); } }
 async function viewOverview() {
   if (!J.flows) J.flows = await api('/api/flows');
   const v = $('view'); v.className = 'view maxw'; const ts = J.tickets;
@@ -1062,6 +1184,15 @@ async function composeResolution(id) {
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#resolution'] = { status: 'running', id, task: 'resolution', mode: 'gather', model: 'opus', started: Date.now() };
     J.dspWatch = id; await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
     dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Ask Jarvis ALL of a ticket's open questions at once → one clean threaded reply.
+async function askQuestionAll(id) {
+  try {
+    const r = await action('jarvisAskAll', { id, confirm: true });
+    toast(`Jarvis is answering ${r.questions || ''} question${r.questions === 1 ? '' : 's'} on ${id}`, 'ok');
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#jarvis-chat'] = { status: 'running', id, task: 'jarvis-chat', mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
 // Log a spin-off finding (by index into J._spin[parentId]) as a new ticket linked back to the parent.
@@ -5334,7 +5465,8 @@ function route() {
   else if (r === 'briefing') viewBriefing();
   else if (r === 'epic' && parts[1]) viewEpic(parts[1]);
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommandCentre(); }
-  else viewOverview();
+  else if (r === 'overview-classic') viewOverview();   // the old stat-card overview, still reachable
+  else viewFlightdeck();                                 // the management home
   renderTopbarStatus();
   renderNowBar();
   renderBackBtn();
