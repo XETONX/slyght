@@ -741,15 +741,34 @@ async function doDigThenAudit(id, task) {
     dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
-function renderCaseFile(t) {
+// Per-type case-file rows (dynamic templates, WS-5): a BUG gathers a diagnostic case; a FEATURE
+// gathers a build case (intent → surfaces → design → acceptance → conformance); a TASK gets a
+// lightweight breakdown. Each row owns one caseFile slot. The auditor + spin-off blocks are shared.
+function caseRows(t) {
   const cf = t.caseFile || {};
+  if (t.type === 'feature') {
+    return [
+      { task: 'intent', slotKey: 'intent', label: 'Intent & goal', filled: !!(cf.intent && cf.intent.intent),
+        summary: (cf.intent && cf.intent.intent) ? esc(String(cf.intent.intent).slice(0, 160)) : '' },
+      { task: 'locate-surface', slotKey: 'surface', label: 'Surfaces affected', filled: !!(cf.surface && cf.surface.surface),
+        summary: (cf.surface && cf.surface.surface) ? esc(cf.surface.surface) : '' },
+      { task: 'design', slotKey: 'design', label: 'Design — the shape', filled: !!(cf.design && cf.design.design),
+        summary: (cf.design && cf.design.design) ? esc(String(cf.design.design).slice(0, 160)) : '', dep: !(cf.intent && cf.intent.intent) ? 'needs intent first' : '' },
+      { task: 'acceptance', slotKey: 'acceptance', label: 'Acceptance criteria', filled: !!(cf.acceptance && cf.acceptance.criteria),
+        summary: (cf.acceptance && Array.isArray(cf.acceptance.criteria)) ? esc(cf.acceptance.criteria.length + ' criteria · ' + String(cf.acceptance.criteria[0] || '').slice(0, 90)) : '', dep: !(cf.design && cf.design.design) ? 'needs a design first' : '' },
+      { task: 'conformance', slotKey: 'conformance', label: 'Conformance (FIT)', filled: !!(cf.conformance && cf.conformance.driftVerdict),
+        summary: (cf.conformance && cf.conformance.driftVerdict) ? esc(cf.conformance.driftVerdict) + (cf.conformance.notes ? ' — ' + esc(String(cf.conformance.notes).slice(0, 90)) : '') : '' },
+    ];
+  }
+  if (t.type === 'task') {
+    return [
+      { task: 'breakdown', slotKey: 'breakdown', label: 'Steps & done-when', filled: !!(cf.breakdown && cf.breakdown.steps),
+        summary: (cf.breakdown && Array.isArray(cf.breakdown.steps)) ? esc(cf.breakdown.steps.length + ' step' + (cf.breakdown.steps.length === 1 ? '' : 's') + (cf.breakdown.doneWhen ? ' · done when: ' + String(cf.breakdown.doneWhen).slice(0, 80) : '')) : '' },
+    ];
+  }
+  // bug (default) — the diagnostic shape
   const rc = cf.rootCause || {};
-  const audit = cf.audit || null;
-  // scoped drones running on THIS ticket right now (live), keyed by task
-  const running = {}; Object.values(J.ccjobs || {}).forEach(v => { if (v.id === t.id && v.status === 'running' && v.task) running[v.task] = true; });
-  const sv = (audit && audit.slots) || {};   // per-slot auditor verdicts
-
-  const rows = [
+  return [
     { task: 'root-cause', slotKey: 'rootCause', label: 'Root cause & mechanism', filled: !!rc.rootCause,
       summary: rc.rootCause ? esc(String(rc.rootCause).slice(0, 150)) : '',
       extra: (rc.files && rc.files.length) ? `<div class="cf-files">${rc.files.length} file${rc.files.length === 1 ? '' : 's'} · ledger: ${esc(String(rc.ledgerVerdict || 'n/a').slice(0, 40))}</div>` : '' },
@@ -762,7 +781,18 @@ function renderCaseFile(t) {
     { task: 'walk', slotKey: 'walk', label: 'Walk evidence (live proof)', filled: !!(t.rich && t.rich.evidence), walk: true,
       summary: (t.rich && t.rich.evidence) ? 'walked' : '' },
   ];
+}
+function renderCaseFile(t) {
+  const cf = t.caseFile || {};
+  const rc = cf.rootCause || {};
+  const audit = cf.audit || null;
+  // scoped drones running on THIS ticket right now (live), keyed by task
+  const running = {}; Object.values(J.ccjobs || {}).forEach(v => { if (v.id === t.id && v.status === 'running' && v.task) running[v.task] = true; });
+  const sv = (audit && audit.slots) || {};   // per-slot auditor verdicts
+  const rows = caseRows(t);                   // type-aware: bug / feature / task
   const filled = rows.filter(r => r.filled).length;
+  const res = cf.resolution || null;          // the composed end-of-investigation resolution (dual narrative)
+  const resRunning = !!(J.ccjobs && J.ccjobs[t.id + '#resolution'] && J.ccjobs[t.id + '#resolution'].status === 'running');
 
   const rowsHtml = rows.map(r => {
     const v = sv[r.slotKey] || '';
@@ -789,7 +819,10 @@ function renderCaseFile(t) {
   } else if (!audit) {
     auditHtml = `<span class="cf-audit-msg">Not audited yet — the auditor verifies completeness, merges findings, and decides if a targeted re-dig is needed.</span><button class="btn sm" onclick="runAudit('${t.id}')">Audit case</button>`;
   } else if (audit.verdict === 'COMPLETE') {
-    auditHtml = `<span><span class="cf-audit-tag cf-v-complete">✓ Complete</span> ready to align${(audit.caveats && audit.caveats.length) ? ` · ${audit.caveats.length} caveat(s)` : ''}</span><button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
+    const composeBtn = res ? '' : resRunning
+      ? `<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> composing…</span>`
+      : `<button class="btn sm primary" onclick="composeResolution('${t.id}')"><span aria-hidden="true">✦</span> Compose resolution</button>`;
+    auditHtml = `<span><span class="cf-audit-tag cf-v-complete">✓ Complete</span> ready to align${(audit.caveats && audit.caveats.length) ? ` · ${audit.caveats.length} caveat(s)` : ''}</span><button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>${composeBtn}`;
   } else {
     const nd = audit.nextDig || null;
     const ndTask = ccNextDigTask(t, audit);   // robust: handles vague "Gather" / already-filled → first MISSING slot
@@ -801,6 +834,20 @@ function renderCaseFile(t) {
     auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(TASK_LABEL[ndTask] || nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` + ndBtn;
   }
   const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
+  // The resolution — the dual narrative (story for John + technical brief for CC). Rendered at the TOP
+  // of the case file when present, because it's the headline: what this all means + what CC will do.
+  const resolutionBlock = res ? `
+    <div class="cf-resolution">
+      <div class="cf-res-h"><span aria-hidden="true">✦</span> Resolution <span class="cf-res-sub">— the story, and the brief for CC</span></div>
+      ${res.story ? `<div class="cf-res-story">${esc(res.story)}</div>` : (res.raw ? `<div class="cf-res-story">${esc(res.raw)}</div>` : '')}
+      ${(res.problem || res.resolution || res.verify) ? `<div class="cf-res-kvs">
+        ${res.problem ? `<div class="cf-res-kv"><span>Problem</span> ${esc(res.problem)}</div>` : ''}
+        ${res.resolution ? `<div class="cf-res-kv"><span>${t.type === 'feature' ? 'Build' : t.type === 'task' ? 'Do' : 'Fix'}</span> ${esc(res.resolution)}</div>` : ''}
+        ${res.verify ? `<div class="cf-res-kv"><span>Verify</span> ${esc(res.verify)}</div>` : ''}
+      </div>` : ''}
+      ${res.technical ? `<details class="cf-res-tech"><summary>Technical brief — for CC</summary><div class="cf-res-techbody txt md">${mdToHtml(res.technical)}</div></details>` : ''}
+      <button class="btn sm cf-res-recompose" onclick="composeResolution('${t.id}')">Recompose</button>
+    </div>` : '';
 
   // Spin-off findings — split into THREE buckets so the list isn't noise (Stage 2c):
   //   • Potential tickets  (unmappedTerritory) — real out-of-scope findings → loggable, with "Log all"
@@ -833,9 +880,9 @@ function renderCaseFile(t) {
   const sweepRunning = sw && sw.status === 'running';
   return `<div class="card cf-card">
     <div class="cf-cardhead">
-      <div class="label">Case file — evidence</div>
+      <div class="label">Case file — ${t.type === 'feature' ? 'the build' : t.type === 'task' ? 'the work' : 'evidence'}</div>
       <div class="cf-headright">
-        <span class="cf-progress">${filled}/5 gathered</span>
+        <span class="cf-progress">${filled}/${rows.length} gathered</span>
         ${(J.ccjobs && J.ccjobs[t.id + '#organize'] && J.ccjobs[t.id + '#organize'].status === 'running')
           ? `<span class="cf-sweep"><span class="cf-spin" aria-hidden="true"></span> organizing…</span>`
           : `<button class="btn sm" onclick="jarvisOrganize('${t.id}')" title="Jarvis suggests epic / bundle / related tickets"><span aria-hidden="true">✦</span> Organize</button>`}
@@ -844,6 +891,7 @@ function renderCaseFile(t) {
           : `<button class="btn sm primary" onclick="buildCase('${t.id}')">⚡ Build the case</button>`}
       </div>
     </div>
+    ${resolutionBlock}
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
     ${merged}
@@ -955,7 +1003,7 @@ async function createEpicFrom(id, name) {
 // Dispatch a scoped GATHER drone (light confirm — it's read-only + on your plan, no cost-cap friction).
 function digScoped(id, task) {
   if (task === 'walk') { const tk = get(id); goWalkDrone(tk ? tk.group : ''); return; }   // walk isn't a scoped task
-  const labels = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor' };
+  const labels = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance criteria', 'breakdown': 'Breakdown' };
   const lbl = labels[task] || task;
   modal(`<h2>Dispatch ${esc(lbl)} drone</h2>
     <p>Spawns a <b>read-only</b> CC drone scoped to <b>${esc(lbl.toLowerCase())}</b> on ${esc(id)}. It edits nothing, runs on your plan, takes a few minutes, and <b>auto-fills the case file</b> when done.</p>
@@ -981,9 +1029,15 @@ function runAudit(id) {
 }
 // "Build the case" — the parallel sweep. Fans out the scoped drones in a converging DAG + auditor.
 function buildCase(id) {
+  const t = get(id) || {};
+  const flow = t.type === 'feature'
+    ? `<b>intent + surfaces</b> (parallel), then <b>design</b>, <b>acceptance</b>, <b>conformance</b>, and the <b>auditor</b>`
+    : t.type === 'task'
+      ? `a <b>breakdown</b> (steps + done-when), then the <b>auditor</b>`
+      : `<b>root cause + surface</b> (parallel), then <b>fix</b>, <b>conformance</b>, and the <b>auditor</b>`;
   modal(`<h2><span aria-hidden="true">⚡</span> Build the case — ${esc(id)}</h2>
-    <p>Fans out the scoped drones — <b>root cause + surface</b> (parallel), then <b>fix</b>, <b>conformance</b>, and the <b>auditor</b>. On a gap it runs one targeted re-dig and re-audits, then converges. Fills the whole case file so you can align in one read.</p>
-    <p class="cf-sweep-note">~5–7 read-only drones · runs on your plan · ~20–30 min · converges automatically · never pushes or deploys.</p>
+    <p>Fans out the scoped drones for this <b>${esc(t.type || 'bug')}</b> — ${flow}. On a gap it runs one targeted re-dig and re-audits, then converges. Fills the whole case file so you can align in one read.</p>
+    <p class="cf-sweep-note">read-only drones · runs on your plan · converges automatically · never pushes or deploys.</p>
     <div class="btns"><button class="btn primary" onclick="doBuildCase('${id}')"><span aria-hidden="true">⚡</span> Build the case</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
 }
 async function doBuildCase(id) {
@@ -996,6 +1050,18 @@ async function doBuildCase(id) {
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
     dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Compose the end-of-investigation resolution (dual narrative) — an Opus drone synthesises the
+// complete case into a plain-English story for John + a technical brief for CC. Read-only.
+async function composeResolution(id) {
+  try {
+    await action('composeResolution', { id, confirm: true });
+    toast('Composing the resolution — Opus is synthesising the case', 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#resolution'] = { status: 'running', id, task: 'resolution', mode: 'gather', model: 'opus', started: Date.now() };
+    J.dspWatch = id; await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
 // Log a spin-off finding (by index into J._spin[parentId]) as a new ticket linked back to the parent.
@@ -1985,7 +2051,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {

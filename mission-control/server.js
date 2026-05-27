@@ -707,6 +707,36 @@ const ACTIONS = {
     return { ok: true, idx: i, ticketId };
   },
 
+  // Compose the END-OF-INVESTIGATION resolution — an Opus drone reads the COMPLETE case file and writes
+  // the DUAL NARRATIVE: a plain-English story for John (problem -> cause -> the fix -> how we'll know) +
+  // a technical appendix for CC (precise change, file:line, what to verify). caseFile.resolution; this is
+  // the trust artifact that flows into the handoff / Deploy. Read-only, confirm-gated. See BEEFY-PLAN.md WS-5.
+  composeResolution: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'composeResolution needs confirm:true' };
+    const key = id + '#resolution';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'already composing a resolution for ' + id };
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const cf = (readState()[id] || {}).caseFile || {};
+    const kind = ticket.type === 'feature' ? 'feature' : ticket.type === 'task' ? 'task' : 'bug';
+    const prompt = [
+      'You are Jarvis, writing the END-OF-INVESTIGATION RESOLUTION for ' + id + ' (a ' + kind + ') on slyght. The case file below is everything the drones gathered. Synthesise it into TWO layers — do NOT start a new investigation:',
+      '1. A STORY for John — plain English, no jargon, real names/numbers. For a bug: what was wrong, why, the fix we will make, and how we will know it worked. For a feature: the goal, the shape we will build, what "done" looks like. For a task: what we will do and the done-when. 4-6 sentences, genuinely readable.',
+      '2. A TECHNICAL appendix for CC (the engineer who implements it): the precise change/build, the file:line change-sites, the INV-NN invariants or acceptance criteria to satisfy, and exactly what to verify. Terse and exact.',
+      'You MAY read the codebase to ground it; do NOT edit files.',
+      '## Ticket', ticket.title, String(ticket.summary || ''),
+      '## The case file (gathered evidence)', caseFileDump(ticket, cf),
+      '',
+      'End with EXACTLY ONE fenced json block: {"story":"the plain-English story for John","technical":"the technical appendix for CC","problem":"one line","resolution":"the fix/build in one line","verify":"how we will know it worked"}',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'resolution', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '6', maxTurns: 14,
+      onResult: ({ job, resultText }) => recordResolution(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
+  },
+
   // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
   // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
   jarvisChat: ({ id, confirm }) => {
@@ -1222,7 +1252,64 @@ const SCOPED_TASKS = {
       'JSON schema: {"task":"auditor","cycle":1,"slots":{"rootCause":"BACKED","files":"BACKED","fix":"THIN","surface":"BACKED","conformance":"MISSING","walk":"MISSING"},"merged":"one-paragraph converged case","verdict":"COMPLETE|GAP","nextDig":null,"caveats":[]}',
     ].join('\n'),
   },
+  // ── FEATURE / TASK scopes — a BUILD shape, not a diagnostic one. A feature ticket gathers
+  // intent → design → acceptance (reusing locate-surface + conformance); a task just gets a breakdown.
+  'intent': {
+    label: 'Intent', slot: 'intent', mode: 'plan', model: 'sonnet', reasoning: 'think',
+    directive: [
+      'This is a FEATURE/initiative, not a bug. Capture the INTENT in plain English: who it is for (John — be specific to his daily use), the user-facing goal, why now, and what success looks like. Ground it in how slyght works today (read the relevant surface) but do NOT design the solution (that is the design drone) or write acceptance checks (acceptance drone).',
+      'DO NOT: propose code, judge architecture, or enumerate steps. Just the intent + success picture.',
+      'JSON schema: {"task":"intent","slot":"intent","findings":{"intent":"one-paragraph plain-English goal","forWho":"...","whyNow":"...","success":"what good looks like"},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'design': {
+    label: 'Design', slot: 'design', mode: 'plan', model: 'opus', reasoning: 'think',
+    directive: [
+      'Given the INTENT in the case file, design the minimal SHAPE of the build for slyght (single-file index.html; global S; BRAIN bubbles are the canonical writers). Describe the approach, the components/state involved, where it lives (file:line), the data shape, and how it fits the existing architecture WITHOUT inventing a parallel system. Reuse canonical writers + SOURCES tags.',
+      'DO NOT: re-state the intent; write acceptance criteria; judge conformance (that drone does). If the intent is unclear, set intentGap to one sentence and stop.',
+      'JSON schema: {"task":"design","slot":"design","findings":{"design":"the approach","components":["..."],"changeSites":[{"path":"index.html","line":0}],"dataShape":"...","intentGap":null},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'acceptance': {
+    label: 'Acceptance', slot: 'acceptance', mode: 'plan', model: 'sonnet', reasoning: 'think',
+    directive: [
+      'Given the intent + design in the case file, write concrete ACCEPTANCE CRITERIA: testable done-when checks (each a single observable outcome on John\'s S23 Android Chrome PWA), the edge cases to cover, and the phone-verify (Open · Do · PASS · FAIL). Plain English, real numbers/names where known.',
+      'DO NOT: design the solution or judge architecture. Just the checks that prove it works.',
+      'JSON schema: {"task":"acceptance","slot":"acceptance","findings":{"criteria":["testable done-when"],"edgeCases":["..."],"phoneVerify":{"open":"...","do":"...","pass":"...","fail":"..."}},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
+  'breakdown': {
+    label: 'Breakdown', slot: 'breakdown', mode: 'plan', model: 'sonnet', reasoning: 'off',
+    directive: [
+      'This is a TASK — a concrete piece of work, not a bug or a feature. Break it into a short ordered list of STEPS, each a single action, with a clear DONE-WHEN for the whole task. Ground it in the actual codebase where relevant (file:line). Keep it tight — a checklist, not an essay.',
+      'DO NOT: over-engineer, design a system, or pad. Just the steps + done-when.',
+      'JSON schema: {"task":"breakdown","slot":"breakdown","findings":{"steps":["step 1","step 2"],"doneWhen":"the single condition that means this is finished","files":[{"path":"...","line":0}]},"confidence":"high|medium|low","openQuestions":[],"unmappedTerritory":[]}',
+    ].join('\n'),
+  },
 };
+// The per-type investigation pipeline — bug = diagnostic, feature = build, task = checklist. sweepCase
+// runs `parallel` concurrently, then `chain` in sequence, then the auditor (if audit). See BEEFY-PLAN.md WS-5.
+const PIPELINES = {
+  bug:     { parallel: ['root-cause', 'locate-surface'], chain: ['fix-proposal', 'conformance'], audit: true },
+  feature: { parallel: ['intent', 'locate-surface'], chain: ['design', 'acceptance', 'conformance'], audit: true },
+  task:    { parallel: ['breakdown'], chain: [], audit: true },
+};
+const pipelineFor = (t) => PIPELINES[(t && t.type) === 'feature' ? 'feature' : (t && t.type) === 'task' ? 'task' : 'bug'];
+// Is a given scoped task's caseFile slot already filled? (drives the sweep's skip-don't-redo behaviour)
+function slotFilled(task, cf) {
+  cf = cf || {};
+  switch (task) {
+    case 'root-cause':     return !!(cf.rootCause && cf.rootCause.rootCause);
+    case 'locate-surface': return !!(cf.surface && cf.surface.surface);
+    case 'fix-proposal':   return !!(cf.fix && cf.fix.fix);
+    case 'conformance':    return !!(cf.conformance && cf.conformance.driftVerdict);
+    case 'intent':         return !!(cf.intent && cf.intent.intent);
+    case 'design':         return !!(cf.design && cf.design.design);
+    case 'acceptance':     return !!(cf.acceptance && cf.acceptance.criteria);
+    case 'breakdown':      return !!(cf.breakdown && cf.breakdown.steps);
+    default:               return false;
+  }
+}
 
 // Readable dump of a ticket's CURRENT evidence — fed to every drone so it never re-derives.
 function caseFileDump(ticket, cf) {
@@ -1241,6 +1328,11 @@ function caseFileDump(ticket, cf) {
     '- Conformance: ' + ((cf.conformance && cf.conformance.driftVerdict) || '(EMPTY — needs conformance drone)'),
     '- Walk evidence: ' + (rich.evidence ? 'present' : '(EMPTY — needs walk drone)'),
   ];
+  // Feature / task build slots — only listed when present, so a bug case file stays lean.
+  if (cf.intent && cf.intent.intent) lines.push('- Intent: ' + cf.intent.intent);
+  if (cf.design && cf.design.design) lines.push('- Design: ' + cf.design.design);
+  if (cf.acceptance && Array.isArray(cf.acceptance.criteria)) lines.push('- Acceptance: ' + cf.acceptance.criteria.join(' | '));
+  if (cf.breakdown && Array.isArray(cf.breakdown.steps)) lines.push('- Steps: ' + cf.breakdown.steps.join(' | ') + (cf.breakdown.doneWhen ? ' (done when: ' + cf.breakdown.doneWhen + ')' : ''));
   if (cf.audit) lines.push('- Last audit: cycle ' + (cf.audit.cycle || 1) + ' -> ' + cf.audit.verdict + (cf.audit.nextDig ? ' (gap: ' + (cf.audit.nextDig.scope || cf.audit.nextDig.why || '') + ')' : ''));
   return lines.join('\n');
 }
@@ -1273,6 +1365,10 @@ function recordScopedResult(id, task, spec, parsed, job, resultText) {
       else if (task === 'locate-surface') t.caseFile.surface = Object.assign({}, f, meta);
       else if (task === 'fix-proposal') t.caseFile.fix = Object.assign({}, f, meta);
       else if (task === 'conformance') t.caseFile.conformance = Object.assign({}, f, meta);
+      else if (task === 'intent') t.caseFile.intent = Object.assign({}, f, meta);
+      else if (task === 'design') t.caseFile.design = Object.assign({}, f, meta);
+      else if (task === 'acceptance') t.caseFile.acceptance = Object.assign({}, f, meta);
+      else if (task === 'breakdown') t.caseFile.breakdown = Object.assign({}, f, meta);
       else if (task === 'auditor') t.caseFile.audit = { ts, model: job.model, verdict: parsed.verdict || null, nextDig: parsed.nextDig || null, slots: parsed.slots || {}, merged: parsed.merged || '', cycle: parsed.cycle || 1, caveats: parsed.caveats || [] };
     }
     const telem = [job.turns != null ? job.turns + ' turns' : null, job.durationMs != null ? (job.durationMs / 60000).toFixed(1) + ' min' : null].filter(Boolean).join(' · ');
@@ -1415,6 +1511,19 @@ function recordTriagePlan(resultText, job) {
   });
 }
 
+// Store the composed resolution (dual narrative) on the ticket caseFile + post the story to the thread.
+function recordResolution(id, resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.caseFile = t.caseFile || {};
+    t.caseFile.resolution = parsed
+      ? Object.assign({ ts: new Date().toISOString(), model: job && job.model }, parsed)
+      : { ts: new Date().toISOString(), raw: String(resultText || '').slice(0, 4000) };
+    t.thread.push({ author: 'jarvis', text: '**Resolution composed**\n\n' + (parsed ? (parsed.story || '(see the resolution on the ticket)') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
 // Store Jarvis's organize suggestion on the ticket caseFile + post a short comment. Best-effort.
 function recordOrganize(id, resultText, job) {
   try {
@@ -1444,6 +1553,10 @@ function scopedSummary(task, parsed) {
   if (task === 'locate-surface') return f.surface ? '**Surface:** ' + f.surface + (f.mapStale ? ' (map stale)' : '') : '';
   if (task === 'fix-proposal') return f.fix ? '**Proposed fix.** ' + f.fix : '';
   if (task === 'conformance') return f.driftVerdict ? '**Conformance:** ' + f.driftVerdict + (f.notes ? ' — ' + f.notes : '') : '';
+  if (task === 'intent') return f.intent ? '**Intent.** ' + f.intent : '';
+  if (task === 'design') return f.design ? '**Design.** ' + f.design + (files ? '\n\n**Change sites:** ' + files : '') : '';
+  if (task === 'acceptance') return Array.isArray(f.criteria) && f.criteria.length ? '**Acceptance criteria.**\n' + f.criteria.map(c => '- ' + c).join('\n') : '';
+  if (task === 'breakdown') return Array.isArray(f.steps) && f.steps.length ? '**Steps.**\n' + f.steps.map((s, i) => (i + 1) + '. ' + s).join('\n') + (f.doneWhen ? '\n\n**Done when:** ' + f.doneWhen : '') : '';
   if (task === 'auditor') return '**Audit:** ' + (parsed.verdict || '?') + (parsed.nextDig ? ' — next: ' + (parsed.nextDig.drone || '') + ' (' + (parsed.nextDig.why || '') + ')' : '') + (parsed.merged ? '\n\n' + parsed.merged : '');
   return '';
 }
@@ -1506,6 +1619,10 @@ function taskKeyFromDroneServer(d) {
   if (d.includes('surface') || d.includes('locate')) return 'locate-surface';
   if (d.includes('fix')) return 'fix-proposal';
   if (d.includes('conform')) return 'conformance';
+  if (d.includes('intent')) return 'intent';
+  if (d.includes('design')) return 'design';
+  if (d.includes('accept')) return 'acceptance';
+  if (d.includes('breakdown') || d.includes('steps')) return 'breakdown';
   return '';   // walk (manual) or unknown
 }
 // Build the scoped prompt + spawn ONE gather drone; record its evidence; then optionally chain
@@ -1547,28 +1664,22 @@ function launchScoped(id, task, afterResult, opts) {
   });
   return { ok: true, key };
 }
-// The converging DAG. root-cause ∥ locate-surface -> fix-proposal -> conformance -> auditor;
-// GAP -> ONE targeted re-dig -> auditor(2) -> done. Each step advances on the prior drone's
-// onResult. A failed launch (e.g. already running) still advances the chain so it never stalls.
+// The converging DAG, PER-TYPE (PIPELINES): bug = root-cause ∥ locate-surface -> fix -> conformance;
+// feature = intent ∥ locate-surface -> design -> acceptance -> conformance; task = breakdown. Then the
+// auditor; GAP -> ONE targeted re-dig -> auditor(2) -> done. A failed/skipped launch still advances the
+// chain so it never stalls. Filled slots are SKIPPED (John's "only Dig, not Re-dig").
 function sweepCase(id) {
   if (!/^SLY-\d+$/.test(id)) return { ok: false, reason: 'bad ticket id' };
   if (sweeps[id] && sweeps[id].status === 'running') return { ok: false, reason: 'a sweep is already running on ' + id };
-  // Only dig MISSING slots. Filled ones (shown as "Re-dig" in the UI) are SKIPPED so a re-run never
-  // burns a drone re-doing finished work — exactly John's "only Dig status, not Re-dig".
-  const st0 = readState(); const cf0 = (st0[id] && st0[id].caseFile) || {};
   const ticket0 = (mergedTickets().tickets || []).find(t => t.id === id);
-  const has = {
-    'root-cause': !!(cf0.rootCause && cf0.rootCause.rootCause),
-    'locate-surface': !!(cf0.surface && cf0.surface.surface),
-    'fix-proposal': !!(cf0.fix && cf0.fix.fix),
-    'conformance': !!(cf0.conformance && cf0.conformance.driftVerdict),
-  };
-  const sw = sweeps[id] = { status: 'running', step: 'gather', cycle: 0, startedAt: Date.now(), finishedAt: null, skipped: [] };
+  const pipe = pipelineFor(ticket0);
+  const sw = sweeps[id] = { status: 'running', step: 'gather', cycle: 0, type: (ticket0 && ticket0.type) || 'bug', startedAt: Date.now(), finishedAt: null, skipped: [] };
   const launch = (task, after) => { const r = launchScoped(id, task, after); if (!r.ok && after) { try { after({ skipped: true }); } catch (_) {} } };
   // run `task` only if its slot is empty; a filled slot skips straight to `after` (no drone spawned)
-  const maybe = (task, after) => { if (has[task]) { sw.skipped.push(task); try { after({ skipped: true }); } catch (_) {} } else { launch(task, after); } };
+  const maybe = (task, after) => { const cf = (readState()[id] || {}).caseFile || {}; if (slotFilled(task, cf)) { sw.skipped.push(task); try { after({ skipped: true }); } catch (_) {} } else { launch(task, after); } };
   const finish = () => { sw.status = 'done'; sw.step = 'complete'; sw.finishedAt = Date.now(); };
   const audit = (cycle) => {
+    if (!pipe.audit) { finish(); return; }
     sw.step = 'audit'; sw.cycle = cycle;
     launch('auditor', () => {
       const st = readState();
@@ -1578,13 +1689,17 @@ function sweepCase(id) {
       else { finish(); }
     });
   };
-  const phaseConf = () => { sw.step = 'conformance'; maybe('conformance', () => audit(1)); };
-  const phaseFix = () => { sw.step = 'fix'; maybe('fix-proposal', phaseConf); };
-  let pending = 2;
-  const onGather = () => { if (--pending === 0) phaseFix(); };
-  maybe('root-cause', onGather);        // phase 1: two independent gather drones in parallel, each skipped if already filled
-  maybe('locate-surface', onGather);
-  return { ok: true, swept: id };
+  // run the chain (sequential) after the parallel phase, then audit
+  const runChain = (i) => {
+    if (i >= pipe.chain.length) { audit(1); return; }
+    sw.step = pipe.chain[i];
+    maybe(pipe.chain[i], () => runChain(i + 1));
+  };
+  let pending = pipe.parallel.length || 1;
+  const onGather = () => { if (--pending === 0) runChain(0); };
+  if (pipe.parallel.length) pipe.parallel.forEach(task => maybe(task, onGather));
+  else runChain(0);
+  return { ok: true, swept: id, type: sw.type };
 }
 
 function logTransition(ticketId, from, to, by) {

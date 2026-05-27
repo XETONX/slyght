@@ -2344,3 +2344,17 @@ body{ background-image:
 .ew-empty{color:var(--muted);line-height:1.6;padding:10px 0;font-size:14px}
 .k-epic{background:var(--violet-bg);color:var(--violet)}
 @media(max-width:760px){.ew-head{flex-direction:column}.ew-progresswrap{text-align:left}}
+
+/* ── Resolution — the end-of-investigation dual narrative (story for John + brief for CC) ── */
+.cf-resolution{background:linear-gradient(180deg,var(--green-bg),var(--card));border:1px solid var(--green);border-radius:var(--radius);padding:15px 17px;margin-bottom:16px}
+.cf-res-h{font-size:14px;font-weight:800;color:var(--green);margin-bottom:9px}
+.cf-res-sub{font-weight:400;color:var(--muted);font-size:12.5px}
+.cf-res-story{font-size:15.5px;line-height:1.65;color:var(--text);margin-bottom:12px}
+.cf-res-kvs{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.cf-res-kv{font-size:13.5px;color:var(--text);line-height:1.5}
+.cf-res-kv span{display:inline-block;min-width:74px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--green);vertical-align:top}
+.cf-res-tech{margin:4px 0 10px;border-top:1px dashed var(--border2);padding-top:10px}
+.cf-res-tech summary{cursor:pointer;font-size:12.5px;font-weight:700;color:var(--muted);font-family:ui-monospace,monospace}
+.cf-res-tech summary:hover{color:var(--text)}
+.cf-res-techbody{margin-top:10px;font-size:13.5px;color:var(--text)}
+.cf-res-recompose{opacity:.8}
