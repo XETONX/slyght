@@ -636,8 +636,13 @@ function renderCaseFile(t) {
     auditHtml = `<span><span class="cf-audit-tag cf-v-complete">✓ Complete</span> ready to align${(audit.caveats && audit.caveats.length) ? ` · ${audit.caveats.length} caveat(s)` : ''}</span><button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
   } else {
     const nd = audit.nextDig || null;
-    auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` +
-      (nd && nd.drone ? `<button class="btn sm primary" onclick="digScoped('${t.id}','${esc(taskKeyFromDrone(nd.drone))}')">Run suggested dig</button>` : `<button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`);
+    const ndTask = (nd && nd.drone) ? taskKeyFromDrone(nd.drone) : '';
+    // The Walk Drone is a separate mechanism (not a scoped task) → route to goWalkDrone, never digScoped('walk').
+    let ndBtn;
+    if (ndTask === 'walk') ndBtn = `<button class="btn sm primary" onclick="goWalkDrone('${esc(t.group || '')}')">Run Walk Drone</button>`;
+    else if (ndTask) ndBtn = `<button class="btn sm primary" onclick="digScoped('${t.id}','${esc(ndTask)}')">Run suggested dig</button>`;
+    else ndBtn = `<button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
+    auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` + ndBtn;
   }
   const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
 
@@ -660,6 +665,7 @@ function renderCaseFile(t) {
 }
 // Dispatch a scoped GATHER drone (light confirm — it's read-only + on your plan, no cost-cap friction).
 function digScoped(id, task) {
+  if (task === 'walk') { const tk = get(id); goWalkDrone(tk ? tk.group : ''); return; }   // walk isn't a scoped task
   const labels = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor' };
   const lbl = labels[task] || task;
   modal(`<h2>Dispatch ${esc(lbl)} drone</h2>
@@ -750,9 +756,7 @@ function viewTicket(id) {
         <div class="card">
           <div class="cf-cardhead">
             <div class="label">Discuss with Jarvis — then align to hand to CC</div>
-            ${(st.thread || []).length > 1 ? `<button class="btn sm" onclick="toggleThreadSort()" title="Toggle comment order">${threadSort === 'newest' ? 'Newest first' : 'Oldest first'} ⇅</button>` : ''}
           </div>
-          <div class="thread" id="thread">${renderThread(st.thread, t.id)}</div>
           <div class="fmtbar" role="toolbar" aria-label="Formatting">
             <button type="button" class="fmtbtn" title="Bold" onclick="fmtCmt('bold')"><b>B</b></button>
             <button type="button" class="fmtbtn" title="Italic" onclick="fmtCmt('italic')"><i>I</i></button>
@@ -788,6 +792,11 @@ function viewTicket(id) {
                    <span class="dsp-btn-ic" aria-hidden="true">▶</span> Dispatch to CC
                  </button>`}
           </div>
+          ${(st.thread || []).length ? `<div class="cf-cardhead cf-history-head">
+            <div class="cf-history-label">Discussion · ${(st.thread || []).length} comment${(st.thread || []).length === 1 ? '' : 's'}</div>
+            ${(st.thread || []).length > 1 ? `<button class="btn sm" onclick="toggleThreadSort()" title="Toggle comment order">${threadSort === 'newest' ? 'Newest first' : 'Oldest first'} ⇅</button>` : ''}
+          </div>` : ''}
+          <div class="thread" id="thread">${renderThread(st.thread, t.id)}</div>
         </div>
       </div>
       <div class="ticketside">
@@ -1141,10 +1150,29 @@ async function goWalkDrone(surface) {
   if (!walkable) { location.hash = '#/command'; toast('Pick a walkable surface on the Command deck', 'ok'); return; }
   try {
     const r = await action('runWalk', { group: surface });
-    if (r && r.started) toast(`Walk Drone deployed · ${niceSurface(surface)} — live log on the Command deck`, 'ok');
-    else toast((r && r.reason) || 'walk not started', 'err');
+    if (r && r.started) {
+      J.walk = Object.assign({}, J.walk, { deploying: true, scope: surface, startedAt: Date.now() });
+      toast(`Walk Drone deployed · ${niceSurface(surface)}`, 'ok');
+      startWalkStatusPoll();
+      location.hash = '#/agents-fleet';   // show it in the Fleet, where running agents live
+    } else { toast((r && r.reason) || 'walk not started', 'err'); }
   } catch (e) { /* action() already toasted */ }
-  location.hash = '#/command';
+}
+// The Walk Drone is NOT a ccJob (separate walkChild/walklog mechanism), so it won't appear in the
+// ccjobs poll. This global poll keeps J.walk fresh from /api/walklog and re-renders the fleet/topbar
+// so the walk shows up as a running drone like the others. Self-stops when the walk finishes.
+let walkStatusPoll = null;
+function startWalkStatusPoll() {
+  if (walkStatusPoll) return;
+  walkStatusPoll = setInterval(async () => {
+    let j; try { j = await api('/api/walklog'); } catch (_) { return; }
+    const lines = j.lines || [];
+    const last = [...lines].reverse().find(l => !l.startsWith('@@WALK_EXIT')) || '';
+    J.walk = Object.assign({}, J.walk, { deploying: !!j.running, lineCount: lines.length, lastLine: last });
+    dspRenderTopbar();
+    if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();
+    if (!j.running) { clearInterval(walkStatusPoll); walkStatusPoll = null; }
+  }, 1000);
 }
 
 // The earn — call confirmFromWalk({id}). NO evidence param. On success: toast + refresh
@@ -1348,10 +1376,13 @@ function dspRenderTopbar() {
   // Usage meter (replaces the old $-spend chip) — estimated spend this month vs a tunable
   // budget, green→amber→red. Persists at rest so usage is always glanceable.
   const meter = dspUsageMeter(J.ccspend);
+  const walkRunning = !!(J.walk && J.walk.deploying);
+  const count = running.length + (walkRunning ? 1 : 0);
 
-  if (!running.length) { host.innerHTML = meter; return; }
+  if (!count) { host.innerHTML = meter; return; }
 
-  const chips = running.slice(0, 4).map(([key, v]) => {
+  const walkChip = walkRunning ? `<button type="button" class="dsp-chip" title="Walk Drone · ${esc((J.walk && J.walk.scope) || 'all')} — open Command deck" onclick="location.hash='#/agents-fleet'">Walk · ${esc((J.walk && J.walk.scope) || 'all')}</button>` : '';
+  const chips = walkChip + running.slice(0, 4).map(([key, v]) => {
     // chip links to the TICKET (v.id), not the id#task key; shows the scoped task when present
     const label = v.task ? `${v.id} · ${TASK_LABEL[v.task] || v.task}` : v.id;
     return `<button type="button" class="dsp-chip" title="${esc(label)} — open ticket"
@@ -1362,8 +1393,8 @@ function dspRenderTopbar() {
     `<span class="sys-sep"></span>` +
     `<span class="dsp-agents-wrap" title="CC drones running now">
        <span class="dsp-live-dot" aria-hidden="true"></span>
-       <b class="dsp-agents-n">${running.length}</b>
-       <span class="dsp-agents-l">Agent${running.length === 1 ? '' : 's'} Running</span>
+       <b class="dsp-agents-n">${count}</b>
+       <span class="dsp-agents-l">Agent${count === 1 ? '' : 's'} Running</span>
        <span class="dsp-chips">${chips}${more}</span>
      </span>` +
     meter;
@@ -2858,8 +2889,10 @@ function viewRecommend() {
       (new Date(b.t.state.lastActivity || 0) - new Date(a.t.state.lastActivity || 0)));
 
   const shipReady = ranked.filter(x => x.t.state.status === 'ConfirmedLive');
-  // "next" = everything that still needs work (exclude the ship-ready callout dupes)
-  const next = ranked.filter(x => x.t.state.status !== 'ConfirmedLive').slice(0, 8);
+  // What John is actively working on (in flight) vs what's queued (open, by priority).
+  const WORKING = ['Discussing', 'Aligned', 'Investigating'];
+  const working = ranked.filter(x => WORKING.includes(x.t.state.status));
+  const nextUp = ranked.filter(x => x.t.state.status === 'Open').slice(0, 8);
   const top = ranked.length ? ranked[0] : null;
   const maxScore = ranked.length ? ranked[0].s.total : 1;
 
@@ -2886,20 +2919,33 @@ function viewRecommend() {
       </div>
     </section>` : '';
 
-  // ── Recommended Next ranked list ────────────────────────────────────────
+  // ── What you're working on (in flight) ──────────────────────────────────
+  const workingBlock = working.length ? `
+    <section class="rec-working">
+      <div class="rec-next-head">
+        <div>
+          <h2 class="rec-next-title">What you're working on</h2>
+          <p class="rec-next-sub">In flight — discussing, aligned, and under investigation. Pick up where you left off.</p>
+        </div>
+        <span class="rec-next-count">${working.length}</span>
+      </div>
+      <div class="rec-list">${working.map(x => recWorkRow(x.t)).join('')}</div>
+    </section>` : '';
+
+  // ── Next up — open tickets by priority (pull when you have capacity) ─────
   const nextBlock = `
     <section class="rec-next">
       <div class="rec-next-head">
         <div>
-          <h2 class="rec-next-title">Recommended Next</h2>
-          <p class="rec-next-sub">Ranked by leverage — severity, readiness, age, how much it touches money, and what hangs off it.</p>
+          <h2 class="rec-next-title">Next up — by priority</h2>
+          <p class="rec-next-sub">Open tickets you haven't started, ranked by leverage — severity, money impact, and what hangs off them. Pull from here when you have capacity.</p>
         </div>
-        <span class="rec-next-count">${next.length}</span>
+        <span class="rec-next-count">${nextUp.length}</span>
       </div>
       <div class="rec-list">
-        ${next.length
-          ? next.map((x, i) => recRow(x.t, x.s, i + 1, maxScore)).join('')
-          : `<div class="rec-empty"><span class="rec-empty-dot" aria-hidden="true"></span>Nothing queued — the ship-ready list above is the whole picture.</div>`}
+        ${nextUp.length
+          ? nextUp.map((x, i) => recRow(x.t, x.s, i + 1, maxScore)).join('')
+          : `<div class="rec-empty"><span class="rec-empty-dot" aria-hidden="true"></span>No unstarted tickets — you're caught up on the open queue.</div>`}
       </div>
     </section>`;
 
@@ -2918,7 +2964,22 @@ function viewRecommend() {
     </div>
 
     ${shipReadyBlock}
+    ${workingBlock}
     ${nextBlock}`;
+}
+// Compact "working on" row — status + severity + title + surface + last-touched → ticket.
+function recWorkRow(t) {
+  const st = t.state || {};
+  return `<div class="rec-work-row" role="button" tabindex="0"
+      onclick="location.hash='#/ticket/${t.id}'"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash='#/ticket/${t.id}'}">
+    <span class="pill sm s-${st.status}">${STATUS_LABEL[st.status] || st.status}</span>
+    <span class="pill sm ${sevCls(t.severity)}">${t.severity}</span>
+    <span class="rec-work-t">${esc(t.title)}</span>
+    <span class="rec-work-surface">${esc(niceSurface(t.group || t.surface))}</span>
+    <span class="rec-work-meta">${ago(st.lastActivity)}</span>
+    <span class="rec-sr-go" aria-hidden="true">Open →</span>
+  </div>`;
 }
 
 // Ship-ready row — green, "ship it now" framing. Whole row → ticket.
@@ -4114,14 +4175,25 @@ function viewAgentsFleet() {
   const taskLbl = t => TASK_LABEL[t] || t || 'investigate';
   const stat = (n, label, tone) => `<div class="fleet-stat fleet-${tone}"><div class="fleet-stat-n">${n}</div><div class="fleet-stat-l">${label}</div></div>`;
 
-  const runRows = running.length ? running.map(j => `
+  // The Walk Drone is a separate mechanism (J.walk via /api/walklog) — surface it here as a drone too.
+  const walkRunning = !!(J.walk && J.walk.deploying);
+  const walkRow = walkRunning ? `
+    <div class="fleet-row fleet-runrow">
+      <span class="fleet-dot" aria-hidden="true"></span>
+      <a class="fleet-tkt" href="#/command">Walk</a>
+      <span class="fleet-task">Walk Drone · ${esc(J.walk.scope || 'all')}</span>
+      <span class="fleet-meta">${(J.walk.lineCount || 0)} lines${J.walk.lastLine ? ' · ' + esc(String(J.walk.lastLine).replace(/^@@/, '').slice(0, 36)) : ''}</span>
+      <span class="fleet-clock">live</span>
+    </div>` : '';
+  const runCount = running.length + (walkRunning ? 1 : 0);
+  const runRows = runCount ? (walkRow + running.map(j => `
     <div class="fleet-row fleet-runrow">
       <span class="fleet-dot" aria-hidden="true"></span>
       <a class="fleet-tkt" href="#/ticket/${esc(j.id)}">${esc(j.id)}</a>
       <span class="fleet-task">${esc(taskLbl(j.task))}</span>
       <span class="fleet-meta">${j.model === 'opus' ? 'Opus' : 'Sonnet'}${j.turns != null ? ' · ' + j.turns + ' turns' : ''}</span>
       <span class="fleet-clock">${clockOf(j)}</span>
-    </div>`).join('') : `<div class="fleet-empty">No drones in the air right now.</div>`;
+    </div>`).join('')) : `<div class="fleet-empty">No drones in the air right now.</div>`;
 
   const recent = done.concat(failed).sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 20);
   const recentRows = recent.length ? recent.map(j => `
@@ -4141,14 +4213,14 @@ function viewAgentsFleet() {
   v.innerHTML = `
     <header class="cmd-head"><div><h1>Drone Fleet</h1><p class="subtitle">Live and recent CC drones across every ticket — what's in the air, and what's landed.</p></div></header>
     <section class="fleet-stats">
-      ${stat(running.length, 'In the air', 'run')}
+      ${stat(runCount, 'In the air', 'run')}
       ${stat(done.length, 'Landed (session)', 'done')}
       ${stat(failed.length, 'Failed', failed.length ? 'fail' : 'mute')}
       ${stat('$' + todayUsd, 'Est. usage today', 'mute')}
     </section>
     ${sweepsRunning.length ? `<div class="card fleet-card"><div class="label">Building the case — sweeps in progress</div>${sweepRows}</div>` : ''}
     <div class="card fleet-card">
-      <div class="label">Running now ${running.length ? `<span class="fleet-live">● live</span>` : ''}</div>
+      <div class="label">Running now ${runCount ? `<span class="fleet-live">● live</span>` : ''}</div>
       <div class="fleet-list">${runRows}</div>
     </div>
     <div class="card fleet-card">
