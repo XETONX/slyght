@@ -618,7 +618,9 @@ function viewBoard() {
     <div class="bd2-countbar">
       <span class="bd2-count"><b>${shown.length}</b> ticket${shown.length === 1 ? '' : 's'}</span>
       <span class="bd2-countsep">of ${ts.length} total</span>
+      ${shown.length ? `<button class="bd2-selall" onclick="bd2SelectAll()">Select these ${shown.length}</button>` : ''}
     </div>
+    <div id="bd2Bulk"></div>
 
     <div class="bd2-list" role="list">
       ${shown.length
@@ -630,6 +632,7 @@ function viewBoard() {
              ${anyFilter ? `<button class="bd2-reset solid" onclick="resetFilters()">Reset filters</button>` : ''}
            </div>`}
     </div>`;
+  bd2RenderBulkBar();   // restore the bulk-organise bar if rows are selected
 }
 // Group the board by epic / priority / surface (Stage 2b — the sprawl-tamer).
 function setBoardGroup(v) { J.filter.group = v || ''; viewBoard(); }
@@ -681,9 +684,10 @@ function ticketRow(t) {
   const nexts = TRANSITIONS_CLIENT[status] || [];
   const onCC = assignee === 'cc';
   const links = (t.links || []).length;
-  return `<div class="bd2-row" role="listitem" data-id="${t.id}" onclick="rowOpen(event,'${t.id}')">
+  const sel = BD2_SELECTED.has(t.id);
+  return `<div class="bd2-row${sel ? ' sel' : ''}" role="listitem" data-id="${t.id}" onclick="rowOpen(event,'${t.id}')">
     <label class="bd2-check" onclick="event.stopPropagation()">
-      <input type="checkbox" onchange="bd2ToggleSelect('${t.id}', this.checked)">
+      <input type="checkbox" ${sel ? 'checked' : ''} onchange="bd2ToggleSelect('${t.id}', this.checked)">
       <span class="bd2-checkbox"></span>
     </label>
 
@@ -877,6 +881,61 @@ function bd2ToggleSelect(id, on) {
   if (on) BD2_SELECTED.add(id); else BD2_SELECTED.delete(id);
   const row = document.querySelector(`.bd2-row[data-id="${id}"]`);
   if (row) row.classList.toggle('sel', on);
+  bd2RenderBulkBar();
+}
+// Bulk-organise bar — appears when rows are selected. Assign-to-epic, bundle, sweep, or close clutter
+// in one move (the anti-clutter management John wants, from the Board). #35.
+function bd2RenderBulkBar() {
+  const host = document.getElementById('bd2Bulk'); if (!host) return;
+  const n = BD2_SELECTED.size;
+  if (!n) { host.innerHTML = ''; return; }
+  const epics = (J.tickets || []).filter(t => t.type === 'epic');
+  host.innerHTML = `<div class="bd2-bulk-bar">
+    <span class="bd2-bulk-n">${n} selected</span>
+    <div class="bd2-selwrap active"><select class="bd2-sel" aria-label="Assign to epic" onchange="bulkAssignEpic(this.value);this.value=''">
+      <option value="">Assign to epic…</option>${epics.map(e => `<option value="${e.id}">${esc(e.id + ' · ' + String(e.title || '').slice(0, 34))}</option>`).join('')}<option value="__new">+ New epic…</option>
+    </select>${BD2_CHEVRON}</div>
+    <button class="btn sm" onclick="bulkSetBundle()">Bundle…</button>
+    <button class="btn sm" onclick="bulkSweep()">⚡ Build case · all</button>
+    <button class="btn sm bd2-bulk-del" onclick="bulkClose()">Close</button>
+    <button class="btn sm" onclick="bd2ClearSel()">Clear</button>
+  </div>`;
+}
+function bd2SelectAll() {
+  document.querySelectorAll('.bd2-row').forEach(r => { const id = r.dataset.id; if (!id) return; BD2_SELECTED.add(id); r.classList.add('sel'); const cb = r.querySelector('input[type=checkbox]'); if (cb) cb.checked = true; });
+  bd2RenderBulkBar();
+}
+function bd2ClearSel() {
+  BD2_SELECTED.forEach(id => { const r = document.querySelector(`.bd2-row[data-id="${id}"]`); if (r) { r.classList.remove('sel'); const cb = r.querySelector('input[type=checkbox]'); if (cb) cb.checked = false; } });
+  BD2_SELECTED.clear(); bd2RenderBulkBar();
+}
+async function bulkAssignEpic(v) {
+  if (!v) return;
+  let epicId = v;
+  if (v === '__new') { const name = prompt('New epic name:'); if (!name) return; try { const r = await action('createTicket', { title: name, type: 'epic', summary: 'Epic created from bulk organise' }); epicId = r.id; } catch (e) { return; } }
+  const ids = [...BD2_SELECTED];
+  for (const id of ids) { try { await action('setMeta', { id, field: 'epic', value: epicId }); } catch (e) {} }
+  toast(`Assigned ${ids.length} ticket${ids.length === 1 ? '' : 's'} to ${epicId}`, 'ok');
+  BD2_SELECTED.clear(); await load(); viewBoard();
+}
+async function bulkSetBundle() {
+  const name = prompt('Bundle name for the selected tickets:'); if (!name) return;
+  const ids = [...BD2_SELECTED];
+  for (const id of ids) { try { await action('setMeta', { id, field: 'bundle', value: name }); } catch (e) {} }
+  toast(`Bundled ${ids.length} as "${name}"`, 'ok'); BD2_SELECTED.clear(); await load(); viewBoard();
+}
+async function bulkSweep() {
+  const ids = [...BD2_SELECTED]; if (!ids.length) return;
+  if (!confirm(`Build the case on ${ids.length} tickets? Spawns parallel read-only drone sweeps.`)) return;
+  toast(`Sweeping ${ids.length} tickets…`, 'ok');
+  for (const id of ids) { try { await action('buildCase', { id, confirm: true }); } catch (e) {} }
+  BD2_SELECTED.clear(); await load(); viewBoard(); dspStartPoll(); dspRenderTopbar(); dspEnsureBannerTimer();
+}
+async function bulkClose() {
+  const ids = [...BD2_SELECTED]; if (!ids.length) return;
+  if (!confirm(`Close (delete) ${ids.length} tickets? This removes them from the backlog — can't be undone.`)) return;
+  for (const id of ids) { try { await action('deleteTicket', { id }); } catch (e) {} }
+  toast(`Closed ${ids.length} ticket${ids.length === 1 ? '' : 's'}`, 'ok'); BD2_SELECTED.clear(); await load(); viewBoard();
 }
 
 /* ════════════════════════ CASE FILE — evidence checklist + scoped drones ════════════
