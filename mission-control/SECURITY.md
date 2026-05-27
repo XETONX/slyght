@@ -74,6 +74,26 @@ then trust it with the irreversible action — built last.
 
 *Protects against:* an accidental or unintended push to main.
 
+#### 6.1 — Pre-ship gate (2026-05-28)
+
+Before `deploy()` pushes, it runs `scripts/verify-fix.js --staged` **synchronously** and
+hard-refuses on a red result: any NEW Guardian finding (on lines the staged delta touched)
+or red/absent smoke blocks the push. Per-ticket, the same gate runs at `markReadyToShip`
+(`verifyFix`), which also requires the verify to be fresh (`verify.sha === worktree HEAD`).
+The gate is **server-run and deterministic** — it does not trust a drone's self-report.
+
+#### 6.2 — Deploy-status probe (the only server-initiated network, narrow + read-only)
+
+`deployStatus()` is the one place the server reaches the internet itself, and it does so via
+the **`curl` subprocess** (same "subprocesses do the network, the server process opens no
+sockets" posture as `git push` and the claude drones). It is a single **GET** to one
+**hardcoded** URL (`LIVE_URL` = the GitHub Pages site), **read-only**, no secrets, no
+request body, response used only to hash-compare against the deployed commit's `index.html`.
+It cannot be pointed elsewhere and writes nothing but the local `deploy-log.json`.
+
+*Protects against:* an accidental or unintended push to main; a broken fix reaching the
+live app; and (6.2) scope-creep of the server's network surface.
+
 ### 7. Written down (this file)
 
 So the protections live in prose a human can audit, not only in code.

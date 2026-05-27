@@ -48,7 +48,46 @@
    ▼
  push to main → GitHub Actions (.github/workflows/pages.yml) → GitHub Pages
    → xetonx.github.io/slyght → the S23 PWA (after the service worker refreshes its cache)
+   │
+   ▼
+ ╔═══════════════════════════════════════════════════════════════════════════════╗
+ ║  On push success (no manual steps — this is what makes it replicable):         ║
+ ║   • deploy-log.json gets a record {sha, ts, tickets[], commits[], status}.     ║
+ ║   • each SLY-N in the pushed commit subjects auto-transitions → Shipped, with   ║
+ ║     deploy evidence + a thread comment. (No hand-run setStatus.)                ║
+ ║                                                                                 ║
+ ║  deployStatus  ← DEPLOY-STATUS TRACKING                                         ║
+ ║   curl the live Pages URL, hash-compare to `git show <sha>:index.html`          ║
+ ║   (line-ending normalized). Match → status:'live' + liveAt. The Deploy tab      ║
+ ║   polls every 15s after a push: Pushed → Pages building → Live → "refresh your  ║
+ ║   phone". The one thing the server can't see (the PWA's service worker cache)   ║
+ ║   is surfaced as the explicit final manual step.                                ║
+ ╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
+
+## Replicability — the three things SLY-1 needed by hand, now automatic
+
+SLY-1 (the first run) required three manual interventions. Each is now wired so the next
+ticket flows through untouched:
+
+1. **The spec was wrong, not the app** (asserted `txn.source`, a field no txn carries).
+   I fixed it by hand. → The execute-fix prompt now tells the fix-drone, on a gate failure,
+   to diagnose **app vs. spec** and correct whichever is wrong — *never weakening a spec to
+   pass*. nextAction routes a verify-FAIL back to execute-fix with that context.
+2. **Marking Shipped** — done by hand via setStatus. → `deploy` now auto-transitions every
+   SLY-N in the pushed commits to Shipped, with the push SHA as evidence.
+3. **Checking the live site** — done by hand with curl. → `deployStatus` + the Deploy-tab
+   poller do it, comparing live bytes to the deployed commit until they match.
+
+## Files
+
+- `scripts/verify-fix.js` — the gate runner. `<SLY-N | --staged> <worktree>` → one line of JSON.
+- `server.js` — `verifyFix` (records `caseFile.verify`); `markReadyToShip` hard-gated on a fresh
+  green verify; `deploy` runs the `--staged` gate, then on push success records `deploy-log.json`
+  + auto-ships the tickets; `deployStatus` probes the live site; `/api/deploylog` serves the log.
+- `jarvis.js` — `nextAction` routes sandbox-PASS → **Verify** → ready-to-ship; the case file renders
+  the gate (`cf-verify`); the Deploy tab renders the status pipeline (`dep-ds`) + polls until live.
+- `deploy-log.json` — runtime, gitignored: the pushes → live record the status tracking reads.
 
 ## Why two gates (ready-to-ship AND push)
 

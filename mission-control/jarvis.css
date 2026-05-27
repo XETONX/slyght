@@ -2419,6 +2419,23 @@ body{ background-image:
 .dep-tkt{font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:700;color:var(--blue)}
 .dep-wt-stat{font-size:12.5px;color:var(--muted);margin-top:8px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .dep-wt-note{font-size:12.5px;color:var(--muted);line-height:1.5;margin-top:8px}
+/* deploy-status tracking — pushed → Pages → live → phone */
+.dep-ds{border-radius:12px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--border);background:var(--card)}
+.dep-ds-live{border-color:var(--green);background:linear-gradient(180deg,var(--green-bg),var(--card))}
+.dep-ds-building{border-color:var(--amber);background:linear-gradient(180deg,var(--amber-bg),var(--card))}
+.dep-ds-err{border-color:var(--red);background:linear-gradient(180deg,var(--red-bg),var(--card))}
+.dep-ds-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dep-ds-badge{font-size:12px;font-weight:800;padding:2px 9px;border-radius:999px;letter-spacing:.3px}
+.dep-ds-live .dep-ds-badge{background:var(--green);color:#04210f}
+.dep-ds-building .dep-ds-badge{background:var(--amber);color:#2a1c00}
+.dep-ds-err .dep-ds-badge{background:var(--red);color:#fff}
+.dep-ds-pipe{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+.dep-ds-step{font-size:12.5px;color:var(--muted);padding:3px 9px;border-radius:8px;background:var(--card2);border:1px solid var(--border)}
+.dep-ds-step.done{color:var(--green);border-color:var(--green)}
+.dep-ds-step.active{color:var(--amber);border-color:var(--amber);font-weight:600}
+.dep-ds-step.phone{color:var(--blue)}
+.dep-ds-arrow{color:var(--muted);font-size:12px}
+.dep-ds-note{font-size:12.5px;color:var(--muted);line-height:1.55;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* ════════════════════════ FLIGHTDECK — the management home (neon command deck) ════════════════════ */
 .fdeck{position:relative;--cy:#2de2e6;--am:#ffb454;--gn:#49d18b;--vi:#a98bf5;--rd:#f4767e;--panel:rgba(20,28,44,.72);--ink:#dbe7f2;--ink2:#8aa0b8;--ink3:#5e7491;--line:#1b2940}

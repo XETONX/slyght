@@ -39,6 +39,14 @@ const DEPLOY_BRANCHES = ['main'];
 const WORKTREE = path.resolve(__dirname, '..', '..', 'slyght-deploy');
 function gitBranchOf(dir) { try { return require('child_process').execSync('git rev-parse --abbrev-ref HEAD', { cwd: dir }).toString().trim(); } catch (_) { return ''; } }
 function gitHeadOf(dir) { try { return require('child_process').execSync('git rev-parse HEAD', { cwd: dir }).toString().trim().slice(0, 40); } catch (_) { return ''; } }
+// Where `main` deploys (GitHub Pages). Used ONLY by the read-only deploy-status probe (deployStatus):
+// a single hardcoded GET via the `curl` SUBPROCESS — the same "subprocesses do the network, the server
+// process opens no sockets" posture as `git push` + the claude drones. No secrets, read-only, one URL.
+const LIVE_URL = 'https://xetonx.github.io/slyght/';
+const DEPLOY_LOG = path.join(MC, 'deploy-log.json');   // append-only record of pushes → live (gitignored, runtime)
+function readDeployLog() { try { return JSON.parse(fs.readFileSync(DEPLOY_LOG, 'utf8')); } catch { return { deploys: [] }; } }
+function writeDeployLog(d) { fs.writeFileSync(jail(path.join('mission-control', 'deploy-log.json')), JSON.stringify(d, null, 2)); }
+function normHash(s) { return require('crypto').createHash('sha256').update(String(s).replace(/\r/g, '')).digest('hex'); }
 function ensureWorktree() {
   try {
     const list = require('child_process').execSync('git worktree list --porcelain', { cwd: REPO }).toString();
@@ -952,7 +960,9 @@ const ACTIONS = {
       '\n---\nYou are CC, dispatched by Jarvis to IMPLEMENT the fix for ' + id + ' on the slyght app (single-file index.html, ~24k lines).',
       'You are in an ISOLATED git worktree checked out on `main` — your edits + commit land on the deploy branch, but NOTHING is pushed (push is blocked; John reviews the diff and pushes). Work ONLY in this directory.',
       plan ? '## The approved plan (from the resolution)\n' + plan : '',
-      'Implement the MINIMAL correct change. Reuse canonical writers (BRAIN.<domain>.<verb> + SOURCES tags) — never a parallel calc. Then run `npm run guardian` and fix anything it flags. When Guardian is green, COMMIT with a message that STARTS with "' + id + ': ". NEVER run git push.',
+      'Implement the MINIMAL correct change. Reuse canonical writers (BRAIN.<domain>.<verb> + SOURCES tags) — never a parallel calc.',
+      'If a previous PRE-SHIP GATE failed for this ticket, FIRST diagnose whether the app (index.html) or its smoke spec (tests/smoke/) is at fault. A spec that asserts something the architecture genuinely does NOT do is a WRONG SPEC — correct it to assert the real contract. (Canonical example, SLY-1: source tags live in the AUDIT LOG `S._auditLog` via record(), NOT on the txn object — 0/212 txns carry `.source`; a spec asserting `txn.source` is wrong.) NEVER weaken, skip, or delete a spec just to make it pass — the spec must still prove the fix.',
+      'VERIFY before committing: run the ticket\'s smoke spec (`npx playwright test tests/smoke/<file> --config=playwright.smoke.config.js`) AND `npm run guardian`; get BOTH green (Guardian must introduce no NEW finding on the lines you touched). When green, COMMIT with a message that STARTS with "' + id + ': ". NEVER run git push.',
       'End with a RESULT section: what you changed (files + the commit), the Guardian result, and what John should phone-verify on his S23.',
     ].filter(Boolean).join('\n');
     spawnDrone({
@@ -1109,12 +1119,58 @@ const ACTIONS = {
         return { ok: false, blocked: true, gate: v, reason: 'push refused by the pre-push gate: ' + (why || 'verification not green') + '. Fix it and re-verify before shipping to the live app.' };
       }
     }
+    // Capture WHAT we're about to ship (before push: origin/main..HEAD) so the deploy record + the
+    // auto-transition to Shipped name the exact tickets + commits. Replicable: no manual setStatus.
+    let pushing = [];
+    try { pushing = execSync('git log --format=%H%x09%s origin/main..HEAD', { cwd: pushDir, encoding: 'utf8' }).trim().split('\n').filter(Boolean).map(l => { const i = l.indexOf('\t'); return { sha: l.slice(0, i).slice(0, 40), subject: l.slice(i + 1) }; }); } catch (_) {}
+    const ticketIds = [...new Set(pushing.flatMap(c => (c.subject.match(/SLY-\d+/g) || [])))];
+    const headSha = gitHeadOf(pushDir);
     return new Promise((resolve) => {
       const p = spawn('git', ['push'], { cwd: pushDir });
       let out = '';
       p.stdout.on('data', d => out += d); p.stderr.on('data', d => out += d);
-      p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000), branch, pushedFrom: pushDir === WORKTREE ? 'worktree' : 'repo' }));
+      p.on('exit', code => {
+        if (code !== 0) return resolve({ ok: false, code, output: out.slice(-2000), branch, pushedFrom: pushDir === WORKTREE ? 'worktree' : 'repo' });
+        // ── Record the deploy (for status tracking) + auto-transition shipped tickets ──
+        const rec = { sha: headSha, ts: new Date().toISOString(), branch, tickets: ticketIds, commits: pushing.map(c => ({ sha: c.sha.slice(0, 7), subject: c.subject })), status: 'building', liveAt: null, liveUrl: LIVE_URL };
+        try { const log = readDeployLog(); log.deploys = [rec, ...(log.deploys || [])].slice(0, 50); writeDeployLog(log); } catch (_) {}
+        try {
+          const st = readState();
+          ticketIds.forEach(id => {
+            const t = st[id]; if (!t) return;
+            if (t.status !== 'Shipped' && (TRANSITIONS[t.status] || []).includes('Shipped')) {
+              const from = t.status; t.status = 'Shipped'; t.assignee = assigneeFor('Shipped');
+              t.evidence = { kind: 'deploy', sha: headSha.slice(0, 7), reason: 'Pushed to ' + branch + ' via Deploy (pre-push gate PASS); GitHub Pages building', ts: new Date().toISOString() };
+              logTransition(id, from, 'Shipped', 'jarvis');
+              t.thread.push({ author: 'jarvis', text: '**Shipped** &mdash; pushed to `' + branch + '` (' + headSha.slice(0, 7) + '). GitHub Pages is building; track it in Deploy. Phone-verify once the service worker refreshes.', ts: new Date().toISOString() });
+              t.lastActivity = new Date().toISOString();
+            }
+          });
+          writeState(st);
+        } catch (_) {}
+        resolve({ ok: true, code, output: out.slice(-2000), branch, pushedFrom: pushDir === WORKTREE ? 'worktree' : 'repo', deploy: rec, shipped: ticketIds });
+      });
     });
+  },
+
+  // DEPLOY STATUS — has the last push actually gone live? Read-only probe: GET the single hardcoded Pages
+  // URL via the `curl` subprocess, compare its (line-ending-normalized) bytes to the deployed commit's
+  // index.html (git show <sha>:index.html — robust even after a newer fix is staged). Match → LIVE.
+  // The phone still needs its service worker to refresh — that's surfaced as the final manual step.
+  deployStatus: () => {
+    const log = readDeployLog(); const d = (log.deploys || [])[0];
+    if (!d) return { ok: true, none: true };
+    const r = spawnSync('curl', ['-s', '--max-time', '25', LIVE_URL + 'index.html?cb=' + Date.now()], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    let deployedHtml = '';
+    try { deployedHtml = execSync('git show ' + d.sha + ':index.html', { cwd: WORKTREE, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }); } catch (_) {}
+    if (r.status === 0 && r.stdout && deployedHtml) {
+      const live = normHash(r.stdout) === normHash(deployedHtml);
+      if (live && d.status !== 'live') { d.status = 'live'; d.liveAt = new Date().toISOString(); }
+      else if (!live) { d.status = 'building'; }
+      d.checkedAt = new Date().toISOString();
+    } else { d.probeError = (r.stderr || 'probe failed').slice(0, 200); d.checkedAt = new Date().toISOString(); }
+    try { writeDeployLog(log); } catch (_) {}
+    return { ok: true, deploy: d, probe: (r.status === 0 && r.stdout) ? 'ok' : 'failed' };
   },
 
   // ── AUTO-TICKETING — untracked App-Map gaps → tickets ───────────────────────
@@ -2121,6 +2177,7 @@ const server = http.createServer((req, res) => {
       const diffstat = (sh('git diff --shortstat origin/main..HEAD') || '').trim();
       return send(res, 200, { exists: true, branch: gitBranchOf(WORKTREE), ahead: commits.length, commits, diffstat, dirty: sh('git status --porcelain').split('\n').filter(Boolean).length });
     }
+    if (p === '/api/deploylog') return send(res, 200, readDeployLog());   // pushes → live status (deploy-status tracking)
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
     // Read-only: the already-auto-ticketed gapKeys (keys of auto-tickets.json, the server's

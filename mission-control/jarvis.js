@@ -4262,7 +4262,24 @@ async function depLoad() {
   try { J.dep = await api('/api/gitstatus'); }
   catch (e) { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-err">Couldn't read git state — is the server running? <span>${esc(e.message || e)}</span></div>`; return; }
   try { J.depWt = await api('/api/worktree'); } catch (_) { J.depWt = { exists: false }; }   // fixes staged on the main worktree
+  try { J.depLog = await api('/api/deploylog'); } catch (_) { J.depLog = { deploys: [] }; }   // pushes → live tracking
   depRender();
+}
+// Deploy-status tracking — after a push, poll the live site (server probe) until it confirms LIVE.
+async function depCheckStatus(silent) {
+  try { const r = await action('deployStatus', {}); if (r && r.deploy) { J.depLog = J.depLog || { deploys: [] }; J.depLog.deploys = [r.deploy, ...((J.depLog.deploys || []).slice(1))]; } if (!silent && r && r.deploy && r.deploy.status === 'live') toast('Live on GitHub Pages ✓', 'ok'); }
+  catch (_) {}
+  if ((location.hash || '').includes('/deploy')) depRender();
+}
+function depStartStatusPoll() {
+  if (J._depPoll) clearInterval(J._depPoll);
+  let n = 0;
+  J._depPoll = setInterval(async () => {
+    n++;
+    const d = (J.depLog && J.depLog.deploys || [])[0];
+    if (!d || d.status === 'live' || n > 40) { clearInterval(J._depPoll); J._depPoll = null; return; }   // stop at live or ~10 min
+    await depCheckStatus(true);
+  }, 15000);
 }
 async function depRefresh() { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-loading">Re-reading git state…</div>`; await depLoad(); }
 
@@ -4379,7 +4396,34 @@ function depRender() {
       <code>${esc(upstream)}</code>. You'll type <code>deploy</code> to confirm — nothing fires until then.</div>`;
   }
 
+  // ── deploy-status tracking — the last push and whether it's actually live yet ──
+  const lastDep = (J.depLog && J.depLog.deploys || [])[0] || null;
+  const depStatusSection = lastDep ? (() => {
+    const st = lastDep.status || 'building';
+    const cls = st === 'live' ? 'dep-ds-live' : (lastDep.probeError ? 'dep-ds-err' : 'dep-ds-building');
+    const badge = st === 'live' ? '✓ LIVE' : (lastDep.probeError ? '⚠ probe failed' : '◷ Building…');
+    const when = (iso) => { try { return new Date(iso).toLocaleString(); } catch (_) { return iso; } };
+    const tks = (lastDep.tickets || []).map(id => `<a class="dep-tkt" href="#/ticket/${esc(id)}">${esc(id)}</a>`).join(' ');
+    return `
+    <div class="dep-ds ${cls}">
+      <div class="dep-ds-h"><span class="dep-ds-badge">${badge}</span> Last deploy &mdash; <code>${esc((lastDep.sha || '').slice(0, 7))}</code> to <code>${esc(lastDep.branch || 'main')}</code>${tks ? ' · ' + tks : ''}</div>
+      <div class="dep-ds-pipe">
+        <span class="dep-ds-step done">Pushed ${esc(when(lastDep.ts))}</span>
+        <span class="dep-ds-arrow">→</span>
+        <span class="dep-ds-step ${st === 'live' ? 'done' : 'active'}">GitHub Pages ${st === 'live' ? 'deployed' : 'building'}</span>
+        <span class="dep-ds-arrow">→</span>
+        <span class="dep-ds-step ${st === 'live' ? 'done' : ''}">Live${lastDep.liveAt ? ' ' + esc(when(lastDep.liveAt)) : ''}</span>
+        <span class="dep-ds-arrow">→</span>
+        <span class="dep-ds-step phone">Your phone (refresh the app)</span>
+      </div>
+      ${st === 'live'
+        ? `<div class="dep-ds-note">Live at <a href="${esc(lastDep.liveUrl || 'https://xetonx.github.io/slyght/')}" target="_blank" rel="noopener">the site</a>. On your S23: fully close the slyght app (swipe it away) and reopen — twice if needed — so the service worker picks up the new version.</div>`
+        : `<div class="dep-ds-note">${lastDep.probeError ? 'Could not reach the live site to confirm (' + esc(String(lastDep.probeError).slice(0, 80)) + '). ' : 'GitHub Actions builds + deploys Pages (~1–2 min). '}<button class="btn sm" onclick="depCheckStatus(false)">Check now</button></div>`}
+    </div>`;
+  })() : '';
+
   body.innerHTML = `
+    ${depStatusSection}
     ${branchBanner}
     ${wtSection}
     <div class="dep-grid">
@@ -4449,7 +4493,9 @@ async function doDeploy() {
     const r = await action('deploy', { confirm: true });   // server: spawn('git', ['push']) → {ok, code, output}
     closeModal();
     if (r.ok) {
-      toast('Pushed to GitHub — prod is live', 'ok');
+      toast(`Pushed${r.shipped && r.shipped.length ? ' — ' + r.shipped.join(', ') + ' shipped' : ''}. Tracking deploy…`, 'ok');
+      if (r.deploy) { J.depLog = J.depLog || { deploys: [] }; J.depLog.deploys = [r.deploy, ...(J.depLog.deploys || [])]; }
+      depStartStatusPoll();   // poll the live site until GitHub Pages serves the new bytes
     } else {
       // surface the git output so a rejected/failed push is visible (not silently swallowed)
       modal(`<h2>Push failed</h2>
