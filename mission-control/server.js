@@ -23,12 +23,16 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 const PORT = 5050;
 const HOST = '127.0.0.1';                              // RULE 1 — loopback only, hard-coded
 const REPO = path.resolve(__dirname, '..');            // the slyght repo root (server lives in mission-control/)
 const MC = __dirname;
+// The ONLY branches a deploy push may target. slyght's live app (GitHub Pages) ships from main; the
+// Mission Control cockpit lives on `mission-control`. Pushing the cockpit branch would publish the tool
+// to the live finance app — so deploy HARD-REFUSES from any branch not in this list.
+const DEPLOY_BRANCHES = ['main'];
 // RULE 4 — origin+token gate the write path. The token PERSISTS across restarts (cached in a
 // gitignored file) so a server restart no longer rotates it out from under an open page (which
 // surfaced as a confusing "missing token" on every action until refresh). Still localhost-only +
@@ -888,11 +892,18 @@ const ACTIONS = {
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
     if (confirm !== true) return { ok: false, reason: 'deploy refused: confirm:true required (UI confirm gate)' };
+    // SAFETY GUARD — only ever push from a deploy branch (main). The cockpit lives on
+    // `mission-control`; pushing it would publish the tool to the live app. Hard-refuse otherwise.
+    let branch = '';
+    try { branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: REPO }).toString().trim(); } catch (_) {}
+    if (!DEPLOY_BRANCHES.includes(branch)) {
+      return { ok: false, reason: 'deploy refused: you are on branch "' + branch + '", not a deploy branch (' + DEPLOY_BRANCHES.join(', ') + '). The cockpit branch must never push to the live app — switch to ' + DEPLOY_BRANCHES[0] + ' to ship.', branch, blocked: true };
+    }
     return new Promise((resolve) => {
       const p = spawn('git', ['push'], { cwd: REPO });
       let out = '';
       p.stdout.on('data', d => out += d); p.stderr.on('data', d => out += d);
-      p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000) }));
+      p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000), branch }));
     });
   },
 

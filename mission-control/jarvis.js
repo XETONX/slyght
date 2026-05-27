@@ -20,6 +20,7 @@ const STATUS_INFO = {
   Shipped:       { mean: 'Done & pushed live',            who: '—',      need: 'Nothing — complete' },
 };
 const CASE_SLOT_KEYS = ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance', 'breakdown'];
+const DEPLOY_BRANCHES_C = ['main'];   // mirror of server DEPLOY_BRANCHES — only main may ship to the live app
 // The ONE right next step for a ticket, by stage. Drives the prominent NEXT banner + keeps the page
 // from showing a wall of co-equal buttons. kind: go (you act) | wait (drones/CC) | done.
 function nextAction(t) {
@@ -4123,6 +4124,9 @@ function depRender() {
   const dirty      = Array.isArray(g.dirty) ? g.dirty : [];
   const dirtyN     = dirty.length;
   const unpushed   = Array.isArray(g.unpushed) ? g.unpushed : [];
+  // SAFETY: only `main` is a deploy branch. On the cockpit branch (mission-control) a push would
+  // publish the tool to the live app — the server hard-refuses, and the UI blocks + explains here.
+  const isDeploy = (DEPLOY_BRANCHES_C).includes(branch);
 
   // The three deploy states:
   //   1. NO UPSTREAM  — branch tracks no remote. CANNOT push with a bare `git push`.
@@ -4173,9 +4177,17 @@ function depRender() {
        </div>`
     : '';
 
-  // ── the push button — armed only in 'ready' ──
+  // ── branch-safety banner — the live app ships from `main`; the cockpit lives on `mission-control`.
+  const branchBanner = isDeploy
+    ? `<div class="dep-branchbar dep-bb-ok"><b>✓ On the deploy branch (${esc(branch)}).</b> A push here updates the live app.</div>`
+    : `<div class="dep-branchbar dep-bb-bad"><b>⛔ You're on <code>${esc(branch)}</code>, not a deploy branch.</b> Pushing is blocked — this protects your live app from cockpit code. To ship a fix, make it on <code>${DEPLOY_BRANCHES_C[0]}</code> (the server hard-refuses any other branch).</div>`;
+
+  // ── the push button — armed only in 'ready' AND on a deploy branch ──
   let pushBtn, hint;
-  if (state === 'no-upstream') {
+  if (!isDeploy) {
+    pushBtn = `<button class="dep-push" disabled title="Pushing is blocked on a non-deploy branch"><span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
+    hint = `<div class="dep-hint dep-hint-warn">Push is <b>blocked</b> on <code>${esc(branch)}</code>. Only <code>${DEPLOY_BRANCHES_C[0]}</code> may ship to the live app — so the Mission Control cockpit can never be published to your finances by accident.</div>`;
+  } else if (state === 'no-upstream') {
     pushBtn = `<button class="dep-push" disabled title="This branch has no remote tracking branch">
         <span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
     hint = `<div class="dep-hint dep-hint-warn">Branch <code>${esc(branch)}</code> has no upstream. A bare
@@ -4194,6 +4206,7 @@ function depRender() {
   }
 
   body.innerHTML = `
+    ${branchBanner}
     <div class="dep-grid">
       <div class="dep-main">
         <div class="dep-card dep-state-${state}">
