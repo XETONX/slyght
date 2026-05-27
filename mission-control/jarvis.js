@@ -1655,20 +1655,20 @@ function viewTicket(id) {
         </div>
       </div>
       <div class="ticketside">
+        <div class="siderail tk-statusrail">
+          <div class="sh">Status</div>
+          <div class="tk-statusnow"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></div>
+          <div class="tk-statusneed">${esc((STATUS_INFO[status] || {}).need || '')}</div>
+          <div class="kv"><span class="k">Owner</span><span class="v">${assignee === 'cc' ? 'CC' : 'John'}</span></div>
+        </div>
         <div class="siderail">
           <div class="sh">Details</div>
-          <div class="kv"><span class="k">Status</span><span class="v"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></span></div>
-          <div class="kv"><span class="k">Assignee</span><span class="v">${assignee === 'cc' ? 'CC — investigating' : 'John — needs judgment'}</span></div>
           <div class="kv fld-kv"><span class="k">Type</span><span class="v">
             ${fldSelect(t.id, 'type', t.type, [['bug', 'Bug'], ['feature', 'Feature'], ['task', 'Task'], ['epic', 'Epic']], 'fld-type-' + t.type)}
           </span></div>
           ${t.type !== 'epic' ? `<div class="kv fld-kv"><span class="k">Epic</span><span class="v">${epicSelect(t)}</span></div>` : ''}
           <div class="kv fld-kv"><span class="k">Severity</span><span class="v">
             ${fldSelect(t.id, 'severity', t.severity, [['P0', 'P0 · Critical'], ['P1', 'P1 · High'], ['P2', 'P2 · Normal']], sevCls(t.severity))}
-          </span></div>
-          <div class="kv fld-kv"><span class="k">Due date</span><span class="v">
-            <input type="date" class="fld-date${t.dueDate ? ' set' : ''}" value="${esc(t.dueDate || '')}"
-              onchange="setMeta('${t.id}','dueDate',this.value)" aria-label="Due date for ${t.id}">
           </span></div>
           <div class="kv fld-kv"><span class="k">Bundle</span><span class="v">
             <input type="text" class="fld-bundle${t.bundle ? ' set' : ''}" list="fld-bundles" maxlength="60"
@@ -1681,20 +1681,7 @@ function viewTicket(id) {
         ${fldBundleDatalist()}
         ${t.type === 'epic' ? renderEpicChildren(t) : ''}
         ${renderLinkedTickets(t)}
-        ${sync.length ? `<div class="siderail" style="background:var(--green-bg);border-color:#a6e9c0"><div class="sh" style="color:var(--green)">Kept in sync on ship</div><div style="font-size:13px;color:#1a1d24;line-height:1.6">${sync.map(esc).join(', ')} — the reasoning stays here on the ticket.</div></div>` : ''}
-        <div class="siderail">
-          <div class="sh">Activity</div>
-          <div class="kv"><span class="k">Opened</span><span class="v">${when(st.opened)}</span></div>
-          ${st.alignment ? `<div class="kv"><span class="k">Aligned</span><span class="v">${when(st.alignment.ts)}</span></div>` : ''}
-          ${ev ? `<div class="kv"><span class="k">Found by walk</span><span class="v">${esc(ev.walkDir || 'Yes')}</span></div>` : ''}
-          ${st.evidence && st.evidence.kind === 'walk' ? `<div class="kv cw-confirmed"><span class="k">Confirmed-live by</span><span class="v">walk <code>${esc(st.evidence.walkDir)}</code> · ${when(st.evidence.walkedAt)}</span></div>` : ''}
-          <div class="kv"><span class="k">Last activity</span><span class="v">${when(st.lastActivity)}</span></div>
-        </div>
-        <div class="siderail danger-rail">
-          <div class="sh">Danger zone</div>
-          <p class="dz-note">Permanently remove this ticket. This can't be undone.</p>
-          <button class="btn danger full" onclick="askDelete('${t.id}')">Delete ticket</button>
-        </div>
+        <button class="tk-delete" onclick="askDelete('${t.id}')" title="Permanently remove this ticket — can't be undone">Delete ticket</button>
       </div>
     </div>`;
   dspRenderTicketBanner(t.id);        // paint the live "drone out" strip if one is running on this ticket

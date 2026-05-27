@@ -2569,3 +2569,8 @@ body{ background-image:
 .sl-txt{display:flex;flex-direction:column;gap:1px}
 .sl-txt b{font-size:14px;color:var(--head)}
 .sl-txt span{font-size:12.5px;color:var(--muted)}
+/* Decluttered ticket siderail: Status lead + lean Details + a quiet delete */
+.tk-statusrail .tk-statusnow{margin:4px 0 7px}
+.tk-statusneed{font-size:13.5px;color:var(--text);line-height:1.45;margin-bottom:10px}
+.tk-delete{display:block;width:100%;margin-top:10px;background:none;border:1px solid var(--border);color:var(--muted);font:inherit;font-size:12.5px;border-radius:8px;padding:9px;cursor:pointer;transition:border-color .14s,color .14s}
+.tk-delete:hover{border-color:var(--red);color:var(--red)}
