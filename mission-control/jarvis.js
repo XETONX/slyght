@@ -146,7 +146,7 @@ function renderNowBar() {
     seg(readyAlign, 'ready to align', 'violet', true),
     seg(needYou, 'need you', 'amber', true),
     seg(gathering, 'gathering', 'indigo', true),
-    seg(inFlight, 'in flight', 'teal', false),
+    seg(inFlight, 'in flight', 'teal', true),
   ].filter(Boolean);
   host.innerHTML = segs.length
     ? `<div class="now-wrap"><span class="now-title">Now</span>${segs.join('')}<a class="now-all" href="#/recommend">Recommends →</a></div>`
@@ -767,18 +767,34 @@ function renderCaseFile(t) {
   </div>`;
 }
 // Jarvis organize suggestion (Stage 2d) — epic / bundle / related / closes-with, with Apply buttons.
+// Jarvis suggestions — only the ACTIONABLE, NOT-YET-APPLIED rows (epic/bundle). Once you apply one
+// (t.epic / t.bundle now match), that row drops; when all are satisfied the whole bubble disappears.
+// Related/closes-with are NOT here — they live in the persistent Linked-tickets tile (renderLinkedTickets).
 function renderOrganize(t) {
   const o = (t.caseFile || {}).organize; if (!o) return '';
   const rows = [];
-  if (o.epic) rows.push(`<div class="org-row"><span class="org-k">Epic</span><span class="org-v">${esc(o.epic)}</span><button class="btn sm" onclick="setMeta('${t.id}','epic','${esc(o.epic)}');toast('epic set','ok');setTimeout(()=>refreshTicket('${t.id}'),200)">Apply</button></div>`);
-  else if (o.newEpic) rows.push(`<div class="org-row"><span class="org-k">New epic</span><span class="org-v">${esc(o.newEpic)}</span><button class="btn sm" onclick="createEpicFrom('${t.id}','${esc(String(o.newEpic).replace(/'/g, ''))}')">Create &amp; assign</button></div>`);
-  if (o.bundle) rows.push(`<div class="org-row"><span class="org-k">Bundle</span><span class="org-v">${esc(o.bundle)}</span><button class="btn sm" onclick="setMeta('${t.id}','bundle','${esc(String(o.bundle).replace(/'/g, ''))}');toast('bundle set','ok');setTimeout(()=>refreshTicket('${t.id}'),200)">Apply</button></div>`);
-  const rel = (o.related || []).filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
-  if (rel.length) rows.push(`<div class="org-row"><span class="org-k">Related</span><span class="org-v">${rel.map(x => `<a href="#/ticket/${esc(x)}">${esc(x)}</a>`).join(', ')}</span></div>`);
-  const cw = (o.closesWith || []).filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
-  if (cw.length) rows.push(`<div class="org-row"><span class="org-k">Closes with</span><span class="org-v">${cw.map(x => `<a href="#/ticket/${esc(x)}">${esc(x)}</a>`).join(', ')} <span class="org-note">— resolve when this ships</span></span></div>`);
+  if (o.epic && /^SLY-\d+$/.test(o.epic) && t.epic !== o.epic) rows.push(`<div class="org-row"><span class="org-k">Epic</span><span class="org-v">${esc(o.epic)}</span><button class="btn sm" onclick="applyOrganize('${t.id}','epic','${esc(o.epic)}')">Apply</button></div>`);
+  else if ((!o.epic || !/^SLY-\d+$/.test(o.epic)) && o.newEpic && !t.epic) rows.push(`<div class="org-row"><span class="org-k">New epic</span><span class="org-v">${esc(o.newEpic)}</span><button class="btn sm" onclick="createEpicFrom('${t.id}','${esc(String(o.newEpic).replace(/'/g, ''))}')">Create &amp; assign</button></div>`);
+  if (o.bundle && t.bundle !== o.bundle) rows.push(`<div class="org-row"><span class="org-k">Bundle</span><span class="org-v">${esc(o.bundle)}</span><button class="btn sm" onclick="applyOrganize('${t.id}','bundle','${esc(String(o.bundle).replace(/'/g, ''))}')">Apply</button></div>`);
   if (!rows.length) return '';
-  return `<div class="cf-organize"><div class="cf-spinoff-h"><span aria-hidden="true">✦</span> Jarvis suggests</div>${rows.join('')}</div>`;
+  return `<div class="cf-organize"><div class="cf-spinoff-h"><span aria-hidden="true">✦</span> Jarvis suggests <span class="cf-spinoff-hint">— apply to organize</span></div>${rows.join('')}</div>`;
+}
+async function applyOrganize(id, field, value) {
+  try { await action('setMeta', { id, field, value }); toast(field + ' set', 'ok'); await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id); } catch (e) {}
+}
+// Persistent Linked-tickets tile — related (links + Jarvis-suggested) + closes-with. Lives in the siderail.
+function renderLinkedTickets(t) {
+  const o = (t.caseFile || {}).organize || {};
+  const linkIds = (t.links || []).map(l => l.to).filter(x => /^SLY-\d+$/.test(x));
+  const related = [...new Set([...linkIds, ...(o.related || [])])].filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
+  const closesWith = [...new Set(o.closesWith || [])].filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
+  if (!related.length && !closesWith.length) return '';
+  const row = id => { const tk = get(id); return `<div class="kv"><span class="k"><a href="#/ticket/${id}">${id}</a></span><span class="v lk-title">${tk ? esc(String(tk.title || '').slice(0, 38)) : ''}</span></div>`; };
+  return `<div class="siderail lk-rail">
+    <div class="sh">Linked tickets</div>
+    ${related.length ? `<div class="lk-grp">Related</div>${related.map(row).join('')}` : ''}
+    ${closesWith.length ? `<div class="lk-grp">Closes when this ships</div>${closesWith.map(row).join('')}` : ''}
+  </div>`;
 }
 function jarvisOrganize(id) {
   modal(`<h2><span aria-hidden="true">✦</span> Jarvis: organize ${esc(id)}</h2>
@@ -1043,7 +1059,7 @@ function viewTicket(id) {
         </div>
         ${fldBundleDatalist()}
         ${t.type === 'epic' ? renderEpicChildren(t) : ''}
-        ${(t.links || []).length ? `<div class="siderail"><div class="sh">Related</div>${t.links.map(l => `<div class="kv"><span class="k">${l.to.startsWith('SLY') ? `<a href="#/ticket/${l.to}">${esc(l.to)}</a>` : esc(l.to)}</span><span class="v" style="font-weight:400;color:var(--muted);font-size:12px;max-width:150px">${esc(l.why)}</span></div>`).join('')}</div>` : ''}
+        ${renderLinkedTickets(t)}
         ${sync.length ? `<div class="siderail" style="background:var(--green-bg);border-color:#a6e9c0"><div class="sh" style="color:var(--green)">Kept in sync on ship</div><div style="font-size:13px;color:#1a1d24;line-height:1.6">${sync.map(esc).join(', ')} — the reasoning stays here on the ticket.</div></div>` : ''}
         <div class="siderail">
           <div class="sh">Activity</div>
@@ -1614,22 +1630,14 @@ function dspRenderTopbar() {
 
   if (!count) { host.innerHTML = meter; return; }
 
-  const walkChip = walkRunning ? `<button type="button" class="dsp-chip" title="Walk Drone · ${esc((J.walk && J.walk.scope) || 'all')} — open Command deck" onclick="location.hash='#/agents-fleet'">Walk · ${esc((J.walk && J.walk.scope) || 'all')}</button>` : '';
-  const chips = walkChip + running.slice(0, 4).map(([key, v]) => {
-    // chip links to the TICKET (v.id), not the id#task key; shows the scoped task when present
-    const label = v.task ? `${v.id} · ${TASK_LABEL[v.task] || v.task}` : v.id;
-    return `<button type="button" class="dsp-chip" title="${esc(label)} — open"
-       onclick="location.hash='${esc(agentHref(v.id))}'">${esc(label)}</button>`;
-  }).join('');
-  const more = running.length > 4 ? `<span class="dsp-chip-more">+${running.length - 4}</span>` : '';
+  // Count only (no per-drone chips — they spread across the topbar). Click → the Fleet page.
   host.innerHTML =
     `<span class="sys-sep"></span>` +
-    `<span class="dsp-agents-wrap" title="CC drones running now">
+    `<button type="button" class="dsp-agents-wrap" title="${count} drone${count === 1 ? '' : 's'} running — open the Fleet" onclick="location.hash='#/agents-fleet'">
        <span class="dsp-live-dot" aria-hidden="true"></span>
        <b class="dsp-agents-n">${count}</b>
        <span class="dsp-agents-l">Agent${count === 1 ? '' : 's'} Running</span>
-       <span class="dsp-chips">${chips}${more}</span>
-     </span>` +
+     </button>` +
     meter;
 }
 // The topbar usage gauge + its detail modal. Estimated $ (API list prices) this month vs a tunable
@@ -3253,9 +3261,9 @@ function recRow(t, scored, rank, maxScore) {
         <span class="rec-id">${t.id}</span>
       </div>
     </div>
-    <div class="rec-scorewrap" title="Leverage score ${scored.total} / ${maxScore}">
+    <div class="rec-scorewrap" title="Leverage = how much this is worth doing now: severity + how much money it touches + readiness + how many other tickets hang off it. Higher = sooner. (${scored.total} of ${maxScore})">
       <div class="rec-score-n">${scored.total}</div>
-      <div class="rec-score-l">leverage</div>
+      <div class="rec-score-l">leverage ⓘ</div>
       <div class="rec-score-track"><div class="rec-score-fill" style="width:${pct}%"></div></div>
     </div>
     <div class="rec-actions" onclick="event.stopPropagation()">

@@ -216,6 +216,9 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .org-k{font-weight:700;color:var(--accent);min-width:88px;flex-shrink:0}
 .org-v{flex:1;color:var(--text);min-width:0}
 .org-note{color:var(--muted);font-size:12px}
+.lk-rail .lk-grp{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:9px 0 2px}
+.lk-rail .lk-grp:first-of-type{margin-top:2px}
+.lk-title{font-weight:400;color:var(--muted);font-size:12px;text-align:right;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cf-spinoff-hint{font-weight:400;color:var(--muted)}
 .cf-spinoff-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
 .cf-spinoff-row:last-child{border-bottom:0}
