@@ -359,6 +359,18 @@ function viewBoard() {
       ${bd2Select('Surface', 'surface', f.surface, surfaces.map(s => [s, niceSurface(s)]))}
       <div class="bd2-tb-spacer"></div>
       <div class="bd2-sortwrap">
+        <span class="bd2-sortlbl">Group</span>
+        <div class="bd2-selwrap">
+          <select class="bd2-sel" onchange="setBoardGroup(this.value)" aria-label="Group by">
+            <option value="">No grouping</option>
+            <option value="epic"${f.group === 'epic' ? ' selected' : ''}>Epic</option>
+            <option value="severity"${f.group === 'severity' ? ' selected' : ''}>Priority</option>
+            <option value="surface"${f.group === 'surface' ? ' selected' : ''}>Surface</option>
+          </select>
+          ${BD2_CHEVRON}
+        </div>
+      </div>
+      <div class="bd2-sortwrap">
         <span class="bd2-sortlbl">Sort</span>
         <div class="bd2-selwrap">
           <select class="bd2-sel" onchange="setFilter('sort', this.value)" aria-label="Sort by">
@@ -377,7 +389,7 @@ function viewBoard() {
 
     <div class="bd2-list" role="list">
       ${shown.length
-        ? shown.map(ticketRow).join('')
+        ? (f.group ? renderGroupedBoard(boardGroups(shown, f.group)) : shown.map(ticketRow).join(''))
         : `<div class="bd2-empty">
              <div class="bd2-empty-ic">🔍</div>
              <div class="bd2-empty-h">No tickets match these filters</div>
@@ -385,6 +397,37 @@ function viewBoard() {
              ${anyFilter ? `<button class="bd2-reset solid" onclick="resetFilters()">Reset filters</button>` : ''}
            </div>`}
     </div>`;
+}
+// Group the board by epic / priority / surface (Stage 2b — the sprawl-tamer).
+function setBoardGroup(v) { J.filter.group = v || ''; viewBoard(); }
+function toggleBoardGroup(key) { J._boardCollapsed = J._boardCollapsed || {}; J._boardCollapsed[key] = !J._boardCollapsed[key]; viewBoard(); }
+function boardGroups(shown, mode) {
+  if (mode === 'epic') {
+    const epics = (J.tickets || []).filter(t => t.type === 'epic');
+    const groups = epics.map(e => ({ key: e.id, label: e.id + ' · ' + String(e.title || '').slice(0, 50), epic: e, tickets: shown.filter(t => t.epic === e.id && t.type !== 'epic') }));
+    const noEpic = shown.filter(t => t.type !== 'epic' && !t.epic);
+    if (noEpic.length) groups.push({ key: '__none', label: 'No epic', epic: null, tickets: noEpic });
+    return groups.filter(g => g.tickets.length || g.epic);
+  }
+  if (mode === 'severity') return ['P0', 'P1', 'P2'].map(s => ({ key: s, label: s + (s === 'P0' ? ' · Critical' : s === 'P1' ? ' · High' : ' · Normal'), tickets: shown.filter(t => t.severity === s) })).filter(g => g.tickets.length);
+  if (mode === 'surface') return [...new Set(shown.map(t => t.group))].filter(Boolean).sort().map(s => ({ key: s, label: niceSurface(s), tickets: shown.filter(t => t.group === s) }));
+  return [];
+}
+function renderGroupedBoard(groups) {
+  if (!groups.length) return '<div class="bd2-group-empty">Nothing to group.</div>';
+  return groups.map(g => {
+    const collapsed = (J._boardCollapsed || {})[g.key];
+    const done = g.tickets.filter(t => ['ConfirmedLive', 'Shipped'].includes((t.state || {}).status)).length;
+    return `<div class="bd2-group${collapsed ? ' collapsed' : ''}">
+      <div class="bd2-group-head" onclick="toggleBoardGroup('${esc(g.key)}')">
+        <span class="bd2-group-tw" aria-hidden="true">${collapsed ? '▸' : '▾'}</span>
+        <span class="bd2-group-label">${esc(g.label)}</span>
+        <span class="bd2-group-n">${done}/${g.tickets.length}</span>
+        ${g.epic ? `<a class="bd2-group-open" href="#/ticket/${g.epic.id}" onclick="event.stopPropagation()">open epic →</a>` : ''}
+      </div>
+      ${collapsed ? '' : (g.tickets.length ? g.tickets.map(ticketRow).join('') : '<div class="bd2-group-empty">No tickets in this group.</div>')}
+    </div>`;
+  }).join('');
 }
 
 // custom-styled select for the filter bar; value '' = "All <Label>"

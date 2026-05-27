@@ -262,6 +262,15 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .epic-count{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-soft);border-radius:5px;padding:1px 7px;margin-left:auto}
 .epic-empty{font-size:13px;color:var(--muted);padding:4px 0}
 .fld-epic{min-width:150px}
+/* board grouping (group by epic / priority / surface) */
+.bd2-group{margin-bottom:16px}
+.bd2-group-head{display:flex;align-items:center;gap:10px;padding:9px 13px;background:var(--card2);border:1px solid var(--border);border-radius:9px;cursor:pointer;margin-bottom:8px}
+.bd2-group-head:hover{background:var(--bg);border-color:var(--border2)}
+.bd2-group-tw{color:var(--muted);font-size:12px;width:12px;flex-shrink:0}
+.bd2-group-label{font-weight:700;font-size:14px;color:var(--head)}
+.bd2-group-n{font-size:12px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:5px;padding:1px 8px}
+.bd2-group-open{margin-left:auto;font-size:12px;font-weight:600;color:var(--blue)}
+.bd2-group-empty{font-size:13px;color:var(--muted);padding:8px 13px}
 
 /* topbar usage meter — estimated monthly spend gauge, green→amber→red (rough, not real quota) */
 .usage-meter{display:inline-flex;align-items:center;gap:8px;background:none;border:0;cursor:pointer;padding:2px 4px;font:inherit}
