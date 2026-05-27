@@ -33,6 +33,33 @@ const MC = __dirname;
 // Mission Control cockpit lives on `mission-control`. Pushing the cockpit branch would publish the tool
 // to the live finance app — so deploy HARD-REFUSES from any branch not in this list.
 const DEPLOY_BRANCHES = ['main'];
+// Execute-fix runs in an ISOLATED git worktree checked out on `main` — so a fix-implementing drone
+// edits the real app on the deploy branch WITHOUT touching the cockpit (mission-control) checkout.
+// Nothing auto-pushes; John reviews the diff in Deploy and pushes. Sibling dir, gitignored from commits.
+const WORKTREE = path.resolve(__dirname, '..', '..', 'slyght-deploy');
+function gitBranchOf(dir) { try { return require('child_process').execSync('git rev-parse --abbrev-ref HEAD', { cwd: dir }).toString().trim(); } catch (_) { return ''; } }
+function ensureWorktree() {
+  try {
+    const list = require('child_process').execSync('git worktree list --porcelain', { cwd: REPO }).toString();
+    const norm = WORKTREE.replace(/\\/g, '/');
+    if (list.includes('worktree ' + norm) || list.includes('worktree ' + WORKTREE)) { linkNodeModules(); return { ok: true, path: WORKTREE, existed: true, branch: gitBranchOf(WORKTREE) }; }
+  } catch (_) {}
+  try {
+    require('child_process').execSync('git worktree add ' + JSON.stringify(WORKTREE) + ' main', { cwd: REPO, stdio: 'pipe' });
+    linkNodeModules();
+    return { ok: true, path: WORKTREE, existed: false, branch: gitBranchOf(WORKTREE) };
+  } catch (e) { return { ok: false, error: (e.stderr ? e.stderr.toString() : '') || e.message }; }
+}
+// The worktree has no node_modules (not committed) → Guardian/tests can't run there. Junction/symlink
+// it to the main repo's node_modules so the fix + code-audit drones can run `npm run guardian` in the worktree.
+function linkNodeModules() {
+  try {
+    const wtNM = path.join(WORKTREE, 'node_modules'); const repoNM = path.join(REPO, 'node_modules');
+    if (fs.existsSync(wtNM) || !fs.existsSync(repoNM)) return;
+    if (process.platform === 'win32') require('child_process').execSync('mklink /J ' + JSON.stringify(wtNM) + ' ' + JSON.stringify(repoNM), { stdio: 'pipe' });
+    else fs.symlinkSync(repoNM, wtNM, 'dir');
+  } catch (_) { /* best-effort — Guardian just won't run in the worktree, code-audit + review still gate */ }
+}
 // RULE 4 — origin+token gate the write path. The token PERSISTS across restarts (cached in a
 // gitignored file) so a server restart no longer rotates it out from under an open page (which
 // surfaced as a confusing "missing token" on every action until refresh). Still localhost-only +
@@ -888,22 +915,58 @@ const ACTIONS = {
     return { ok: true, dispatched: key };
   },
 
+  // EXECUTE THE FIX (safe) — the command-centre close-out John asked for. A fix-mode drone runs in an
+  // ISOLATED `main` worktree (cockpit branch untouched): implements from the aligned handoff + resolution,
+  // runs Guardian, COMMITS "SLY-N:" on main. NOTHING is pushed — the diff lands for John to review, then he
+  // pushes from Deploy. Confirm-gated; the riskiest action, so it's the most guarded. See PATHWAY/SITE docs.
+  executeFixOnMain: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'executeFixOnMain needs confirm:true' };
+    const key = id + '#execute-fix';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a fix is already executing for ' + id };
+    let handoff;
+    try { handoff = fs.readFileSync(jail(path.join('mission-control', 'handoffs', id + '.md')), 'utf8'); }
+    catch { throw new Error('No handoff yet — align the ticket first.'); }
+    const wt = ensureWorktree();
+    if (!wt.ok) throw new Error('could not prepare the main worktree: ' + wt.error);
+    if (!DEPLOY_BRANCHES.includes(wt.branch)) throw new Error('worktree is on "' + wt.branch + '", expected main — refusing to fix on a non-deploy branch');
+    const cf = (readState()[id] || {}).caseFile || {};
+    const plan = (cf.resolution && (cf.resolution.technical || cf.resolution.resolution)) || '';
+    const prompt = [
+      handoff,
+      '\n---\nYou are CC, dispatched by Jarvis to IMPLEMENT the fix for ' + id + ' on the slyght app (single-file index.html, ~24k lines).',
+      'You are in an ISOLATED git worktree checked out on `main` — your edits + commit land on the deploy branch, but NOTHING is pushed (push is blocked; John reviews the diff and pushes). Work ONLY in this directory.',
+      plan ? '## The approved plan (from the resolution)\n' + plan : '',
+      'Implement the MINIMAL correct change. Reuse canonical writers (BRAIN.<domain>.<verb> + SOURCES tags) — never a parallel calc. Then run `npm run guardian` and fix anything it flags. When Guardian is green, COMMIT with a message that STARTS with "' + id + ': ". NEVER run git push.',
+      'End with a RESULT section: what you changed (files + the commit), the Guardian result, and what John should phone-verify on his S23.',
+    ].filter(Boolean).join('\n');
+    spawnDrone({
+      key, id, task: 'execute-fix', prompt, mode: 'fix', mdl: 'opus', rsn: 'think', budget: '10', maxTurns: 60, cwd: wt.path,
+      onResult: ({ job, resultText }) => recordExecuteFix(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id, worktree: wt.path };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
     if (confirm !== true) return { ok: false, reason: 'deploy refused: confirm:true required (UI confirm gate)' };
-    // SAFETY GUARD — only ever push from a deploy branch (main). The cockpit lives on
-    // `mission-control`; pushing it would publish the tool to the live app. Hard-refuse otherwise.
-    let branch = '';
-    try { branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: REPO }).toString().trim(); } catch (_) {}
+    // SAFETY GUARD — only ever push the DEPLOY branch (main). Push from wherever main is checked out:
+    // the cockpit checkout (REPO, on mission-control) OR the execute-fix worktree (on main). The cockpit
+    // branch must NEVER push to the live app, so if no main checkout is found we hard-refuse.
+    let pushDir = REPO, branch = gitBranchOf(REPO);
     if (!DEPLOY_BRANCHES.includes(branch)) {
-      return { ok: false, reason: 'deploy refused: you are on branch "' + branch + '", not a deploy branch (' + DEPLOY_BRANCHES.join(', ') + '). The cockpit branch must never push to the live app — switch to ' + DEPLOY_BRANCHES[0] + ' to ship.', branch, blocked: true };
+      const wb = gitBranchOf(WORKTREE);
+      if (DEPLOY_BRANCHES.includes(wb)) { pushDir = WORKTREE; branch = wb; }
+    }
+    if (!DEPLOY_BRANCHES.includes(branch)) {
+      return { ok: false, blocked: true, branch: gitBranchOf(REPO), reason: 'deploy refused: no deploy branch (' + DEPLOY_BRANCHES.join(', ') + ') is checked out. The cockpit is on "' + gitBranchOf(REPO) + '"; run Execute-fix to stage the change on a main worktree, then push.' };
     }
     return new Promise((resolve) => {
-      const p = spawn('git', ['push'], { cwd: REPO });
+      const p = spawn('git', ['push'], { cwd: pushDir });
       let out = '';
       p.stdout.on('data', d => out += d); p.stderr.on('data', d => out += d);
-      p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000), branch }));
+      p.on('exit', code => resolve({ ok: code === 0, code, output: out.slice(-2000), branch, pushedFrom: pushDir === WORKTREE ? 'worktree' : 'repo' }));
     });
   },
 
@@ -1589,6 +1652,15 @@ function recordTriagePlan(resultText, job) {
   });
 }
 
+// Post the execute-fix drone's result into the ticket + advance Aligned → Investigating (CC is on it).
+function recordExecuteFix(id, resultText, job) {
+  try {
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.thread.push({ author: 'cc', text: '**Execute-fix drone (main worktree) — ' + ((job && job.model) || '') + '**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
+    if (t.status === 'Aligned') { t.status = 'Investigating'; t.assignee = 'cc'; logTransition(id, 'Aligned', 'Investigating', 'cc'); }
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
 // Store the code-alignment audit verdict on the ticket caseFile + post the summary. Best-effort.
 function recordCodeAudit(id, resultText, job) {
   try {
@@ -1668,7 +1740,8 @@ function mergeRich(rich, cf) {
 // Spawn ONE headless claude drone (shared by scoped tasks; mirrors dispatchCC's proven spawn +
 // UTF-8 chunk handling + telemetry/spend). onResult({job,resultText,code}) does the task-specific
 // post-processing and must never throw into the exit handler.
-function spawnDrone({ key, id, task, prompt, mode, mdl, rsn, budget, onResult, maxTurns }) {
+function spawnDrone({ key, id, task, prompt, mode, mdl, rsn, budget, onResult, maxTurns, cwd }) {
+  const runCwd = cwd || REPO;   // execute-fix runs in an isolated `main` worktree, not the cockpit branch
   const claudeBin = process.platform === 'win32' ? 'claude.cmd' : 'claude';   // bare name; droneEnv() puts its dir on PATH
   // 'gather' = read-only investigation that MUST emit its JSON as the final result, so it uses
   // 'default' mode (NOT plan — plan mode routes the substantive output into a plan artifact and the
@@ -1680,8 +1753,8 @@ function spawnDrone({ key, id, task, prompt, mode, mdl, rsn, budget, onResult, m
     : ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash(git push:*)', 'Bash(git push)'];   // gather/plan: read-only
   const args = ['-p', '--output-format', 'json', '--model', mdl, '--max-turns', String(maxTurns || 40), '--max-budget-usd', budget, '--permission-mode', permMode, '--disallowedTools', ...disallow];
   const child = process.platform === 'win32'
-    ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: REPO, env: droneEnv() })
-    : spawn(claudeBin, args, { cwd: REPO });
+    ? spawn('cmd.exe', ['/c', claudeBin, ...args], { cwd: runCwd, env: droneEnv() })
+    : spawn(claudeBin, args, { cwd: runCwd });
   child.stdin.write(prompt); child.stdin.end();
   const job = ccJobs[key] = { status: 'running', id, task, mode, model: mdl, reasoning: rsn, started: Date.now(), out: '', _chunks: [] };
   child.stdout.on('data', d => job._chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d)));
@@ -1870,6 +1943,13 @@ const server = http.createServer((req, res) => {
       catch (e) { return send(res, 200, { prompts: PROMPT_DEFAULTS, seeded: true }); }
     }
     if (p === '/api/tickets') return send(res, 200, mergedTickets());
+    if (p === '/api/worktree') {   // the execute-fix main worktree: staged fix commits awaiting review + push
+      if (!fs.existsSync(WORKTREE)) return send(res, 200, { exists: false });
+      const sh = (c) => { try { return execSync(c, { cwd: WORKTREE }).toString().trim(); } catch (_) { return ''; } };
+      const commits = sh('git log --oneline origin/main..HEAD').split('\n').filter(Boolean);
+      const diffstat = (sh('git diff --shortstat origin/main..HEAD') || '').trim();
+      return send(res, 200, { exists: true, branch: gitBranchOf(WORKTREE), ahead: commits.length, commits, diffstat, dirty: sh('git status --porcelain').split('\n').filter(Boolean).length });
+    }
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
     // Read-only: the already-auto-ticketed gapKeys (keys of auto-tickets.json, the server's

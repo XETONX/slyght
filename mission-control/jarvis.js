@@ -32,7 +32,7 @@ function nextAction(t) {
   if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Fix is proven on a walk. Review &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
   if (fdLive(t.id))                return { label: 'Drones working — sit tight', why: 'Jarvis is investigating this now. Findings will land in the case file.', kind: 'wait' };
   if (status === 'Investigating')  return { label: 'CC is fixing it', why: 'CC is implementing the fix. It&rsquo;ll post back when done.', kind: 'wait' };
-  if (status === 'Aligned')        return { label: 'Hand to CC', why: 'You signed off the fix — send it to CC to implement.', fn: `dispatchToCC('${t.id}')`, kind: 'go' };
+  if (status === 'Aligned')        return { label: 'Execute the fix', why: 'You approved the plan — a drone implements it on an isolated main worktree (nothing pushes; you review the diff in Deploy).', fn: `executeFix('${t.id}')`, kind: 'go' };
   if (complete && !hasRes)         return { label: 'Compose the resolution', why: 'The case is complete. Get the plain-English resolution, then align.', fn: `composeResolution('${t.id}')`, kind: 'go' };
   if (complete && hasRes)          return { label: 'Align — sign off the fix', why: 'Resolution&rsquo;s ready. Align to hand it to CC.', fn: `align('${t.id}')`, kind: 'go' };
   if (!anyCase)                    return { label: 'Build the case', why: 'No evidence yet — deploy drones to investigate it for you.', fn: `buildCase('${t.id}')`, kind: 'go' };
@@ -1251,6 +1251,19 @@ async function composeResolution(id) {
     dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
+// Execute the fix on main — a drone implements it in an ISOLATED main worktree (cockpit untouched),
+// runs Guardian, commits. NOTHING pushes; the diff lands in Deploy for John to review + push.
+async function executeFix(id) {
+  if (!confirm('Run the execute-fix drone for ' + id + '?\n\n• Implements the fix in an ISOLATED main worktree — your cockpit branch is untouched.\n• Runs Guardian, commits the change. NOTHING is pushed.\n• You review the diff in Deploy and push.\n\nThis is an Opus drone editing your live app code; it can take several minutes.')) return;
+  try {
+    const r = await action('executeFixOnMain', { id, confirm: true });
+    toast(`Execute-fix drone running on ${id} (main worktree) — the diff will land for your review`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#execute-fix'] = { status: 'running', id, task: 'execute-fix', mode: 'fix', model: 'opus', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
 // Run the code-alignment auditor on a ticket's committed fix (BRAIN / invariants / architecture / Guardian).
 async function runCodeAudit(id) {
   try {
@@ -2258,7 +2271,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
