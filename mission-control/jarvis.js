@@ -2155,7 +2155,7 @@ async function goWalkDrone(surface) {
       J.walk = Object.assign({}, J.walk, { deploying: true, scope: surface, startedAt: Date.now() });
       toast(`Walk Drone deployed · ${niceSurface(surface)}`, 'ok');
       startWalkStatusPoll();
-      location.hash = '#/agents-fleet';   // show it in the Fleet, where running agents live
+      location.hash = '#/command';   // the live fleet lives in the Command Centre (renders in place — no flash)
     } else { toast((r && r.reason) || 'walk not started', 'err'); }
   } catch (e) { /* action() already toasted */ }
 }
@@ -2402,7 +2402,7 @@ function dspRenderTopbar() {
   // Count only (no per-drone chips — they spread across the topbar). Click → the Fleet page.
   host.innerHTML =
     `<span class="sys-sep"></span>` +
-    `<button type="button" class="dsp-agents-wrap" title="${count} drone${count === 1 ? '' : 's'} running — open the Fleet" onclick="location.hash='#/agents-fleet'">
+    `<button type="button" class="dsp-agents-wrap" title="${count} drone${count === 1 ? '' : 's'} running — open the Command Centre" onclick="location.hash='#/command'">
        <span class="dsp-live-dot" aria-hidden="true"></span>
        <b class="dsp-agents-n">${count}</b>
        <span class="dsp-agents-l">Agent${count === 1 ? '' : 's'} Running</span>
@@ -5617,7 +5617,7 @@ function viewCommandCentre() {
     <header class="cc-head">
       <div class="cc-title"><span class="cc-title-glow">COMMAND</span> CENTRE</div>
       <div class="cc-telemetry">
-        <span class="cc-tm"><b class="cc-tm-n ${online ? 'cc-tm-live' : ''}" id="ccOnline">${online}</b> drones online</span>
+        <span class="cc-tm"><b class="cc-tm-n ${online ? 'cc-tm-live' : ''}" id="ccOnline">${online}</b> drone${online === 1 ? '' : 's'} online</span>
         <span class="cc-tm"><b class="cc-tm-n">${(+sp.count || 0)}</b> ops total</span>
         <span class="cc-tm"><b class="cc-tm-n">~$${(+sp.today_usd || 0).toFixed(2)}</b> today</span>
       </div>

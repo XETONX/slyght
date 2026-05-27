@@ -921,6 +921,36 @@ const ACTIONS = {
     return { ok: true, dispatched: key, id };
   },
 
+  // ── UX AUDIT (cockpit-wide, 2026-05-28) — the UX drone turned on Mission Control's OWN UI. Captures the
+  // cockpit surfaces (cockpit-shots.js, deterministic), then a UX drone reads the screenshots + jarvis.css/js
+  // and returns a prioritized VISUAL-CONSISTENCY + polish pass (cross-cutting + per-surface). Drives #31.
+  uxAudit: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'uxAudit needs confirm:true' };
+    const key = 'COCKPIT#ux-audit';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a cockpit UX audit is already running' };
+    ccJobs[key] = { status: 'running', id: 'COCKPIT', task: 'ux', mode: 'capture', model: '—', started: Date.now() };
+    // Step 1: capture the surfaces fresh (deterministic), THEN dispatch the judging drone on exit.
+    const cap = spawn(process.execPath, [path.join(MC, 'scripts', 'cockpit-shots.js'), String(PORT)], { cwd: MC });
+    cap.on('exit', () => {
+      const shotsDir = path.join(MC, 'shots', 'cockpit');
+      const prompt = [
+        UX_DESIGN_PREAMBLE(),
+        '',
+        'You are the UX drone auditing **Mission Control\'s OWN cockpit UI** (the ticketing/command-centre tool itself) — NOT slyght\'s index.html. The UI lives in THIS directory: `jarvis.css`, `jarvis.js`, `mission-control.html`. Fresh screenshots of every surface (wide + narrow) are in `shots/cockpit/` (see `shots/cockpit/manifest.json`).',
+        'GOAL: a VISUAL-CONSISTENCY + polish pass across the whole cockpit — make it feel like one well-built product, not layers pasted together (John\'s words).',
+        '',
+        'HOW: READ `shots/cockpit/manifest.json`, then READ the PNGs (both wide and narrow). READ `jarvis.css` (the design system) + the relevant `jarvis.js` render functions. Judge against the discipline above. Look hard for: inconsistent spacing/padding scales, button styles that differ surface-to-surface, misalignment, typography rhythm + contrast (grey-on-grey data), color/token drift (one-off hex vs vars), anything that flashes/jumps, and narrow-width breakage. Tie each finding to a file:line and a token/class where you can.',
+        '',
+        'End with EXACTLY ONE fenced json block: {"summary":"the overall feel + the top theme to fix","crosscutting":[{"issue":"","fix":"the concrete CSS/JS change (name the class/var)","severity":"high|med|low"}],"surfaces":[{"surface":"command|overview|board|ticket|briefing|deploy|map|architecture","findings":[{"issue":"","cause":"jarvis.css:NN or jarvis.js:NN","fix":"","severity":"high|med|low"}]}]}',
+      ].join('\n');
+      spawnDrone({
+        key, id: 'COCKPIT', task: 'ux', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '10', maxTurns: 60, cwd: MC,
+        onResult: ({ job, resultText }) => recordUxAudit(resultText, job),
+      });
+    });
+    return { ok: true, auditing: 'COCKPIT', note: 'capturing surfaces, then the UX drone judges' };
+  },
+
   // ── Jarvis organize — read-only drone that reads THIS ticket + the full ticket list and suggests
   // how to categorize it: epic (existing or new), bundle, related tickets, and closes-with. Stage 2d.
   jarvisOrganize: ({ id, confirm }) => {
@@ -1965,6 +1995,16 @@ function recordUxReview(id, resultText, job) {
     t.lastActivity = new Date().toISOString(); writeState(st);
   } catch (_) {}
 }
+// Store the cockpit-wide UX audit (visual-consistency pass) to ux-audit.json. Best-effort.
+function recordUxAudit(resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const out = parsed
+      ? Object.assign({ ts: new Date().toISOString(), model: job && job.model }, parsed)
+      : { ts: new Date().toISOString(), summary: 'could not parse the UX audit output', raw: String(resultText || '').slice(0, 8000) };
+    fs.writeFileSync(jail(path.join('mission-control', 'ux-audit.json')), JSON.stringify(out, null, 2));
+  } catch (_) {}
+}
 // Store the code-alignment audit verdict on the ticket caseFile + post the summary. Best-effort.
 function recordCodeAudit(id, resultText, job) {
   try {
@@ -2261,6 +2301,7 @@ const server = http.createServer((req, res) => {
       return send(res, 200, { exists: true, branch: gitBranchOf(WORKTREE), ahead: commits.length, commits, diffstat, dirty: sh('git status --porcelain').split('\n').filter(Boolean).length });
     }
     if (p === '/api/deploylog') return send(res, 200, readDeployLog());   // pushes → live status (deploy-status tracking)
+    if (p === '/api/ux-audit') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'ux-audit.json'), 'utf8'))); } catch (e) { return send(res, 200, { none: true }); } }
     if (p === '/api/handoff') { try { return send(res, 200, { id: url.searchParams.get('id'), content: fs.readFileSync(jail(path.join('mission-control', 'handoffs', path.basename(url.searchParams.get('id') || '') + '.md')), 'utf8') }); } catch (e) { return send(res, 404, { error: e.message }); } }
     if (p === '/api/flows') { try { return send(res, 200, JSON.parse(fs.readFileSync(path.join(MC, 'flows.json'), 'utf8'))); } catch (e) { return send(res, 200, { surfaces: [], roster: [], coverage: {}, error: 'run scripts/mc/build-flows.js' }); } }
     // Read-only: the already-auto-ticketed gapKeys (keys of auto-tickets.json, the server's

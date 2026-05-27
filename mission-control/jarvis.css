@@ -13,6 +13,10 @@
   --amber:#e6aa5a; --amber-bg:#342810; --green:#49d18b; --green-bg:#103221;
   --violet:#a98bf5; --violet-bg:#241f39; --teal:#3cc6e0; --teal-bg:#0f2c39;
   --accent:#7c83ff; --accent-2:#9499ff; --accent-soft:#20233e;
+  /* Neon command-deck palette — ONE source of truth (was redeclared in .cmd-centre/.brief/.fdeck/.fmap).
+     green/violet/red are the existing tokens; only cyan+amber+hairlines are neon-specific. */
+  --neon-cyan:#2de2e6; --neon-amber:#ffb454; --neon-line:#1b2940; --neon-line2:#243349;
+  --neon-bg:#10141c;  /* deck base — deeper than --bg but close enough that board→command has no hard seam */
   --radius:14px; --radius-lg:18px;
   --sh-xs:0 1px 2px rgba(0,0,0,.3);
   --sh-sm:0 1px 3px rgba(0,0,0,.4), 0 1px 2px rgba(0,0,0,.25);
@@ -358,8 +362,8 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .btn{font-size:14px;font-weight:500;padding:10px 16px;border-radius:8px;border:1px solid var(--border2);background:var(--card);color:var(--label);transition:.12s}
 .btn:hover{border-color:var(--blue);color:var(--blue)}
 .btn.primary{border-color:var(--blue);background:var(--blue);color:#fff}
-.btn.primary:hover{background:#1349a8;color:#fff}
-.btn.green{border-color:var(--green);background:var(--green);color:#fff} .btn.green:hover{background:#05603a;color:#fff}
+.btn.primary:hover{background:color-mix(in srgb,var(--blue) 82%,white);color:#fff}
+.btn.green{border-color:var(--green);background:var(--green);color:#fff} .btn.green:hover{background:color-mix(in srgb,var(--green) 82%,white);color:#fff}
 .btn.sm{font-size:13px;padding:7px 12px}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 .footer-meta{display:flex;gap:18px;padding:2px 4px;font-size:13px;color:var(--muted);flex-wrap:wrap}
@@ -393,7 +397,7 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .rung{width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700}
 .rung.ok{background:var(--green-bg);color:var(--green);border:1px solid #a6e9c0}
 .rung.gap{background:var(--red-bg);color:var(--red);border:2px dashed #f0a3a3}
-.rung.dead{background:#f0f1f4;color:#98a2b3;border:2px dashed #d0d5dd}
+.rung.dead{background:var(--card2);color:var(--muted);border:2px dashed var(--border2)}
 .rung.fire{background:var(--amber-bg);color:var(--amber);border:1px solid #f5d990}
 .rinfo .rt{font-size:16px;font-weight:600;color:var(--head)}
 .rinfo .rsub{font-size:13.5px;color:var(--muted);line-height:1.6;margin-top:3px}
@@ -909,7 +913,7 @@ body{ background-image:radial-gradient(1200px 600px at 100% -5%, var(--card2) 0%
   padding:7px 8px; display:flex; flex-direction:column; gap:4px; transition:all .16s var(--ease); }
 .cal-cell:hover{ box-shadow:var(--sh-xs); }
 .cal-out{ background:transparent; border-color:transparent; }
-.cal-out .cal-daynum{ color:#c2c8d2; }
+.cal-out .cal-daynum{ color:var(--muted); }
 .cal-daynum{ font-size:13px; font-weight:600; color:var(--label); line-height:1.2; }
 .cal-today{ border-color:var(--accent); box-shadow:var(--sh-glow); background:var(--accent-soft); }
 .cal-todaydot{ display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px;
@@ -1321,7 +1325,7 @@ body{ background-image:radial-gradient(1200px 600px at 100% -5%, var(--card2) 0%
 .kb-doc h5,.kb-doc h6{ font-size:14px; margin:18px 0 6px; color:var(--label); text-transform:uppercase; letter-spacing:.4px; }
 .kb-doc p{ margin:0 0 16px; }
 .kb-doc a{ color:var(--blue); font-weight:600; text-decoration:underline; text-underline-offset:2px; text-decoration-thickness:1px; }
-.kb-doc a:hover{ color:#1349a8; }
+.kb-doc a:hover{ color:var(--blue); }
 .kb-doc strong{ font-weight:700; color:var(--head); }
 .kb-doc em{ font-style:italic; }
 .kb-doc ul,.kb-doc ol{ margin:0 0 16px; padding-left:26px; }
@@ -1346,7 +1350,7 @@ body{ background-image:radial-gradient(1200px 600px at 100% -5%, var(--card2) 0%
   background:var(--red-bg); border:1px solid #f0a3a3; border-radius:var(--radius-lg); padding:22px 24px; }
 .kb-error-ic{ font-size:22px; color:var(--red); flex-shrink:0; }
 .kb-error-h{ font-size:16px; font-weight:700; color:var(--red); }
-.kb-error-b{ font-size:14px; color:#7a271a; margin-top:3px; line-height:1.6; }
+.kb-error-b{ font-size:14px; color:var(--red); margin-top:3px; line-height:1.6; }
 
 /* ── responsive ────────────────────────────────────────────────────────── */
 @media (max-width:760px){
@@ -1531,7 +1535,7 @@ body.cp-lock{ overflow:hidden; }
 
 /* ── topbar → refined HQ header ──────────────────────────────────────────── */
 .topbar{ height:62px; padding:0 28px;
-  background:linear-gradient(180deg,#ffffff,#fbfcfe);
+  background:var(--card);
   border-bottom:1px solid var(--border); box-shadow:var(--sh-xs); }
 .topbar .brand{ gap:11px; letter-spacing:-.2px; }
 .brand-name{ font-weight:700; color:var(--head); }
@@ -1541,7 +1545,7 @@ body.cp-lock{ overflow:hidden; }
 .sysstrip{ display:flex; align-items:center; gap:14px; font-size:12.5px; color:var(--muted);
   white-space:nowrap; }
 .sys-live{ display:inline-flex; align-items:center; gap:7px; font-weight:600; color:var(--green);
-  background:var(--green-bg); border:1px solid #a6e9c0; border-radius:999px; padding:4px 11px 4px 9px;
+  background:var(--green-bg); border:1px solid var(--green); border-radius:999px; padding:4px 11px 4px 9px;
   box-shadow:var(--sh-xs); }
 .sys-dot{ width:8px; height:8px; border-radius:50%; background:var(--green); flex-shrink:0;
   box-shadow:0 0 0 0 rgba(6,118,71,.5); animation:sysPulse 2.4s var(--ease) infinite; }
@@ -1558,8 +1562,10 @@ body.cp-lock{ overflow:hidden; }
 .sys-stat.sys-p0 b{ color:var(--red); }
 .sys-stat.sys-amber b{ color:var(--amber); }
 .sys-stat.sys-green b{ color:var(--green); }
-/* collapse stats on narrow screens; keep the Live pill */
-@media (max-width:720px){ .sys-stat,.sys-sep{ display:none; } }
+/* collapse stats + brand subtitle on narrow screens so the right-side pills stay on one row
+   (was clipping: .topbar overflow:hidden + .right max-height:60px slice wrapped pills). Keep the Live pill. */
+@media (max-width:820px){ .sys-stat,.sys-sep{ display:none; } }
+@media (max-width:760px){ .topbar .brand small{ display:none; } }
 
 /* ── grouped rail sections ───────────────────────────────────────────────── */
 .rail{ display:flex; flex-direction:column; }
@@ -1890,14 +1896,14 @@ body{ background-image:
 
 /* ── Jarvis-voice opener ─────────────────────────────────────────────────── */
 .rec-voice{ display:flex; align-items:flex-start; gap:13px; margin-bottom:22px;
-  background:linear-gradient(135deg, var(--accent-soft), #fff); border:1px solid var(--accent-soft);
+  background:linear-gradient(135deg, var(--accent-soft), var(--card)); border:1px solid var(--accent-soft);
   border-radius:var(--radius-lg); padding:16px 20px; box-shadow:var(--sh-sm); }
 .rec-voice-av{ flex-shrink:0; width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
   font-size:13px; font-weight:700; color:#fff; background:linear-gradient(135deg,var(--violet),#9f7aea); box-shadow:0 2px 8px rgba(105,65,198,.32); }
 .rec-voice-txt{ margin:0; font-size:15.5px; line-height:1.6; color:var(--head); font-weight:500; }
 
 /* ── Ship-Ready Now callout (green — "ship it") ──────────────────────────── */
-.rec-shipready{ background:linear-gradient(180deg,var(--green-bg),#fff); border:1px solid #a6e9c0;
+.rec-shipready{ background:linear-gradient(180deg,var(--green-bg),var(--card)); border:1px solid var(--green);
   border-radius:var(--radius-lg); padding:20px 22px; margin-bottom:22px; box-shadow:var(--sh-sm); }
 .rec-sr-head{ display:flex; align-items:center; gap:14px; margin-bottom:14px; }
 .rec-sr-ic{ flex-shrink:0; width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center;
@@ -2126,7 +2132,7 @@ body{ background-image:
 .cw-flow .cw-flow-dot { font-size: 11px; }
 .cw-flow.pass { background: var(--green-bg, #eafaf1); }
 .cw-flow.pass .cw-flow-dot { color: var(--green, var(--green)); }
-.cw-flow.fail { background: #fdecec; }
+.cw-flow.fail { background: var(--red-bg); }
 .cw-flow.fail .cw-flow-dot, .cw-flow-tail.err { color: var(--red, #c0392b); }
 .cw-flow.miss { opacity: .7; }
 .cw-flow-tail { margin-left: auto; color: var(--muted, #6b7280); font-size: 12px; }
@@ -2134,9 +2140,9 @@ body{ background-image:
 .cw-confirmed .v { color: var(--green, var(--green)); }
 
 /* ════════════ COMMAND CENTRE — orbital drone deck (neon-on-dark, scoped to .cmd-centre) ════════════ */
-.cmd-centre{position:relative;--cc-cyan:#2de2e6;--cc-amber:#ffb454}
+.cmd-centre{position:relative;--cc-cyan:var(--neon-cyan);--cc-amber:var(--neon-amber)}
 .cc-bg{position:absolute;inset:-26px -32px;z-index:0;pointer-events:none;border-radius:14px;overflow:hidden;
-  background:radial-gradient(900px 480px at 82% -8%,rgba(45,226,230,.10),transparent 60%),radial-gradient(680px 460px at -5% 108%,rgba(124,131,255,.09),transparent 60%),#0a0e16}
+  background:radial-gradient(900px 480px at 82% -8%,rgba(45,226,230,.10),transparent 60%),radial-gradient(680px 460px at -5% 108%,rgba(124,131,255,.09),transparent 60%),var(--neon-bg)}
 .cc-bg::before{content:"";position:absolute;inset:0;opacity:.6;
   background-image:linear-gradient(rgba(45,226,230,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(45,226,230,.05) 1px,transparent 1px);background-size:44px 44px;
   -webkit-mask-image:radial-gradient(circle at 55% 25%,#000,transparent 78%);mask-image:radial-gradient(circle at 55% 25%,#000,transparent 78%)}
@@ -2150,7 +2156,9 @@ body{ background-image:
 @keyframes ccBlink{50%{opacity:.5}}
 .cc-targetbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:rgba(14,20,32,.72);border:1px solid #1b2940;border-radius:10px;padding:10px 14px;margin-bottom:18px}
 .cc-target-lbl{font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:var(--cc-cyan);letter-spacing:.1em}
-.cc-target-sel{flex:0 1 380px;background:#0a0e16;color:#cfe3f0;border:1px solid #1b2940;border-radius:8px;padding:8px 11px;font:inherit;font-size:13px}
+.cc-target-sel{flex:0 1 380px;background:var(--neon-bg);color:#cfe3f0;border:1px solid var(--neon-line);border-radius:8px;padding:8px 32px 8px 11px;font:inherit;font-size:13px;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%232de2e6' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 11px center}
 .cc-target-sel:focus{outline:none;border-color:var(--cc-cyan);box-shadow:0 0 0 3px rgba(45,226,230,.15)}
 .cc-target-open{font-size:12px;font-weight:600;color:var(--cc-cyan)}
 .cc-target-hint{font-size:12px;color:#5e7491}
@@ -2208,7 +2216,7 @@ body{ background-image:
 .cc-triage-go{font-family:ui-monospace,monospace;font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--cc-amber);flex-shrink:0}
 
 /* ════════════ JARVIS BRIEFING — autonomous-triage surface (neon-on-dark, scoped to .brief) ════════════ */
-.brief{position:relative;--cc-cyan:#2de2e6;--cc-amber:#ffb454}
+.brief{position:relative;--cc-cyan:var(--neon-cyan);--cc-amber:var(--neon-amber)}
 .brief > *:not(.cc-bg){position:relative;z-index:1}
 .brief-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #1b2940}
 .brief-title{font-size:23px;font-weight:800;letter-spacing:.18em;color:#e8f4f8;font-family:ui-monospace,Consolas,monospace}
@@ -2216,7 +2224,7 @@ body{ background-image:
 .brief-rerun{display:inline-flex;align-items:center;gap:7px;background:rgba(14,20,32,.72);border:1px solid #1b2940;border-radius:8px;color:var(--cc-cyan);font:inherit;font-size:12.5px;font-weight:600;padding:8px 13px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .brief-rerun:hover{border-color:var(--cc-cyan);box-shadow:0 0 0 3px rgba(45,226,230,.14)}
 .brief-rerun-ic{font-size:14px}
-.brief-body{max-width:900px}
+.brief-body{max-width:1200px;margin:0 auto}
 .brief-summary{font-size:17px;line-height:1.62;color:#dceaf2;background:rgba(14,20,32,.6);border-left:3px solid var(--cc-cyan);border-radius:0 10px 10px 0;padding:15px 19px;margin-bottom:16px}
 .brief-summary-k{display:block;font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--cc-cyan);margin-bottom:6px}
 /* SITREP — one-glance status of the whole operation */
@@ -2253,7 +2261,7 @@ body{ background-image:
 .brief-sev{font-family:ui-monospace,monospace;font-size:11px;font-weight:800;letter-spacing:.06em;padding:2px 8px;border-radius:5px;border:1px solid}
 .brief-sev.sev-P0{color:#f4767e;border-color:rgba(244,118,126,.5);background:rgba(244,118,126,.1)}
 .brief-sev.sev-P1{color:#ffb454;border-color:rgba(255,180,84,.5);background:rgba(255,180,84,.1)}
-.brief-sev.sev-P2{color:#7e93ad;border-color:#2b3b54;background:rgba(126,147,173,.08)}
+.brief-sev.sev-P2{color:#7e93ad;border-color:var(--neon-line2);background:rgba(126,147,173,.08)}
 .brief-conf{font-size:12px;color:#7e93ad}
 .brief-status{margin-left:auto;font-family:ui-monospace,monospace;font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:20px}
 .brief-st-queued{color:#8aa0b8;background:rgba(126,147,173,.12)}
@@ -2269,11 +2277,11 @@ body{ background-image:
 .brief-find-progress{color:#8aa0b8;font-style:italic}
 .brief-find-progress a{color:var(--cc-cyan);font-style:normal}
 .brief-card-foot{display:flex;gap:10px;flex-wrap:wrap}
-.brief .btn{background:rgba(14,20,32,.7);border:1px solid #2b3b54;color:#bdd0e0}
+.brief .btn{background:rgba(14,20,32,.7);border:1px solid var(--neon-line2);color:#bdd0e0}
 .brief .btn:hover{border-color:var(--cc-cyan);color:#e8f4f8}
 .brief-watch{display:flex;flex-direction:column;gap:8px}
 .brief-watch-row{display:flex;align-items:center;gap:10px;background:rgba(14,20,32,.5);border:1px solid #1b2940;border-radius:8px;padding:6px 10px 6px 12px}
-.brief-watch-row:hover{border-color:#2b3b54}
+.brief-watch-row:hover{border-color:var(--neon-line2)}
 .brief-watch-main{display:flex;align-items:center;gap:10px;flex:1;min-width:0;font-size:14px;color:#bdd0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brief-watch-main b{color:#cfe3f0;font-family:ui-monospace,monospace}
 .brief-thinking{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:15px;color:#bdd0e0;background:rgba(14,20,32,.6);border:1px solid #1b2940;border-radius:12px;padding:22px 24px;line-height:1.5}
@@ -2423,7 +2431,7 @@ body{ background-image:
 .cf-fs-acts{margin-top:10px}
 /* Deploy branch-safety banner */
 .dep-branchbar{border-radius:11px;padding:12px 16px;margin-bottom:16px;font-size:14px;line-height:1.5;border:1px solid}
-.dep-branchbar code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:rgba(0,0,0,.25);padding:1px 5px;border-radius:4px}
+.dep-branchbar code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--card2);border:1px solid var(--border);padding:1px 5px;border-radius:4px}
 .dep-bb-ok{background:var(--green-bg);border-color:var(--green);color:var(--text)}.dep-bb-ok b{color:var(--green)}
 .dep-bb-bad{background:var(--red-bg);border-color:var(--red);color:var(--text)}.dep-bb-bad b{color:var(--red)}
 /* Deploy — fixes staged on the main worktree (ready to ship) */
@@ -2453,7 +2461,7 @@ body{ background-image:
 .dep-ds-note{font-size:12.5px;color:var(--muted);line-height:1.55;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* ════════════════════════ FLIGHTDECK — the management home (neon command deck) ════════════════════ */
-.fdeck{position:relative;--cy:#2de2e6;--am:#ffb454;--gn:#49d18b;--vi:#a98bf5;--rd:#f4767e;--panel:rgba(20,28,44,.72);--ink:#dbe7f2;--ink2:#8aa0b8;--ink3:#5e7491;--line:#1b2940}
+.fdeck{position:relative;--cy:var(--neon-cyan);--am:var(--neon-amber);--gn:var(--green);--vi:var(--violet);--rd:var(--red);--panel:rgba(20,28,44,.72);--ink:#dbe7f2;--ink2:#8aa0b8;--ink3:#5e7491;--line:var(--neon-line)}
 .fdeck > *:not(.cc-bg){position:relative;z-index:1}
 .fdeck .cc-bg{inset:-30px -40px}
 /* hero */
@@ -2519,7 +2527,7 @@ body{ background-image:
 .fd-sevtag{font-family:ui-monospace,monospace;font-size:10px;font-weight:800;padding:1px 6px;border-radius:5px;border:1px solid}
 .fd-sevtag.s-P0{color:var(--rd);border-color:rgba(244,118,126,.5);background:rgba(244,118,126,.12)}
 .fd-sevtag.s-P1{color:var(--am);border-color:rgba(255,180,84,.5);background:rgba(255,180,84,.12)}
-.fd-sevtag.s-P2{color:var(--ink2);border-color:#2b3b54}
+.fd-sevtag.s-P2{color:var(--ink2);border-color:var(--neon-line2)}
 .fd-statetag,.fd-restag,.fd-bundle-n{margin-left:auto;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--ink3)}
 .fd-restag{color:var(--gn)}
 .fd-title{font-size:14px;line-height:1.42;color:var(--ink);margin-bottom:9px}
@@ -2527,7 +2535,7 @@ body{ background-image:
 .fd-prog span{display:block;height:100%;background:linear-gradient(90deg,var(--am),var(--cy));border-radius:3px;transition:width .5s var(--ease)}
 .fd-prog-bundle span{background:linear-gradient(90deg,var(--gn),var(--cy))}
 .fd-card-acts{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
-.fd-btn{font:inherit;font-size:12px;font-weight:700;border-radius:8px;padding:6px 11px;cursor:pointer;background:rgba(10,14,22,.6);border:1px solid #2b3b54;color:var(--ink);transition:all .14s var(--ease);white-space:nowrap}
+.fd-btn{font:inherit;font-size:12px;font-weight:700;border-radius:8px;padding:6px 11px;cursor:pointer;background:rgba(10,14,22,.6);border:1px solid var(--neon-line2);color:var(--ink);transition:all .14s var(--ease);white-space:nowrap}
 .fd-btn:hover{border-color:var(--cy);color:#eef6fb;transform:translateY(-1px)}
 .fd-btn-go{color:var(--am);border-color:rgba(255,180,84,.45)}
 .fd-btn-go:hover{border-color:var(--am);box-shadow:0 0 12px rgba(255,180,84,.18)}
@@ -2545,10 +2553,10 @@ body{ background-image:
 @keyframes fdFlash{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--cy),0 0 26px rgba(45,226,230,.3)}}
 
 /* ════════════════════════ FEATURE MAP — the constellation ════════════════════ */
-.fmap{position:relative;display:flex;gap:0;height:calc(100vh - 108px);min-height:560px;border-radius:16px;overflow:hidden;border:1px solid #16202f;--cy:#2de2e6;--am:#ffb454;--gn:#49d18b;--vi:#a98bf5;--rd:#f4767e}
+.fmap{position:relative;display:flex;gap:0;height:calc(100vh - 108px);min-height:560px;border-radius:16px;overflow:hidden;border:1px solid var(--neon-line);--cy:var(--neon-cyan);--am:var(--neon-amber);--gn:var(--green);--vi:var(--violet);--rd:var(--red)}
 .fmap .cc-bg{inset:0;border-radius:0}
 .fmap > *:not(.cc-bg){position:relative;z-index:1}
-.fmap-side{width:236px;flex:0 0 236px;background:rgba(10,14,22,.78);border-right:1px solid #16202f;padding:18px 16px;overflow-y:auto;backdrop-filter:blur(3px)}
+.fmap-side{width:236px;flex:0 0 236px;background:rgba(10,14,22,.78);border-right:1px solid var(--neon-line);padding:18px 16px;overflow-y:auto;backdrop-filter:blur(3px)}
 .fmap-brand{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:800;letter-spacing:.16em;color:#eef6fb}
 .fmap-brand-glow{color:var(--cy);text-shadow:0 0 16px rgba(45,226,230,.6)}
 .fmap-sub{font-size:12px;color:#5e7491;line-height:1.5;margin:6px 0 18px}

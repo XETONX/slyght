@@ -95,3 +95,6 @@ mission-control/shots/
 
 # Jarvis deploy-status log (runtime — pushes → live tracking)
 mission-control/deploy-log.json
+
+# Jarvis cockpit UX audit (runtime — the UX drone's visual-consistency pass output)
+mission-control/ux-audit.json
