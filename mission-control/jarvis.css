@@ -2168,3 +2168,7 @@ body{ background-image:
 .cc-fleet-idle{font-size:12.5px;color:#5e7491;font-family:ui-monospace,monospace;padding:8px 0;line-height:1.5}
 @keyframes ccUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:980px){.cc-layout{grid-template-columns:1fr}.cc-fleet{position:static}}
+.cc-fleet-sub{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;letter-spacing:.12em;color:#5e7491;margin:14px 0 6px}
+.cc-fleet-done{opacity:.72}
+.cc-dot-ok{background:#49d18b !important;box-shadow:0 0 8px rgba(73,209,139,.6) !important;animation:none !important}
+.cc-dot-bad{background:#f4767e !important;box-shadow:0 0 8px rgba(244,118,126,.6) !important;animation:none !important}

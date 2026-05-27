@@ -621,6 +621,17 @@ const ACTIONS = {
     return sweepCase(id);
   },
 
+  // ── Run ONE scoped dig, then automatically re-run the auditor so the GAP verdict re-converges.
+  // This is what "Run suggested dig" calls — without the re-audit, the GAP never clears (John's SLY-1 bug).
+  digThenAudit: ({ id, task, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'digThenAudit needs confirm:true' };
+    if (!SCOPED_TASKS[task]) throw new Error('unknown scoped task: ' + task);
+    const r = launchScoped(id, task, () => { launchScoped(id, 'auditor', null); });
+    if (!r.ok) return r;
+    return { ok: true, dispatched: r.key, id, task, thenAudit: true };
+  },
+
   // ── System auditor — a ruthless READ-ONLY health audit across the WHOLE app (not one ticket):
   // cloud-sync integrity, cross-surface story coherence, and financial↔AI-layer↔Jarvis reconciliation.
   // Reuses the drone machinery (keyed SYSTEM#audit). Report → mission-control/system-audit.json.
@@ -1143,7 +1154,7 @@ const SCOPED_TASKS = {
       'You are the AUDITOR. The case file above is everything gathered so far. Do three things, nothing else:',
       '1. Verdict each slot: BACKED (evidence supports it) / THIN (present but weak) / MISSING / CONTRADICTORY (slots disagree).',
       '2. Merge and dedupe: fold overlapping findings into one coherent case. If two passes found the same issue, state it ONCE. If a later pass found an additional issue, add it — do not restate the first.',
-      '3. Decide: COMPLETE (ready for John to align) or GAP — and if GAP, name EXACTLY ONE targeted follow-up: which drone, what specific question, why. Never a blind full re-run; never more than one.',
+      '3. Decide: COMPLETE (ready for John to align) or GAP — and if GAP, name EXACTLY ONE targeted follow-up. The "drone" field MUST be one of these exact scoped task ids: root-cause, locate-surface, fix-proposal, conformance (never "Gather" or a free word — the system re-runs that exact drone, then re-audits). Pick the drone that owns the MISSING/THIN slot. Never a blind full re-run; never more than one.',
       'If the case file shows a prior audit at cycle 2, you MUST return COMPLETE (with caveats for anything still thin) — convergence is mandatory, there is no cycle 3.',
       'DO NOT investigate yourself, request multiple digs, or loop.',
       'JSON schema: {"task":"auditor","cycle":1,"slots":{"rootCause":"BACKED","files":"BACKED","fix":"THIN","surface":"BACKED","conformance":"MISSING","walk":"MISSING"},"merged":"one-paragraph converged case","verdict":"COMPLETE|GAP","nextDig":null,"caveats":[]}',

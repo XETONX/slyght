@@ -657,6 +657,40 @@ function taskKeyFromDrone(d) {
   if (d.includes('walk')) return 'walk';
   return 'root-cause';
 }
+// Resolve the GAP's re-dig target robustly: a vague nextDig ("Gather") that maps to root-cause when
+// root-cause is already filled, or no drone named, → the first MISSING/THIN/empty slot. Fixes SLY-1.
+function ccNextDigTask(t, audit) {
+  const cf = t.caseFile || {};
+  const slotToTask = { rootCause: 'root-cause', surface: 'locate-surface', fix: 'fix-proposal', conformance: 'conformance' };
+  const filled = { rootCause: !!(cf.rootCause && cf.rootCause.rootCause), surface: !!(cf.surface && cf.surface.surface), fix: !!(cf.fix && cf.fix.fix), conformance: !!(cf.conformance && cf.conformance.driftVerdict) };
+  const slots = audit.slots || {};
+  const firstGap = Object.keys(slotToTask).find(k => ['MISSING', 'THIN', 'CONTRADICTORY'].includes(slots[k]) || !filled[k]);
+  const drone = (audit.nextDig && audit.nextDig.drone) || '';
+  let task = drone ? taskKeyFromDrone(drone) : '';
+  if (task === 'walk') return 'walk';
+  // vague drone (didn't name a real slot) but defaulted to a filled root-cause → use the real gap
+  if (!task || (task === 'root-cause' && filled.rootCause && !/root/i.test(drone))) task = firstGap ? slotToTask[firstGap] : task;
+  return task || (firstGap ? slotToTask[firstGap] : 'root-cause');
+}
+// Run a scoped dig then auto re-audit so the GAP re-converges (John's SLY-1 "doesn't update" fix).
+function digThenAudit(id, task) {
+  const lbl = TASK_LABEL[task] || task;
+  modal(`<h2>Run ${esc(lbl)} + re-audit</h2>
+    <p>Runs a read-only <b>${esc(lbl.toLowerCase())}</b> drone on ${esc(id)}, then <b>automatically re-runs the auditor</b> so the gap re-checks and clears. ~a few minutes.</p>
+    <div class="btns"><button class="btn primary" onclick="doDigThenAudit('${id}','${task}')"><span aria-hidden="true">▶</span> Run + re-audit</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doDigThenAudit(id, task) {
+  closeModal();
+  try {
+    await action('digThenAudit', { id, task, confirm: true });
+    toast(`${TASK_LABEL[task] || task} drone dispatched — re-audits when it lands`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#' + task] = { status: 'running', id, task, mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = id;
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
 function renderCaseFile(t) {
   const cf = t.caseFile || {};
   const rc = cf.rootCause || {};
@@ -708,13 +742,13 @@ function renderCaseFile(t) {
     auditHtml = `<span><span class="cf-audit-tag cf-v-complete">✓ Complete</span> ready to align${(audit.caveats && audit.caveats.length) ? ` · ${audit.caveats.length} caveat(s)` : ''}</span><button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
   } else {
     const nd = audit.nextDig || null;
-    const ndTask = (nd && nd.drone) ? taskKeyFromDrone(nd.drone) : '';
+    const ndTask = ccNextDigTask(t, audit);   // robust: handles vague "Gather" / already-filled → first MISSING slot
     // The Walk Drone is a separate mechanism (not a scoped task) → route to goWalkDrone, never digScoped('walk').
     let ndBtn;
     if (ndTask === 'walk') ndBtn = `<button class="btn sm primary" onclick="goWalkDrone('${esc(t.group || '')}')">Run Walk Drone</button>`;
-    else if (ndTask) ndBtn = `<button class="btn sm primary" onclick="digScoped('${t.id}','${esc(ndTask)}')">Run suggested dig</button>`;
+    else if (ndTask) ndBtn = `<button class="btn sm primary" onclick="digThenAudit('${t.id}','${esc(ndTask)}')">Run suggested dig</button>`;
     else ndBtn = `<button class="btn sm" onclick="runAudit('${t.id}')">Re-audit</button>`;
-    auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` + ndBtn;
+    auditHtml = `<span><span class="cf-audit-tag cf-v-gap">Gap</span> ${nd ? `needs <b>${esc(TASK_LABEL[ndTask] || nd.drone || '')}</b> — ${esc(String(nd.why || nd.scope || '').slice(0, 120))}` : 'more evidence needed'}</span>` + ndBtn;
   }
   const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
 
@@ -731,16 +765,17 @@ function renderCaseFile(t) {
   const newTickets = collect('unmappedTerritory');
   const questions = collect('openQuestions');
   const caveats = [...new Set((cf.audit && cf.audit.caveats || []).map(c => String(c || '').trim()).filter(Boolean))];
-  J._spin = J._spin || {}; J._spin[t.id] = newTickets;   // logSpinoff indexes into the Potential-tickets bucket
+  J._spin = J._spin || {}; J._spin[t.id] = newTickets;       // logSpinoff indexes into Potential-tickets
+  J._questions = J._questions || {}; J._questions[t.id] = questions;   // askQuestionJarvis indexes into Open-questions
   const cfBucket = (label, items, opts) => items.length ? `
     <div class="cf-spinoff-bucket">
       <div class="cf-spinoff-h">${label} <span class="cf-spinoff-n">${items.length}</span>${opts.logAll && items.length > 1 ? `<button class="btn sm cf-logall" onclick="logAllSpinoffs('${t.id}')">Log all ${items.length}</button>` : ''}</div>
-      ${items.slice(0, 12).map((x, i) => `<div class="cf-spinoff-row"><span class="cf-spinoff-t">${esc(x.slice(0, 180))}</span>${opts.log ? `<button class="btn sm" onclick="logSpinoff('${t.id}',${i})">Log</button>` : ''}</div>`).join('')}
+      ${items.slice(0, 12).map((x, i) => `<div class="cf-spinoff-row"><span class="cf-spinoff-t">${esc(x.slice(0, 180))}</span>${opts.log ? `<button class="btn sm" onclick="logSpinoff('${t.id}',${i})">Log</button>` : ''}${opts.ask ? `<button class="btn sm" onclick="askQuestionJarvis('${t.id}',${i})">Ask Jarvis</button>` : ''}</div>`).join('')}
     </div>` : '';
   const spinoffBlock = (newTickets.length || questions.length || caveats.length) ? `
     <div class="cf-spinoff">
       ${cfBucket('Potential tickets', newTickets, { log: true, logAll: true })}
-      ${cfBucket('Open questions — answer in the thread', questions, {})}
+      ${cfBucket('Open questions — ask Jarvis to work them', questions, { ask: true })}
       ${cfBucket('Case-quality notes (auditor)', caveats, {})}
     </div>` : '';
 
@@ -1275,6 +1310,21 @@ async function askJarvis(id) {
     J.dspWatch = id;
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Fold an open question into a Jarvis conversation — posts it + Jarvis works it in-thread, which
+// then informs next steps (deeper dig / a different action). Per John's open-questions ask.
+async function askQuestionJarvis(id, idx) {
+  const q = ((J._questions || {})[id] || [])[idx]; if (!q) { toast('question not found', 'err'); return; }
+  try {
+    await action('addComment', { id, author: 'john', text: 'Open question for Jarvis — work this and tell me the next step: ' + q });
+    await action('jarvisChat', { id, confirm: true });
+    toast('Jarvis is working that question…', 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#jarvis-chat'] = { status: 'running', id, task: 'jarvis-chat', mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = id;
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
     dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
@@ -4627,10 +4677,14 @@ function viewCommandCentre() {
     </button>`;
   }).join('');
 
+  const liveRows = (walkRunning ? `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><span class="cc-fleet-id">WALK</span><span class="cc-fleet-task">${esc((J.walk.scope) || 'all')}</span><span class="cc-fleet-clock">live</span></div>` : '')
+    + running.map(j => { const ms = j.started ? Date.now() - j.started : 0; const clk = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); return `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || 'investigate')}</span><span class="cc-fleet-clock">${clk}</span></div>`; }).join('');
+  // fill the column when idle: recent completed ops (this session) so the panel is never dead space
+  const recent = Object.values(jobs).filter(j => j.status === 'done' || j.status === 'failed').sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 8);
+  const recentRows = recent.length ? `<div class="cc-fleet-sub">RECENT OPS</div>` + recent.map(j => `<div class="cc-fleet-row cc-fleet-done"><span class="cc-fleet-dot cc-dot-${j.status === 'done' ? 'ok' : 'bad'}"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || '—')}</span><span class="cc-fleet-clock">${j.status === 'done' ? '✓' : '✕'}</span></div>`).join('') : '';
   const fleetRows = (running.length || walkRunning)
-    ? (walkRunning ? `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><span class="cc-fleet-id">WALK</span><span class="cc-fleet-task">${esc((J.walk.scope) || 'all')}</span><span class="cc-fleet-clock">live</span></div>` : '')
-      + running.map(j => { const ms = j.started ? Date.now() - j.started : 0; const clk = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); return `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || 'investigate')}</span><span class="cc-fleet-clock">${clk}</span></div>`; }).join('')
-    : `<div class="cc-fleet-idle">No drones in the air. Select a target and deploy.</div>`;
+    ? liveRows + recentRows
+    : (recentRows || `<div class="cc-fleet-idle">No drones in the air. Select a target and deploy — agents you launch show here, live.</div>`);
 
   v.innerHTML = `
     <div class="cc-bg" aria-hidden="true"></div>
