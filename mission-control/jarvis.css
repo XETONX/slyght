@@ -196,6 +196,13 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .cf-spinoff-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--head);margin-bottom:6px}
 .cf-spinoff-n{font-size:11px;font-weight:700;color:var(--muted);background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:1px 7px}
 .cf-logall{margin-left:auto}
+/* Jarvis organize suggestion */
+.cf-organize{margin-top:12px;padding:10px 13px;background:var(--accent-soft);border:1px solid #c7cdf7;border-radius:8px}
+.cf-organize .cf-spinoff-h{color:var(--accent)}
+.org-row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+.org-k{font-weight:700;color:var(--accent);min-width:88px;flex-shrink:0}
+.org-v{flex:1;color:var(--text);min-width:0}
+.org-note{color:var(--muted);font-size:12px}
 .cf-spinoff-hint{font-weight:400;color:var(--muted)}
 .cf-spinoff-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
 .cf-spinoff-row:last-child{border-bottom:0}

@@ -666,6 +666,35 @@ const ACTIONS = {
     return { ok: true, dispatched: key, id };
   },
 
+  // ── Jarvis organize — read-only drone that reads THIS ticket + the full ticket list and suggests
+  // how to categorize it: epic (existing or new), bundle, related tickets, and closes-with. Stage 2d.
+  jarvisOrganize: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'jarvisOrganize needs confirm:true' };
+    const key = id + '#organize';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'Jarvis is already organizing ' + id };
+    const all = mergedTickets().tickets || [];
+    const ticket = all.find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const open = all.filter(t => !(t.state && t.state.status === 'Shipped'));
+    const list = open.map(t => `${t.id} [${t.type}${t.epic ? ' epic:' + t.epic : ''}${t.bundle ? ' bundle:' + t.bundle : ''}] ${t.severity} ${t.group || ''} — ${String(t.title || '').slice(0, 70)}`).join('\n').slice(0, 8000);
+    const epics = all.filter(t => t.type === 'epic').map(t => t.id + ' — ' + t.title).join('; ') || '(none yet)';
+    const prompt = [
+      'You are Jarvis, organizing ticket ' + id + ' for John in Mission Control. Read THIS ticket and the FULL ticket list, then suggest how to categorize it. Do NOT edit files; respond only with the analysis + JSON.',
+      '## This ticket', ticket.title, String(ticket.summary || ''), 'surface: ' + (ticket.group || '?') + ' · type: ' + ticket.type + ' · severity: ' + ticket.severity,
+      '## Existing epics', epics,
+      '## All open tickets', list,
+      '',
+      'Suggest: which EXISTING epic this belongs under (its SLY-id) OR a NEW epic name if a clear cluster exists; a bundle name; RELATED tickets (same surface/root-cause, by id); and tickets that would CLOSE when this one ships (by id). Be conservative — only real relationships.',
+      'End with EXACTLY ONE fenced json block: {"epic":"SLY-N or null","newEpic":"name or null","bundle":"name or null","related":["SLY-N"],"closesWith":["SLY-N"],"reasoning":"one short paragraph"}',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'organize', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'off', budget: '3', maxTurns: 10,
+      onResult: ({ job, resultText }) => recordOrganize(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
@@ -1184,6 +1213,17 @@ function recordSystemAudit(resultText, job) {
   } catch (_) {}
 }
 
+// Store Jarvis's organize suggestion on the ticket caseFile + post a short comment. Best-effort.
+function recordOrganize(id, resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.caseFile = t.caseFile || {};
+    t.caseFile.organize = parsed ? Object.assign({ ts: new Date().toISOString() }, parsed) : { ts: new Date().toISOString(), raw: String(resultText || '').slice(0, 2000) };
+    t.thread.push({ author: 'jarvis', text: '**Jarvis — organize suggestion**\n\n' + (parsed ? (parsed.reasoning || '(see suggestions on the ticket)') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
 // Post a live-Jarvis reply into the thread as a 'jarvis' comment. Best-effort; never throws.
 function postJarvisReply(id, resultText, job) {
   try {

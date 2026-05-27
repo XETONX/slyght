@@ -723,6 +723,9 @@ function renderCaseFile(t) {
       <div class="label">Case file — evidence</div>
       <div class="cf-headright">
         <span class="cf-progress">${filled}/5 gathered</span>
+        ${(J.ccjobs && J.ccjobs[t.id + '#organize'] && J.ccjobs[t.id + '#organize'].status === 'running')
+          ? `<span class="cf-sweep"><span class="cf-spin" aria-hidden="true"></span> organizing…</span>`
+          : `<button class="btn sm" onclick="jarvisOrganize('${t.id}')" title="Jarvis suggests epic / bundle / related tickets"><span aria-hidden="true">✦</span> Organize</button>`}
         ${sweepRunning
           ? `<span class="cf-sweep"><span class="cf-spin" aria-hidden="true"></span> Building · ${esc(sw.step)}${sw.cycle ? ` (audit ${sw.cycle})` : ''}</span>`
           : `<button class="btn sm primary" onclick="buildCase('${t.id}')">⚡ Build the case</button>`}
@@ -731,8 +734,48 @@ function renderCaseFile(t) {
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
     ${merged}
+    ${renderOrganize(t)}
     ${spinoffBlock}
   </div>`;
+}
+// Jarvis organize suggestion (Stage 2d) — epic / bundle / related / closes-with, with Apply buttons.
+function renderOrganize(t) {
+  const o = (t.caseFile || {}).organize; if (!o) return '';
+  const rows = [];
+  if (o.epic) rows.push(`<div class="org-row"><span class="org-k">Epic</span><span class="org-v">${esc(o.epic)}</span><button class="btn sm" onclick="setMeta('${t.id}','epic','${esc(o.epic)}');toast('epic set','ok');setTimeout(()=>refreshTicket('${t.id}'),200)">Apply</button></div>`);
+  else if (o.newEpic) rows.push(`<div class="org-row"><span class="org-k">New epic</span><span class="org-v">${esc(o.newEpic)}</span><button class="btn sm" onclick="createEpicFrom('${t.id}','${esc(String(o.newEpic).replace(/'/g, ''))}')">Create &amp; assign</button></div>`);
+  if (o.bundle) rows.push(`<div class="org-row"><span class="org-k">Bundle</span><span class="org-v">${esc(o.bundle)}</span><button class="btn sm" onclick="setMeta('${t.id}','bundle','${esc(String(o.bundle).replace(/'/g, ''))}');toast('bundle set','ok');setTimeout(()=>refreshTicket('${t.id}'),200)">Apply</button></div>`);
+  const rel = (o.related || []).filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
+  if (rel.length) rows.push(`<div class="org-row"><span class="org-k">Related</span><span class="org-v">${rel.map(x => `<a href="#/ticket/${esc(x)}">${esc(x)}</a>`).join(', ')}</span></div>`);
+  const cw = (o.closesWith || []).filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
+  if (cw.length) rows.push(`<div class="org-row"><span class="org-k">Closes with</span><span class="org-v">${cw.map(x => `<a href="#/ticket/${esc(x)}">${esc(x)}</a>`).join(', ')} <span class="org-note">— resolve when this ships</span></span></div>`);
+  if (!rows.length) return '';
+  return `<div class="cf-organize"><div class="cf-spinoff-h"><span aria-hidden="true">✦</span> Jarvis suggests</div>${rows.join('')}</div>`;
+}
+function jarvisOrganize(id) {
+  modal(`<h2><span aria-hidden="true">✦</span> Jarvis: organize ${esc(id)}</h2>
+    <p>Jarvis reads this ticket + the whole ticket list and suggests an <b>epic</b>, <b>bundle</b>, <b>related</b> tickets, and what would <b>close when this ships</b>. Read-only; ~a minute.</p>
+    <div class="btns"><button class="btn primary" onclick="doJarvisOrganize('${id}')"><span aria-hidden="true">✦</span> Organize</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doJarvisOrganize(id) {
+  closeModal();
+  try {
+    await action('jarvisOrganize', { id, confirm: true });
+    toast('Jarvis is organizing…', 'ok');
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#organize'] = { status: 'running', id, task: 'organize', mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = id;
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+    dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Create a new epic from Jarvis's suggested name + assign this ticket to it.
+async function createEpicFrom(id, name) {
+  try {
+    const r = await action('createTicket', { title: name, type: 'epic', summary: 'Epic created from Jarvis organize on ' + id });
+    await action('setMeta', { id, field: 'epic', value: r.id });
+    toast(`Created epic ${r.id} + assigned ${id}`, 'ok');
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
 }
 // Dispatch a scoped GATHER drone (light confirm — it's read-only + on your plan, no cost-cap friction).
 function digScoped(id, task) {
@@ -1590,7 +1633,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
