@@ -2172,3 +2172,78 @@ body{ background-image:
 .cc-fleet-done{opacity:.72}
 .cc-dot-ok{background:#49d18b !important;box-shadow:0 0 8px rgba(73,209,139,.6) !important;animation:none !important}
 .cc-dot-bad{background:#f4767e !important;box-shadow:0 0 8px rgba(244,118,126,.6) !important;animation:none !important}
+
+/* ── Triage hero — the Command Centre's door to "what are my issues?" ── */
+.cc-triage{display:flex;align-items:center;gap:16px;width:100%;text-align:left;cursor:pointer;font:inherit;position:relative;overflow:hidden;
+  background:linear-gradient(120deg,rgba(42,32,20,.92),rgba(20,15,10,.92));border:1px solid rgba(255,180,84,.42);border-radius:12px;padding:16px 20px;margin-bottom:16px;color:#f0e6d8;
+  box-shadow:0 0 22px rgba(255,180,84,.10);transition:transform .16s var(--ease),box-shadow .16s var(--ease),border-color .16s var(--ease)}
+.cc-triage::after{content:"";position:absolute;inset:0;background:linear-gradient(120deg,transparent 34%,rgba(255,180,84,.10) 50%,transparent 66%);opacity:0;transition:opacity .3s;pointer-events:none}
+.cc-triage:hover{transform:translateY(-2px);border-color:var(--cc-amber);box-shadow:0 12px 34px rgba(0,0,0,.5),0 0 30px rgba(255,180,84,.22)}
+.cc-triage:hover::after{opacity:1}
+.cc-triage-ic{font-size:26px;color:var(--cc-amber);text-shadow:0 0 16px rgba(255,180,84,.6);flex-shrink:0}
+.cc-triage-txt{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+.cc-triage-txt b{font-size:17px;font-weight:800;color:#fff}
+.cc-triage-txt small{font-size:12.5px;color:#bfa98c;line-height:1.45}
+.cc-triage-go{font-family:ui-monospace,monospace;font-size:12px;font-weight:700;letter-spacing:.1em;color:var(--cc-amber);flex-shrink:0}
+
+/* ════════════ JARVIS BRIEFING — autonomous-triage surface (neon-on-dark, scoped to .brief) ════════════ */
+.brief{position:relative;--cc-cyan:#2de2e6;--cc-amber:#ffb454}
+.brief > *:not(.cc-bg){position:relative;z-index:1}
+.brief-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #1b2940}
+.brief-title{font-size:23px;font-weight:800;letter-spacing:.18em;color:#e8f4f8;font-family:ui-monospace,Consolas,monospace}
+.brief-glow{color:var(--cc-cyan);text-shadow:0 0 18px rgba(45,226,230,.6)}
+.brief-rerun{display:inline-flex;align-items:center;gap:7px;background:rgba(14,20,32,.72);border:1px solid #1b2940;border-radius:8px;color:var(--cc-cyan);font:inherit;font-size:12.5px;font-weight:600;padding:8px 13px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.brief-rerun:hover{border-color:var(--cc-cyan);box-shadow:0 0 0 3px rgba(45,226,230,.14)}
+.brief-rerun-ic{font-size:14px}
+.brief-body{max-width:880px}
+.brief-summary{font-size:16px;line-height:1.6;color:#dceaf2;background:rgba(14,20,32,.6);border-left:3px solid var(--cc-cyan);border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:14px}
+.brief-meta{font-family:ui-monospace,monospace;font-size:12px;color:#7e93ad;margin-bottom:18px}
+.brief-meta b{color:var(--cc-amber)}
+.brief-issues{display:flex;flex-direction:column;gap:14px}
+.brief-anim .brief-card{animation:briefIn .42s var(--ease) both}
+@keyframes briefIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.brief-card{position:relative;background:linear-gradient(160deg,rgba(22,32,50,.9),rgba(12,18,30,.92));border:1px solid #1b2940;border-radius:12px;padding:16px 18px;overflow:hidden}
+.brief-card.brief-live{border-color:rgba(255,180,84,.4);box-shadow:0 0 22px rgba(255,180,84,.1)}
+.brief-card-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.brief-rank{font-family:ui-monospace,monospace;font-size:13px;font-weight:800;color:var(--cc-cyan)}
+.brief-tkt{font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#cfe3f0}
+.brief-tkt:hover{color:var(--cc-cyan)}
+.brief-sev{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:2px 7px;border-radius:5px;border:1px solid}
+.brief-sev.sev-P0{color:#f4767e;border-color:rgba(244,118,126,.5);background:rgba(244,118,126,.1)}
+.brief-sev.sev-P1{color:#ffb454;border-color:rgba(255,180,84,.5);background:rgba(255,180,84,.1)}
+.brief-sev.sev-P2{color:#7e93ad;border-color:#2b3b54;background:rgba(126,147,173,.08)}
+.brief-conf{font-size:11px;color:#7e93ad}
+.brief-status{margin-left:auto;font-family:ui-monospace,monospace;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+.brief-st-queued{color:#8aa0b8;background:rgba(126,147,173,.12)}
+.brief-st-investigating{color:var(--cc-amber);background:rgba(255,180,84,.13);animation:ccBlink 1.5s infinite}
+.brief-st-done{color:#49d18b;background:rgba(73,209,139,.14)}
+.brief-card-title{font-size:16px;font-weight:700;color:#e8f4f8;margin-bottom:7px}
+.brief-why{font-size:14px;line-height:1.6;color:#bdd0e0;margin-bottom:9px}
+.brief-learn{display:flex;gap:8px;font-size:13px;line-height:1.5;color:#9fd9db;background:rgba(45,226,230,.06);border-radius:8px;padding:9px 12px;margin-bottom:10px}
+.brief-learn-ic{color:var(--cc-cyan);flex-shrink:0}
+.brief-digest{display:flex;flex-direction:column;gap:7px;border-top:1px dashed #233650;padding-top:11px;margin-bottom:10px}
+.brief-find{font-size:13px;line-height:1.55;color:#c7d6e6}
+.brief-find-k{display:inline-block;font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;letter-spacing:.05em;color:var(--cc-amber);text-transform:uppercase;margin-right:6px}
+.brief-find-progress{color:#8aa0b8;font-style:italic}
+.brief-find-progress a{color:var(--cc-cyan);font-style:normal}
+.brief-card-foot{display:flex;gap:10px;flex-wrap:wrap}
+.brief .btn{background:rgba(14,20,32,.7);border:1px solid #2b3b54;color:#bdd0e0}
+.brief .btn:hover{border-color:var(--cc-cyan);color:#e8f4f8}
+.brief-watch-h{font-family:ui-monospace,monospace;font-size:12px;font-weight:700;letter-spacing:.12em;color:#7e93ad;margin:24px 0 10px}
+.brief-watch-sub{color:#5e7491;font-weight:400;letter-spacing:0}
+.brief-watch{display:flex;flex-direction:column;gap:7px}
+.brief-watch-row{display:flex;align-items:center;gap:10px;font-size:13px;color:#bdd0e0;background:rgba(14,20,32,.5);border:1px solid #1b2940;border-radius:8px;padding:9px 12px}
+.brief-watch-row:hover{border-color:#2b3b54}
+.brief-watch-row b{color:#cfe3f0;font-family:ui-monospace,monospace}
+.brief-thinking{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:15px;color:#bdd0e0;background:rgba(14,20,32,.6);border:1px solid #1b2940;border-radius:12px;padding:22px 24px;line-height:1.5}
+.brief-thinking-sub{display:block;width:100%;font-size:12.5px;color:#7e93ad;margin-top:4px}
+.brief-orbit{width:18px;height:18px;border-radius:50%;border:2px solid rgba(45,226,230,.25);border-top-color:var(--cc-cyan);animation:ccSpin 1s linear infinite;flex-shrink:0;box-shadow:0 0 12px rgba(45,226,230,.4)}
+.brief-orbit.sm{width:12px;height:12px;border-width:1.5px;display:inline-block;vertical-align:middle}
+.brief-empty{text-align:center;padding:48px 28px;max-width:560px;margin:0 auto}
+.brief-empty-ic{font-size:40px;color:var(--cc-cyan);text-shadow:0 0 24px rgba(45,226,230,.5);margin-bottom:8px}
+.brief-empty h2{font-size:24px;color:#e8f4f8;margin:0 0 12px}
+.brief-empty p{font-size:15px;line-height:1.65;color:#9fb3c8;margin:0 0 22px}
+.brief-cta{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--cc-cyan),#1aa9ad);color:#04141a;font:inherit;font-size:15px;font-weight:800;border:none;border-radius:10px;padding:13px 26px;cursor:pointer;box-shadow:0 0 26px rgba(45,226,230,.3);transition:transform .15s,box-shadow .15s}
+.brief-cta:hover{transform:translateY(-2px);box-shadow:0 0 36px rgba(45,226,230,.45)}
+.brief-cta.sm{font-size:13px;padding:8px 16px}
+.brief-raw{margin-top:16px;text-align:left;color:#9fb3c8}

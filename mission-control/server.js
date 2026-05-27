@@ -647,6 +647,25 @@ const ACTIONS = {
     return { ok: true, dispatched: key };
   },
 
+  // ── Autonomous triage — "Hey Jarvis, what are my issues?" The commander (Opus, read-only) reads the
+  // WHOLE backlog (context pack) + the grounding docs on disk + live S, RANKS the real issues, and
+  // AUTO-SWEEPS the top ≤3 (recordTriagePlan fires sweepCase). Reuses spawnDrone (keyed SYSTEM#triage)
+  // + the converging DAG. Report → triage-report.json. See AUTONOMOUS-TRIAGE.md. Confirm-gated like every drone.
+  triageWorkload: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'triageWorkload needs confirm:true' };
+    const key = 'SYSTEM#triage';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a triage is already running' };
+    const ctx = buildTriageContext();
+    // Write a 'running' stub immediately so the Briefing surface has state to render while Opus thinks.
+    writeTriageReport({ ts: new Date().toISOString(), status: 'running', plan: null, dispatched: [], backlog: ctx.open.length });
+    spawnDrone({
+      key, id: 'SYSTEM', task: 'triage', prompt: triageCommanderPrompt(ctx), mode: 'gather',
+      mdl: 'opus', rsn: 'deep', budget: '8', maxTurns: 30,
+      onResult: ({ job, resultText }) => recordTriagePlan(resultText, job),
+    });
+    return { ok: true, dispatched: key, backlog: ctx.open.length };
+  },
+
   // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
   // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
   jarvisChat: ({ id, confirm }) => {
@@ -1257,6 +1276,102 @@ function recordSystemAudit(resultText, job) {
   } catch (_) {}
 }
 
+// ── Autonomous triage helpers ────────────────────────────────────────────────
+const TRIAGE_FILE = path.join('mission-control', 'triage-report.json');
+function writeTriageReport(rec) { try { fs.writeFileSync(jail(TRIAGE_FILE), JSON.stringify(rec, null, 2)); } catch (_) {} }
+
+// Assemble the compact TICKET WORLD brief for the triage commander — the bridge that lets a drone
+// reason about the whole backlog (which a per-ticket drone cannot see), then point it at the on-disk
+// grounding docs. Backlog snapshot + open-bugs digest + recent session. See AUTONOMOUS-TRIAGE.md §2.
+function buildTriageContext() {
+  const all = mergedTickets().tickets || [];
+  const open = all.filter(t => !(t.state && t.state.status === 'Shipped'));
+  const slotState = (cf) => {
+    cf = cf || {}; const has = [];
+    if (cf.rootCause && cf.rootCause.rootCause) has.push('root');
+    if (cf.surface && cf.surface.surface) has.push('surface');
+    if (cf.fix && cf.fix.fix) has.push('fix');
+    if (cf.conformance && cf.conformance.driftVerdict) has.push('conf');
+    if (cf.audit && cf.audit.verdict) has.push('audit:' + cf.audit.verdict);
+    return has.length ? has.join('+') : 'EMPTY';
+  };
+  const ageOf = (t) => { const o = t.state && t.state.opened; return o ? Math.round((Date.now() - new Date(o)) / 86400000) + 'd' : '?'; };
+  const SEV = { P0: 0, P1: 1, P2: 2 };
+  const backlog = open
+    .slice().sort((a, b) => (SEV[a.severity] != null ? SEV[a.severity] : 3) - (SEV[b.severity] != null ? SEV[b.severity] : 3))
+    .map(t => `${t.id} · ${t.severity || '?'} · ${(t.state && t.state.status) || 'Open'} · ${t.group || '—'} · case[${slotState(t.caseFile)}] · ${ageOf(t)} — ${String(t.title || '').slice(0, 80)}`)
+    .join('\n');
+  let bugs = '';
+  try { bugs = fs.readFileSync(jail('OPEN-BUGS.md'), 'utf8').split('\n').slice(0, 50).join('\n'); } catch (_) {}
+  let session = '';
+  try {
+    const dir = jail(path.join('docs', 'sessions'));
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.md'))
+      .map(f => ({ f, m: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.m - a.m);
+    if (files.length) session = files[0].f + '\n' + fs.readFileSync(path.join(dir, files[0].f), 'utf8').split('\n').slice(0, 30).join('\n');
+  } catch (_) {}
+  return { open, backlog, bugs, session };
+}
+
+// The Triage Commander prompt — Jarvis's brain for the WHOLE backlog. Opus, read-only.
+function triageCommanderPrompt(ctx) {
+  return [
+    'You are JARVIS — John\'s engineering chief of staff for slyght, running an AUTONOMOUS TRIAGE of his entire ticket backlog. John just asked: "what are my issues?" Read the backlog, ground yourself in the architecture + the financial contract + the live state, decide which tickets are the REAL issues right now, rank them, and pick the top few to investigate immediately. You COMMAND drones; you never edit code.',
+    '',
+    'slyght is a single-file PWA (index.html ~24k lines; global S persisted to localStorage.slyght_v5; BRAIN bubbles are the canonical writers; S._auditLog is forensic truth; a Cloudflare Worker + KV back push/sync). It is John\'s PERSONAL finance coach — ONE user. Judge issues by "does this hurt John daily or risk his money?", never by elegance.',
+    '',
+    'GROUND YOURSELF — read these on disk as needed (you have the Read tool; cwd is the repo root):',
+    '  • ARCHITECTURE.md — the system shape',
+    '  • FINANCIAL-INVARIANTS.md — the contract the app MUST satisfy (INV-NN). A ticket that breaks an invariant ranks HIGH.',
+    '  • FEATURE-MAP.md — surfaces, canonical writers, state fields',
+    '  • OPEN-BUGS.md — the known-broken list (digest below; read the full file for detail)',
+    '  • docs/PIPELINE.md — how work is judged (Ledger Walk is Step 0: S.txns are truth, flags are derived)',
+    '  • state-snapshot.json — John\'s LIVE state S (the actual numbers). For any money ticket, the ledger is truth.',
+    '',
+    'Discipline: plain English (John is a visual learner — no jargon, real names not categories), ground claims in file:line where you can, and for any money issue remember S.txns are truth, not derived flags. Be decisive and honest; push back on noise; do not pad the list.',
+    '',
+    '## THE BACKLOG (Mission Control ticket world — what you cannot see from disk)',
+    'Format:  ID · severity · status · surface · case[evidence already gathered] · age — title',
+    ctx.backlog || '(no open tickets)',
+    '',
+    '## OPEN-BUGS.md (digest — read the full file for detail)',
+    ctx.bugs || '(none)',
+    '',
+    '## WHERE THE LAST SESSION LEFT OFF',
+    ctx.session || '(no session notes found)',
+    '',
+    '## YOUR JOB',
+    'Rank the real issues. For each, give: WHY it is a real issue and why it ranks there (plain English); its severity; your confidence; which scoped drone should investigate it FIRST (root-cause | locate-surface | fix-proposal | conformance | build); and ONE sentence of what John should LEARN from it. Then pick the top ≤3 highest-leverage tickets to investigate NOW (where a drone sweep will actually move things) → investigateNow. Real-but-not-now tickets go on the watchlist.',
+    '',
+    'End with EXACTLY ONE fenced code block tagged json:',
+    '{"summaryForJohn":"2-3 plain-English sentences on the shape of the backlog right now","issues":[{"ticketId":"SLY-N","why":"...","severity":"P0|P1|P2","confidence":"high|medium|low","recommendedDrone":"root-cause|locate-surface|fix-proposal|conformance|build","learnForJohn":"one sentence"}],"investigateNow":["SLY-N"],"watchlist":["SLY-M"]}',
+  ].join('\n');
+}
+
+// Persist the commander's plan to triage-report.json AND auto-dispatch sweepCase on the top
+// investigateNow ids (cap 3, validated). The plan DECIDES; the proven converging sweep EXECUTES.
+function recordTriagePlan(resultText, job) {
+  const parsed = extractJsonBlock(resultText);
+  const dispatched = [];
+  try {
+    if (parsed && Array.isArray(parsed.investigateNow)) {
+      const valid = new Set((mergedTickets().tickets || []).map(t => t.id));
+      parsed.investigateNow
+        .filter(id => /^SLY-\d+$/.test(id) && valid.has(id)).slice(0, 3)
+        .forEach(id => { try { if (sweepCase(id).ok) dispatched.push(id); } catch (_) {} });
+    }
+  } catch (_) {}
+  writeTriageReport({
+    ts: new Date().toISOString(),
+    status: 'complete',
+    model: (job && job.model) || null,
+    turns: (job && job.turns) || null,
+    plan: parsed || null,
+    dispatched,                                       // ids we actually kicked sweeps on
+    raw: parsed ? null : String(resultText || '').slice(0, 8000),
+  });
+}
+
 // Store Jarvis's organize suggestion on the ticket caseFile + post a short comment. Best-effort.
 function recordOrganize(id, resultText, job) {
   try {
@@ -1620,6 +1735,10 @@ const server = http.createServer((req, res) => {
     }
     if (p === '/api/system-audit') {
       try { return send(res, 200, JSON.parse(fs.readFileSync(jail(path.join('mission-control', 'system-audit.json')), 'utf8'))); }
+      catch (e) { return send(res, 200, { empty: true }); }
+    }
+    if (p === '/api/triage') {
+      try { return send(res, 200, JSON.parse(fs.readFileSync(jail(TRIAGE_FILE), 'utf8'))); }
       catch (e) { return send(res, 200, { empty: true }); }
     }
     if (p === '/api/read') {

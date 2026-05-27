@@ -1644,6 +1644,7 @@ function dspStartPoll(watchId) {
       if (cur) viewTicket(cur);
       else if (rt === 'agents-fleet') viewAgentsFleet();
       else if (rt === 'architecture') viewArchitecture();
+      else if (rt === 'briefing') renderBriefing();   // in-place body update — no flash
       else if (rt === 'command') renderCCFleet();   // fleet-only update — no full re-render, no flash
     }
 
@@ -4689,6 +4690,11 @@ function viewCommandCentre() {
         <span class="cc-tm"><b class="cc-tm-n">~$${(+sp.today_usd || 0).toFixed(2)}</b> today</span>
       </div>
     </header>
+    <button class="cc-triage" onclick="askJarvisTriage()" title="Jarvis reads the whole backlog, deploys drones, and reports back">
+      <span class="cc-triage-ic">✦</span>
+      <span class="cc-triage-txt"><b>What are my issues?</b><small>Jarvis triages the whole backlog with full context — then deploys drones and briefs you back</small></span>
+      <span class="cc-triage-go">ASK JARVIS ▸</span>
+    </button>
     <div class="cc-targetbar">
       <span class="cc-target-lbl">▸ TARGET</span>
       <select class="cc-target-sel" onchange="ccSetTarget(this.value)">
@@ -4768,6 +4774,147 @@ async function doCcNewAgent() {
   try { await action('designAgent', { desc, confirm: true }); closeModal(); toast('Opus is drafting the agent — check the Knowledge tab when it lands', 'ok'); } catch (e) {}
 }
 
+/* ════════════════════════ JARVIS BRIEFING — autonomous triage ════════════════════
+ * "Hey Jarvis, what are my issues?" — Jarvis reads the WHOLE backlog with full context
+ * (architecture · financial invariants · live state · every open ticket), ranks the real
+ * issues, AUTO-SWEEPS the top few, and reports back in plain English while teaching John.
+ * Foundation for future voice. Backend: triageWorkload → triage-report.json. Lives in the
+ * Command Centre's neon world, but calmer + readable. See AUTONOMOUS-TRIAGE.md. */
+
+// Fire a fresh triage from anywhere (the CC hero today; voice later) and route to the Briefing.
+async function askJarvisTriage() {
+  try {
+    await action('triageWorkload', { confirm: true });
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {};
+    J.ccjobs['SYSTEM#triage'] = { status: 'running', id: 'SYSTEM', task: 'triage', mode: 'gather', model: 'opus', started: Date.now() };
+    J._triage = { status: 'running', plan: null };          // optimistic — the Briefing shows "thinking"
+    J.dspWatch = 'SYSTEM';
+    dspStartPoll('SYSTEM'); dspRenderTopbar(); dspEnsureBannerTimer();
+    location.hash = '#/briefing';
+    toast('Jarvis is triaging your backlog — Opus is reading everything', 'ok');
+  } catch (e) { /* action() already toasted */ }
+}
+
+function viewBriefing() {
+  const v = $('view'); v.className = 'view brief';
+  J._briefAnimated = false;   // entrance stagger plays once per fresh open
+  v.innerHTML = `
+    <div class="cc-bg" aria-hidden="true"></div>
+    <header class="brief-head">
+      <div class="brief-title"><span class="brief-glow">JARVIS</span> BRIEFING</div>
+      <button class="brief-rerun" onclick="askJarvisTriage()" title="Re-triage — the backlog has moved"><span class="brief-rerun-ic">↻</span> ask again</button>
+    </header>
+    <div id="briefBody" class="brief-body"><div class="brief-thinking"><span class="brief-orbit"></span> loading…</div></div>`;
+  loadBriefing();
+}
+
+// Fetch the latest triage report, cache it, paint the body in place.
+async function loadBriefing() {
+  let rec; try { rec = await api('/api/triage'); } catch (_) { rec = J._triage; }
+  if (rec && !rec.empty) J._triage = rec;
+  renderBriefing();
+}
+
+// In-place render of #briefBody from the cached plan + LIVE sweep/case-file state. Poll-safe (no flash).
+function renderBriefing() {
+  const el = $('briefBody'); if (!el) return;
+  const rec = J._triage;
+  const triageRunning = (J.ccjobs || {})['SYSTEM#triage'] && J.ccjobs['SYSTEM#triage'].status === 'running';
+
+  // never triaged
+  if ((!rec || rec.empty) && !triageRunning) {
+    el.innerHTML = `<div class="brief-empty">
+      <div class="brief-empty-ic">✦</div>
+      <h2>What are my issues?</h2>
+      <p>Jarvis reads your whole backlog — the architecture, the financial contract, your live numbers, and every open ticket — then names the real issues, deploys drones on the top few, and reports back in plain English.</p>
+      <button class="brief-cta" onclick="askJarvisTriage()">Ask Jarvis →</button>
+    </div>`;
+    return;
+  }
+  // commander still thinking
+  if (triageRunning && (!rec || !rec.plan)) {
+    el.innerHTML = `<div class="brief-thinking"><span class="brief-orbit"></span> Jarvis is reading the architecture, your invariants, your live state, and the whole backlog…<span class="brief-thinking-sub">Opus — a minute or two</span></div>`;
+    return;
+  }
+  const plan = (rec && rec.plan) || null;
+  if (!plan) {
+    el.innerHTML = `<div class="brief-empty"><p>Jarvis returned no structured plan. <button class="brief-cta sm" onclick="askJarvisTriage()">Try again</button></p>${rec && rec.raw ? `<div class="txt md brief-raw">${mdToHtml(rec.raw)}</div>` : ''}</div>`;
+    return;
+  }
+
+  const tix = {}; (J.tickets || []).forEach(t => tix[t.id] = t);
+  const sweeps = J.sweeps || {};
+  const dispatched = new Set(rec.dispatched || plan.investigateNow || []);
+  const sevClass = (s) => 'sev-' + String(s || 'P2');
+
+  const liveStatus = (id) => {
+    const sw = sweeps[id]; const t = tix[id];
+    const audited = t && t.caseFile && t.caseFile.audit && t.caseFile.audit.verdict;
+    if (sw && sw.status === 'running') return { k: 'investigating', label: 'investigating · ' + (sw.step || 'gather') };
+    if (audited || (sw && sw.status === 'done')) return { k: 'done', label: 'findings in' };
+    if (dispatched.has(id)) return { k: 'queued', label: 'queued' };
+    return null;
+  };
+  // The Briefing is JOHN'S reading surface — keep it plain (his standing rule: technical detail lives
+  // on the ticket, not here). The auditor's converged one-paragraph case is the most readable single
+  // summary; the raw mechanism / fix file:line dump stays on the ticket behind "open ticket →".
+  const digest = (id) => {
+    const t = tix[id]; if (!t || !t.caseFile) return '';
+    const cf = t.caseFile;
+    if (cf.audit && cf.audit.merged) {
+      const m = String(cf.audit.merged); const short = m.length > 320 ? m.slice(0, 320).replace(/\s+\S*$/, '') + '…' : m;
+      return `<div class="brief-digest"><div class="brief-find"><span class="brief-find-k">Drones found</span> ${esc(short)}</div></div>`;
+    }
+    if (cf.rootCause && cf.rootCause.rootCause) return `<div class="brief-digest"><div class="brief-find brief-find-progress">Root cause located — <a href="#/ticket/${esc(id)}">open the ticket</a> for the full case.</div></div>`;
+    return '';
+  };
+
+  const issues = plan.issues || [];
+  const watch = (plan.watchlist || []).map(id => tix[id]).filter(Boolean);
+  // Stagger the card entrance only ONCE (first render) — re-renders from the poll sig-block must NOT
+  // replay it (that's the Command-Centre flash class). The flag resets when the view is opened fresh.
+  const anim = !J._briefAnimated && issues.length;
+  if (anim) J._briefAnimated = true;
+  el.innerHTML = `
+    ${plan.summaryForJohn ? `<div class="brief-summary">${esc(plan.summaryForJohn)}</div>` : ''}
+    <div class="brief-meta">${rec.status === 'running' ? '<span class="brief-orbit sm"></span> still triaging…' : `Jarvis triaged ${issues.length} issue${issues.length === 1 ? '' : 's'}`}${rec.model ? ' · ' + esc(rec.model) : ''}${rec.ts ? ' · ' + when(rec.ts) : ''}${dispatched.size ? ` · <b>${dispatched.size}</b> on the bench` : ''}</div>
+    <div class="brief-issues${anim ? ' brief-anim' : ''}">
+      ${issues.map((iss, i) => {
+        const id = iss.ticketId; const t = tix[id]; const ls = liveStatus(id);
+        return `<div class="brief-card ${ls ? 'brief-live' : ''}" style="animation-delay:${i * 55}ms">
+          <div class="brief-card-top">
+            <span class="brief-rank">#${i + 1}</span>
+            <a class="brief-tkt" href="#/ticket/${esc(id)}">${esc(id)}</a>
+            <span class="brief-sev ${sevClass(iss.severity)}">${esc(iss.severity || '?')}</span>
+            ${iss.confidence ? `<span class="brief-conf">${esc(iss.confidence)} confidence</span>` : ''}
+            ${ls ? `<span class="brief-status brief-st-${ls.k}">${esc(ls.label)}</span>` : ''}
+          </div>
+          <div class="brief-card-title">${esc((t && t.title) || id)}</div>
+          ${iss.why ? `<div class="brief-why">${esc(iss.why)}</div>` : ''}
+          ${iss.learnForJohn ? `<div class="brief-learn"><span class="brief-learn-ic">◆</span> ${esc(iss.learnForJohn)}</div>` : ''}
+          ${digest(id)}
+          <div class="brief-card-foot">
+            <a class="btn sm" href="#/ticket/${esc(id)}">open ticket →</a>
+            ${!ls ? `<button class="btn sm" onclick="briefInvestigate('${esc(id)}')">investigate now</button>` : ''}
+          </div>
+        </div>`;
+      }).join('') || '<div class="brief-empty"><p>Jarvis found no real issues right now — clean backlog.</p></div>'}
+    </div>
+    ${watch.length ? `<div class="brief-watch-h">Watchlist <span class="brief-watch-sub">— real, but not now</span></div>
+      <div class="brief-watch">${watch.map(t => `<a class="brief-watch-row" href="#/ticket/${t.id}"><span class="brief-sev ${sevClass(t.severity)}">${esc(t.severity || '?')}</span> <b>${esc(t.id)}</b> ${esc(String(t.title || '').slice(0, 70))}</a>`).join('')}</div>` : ''}`;
+}
+
+// "Investigate now" on a briefing card — kick a sweep on a watchlisted / not-yet-dispatched issue.
+async function briefInvestigate(id) {
+  try {
+    await action('buildCase', { id, confirm: true });
+    toast(`Drones deployed on ${id}`, 'ok');
+    J.dspWatch = id; dspStartPoll(id); dspEnsureBannerTimer();
+    renderBriefing();
+  } catch (e) { /* action() already toasted */ }
+}
+
 /* ── router ───────────────────────────────────────────────────────────── */
 function route() {
   const raw = (location.hash || '#/overview').slice(1);
@@ -4806,6 +4953,7 @@ function route() {
   else if (r === 'deploy') viewDeploy();
   else if (r === 'agents-fleet') viewAgentsFleet();
   else if (r === 'architecture') viewArchitecture();
+  else if (r === 'briefing') viewBriefing();
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommandCentre(); }
   else viewOverview();
   renderTopbarStatus();
