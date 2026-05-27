@@ -138,19 +138,38 @@ function renderNowBar() {
   const needYou   = bySev(ts.filter(t => ['Open', 'Discussing'].includes(st(t)) && !alignIds.has(t.id)));
   const gathering = ts.filter(t => st(t) === 'Gathering');
   const inFlight  = ts.filter(t => ['Aligned', 'Investigating'].includes(st(t)));
-  const seg = (arr, label, tone, toTicket) => arr.length
-    ? `<button class="now-seg now-${tone}" title="${esc(arr.map(t => t.id).slice(0, 10).join(', '))}" onclick="location.hash='${toTicket ? '#/ticket/' + arr[0].id : '#/recommend'}'"><b class="now-n">${arr.length}</b> <span class="now-l">${label}</span></button>`
+  // Stash the segments so nowJump() can route by COUNT (1 → that ticket; >1 → Board pre-filtered).
+  J._now = { ship: readyShip, align: readyAlign, need: needYou, gather: gathering, flight: inFlight };
+  const seg = (arr, label, tone, key) => arr.length
+    ? `<button class="now-seg now-${tone}" title="${esc(arr.map(t => t.id).slice(0, 10).join(', '))}" onclick="nowJump('${key}')"><b class="now-n">${arr.length}</b> <span class="now-l">${label}</span></button>`
     : '';
   const segs = [
-    seg(readyShip, 'ready to ship', 'green', true),
-    seg(readyAlign, 'ready to align', 'violet', true),
-    seg(needYou, 'need you', 'amber', true),
-    seg(gathering, 'gathering', 'indigo', true),
-    seg(inFlight, 'in flight', 'teal', true),
+    seg(readyShip, 'ready to ship', 'green', 'ship'),
+    seg(readyAlign, 'ready to align', 'violet', 'align'),
+    seg(needYou, 'need you', 'amber', 'need'),
+    seg(gathering, 'gathering', 'indigo', 'gather'),
+    seg(inFlight, 'in flight', 'teal', 'flight'),
   ].filter(Boolean);
   host.innerHTML = segs.length
     ? `<div class="now-wrap"><span class="now-title">Now</span>${segs.join('')}<a class="now-all" href="#/recommend">Recommends →</a></div>`
     : '';
+}
+// Route a Now-bar segment by COUNT: exactly one → straight to that ticket; more than one → the
+// Board pre-filtered to the segment's view (fixes "it keeps bringing me back to SLY-1"). readyAlign
+// has no single board view, so it goes to Recommends (its natural home) when there's more than one.
+function nowJump(key) {
+  const arr = (J._now || {})[key] || [];
+  if (!arr.length) return;
+  if (arr.length === 1) { location.hash = '#/ticket/' + arr[0].id; return; }
+  const base = { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all', group: '' };
+  const dests = {
+    ship:   () => { J.filter = { ...base, view: 'live' }; location.hash = '#/board'; },
+    need:   () => { J.filter = { ...base, view: 'judgment' }; location.hash = '#/board'; },
+    flight: () => { J.filter = { ...base, view: 'flight' }; location.hash = '#/board'; },
+    gather: () => { J.filter = { ...base, status: 'Gathering' }; location.hash = '#/board'; },
+    align:  () => { location.hash = '#/recommend'; },
+  };
+  (dests[key] || dests.align)();
 }
 
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
@@ -4579,13 +4598,16 @@ function renderSystemAuditBody(rec) {
     ${lens('Cloud-sync integrity', (p.lenses || {}).cloudSync)}
     ${lens('Story coherence', (p.lenses || {}).storyCoherence)}
     ${lens('Financial ↔ AI ↔ Jarvis', (p.lenses || {}).financialAiJarvis)}
-    ${(p.topRisks || []).length ? `<div class="sa-risks-h">Top risks <span class="cf-spinoff-hint">— log any as a ticket</span></div>${p.topRisks.slice(0, 6).map((r, i) => `<div class="sa-risk-row"><div class="sa-risk-main"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}<div class="sa-risk-why">${esc(r.why || '')}</div></div><button class="btn sm" onclick="logAuditFinding(${i})">Log as ticket</button></div>`).join('')}` : ''}`;
+    ${(p.topRisks || []).length ? `<div class="sa-risks-h">Top risks <span class="cf-spinoff-hint">— log any as a ticket; logged ones clear</span></div>${p.topRisks.slice(0, 8).map((r, i) => r.loggedTicket
+        ? `<div class="sa-risk-row sa-risk-logged"><div class="sa-risk-main"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}</div><a class="sa-risk-tkt" href="#/ticket/${esc(r.loggedTicket)}">✓ ${esc(r.loggedTicket)} →</a></div>`
+        : `<div class="sa-risk-row"><div class="sa-risk-main"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}<div class="sa-risk-why">${esc(r.why || '')}</div></div><button class="btn sm" onclick="logAuditFinding(${i})">Log as ticket</button></div>`).join('')}` : ''}`;
   J._auditRisks = p.topRisks || [];   // referenced by index in logAuditFinding
 }
 // Log a system-audit top-risk as a ticket. Jarvis-categorize for v1 = a smart default (P1 bug) that
 // John adjusts in the modal; he can Ask Jarvis on the created ticket to refine scope/severity.
 function logAuditFinding(idx) {
   const r = ((J._auditRisks) || [])[idx]; if (!r) { toast('finding not found', 'err'); return; }
+  J._auditLogIdx = idx;   // remembered so doLogAuditFinding can stamp the risk as cleared
   const title = String(r.what || 'System-audit finding').slice(0, 120);
   const summary = `[From system audit ${new Date().toISOString().slice(0, 10)}]\n\n${r.what || ''}\n\nWhere: ${r.where || '(unspecified)'}\n\nWhy: ${r.why || ''}`;
   modal(`<h2>Log audit finding as a ticket</h2>
@@ -4604,7 +4626,9 @@ async function doLogAuditFinding() {
   const type = $('afType') ? $('afType').value : 'bug'; const severity = $('afSev') ? $('afSev').value : 'P1';
   try {
     const r = await action('createTicket', { title, summary, type, severity });
-    closeModal(); toast(`Created ${r.id} from the system audit`, 'ok');
+    // Stamp the audit risk as logged so the ruthless-audit list clears it next render.
+    if (J._auditLogIdx != null) { try { await action('markAuditLogged', { idx: J._auditLogIdx, ticketId: r.id }); } catch (_) {} J._auditLogIdx = null; }
+    closeModal(); toast(`Created ${r.id} from the system audit — finding cleared`, 'ok');
     await load(); location.hash = '#/ticket/' + r.id;
   } catch (e) { /* action() already toasted */ }
 }
@@ -4871,38 +4895,72 @@ function renderBriefing() {
   };
 
   const issues = plan.issues || [];
-  const watch = (plan.watchlist || []).map(id => tix[id]).filter(Boolean);
+  const issueIds = new Set(issues.map(i => i.ticketId));
+  const bench = (plan.watchlist || []).filter(id => !issueIds.has(id)).map(id => tix[id]).filter(Boolean);
+
+  // Split the ranked issues into "in the air / findings landed" (DEPLOYED NOW) vs "recommended
+  // next, deploy to investigate" (DO NEXT) — the to-do list John asked for.
+  const deployedNow = [], doNext = [];
+  issues.forEach((iss, i) => { const ls = liveStatus(iss.ticketId); (ls ? deployedNow : doNext).push({ iss, rank: i + 1, ls }); });
+
+  // SITREP live counts — the one-glance "what's going on right now".
+  let nAir = 0, nQ = 0, nReady = 0;
+  deployedNow.forEach(d => { if (d.ls.k === 'investigating') nAir++; else if (d.ls.k === 'queued') nQ++; else if (d.ls.k === 'done') nReady++; });
+
   // Stagger the card entrance only ONCE (first render) — re-renders from the poll sig-block must NOT
   // replay it (that's the Command-Centre flash class). The flag resets when the view is opened fresh.
   const anim = !J._briefAnimated && issues.length;
   if (anim) J._briefAnimated = true;
+
+  const tile = (n, label, tone) => `<div class="brief-tile brief-tile-${tone}${n ? ' on' : ''}"><b class="brief-tile-n">${n}</b><span class="brief-tile-l">${label}</span></div>`;
+  const card = (d, deployable) => {
+    const iss = d.iss, id = iss.ticketId, t = tix[id], ls = d.ls;
+    return `<div class="brief-card ${ls ? 'brief-live' : ''}" style="animation-delay:${(d.rank - 1) * 45}ms">
+      <div class="brief-card-top">
+        <span class="brief-rank">#${d.rank}</span>
+        <a class="brief-tkt" href="#/ticket/${esc(id)}">${esc(id)}</a>
+        <span class="brief-sev ${sevClass(iss.severity)}">${esc(iss.severity || '?')}</span>
+        ${iss.confidence ? `<span class="brief-conf">${esc(iss.confidence)} confidence</span>` : ''}
+        ${ls ? `<span class="brief-status brief-st-${ls.k}">${esc(ls.label)}</span>` : ''}
+      </div>
+      <div class="brief-card-title">${esc((t && t.title) || id)}</div>
+      ${iss.why ? `<div class="brief-why">${esc(iss.why)}</div>` : ''}
+      ${iss.learnForJohn ? `<div class="brief-learn"><span class="brief-learn-ic">◆</span> ${esc(iss.learnForJohn)}</div>` : ''}
+      ${digest(id)}
+      <div class="brief-card-foot">
+        <a class="btn sm" href="#/ticket/${esc(id)}">open ticket →</a>
+        ${deployable ? `<button class="btn sm brief-deploy" onclick="briefInvestigate('${esc(id)}')">⚡ deploy drones</button>` : ''}
+      </div>
+    </div>`;
+  };
+
   el.innerHTML = `
-    ${plan.summaryForJohn ? `<div class="brief-summary">${esc(plan.summaryForJohn)}</div>` : ''}
-    <div class="brief-meta">${rec.status === 'running' ? '<span class="brief-orbit sm"></span> still triaging…' : `Jarvis triaged ${issues.length} issue${issues.length === 1 ? '' : 's'}`}${rec.model ? ' · ' + esc(rec.model) : ''}${rec.ts ? ' · ' + when(rec.ts) : ''}${dispatched.size ? ` · <b>${dispatched.size}</b> on the bench` : ''}</div>
-    <div class="brief-issues${anim ? ' brief-anim' : ''}">
-      ${issues.map((iss, i) => {
-        const id = iss.ticketId; const t = tix[id]; const ls = liveStatus(id);
-        return `<div class="brief-card ${ls ? 'brief-live' : ''}" style="animation-delay:${i * 55}ms">
-          <div class="brief-card-top">
-            <span class="brief-rank">#${i + 1}</span>
-            <a class="brief-tkt" href="#/ticket/${esc(id)}">${esc(id)}</a>
-            <span class="brief-sev ${sevClass(iss.severity)}">${esc(iss.severity || '?')}</span>
-            ${iss.confidence ? `<span class="brief-conf">${esc(iss.confidence)} confidence</span>` : ''}
-            ${ls ? `<span class="brief-status brief-st-${ls.k}">${esc(ls.label)}</span>` : ''}
-          </div>
-          <div class="brief-card-title">${esc((t && t.title) || id)}</div>
-          ${iss.why ? `<div class="brief-why">${esc(iss.why)}</div>` : ''}
-          ${iss.learnForJohn ? `<div class="brief-learn"><span class="brief-learn-ic">◆</span> ${esc(iss.learnForJohn)}</div>` : ''}
-          ${digest(id)}
-          <div class="brief-card-foot">
-            <a class="btn sm" href="#/ticket/${esc(id)}">open ticket →</a>
-            ${!ls ? `<button class="btn sm" onclick="briefInvestigate('${esc(id)}')">investigate now</button>` : ''}
-          </div>
-        </div>`;
-      }).join('') || '<div class="brief-empty"><p>Jarvis found no real issues right now — clean backlog.</p></div>'}
+    ${plan.summaryForJohn ? `<div class="brief-summary"><span class="brief-summary-k">Jarvis's read</span>${esc(plan.summaryForJohn)}</div>` : ''}
+    <div class="brief-sitrep">
+      ${tile(nAir, 'in the air', 'air')}
+      ${tile(nQ, 'queued', 'q')}
+      ${tile(nReady, 'ready for you', 'ready')}
+      ${tile(doNext.length, 'do next', 'next')}
+      ${tile(bench.length, 'on the bench', 'bench')}
     </div>
-    ${watch.length ? `<div class="brief-watch-h">Watchlist <span class="brief-watch-sub">— real, but not now</span></div>
-      <div class="brief-watch">${watch.map(t => `<a class="brief-watch-row" href="#/ticket/${t.id}"><span class="brief-sev ${sevClass(t.severity)}">${esc(t.severity || '?')}</span> <b>${esc(t.id)}</b> ${esc(String(t.title || '').slice(0, 70))}</a>`).join('')}</div>` : ''}`;
+    <div class="brief-meta">${rec.status === 'running' ? '<span class="brief-orbit sm"></span> still triaging…' : `triaged ${issues.length} issue${issues.length === 1 ? '' : 's'}`}${rec.model ? ' · ' + esc(rec.model) : ''}${rec.ts ? ' · ' + when(rec.ts) : ''} · <button class="brief-link" onclick="askJarvisTriage()">re-triage</button></div>
+
+    ${deployedNow.length ? `<section class="brief-sec brief-sec-air${anim ? ' brief-anim' : ''}">
+      <div class="brief-sec-h"><span class="brief-radar"></span> DEPLOYED NOW <small>drones investigating — findings land here live</small></div>
+      ${deployedNow.map(d => card(d, false)).join('')}
+    </section>` : ''}
+
+    ${doNext.length ? `<section class="brief-sec brief-sec-next${anim ? ' brief-anim' : ''}">
+      <div class="brief-sec-h">DO NEXT <small>recommended — deploy drones to investigate</small></div>
+      ${doNext.map(d => card(d, true)).join('')}
+    </section>` : ''}
+
+    ${bench.length ? `<section class="brief-sec">
+      <div class="brief-sec-h">ON THE BENCH <small>real, but not now</small></div>
+      <div class="brief-watch">${bench.map(t => `<div class="brief-watch-row"><a class="brief-watch-main" href="#/ticket/${t.id}"><span class="brief-sev ${sevClass(t.severity)}">${esc(t.severity || '?')}</span> <b>${esc(t.id)}</b> ${esc(String(t.title || '').slice(0, 72))}</a><button class="btn sm" onclick="briefInvestigate('${esc(t.id)}')">deploy</button></div>`).join('')}</div>
+    </section>` : ''}
+
+    ${!issues.length ? '<div class="brief-empty"><p>Jarvis found no real issues right now — clean backlog.</p></div>' : ''}`;
 }
 
 // "Investigate now" on a briefing card — kick a sweep on a watchlisted / not-yet-dispatched issue.

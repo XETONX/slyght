@@ -666,6 +666,20 @@ const ACTIONS = {
     return { ok: true, dispatched: key, backlog: ctx.open.length };
   },
 
+  // Stamp a system-audit top-risk as logged-to-a-ticket, so the "ruthless audit" list clears it
+  // (a finding with a ticket against it is tracked work, not an open risk). Path-jailed to
+  // system-audit.json; idx validated to a non-negative int; ticketId pinned to ^SLY-\d+$.
+  markAuditLogged: ({ idx, ticketId }) => {
+    if (!/^SLY-\d+$/.test(ticketId)) throw new Error('bad ticket id');
+    const i = Number(idx); if (!Number.isInteger(i) || i < 0) throw new Error('bad idx');
+    const abs = jail(path.join('mission-control', 'system-audit.json'));
+    const rec = JSON.parse(fs.readFileSync(abs, 'utf8'));
+    if (!rec.parsed || !Array.isArray(rec.parsed.topRisks) || !rec.parsed.topRisks[i]) throw new Error('no such risk #' + i);
+    rec.parsed.topRisks[i].loggedTicket = ticketId;
+    fs.writeFileSync(abs, JSON.stringify(rec, null, 2));
+    return { ok: true, idx: i, ticketId };
+  },
+
   // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
   // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
   jarvisChat: ({ id, confirm }) => {
@@ -1134,7 +1148,7 @@ function GATHER_PREAMBLE(id, richDump) {
 }
 const SCOPED_TASKS = {
   'root-cause': {
-    label: 'Root-cause dig', slot: 'rootCause + mechanism + files', mode: 'plan',
+    label: 'Root-cause dig', slot: 'rootCause + mechanism + files', mode: 'plan', model: 'sonnet', reasoning: 'think',
     directive: [
       'Find the MECHANISM (how the wrong behaviour is produced, step by step in code) and the ROOT CAUSE (why it exists), and ENUMERATE every file:line on the causal path.',
       'If this ticket touches money (balance, buckets, debts, bills, allocation, forecast): do a LEDGER WALK first — trace S.txns forward; never trust a paid/flag value the ledger does not back (paid:true + matching txn = BACKED; paid:true + no txn = ORPHAN, treat suspect). State the verdict for any flag on your path.',
@@ -1143,7 +1157,7 @@ const SCOPED_TASKS = {
     ].join('\n'),
   },
   'locate-surface': {
-    label: 'Locate surface', slot: 'surface + mapVerdict', mode: 'plan',
+    label: 'Locate surface', slot: 'surface + mapVerdict', mode: 'plan', model: 'sonnet', reasoning: 'off',
     directive: [
       'Decide which App-Map surface(s) this ticket belongs to, using FEATURE-MAP.md plus the files in the case file. Return the surface id(s) with file:line evidence and whether it is mapped / orphaned / map-stale.',
       'DO NOT: investigate root cause, propose a fix, or judge conformance beyond the mapped/orphaned question.',
@@ -1151,7 +1165,7 @@ const SCOPED_TASKS = {
     ].join('\n'),
   },
   'fix-proposal': {
-    label: 'Fix proposal', slot: 'fix + invariants', mode: 'plan', reasoning: 'think',
+    label: 'Fix proposal', slot: 'fix + invariants', mode: 'plan', model: 'opus', reasoning: 'think',
     directive: [
       'Given the ALREADY-ESTABLISHED root cause in the case file above, design the MINIMAL correct fix: the change, before->after behaviour, the exact change-site file:lines, and which INV-NN invariants it preserves (and any it risks). Use canonical writers (BRAIN.<domain>.<verb>, source tags) — never a parallel calc.',
       'DO NOT: re-derive the root cause (it is given — if you believe it is wrong, set rootCauseDisagreement to one sentence and stop, do not re-investigate); edit or implement files; judge surface mapping.',
@@ -1159,7 +1173,7 @@ const SCOPED_TASKS = {
     ].join('\n'),
   },
   'conformance': {
-    label: 'Conformance', slot: 'conformance', mode: 'plan',
+    label: 'Conformance', slot: 'conformance', mode: 'plan', model: 'opus', reasoning: 'think',
     directive: [
       'Run the Conformance (FIT) checks on the proposed fix in the case file above. Answer each with file:line evidence: Mapped? (in FEATURE-MAP) · Labelled? (vocabulary registry — no new meaning for an overloaded word) · Linked? (wired to canonical readers/writers) · Canonical-or-parallel? (reuses surplus/headroom/daily-living/isPaidInCycle, or invents a drifting parallel) · Invariant coverage? (which INV-NN; need a new one?) · Fits current + planned architecture? (collides with a queued bundle?).',
       'Severity-gate the verdict: NEW drift this fix introduces = block; distant pre-existing drift = flag; adjacent same-shape cheap drift = correct.',
@@ -1168,7 +1182,7 @@ const SCOPED_TASKS = {
     ].join('\n'),
   },
   'auditor': {
-    label: 'Auditor', slot: 'audit', mode: 'plan', reasoning: 'think',
+    label: 'Auditor', slot: 'audit', mode: 'plan', model: 'opus', reasoning: 'think',
     directive: [
       'You are the AUDITOR. The case file above is everything gathered so far. Do three things, nothing else:',
       '1. Verdict each slot: BACKED (evidence supports it) / THIN (present but weak) / MISSING / CONTRADICTORY (slots disagree).',
@@ -1485,7 +1499,9 @@ function launchScoped(id, task, afterResult, opts) {
     st0[id].status = 'Gathering'; st0[id].assignee = 'cc'; st0[id].lastActivity = new Date().toISOString();
     logTransition(id, 'Open', 'Gathering', 'jarvis'); writeState(st0);
   }
-  const mdl = opts.model === 'opus' ? 'opus' : 'sonnet';
+  // Model policy: "Sonnet finds, Opus decides" — each scoped task carries its default model
+  // (spec.model: gather/enumerate = sonnet, design/judge = opus); an explicit opts.model overrides.
+  const mdl = (opts.model === 'opus' || opts.model === 'sonnet') ? opts.model : (spec.model || 'sonnet');
   const rsn = ['off', 'think', 'deep'].includes(opts.reasoning) ? opts.reasoning : (spec.reasoning || 'off');
   const budget = mdl === 'opus' ? '6' : '3';
   const prompt =
