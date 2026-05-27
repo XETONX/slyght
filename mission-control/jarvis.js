@@ -646,6 +646,23 @@ function renderCaseFile(t) {
   }
   const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
 
+  // Spin-off findings — drone openQuestions + unmappedTerritory + audit caveats. One click logs any
+  // as a new ticket linked back here, so investigations breed tickets instead of dying in a comment.
+  const spin = [];
+  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => {
+    const slot = cf[k]; if (!slot) return;
+    (slot.openQuestions || []).forEach(q => { const x = String(q || '').trim(); if (x) spin.push(x); });
+    (slot.unmappedTerritory || []).forEach(u => { const x = (typeof u === 'string' ? u : JSON.stringify(u)).trim(); if (x) spin.push(x); });
+  });
+  if (cf.audit && Array.isArray(cf.audit.caveats)) cf.audit.caveats.forEach(c => { const x = String(c || '').trim(); if (x) spin.push(x); });
+  const spinUniq = [...new Set(spin)].slice(0, 8);
+  J._spin = J._spin || {}; J._spin[t.id] = spinUniq;   // referenced by index in logSpinoff (avoids attr-escaping)
+  const spinoffBlock = spinUniq.length ? `
+    <div class="cf-spinoff">
+      <div class="cf-spinoff-h">Spin-off findings <span class="cf-spinoff-hint">— log any as a new linked ticket</span></div>
+      ${spinUniq.map((x, i) => `<div class="cf-spinoff-row"><span class="cf-spinoff-t">${esc(x.slice(0, 180))}</span><button class="btn sm" onclick="logSpinoff('${t.id}',${i})">Log as ticket</button></div>`).join('')}
+    </div>` : '';
+
   const sw = (J.sweeps || {})[t.id];
   const sweepRunning = sw && sw.status === 'running';
   return `<div class="card cf-card">
@@ -661,6 +678,7 @@ function renderCaseFile(t) {
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
     ${merged}
+    ${spinoffBlock}
   </div>`;
 }
 // Dispatch a scoped GATHER drone (light confirm — it's read-only + on your plan, no cost-cap friction).
@@ -707,6 +725,33 @@ async function doBuildCase(id) {
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
     dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Log a spin-off finding (by index into J._spin[parentId]) as a new ticket linked back to the parent.
+function logSpinoff(parentId, idx) {
+  const text = ((J._spin || {})[parentId] || [])[idx] || '';
+  if (!text) { toast('finding not found', 'err'); return; }
+  const title = text.length > 90 ? text.slice(0, 87) + '…' : text;
+  modal(`<h2>Log as new ticket</h2>
+    <p>Create a ticket from this spin-off finding, auto-linked back to <b>${esc(parentId)}</b>. Edit before creating.</p>
+    <div class="label">Title</div><input id="soTitle" value="${esc(title)}" maxlength="200">
+    <div class="label" style="margin-top:10px">Detail</div><textarea id="soSummary">${esc(text)}</textarea>
+    <div class="dsp-tunes" style="margin-top:10px">
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="soType">Type</label><div class="dsp-selwrap"><select id="soType" class="dsp-sel"><option value="bug" selected>Bug</option><option value="task">Task</option><option value="feature">Feature</option></select></div></div>
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="soSev">Severity</label><div class="dsp-selwrap"><select id="soSev" class="dsp-sel"><option value="P2" selected>P2</option><option value="P1">P1</option><option value="P0">P0</option></select></div></div>
+    </div>
+    <div class="btns"><button class="btn primary" onclick="doLogSpinoff('${parentId}')">Create ticket</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doLogSpinoff(parentId) {
+  const title = ($('soTitle').value || '').trim(); if (!title) { toast('title required', 'err'); return; }
+  const summary = ($('soSummary').value || '').trim();
+  const type = ($('soType') ? $('soType').value : 'bug'); const severity = ($('soSev') ? $('soSev').value : 'P2');
+  const parent = get(parentId);
+  try {
+    const r = await action('createTicket', { title, summary, type, severity, surface: parent ? parent.group : null, parent: parentId });
+    closeModal(); toast(`Created ${r.id} — linked to ${parentId}`, 'ok');
+    await load();
+    if ((location.hash || '').includes('/ticket/' + parentId)) viewTicket(parentId);
   } catch (e) { /* action() already toasted */ }
 }
 
@@ -1171,7 +1216,17 @@ function startWalkStatusPoll() {
     J.walk = Object.assign({}, J.walk, { deploying: !!j.running, lineCount: lines.length, lastLine: last });
     dspRenderTopbar();
     if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();
-    if (!j.running) { clearInterval(walkStatusPoll); walkStatusPoll = null; }
+    if (!j.running) {
+      clearInterval(walkStatusPoll); walkStatusPoll = null;
+      // Report the OUTCOME — a walk on a surface with no specs exits in seconds with "(none)" and
+      // otherwise says nothing, which looks like a silent failure. Make it explicit.
+      const flows = lines.filter(l => l.startsWith('@@FLOW_DONE')).length;
+      const noFlows = flows === 0 || lines.some(l => /→\s*\(none\)/.test(l));
+      if (noFlows) toast(`Walk finished — no walk flows exist for ${niceSurface(J.walk.scope || 'all')} yet (nothing to walk)`, 'err');
+      else toast(`Walk complete — ${flows} flow${flows === 1 ? '' : 's'} walked · captures in tests/walker-out`, 'ok');
+      J.walk = Object.assign({}, J.walk, { deploying: false, done: true, flows });
+      if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();
+    }
   }, 1000);
 }
 
@@ -1343,8 +1398,10 @@ function dspStartPoll(watchId) {
       lastSig = sig;
       await load();
       const cur = currentTicketId();
+      const rt = (location.hash || '').slice(1).split('?')[0].split('/')[1];
       if (cur) viewTicket(cur);
-      else if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();
+      else if (rt === 'agents-fleet') viewAgentsFleet();
+      else if (rt === 'architecture') viewArchitecture();
     }
 
     // Watch a TICKET: when its last running drone finishes AND no sweep is mid-flight, toast + notify.
@@ -1385,8 +1442,8 @@ function dspRenderTopbar() {
   const chips = walkChip + running.slice(0, 4).map(([key, v]) => {
     // chip links to the TICKET (v.id), not the id#task key; shows the scoped task when present
     const label = v.task ? `${v.id} · ${TASK_LABEL[v.task] || v.task}` : v.id;
-    return `<button type="button" class="dsp-chip" title="${esc(label)} — open ticket"
-       onclick="location.hash='#/ticket/${esc(v.id)}'">${esc(label)}</button>`;
+    return `<button type="button" class="dsp-chip" title="${esc(label)} — open"
+       onclick="location.hash='${esc(agentHref(v.id))}'">${esc(label)}</button>`;
   }).join('');
   const more = running.length > 4 ? `<span class="dsp-chip-more">+${running.length - 4}</span>` : '';
   host.innerHTML =
@@ -1429,7 +1486,9 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit' };
+// Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
+const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
   const host = $('dspTicketBanner'); if (!host) return;
   if (!id) { host.innerHTML = ''; return; }
@@ -4189,7 +4248,7 @@ function viewAgentsFleet() {
   const runRows = runCount ? (walkRow + running.map(j => `
     <div class="fleet-row fleet-runrow">
       <span class="fleet-dot" aria-hidden="true"></span>
-      <a class="fleet-tkt" href="#/ticket/${esc(j.id)}">${esc(j.id)}</a>
+      <a class="fleet-tkt" href="${esc(agentHref(j.id))}">${esc(j.id)}</a>
       <span class="fleet-task">${esc(taskLbl(j.task))}</span>
       <span class="fleet-meta">${j.model === 'opus' ? 'Opus' : 'Sonnet'}${j.turns != null ? ' · ' + j.turns + ' turns' : ''}</span>
       <span class="fleet-clock">${clockOf(j)}</span>
@@ -4198,7 +4257,7 @@ function viewAgentsFleet() {
   const recent = done.concat(failed).sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 20);
   const recentRows = recent.length ? recent.map(j => `
     <div class="fleet-row">
-      <a class="fleet-tkt" href="#/ticket/${esc(j.id)}">${esc(j.id)}</a>
+      <a class="fleet-tkt" href="${esc(agentHref(j.id))}">${esc(j.id)}</a>
       <span class="fleet-task">${esc(taskLbl(j.task))}</span>
       <span class="fleet-meta">${j.turns != null ? j.turns + ' turns' : ''}${j.durationMs != null ? ' · ' + (j.durationMs / 60000).toFixed(1) + ' min' : ''}</span>
       <span class="pill sm ${j.status === 'done' ? 's-ConfirmedLive' : 'p-p0'}">${j.status === 'done' ? 'done' : 'failed'}</span>
@@ -4227,6 +4286,91 @@ function viewAgentsFleet() {
       <div class="label">Recent runs</div>
       <div class="fleet-list">${recentRows}</div>
     </div>`;
+}
+
+/* ════════════════════════ ARCHITECTURE & ROADMAP ════════════════════════
+ * Now (ARCHITECTURE.md) · Going-to (tickets grouped by bundle) · New-initiative
+ * (creates a feature ticket that flows through the same gather/sweep machinery). */
+function viewArchitecture() {
+  const v = $('view'); v.className = 'view maxw';
+  const ts = J.tickets || [];
+  const byBundle = {};
+  ts.forEach(t => { if (t.bundle) (byBundle[t.bundle] = byBundle[t.bundle] || []).push(t); });
+  const bundles = Object.keys(byBundle).sort();
+  const roadmapHtml = bundles.length
+    ? bundles.map(b => `<div class="arch-bundle"><div class="arch-bundle-h">${esc(b)} <span class="arch-bundle-n">${byBundle[b].length}</span></div>${byBundle[b].map(t => `<a class="arch-tkt" href="#/ticket/${t.id}"><span class="pill sm s-${(t.state || {}).status}">${STATUS_LABEL[(t.state || {}).status] || (t.state || {}).status}</span> ${esc(t.title)}</a>`).join('')}</div>`).join('')
+    : `<div class="arch-empty">No bundles assigned yet — set a <b>Bundle</b> on tickets (in the ticket sidebar) to plan releases here. <a href="#/roadmap">Open the Roadmap →</a></div>`;
+
+  v.innerHTML = `
+    <header class="cmd-head"><div><h1>Architecture &amp; Roadmap</h1><p class="subtitle">Where slyght is now, where it's going, and where to start a new layer.</p></div></header>
+    <section class="arch-bands">
+      <div class="card arch-band">
+        <div class="cf-cardhead"><div class="label">Now — current architecture</div><a class="btn sm" href="#/map">App Map →</a></div>
+        <div id="archDoc" class="arch-doc"><div class="fleet-empty">Loading ARCHITECTURE.md…</div></div>
+      </div>
+      <div class="card arch-band">
+        <div class="cf-cardhead"><div class="label">Going to — bundles &amp; layers</div><a class="btn sm" href="#/roadmap">Roadmap →</a></div>
+        <div class="arch-roadmap">${roadmapHtml}</div>
+      </div>
+      <div class="card arch-band">
+        <div class="cf-cardhead"><div class="label">System health — ruthless audit</div>
+          ${(J.ccjobs && J.ccjobs['SYSTEM#audit'] && J.ccjobs['SYSTEM#audit'].status === 'running') ? `<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> auditing…</span>` : `<button class="btn sm primary" onclick="runSystemAudit()">Run system audit</button>`}
+        </div>
+        <div id="sysAuditBody" class="arch-audit"><div class="fleet-empty">Loading…</div></div>
+      </div>
+      <div class="card arch-band arch-initiative">
+        <div class="cf-cardhead"><div class="label">New initiative — start a layer / feature / concept</div></div>
+        <p class="arch-init-note">Scope a new layer or concept as a ticket — it flows through the same gather → case-file → Build-the-case machinery as everything else.</p>
+        <button class="btn primary" onclick="newInitiative()"><span aria-hidden="true">✦</span> Plan a new initiative</button>
+      </div>
+    </section>`;
+  api('/api/read?name=architecture')
+    .then(r => { const el = $('archDoc'); if (el) el.innerHTML = (r && r.content) ? `<div class="txt md arch-md">${mdToHtml(r.content)}</div>` : '<div class="fleet-empty">ARCHITECTURE.md not found.</div>'; })
+    .catch(() => { const el = $('archDoc'); if (el) el.innerHTML = '<div class="fleet-empty">Could not load ARCHITECTURE.md.</div>'; });
+  api('/api/system-audit').then(renderSystemAuditBody).catch(() => {});
+}
+function renderSystemAuditBody(rec) {
+  const el = $('sysAuditBody'); if (!el) return;
+  if (!rec || rec.empty) { el.innerHTML = '<div class="fleet-empty">No system audit yet — run one to check cloud-sync, cross-surface coherence, and financial ↔ AI ↔ Jarvis reconciliation.</div>'; return; }
+  const p = rec.parsed;
+  if (!p) { el.innerHTML = `<div class="arch-audit-meta">Last run ${when(rec.ts)} · couldn't parse structured output</div><div class="txt md">${mdToHtml(rec.raw || '')}</div>`; return; }
+  const lens = (name, l) => l ? `<div class="sa-lens sa-${esc(String(l.verdict || '').toLowerCase())}"><div class="sa-lens-top"><span class="sa-lens-name">${esc(name)}</span><span class="sa-lens-v">${esc(l.verdict || '?')}</span></div><ul>${(l.findings || []).slice(0, 5).map(f => `<li>${esc(String(f).slice(0, 220))}</li>`).join('')}</ul></div>` : '';
+  el.innerHTML = `<div class="arch-audit-meta">Last run ${when(rec.ts)}${rec.turns ? ` · ${rec.turns} turns` : ''}</div>
+    ${p.summary ? `<div class="cf-merged">${esc(p.summary)}</div>` : ''}
+    ${lens('Cloud-sync integrity', (p.lenses || {}).cloudSync)}
+    ${lens('Story coherence', (p.lenses || {}).storyCoherence)}
+    ${lens('Financial ↔ AI ↔ Jarvis', (p.lenses || {}).financialAiJarvis)}
+    ${(p.topRisks || []).length ? `<div class="sa-risks-h">Top risks</div>${p.topRisks.slice(0, 6).map(r => `<div class="sa-risk-row"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}<div class="sa-risk-why">${esc(r.why || '')}</div></div>`).join('')}` : ''}`;
+}
+async function runSystemAudit() {
+  try {
+    await action('systemAudit', { confirm: true });
+    toast('System audit dispatched — ~few min', 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {};
+    J.ccjobs['SYSTEM#audit'] = { status: 'running', id: 'SYSTEM', task: 'system-audit', mode: 'gather', model: 'sonnet', started: Date.now() };
+    J.dspWatch = 'SYSTEM';
+    dspStartPoll('SYSTEM'); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('architecture')) viewArchitecture();
+  } catch (e) { /* action() already toasted */ }
+}
+function newInitiative() {
+  modal(`<h2><span aria-hidden="true">✦</span> Plan a new initiative</h2>
+    <p>Creates a <b>feature</b> ticket for a new layer/concept. Investigate or Build-the-case on it like any ticket.</p>
+    <div class="label">Name</div><input id="niTitle" placeholder="e.g. Cloud state sync (Bundle 23)" maxlength="200">
+    <div class="label" style="margin-top:10px">What is it / why</div><textarea id="niSummary" placeholder="The layer, the goal, the rough shape…"></textarea>
+    <div class="label" style="margin-top:10px">Surface (optional)</div><input id="niSurface" placeholder="e.g. settings, savings — or blank for planning">
+    <div class="btns"><button class="btn primary" onclick="doNewInitiative()">Create initiative</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doNewInitiative() {
+  const title = ($('niTitle').value || '').trim(); if (!title) { toast('name it first', 'err'); return; }
+  const summary = ($('niSummary').value || '').trim();
+  const surface = ($('niSurface').value || '').trim() || null;
+  try {
+    const r = await action('createTicket', { title, summary, type: 'feature', severity: 'P2', surface });
+    closeModal(); toast(`Created ${r.id}`, 'ok');
+    await load(); location.hash = '#/ticket/' + r.id;
+  } catch (e) { /* action() already toasted */ }
 }
 
 /* ── router ───────────────────────────────────────────────────────────── */
@@ -4266,6 +4410,7 @@ function route() {
   else if (r === 'recommend') viewRecommend();
   else if (r === 'deploy') viewDeploy();
   else if (r === 'agents-fleet') viewAgentsFleet();
+  else if (r === 'architecture') viewArchitecture();
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
   renderTopbarStatus();

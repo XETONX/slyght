@@ -352,13 +352,15 @@ const ACTIONS = {
     return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.` };
   },
   // John (or a walk) creates a ticket → manual store (never clobbered by regen).
-  createTicket: ({ title, summary, surface, severity, type }) => {
+  createTicket: ({ title, summary, surface, severity, type, parent }) => {
     if (!title) throw new Error('title required');
     if (type && !['bug', 'feature', 'task'].includes(type)) throw new Error('bad type');
     const all = [...TICKETS(), ...MANUAL()]; const nextN = Math.max(0, ...all.map(t => +(t.id.replace('SLY-', '') || 0))) + 1; const id = 'SLY-' + nextN;
     const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
     let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
-    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links: [] });
+    // optional parent link (spin-off from an investigation) — child→parent, validated id
+    const links = (parent && /^SLY-\d+$/.test(parent)) ? [{ to: parent, why: 'spun off from this investigation' }] : [];
+    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links });
     fs.mkdirSync(path.dirname(manualPath), { recursive: true }); fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
     const stt = readState(); const now = new Date().toISOString(); stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now }; writeState(stt);
     return { ok: true, id };
@@ -607,6 +609,21 @@ const ACTIONS = {
     return sweepCase(id);
   },
 
+  // ── System auditor — a ruthless READ-ONLY health audit across the WHOLE app (not one ticket):
+  // cloud-sync integrity, cross-surface story coherence, and financial↔AI-layer↔Jarvis reconciliation.
+  // Reuses the drone machinery (keyed SYSTEM#audit). Report → mission-control/system-audit.json.
+  systemAudit: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'system audit needs confirm:true' };
+    const key = 'SYSTEM#audit';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a system audit is already running' };
+    spawnDrone({
+      key, id: 'SYSTEM', task: 'system-audit', prompt: SYSTEM_AUDIT_PROMPT, mode: 'gather',
+      mdl: 'sonnet', rsn: 'think', budget: '3', maxTurns: 24,
+      onResult: ({ job, resultText }) => recordSystemAudit(resultText, job),
+    });
+    return { ok: true, dispatched: key };
+  },
+
   // ── Live Jarvis chat — a read-only headless-Claude advisor. Reads the ticket + evidence + thread
   // and replies as a 'jarvis' comment (the thread IS the chat history). Folds in the old "Go deeper".
   jarvisChat: ({ id, confirm }) => {
@@ -756,6 +773,7 @@ const READS = {
   // The contract
   invariants:     'FINANCIAL-INVARIANTS.md',
   featuremap:     'FEATURE-MAP.md',
+  architecture:   'ARCHITECTURE.md',
   // Project
   openbugs:       'OPEN-BUGS.md',
   'john-knowledge': 'docs/JOHN-KNOWLEDGE.md',
@@ -1131,6 +1149,28 @@ function recordScopedResult(id, task, spec, parsed, job, resultText) {
   } catch (_) {}
 }
 
+// System-audit drone prompt — ruthless, read-only, whole-app, three lenses (see CASE-FILE-REDESIGN.md §8/#8).
+const SYSTEM_AUDIT_PROMPT = [
+  'You are the SYSTEM AUDITOR for slyght — a ruthless, READ-ONLY health audit across the WHOLE app, not one ticket.',
+  'slyght is a single-file PWA (index.html ~24k lines; global S persisted to localStorage slyght_v5; BRAIN bubbles are the canonical writers; S._auditLog is forensic truth; a Cloudflare Worker + KV back push/sync).',
+  'Report findings in ASSUMPTION-SHAPE with file:line evidence. Enumerate, never estimate counts. Do NOT edit files. Audit THREE lenses:',
+  '',
+  '1. CLOUD-SYNC INTEGRITY — does state actually persist + sync? Trace the push/pull paths (worker-KV, any gist/sync engine), the keepalive/pagehide push, and whether derived state can drift from the synced source. Flag any path where a save can silently fail to sync (cite file:line).',
+  '2. STORY COHERENCE (cross-surface) — does every number tell ONE consistent story across surfaces? Find the same value computed two ways (parallel calcs that drift), surfaces reading stale snapshots, or a figure shown differently in two places (FR-06/FR-07 class). Cite the divergent readers file:line.',
+  '3. FINANCIAL <-> AI-LAYER <-> JARVIS — do the three reconcile? The financial truth (S.txns ledger), the in-app AI layer (its update_balance / advice), and Jarvis (this cockpit). Flag where the AI layer can write a number the ledger does not back, or where the cockpit diverges from the app truth.',
+  '',
+  'End with EXACTLY ONE fenced code block tagged json: {"lenses":{"cloudSync":{"verdict":"ok|risk|broken","findings":["file:line — what"]},"storyCoherence":{"verdict":"...","findings":[...]},"financialAiJarvis":{"verdict":"...","findings":[...]}},"topRisks":[{"what":"...","where":"file:line","why":"..."}],"summary":"one paragraph"}',
+].join('\n');
+
+// Persist the latest system audit (jail()'d to one fixed file). Best-effort; never throws.
+function recordSystemAudit(resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const rec = { ts: new Date().toISOString(), turns: (job && job.turns) || null, model: (job && job.model) || null, parsed: parsed || null, raw: String(resultText || '').slice(0, 20000) };
+    fs.writeFileSync(jail(path.join('mission-control', 'system-audit.json')), JSON.stringify(rec, null, 2));
+  } catch (_) {}
+}
+
 // Post a live-Jarvis reply into the thread as a 'jarvis' comment. Best-effort; never throws.
 function postJarvisReply(id, resultText, job) {
   try {
@@ -1462,6 +1502,10 @@ const server = http.createServer((req, res) => {
       // Computed fresh from the jail()'d ledger so a restart still reports correctly.
       const sw = Object.fromEntries(Object.entries(sweeps).map(([k, v]) => [k, { status: v.status, step: v.step, cycle: v.cycle, startedAt: v.startedAt, finishedAt: v.finishedAt }]));
       return send(res, 200, { jobs, spend: spendWindows(), sweeps: sw });
+    }
+    if (p === '/api/system-audit') {
+      try { return send(res, 200, JSON.parse(fs.readFileSync(jail(path.join('mission-control', 'system-audit.json')), 'utf8'))); }
+      catch (e) { return send(res, 200, { empty: true }); }
     }
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
