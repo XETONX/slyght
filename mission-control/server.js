@@ -1275,6 +1275,12 @@ function launchScoped(id, task, afterResult, opts) {
   const cf = (st0[id] && st0[id].caseFile) || {};
   const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
   if (!ticket) return { ok: false, reason: 'no such ticket: ' + id };
+  // Building a case is active work — lift an Open ticket out of Open so the status reflects it
+  // (and Recommends moves it into "What you're working on"). Per John 2026-05-27.
+  if (st0[id] && st0[id].status === 'Open') {
+    st0[id].status = 'Discussing'; st0[id].assignee = 'john'; st0[id].lastActivity = new Date().toISOString();
+    logTransition(id, 'Open', 'Discussing', 'jarvis'); writeState(st0);
+  }
   const mdl = opts.model === 'opus' ? 'opus' : 'sonnet';
   const rsn = ['off', 'think', 'deep'].includes(opts.reasoning) ? opts.reasoning : (spec.reasoning || 'off');
   const budget = mdl === 'opus' ? '6' : '3';
