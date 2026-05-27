@@ -4161,6 +4161,7 @@ async function viewDeploy() {
 async function depLoad() {
   try { J.dep = await api('/api/gitstatus'); }
   catch (e) { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-err">Couldn't read git state — is the server running? <span>${esc(e.message || e)}</span></div>`; return; }
+  try { J.depWt = await api('/api/worktree'); } catch (_) { J.depWt = { exists: false }; }   // fixes staged on the main worktree
   depRender();
 }
 async function depRefresh() { const b = $('depBody'); if (b) b.innerHTML = `<div class="dep-loading">Re-reading git state…</div>`; await depLoad(); }
@@ -4229,16 +4230,37 @@ function depRender() {
        </div>`
     : '';
 
+  // ── staged fixes on the main worktree (execute-fix commits) — the real ship path when the cockpit
+  //    checkout is on mission-control. The deploy action pushes from wherever main is checked out.
+  const wt = J.depWt || {};
+  const wtReady = !!(wt.exists && wt.ahead > 0 && !isDeploy);
+  const wtSection = (wt.exists && wt.ahead > 0) ? `
+    <div class="dep-wt">
+      <div class="dep-wt-h"><span aria-hidden="true">◎</span> ${wt.ahead} fix${wt.ahead === 1 ? '' : 'es'} staged on the <code>main</code> worktree — ready to ship</div>
+      <ul class="dep-commitlist">${(wt.commits || []).slice(0, 20).map(line => {
+        const sp = line.indexOf(' '); const sha = sp > 0 ? line.slice(0, sp) : ''; const subj = sp > 0 ? line.slice(sp + 1) : line;
+        const m = subj.match(/^(SLY-\d+)/); const tk = m && get(m[1]);
+        return `<li><code class="dep-sha">${esc(sha)}</code> <span class="dep-subj">${esc(subj)}</span>${tk ? ` <a class="dep-tkt" href="#/ticket/${m[1]}">${m[1]} →</a>` : ''}</li>`;
+      }).join('')}</ul>
+      ${wt.diffstat ? `<div class="dep-wt-stat">${esc(wt.diffstat)}</div>` : ''}
+      <div class="dep-wt-note">Cockpit (<code>${esc(branch)}</code>) is untouched. Review the diff in <code>slyght-deploy</code>, then push — it ships from the worktree's <code>main</code>.</div>
+    </div>` : '';
+
   // ── branch-safety banner — the live app ships from `main`; the cockpit lives on `mission-control`.
   const branchBanner = isDeploy
     ? `<div class="dep-branchbar dep-bb-ok"><b>✓ On the deploy branch (${esc(branch)}).</b> A push here updates the live app.</div>`
-    : `<div class="dep-branchbar dep-bb-bad"><b>⛔ You're on <code>${esc(branch)}</code>, not a deploy branch.</b> Pushing is blocked — this protects your live app from cockpit code. To ship a fix, make it on <code>${DEPLOY_BRANCHES_C[0]}</code> (the server hard-refuses any other branch).</div>`;
+    : wtReady
+      ? `<div class="dep-branchbar dep-bb-ok"><b>✓ ${wt.ahead} fix${wt.ahead === 1 ? '' : 'es'} ready on the main worktree.</b> The cockpit (<code>${esc(branch)}</code>) is untouched; the push ships from the worktree's <code>main</code>.</div>`
+      : `<div class="dep-branchbar dep-bb-bad"><b>⛔ You're on <code>${esc(branch)}</code>, not a deploy branch, and nothing is staged on the main worktree.</b> Run Execute-fix on an aligned ticket to stage a change; pushing the cockpit is hard-refused.</div>`;
 
-  // ── the push button — armed only in 'ready' AND on a deploy branch ──
+  // ── the push button — armed when on a deploy branch + ahead, OR when fixes are staged on the worktree.
   let pushBtn, hint;
-  if (!isDeploy) {
+  if (wtReady) {
+    pushBtn = `<button class="dep-push dep-push-ready" onclick="depAskPush()"><span class="dep-push-ic" aria-hidden="true">⬆</span> Ship ${wt.ahead} fix${wt.ahead === 1 ? '' : 'es'} to GitHub</button>`;
+    hint = `<div class="dep-hint">Pushes <b>${wt.ahead} commit${wt.ahead === 1 ? '' : 's'}</b> from the main worktree to <code>origin/main</code> — the live app. You'll type <code>deploy</code> to confirm; nothing fires until then.</div>`;
+  } else if (!isDeploy) {
     pushBtn = `<button class="dep-push" disabled title="Pushing is blocked on a non-deploy branch"><span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
-    hint = `<div class="dep-hint dep-hint-warn">Push is <b>blocked</b> on <code>${esc(branch)}</code>. Only <code>${DEPLOY_BRANCHES_C[0]}</code> may ship to the live app — so the Mission Control cockpit can never be published to your finances by accident.</div>`;
+    hint = `<div class="dep-hint dep-hint-warn">Push is <b>blocked</b> on <code>${esc(branch)}</code>, and nothing is staged on the main worktree. Only <code>${DEPLOY_BRANCHES_C[0]}</code> may ship — so the cockpit can never reach your live app by accident.</div>`;
   } else if (state === 'no-upstream') {
     pushBtn = `<button class="dep-push" disabled title="This branch has no remote tracking branch">
         <span class="dep-push-ic" aria-hidden="true">⬆</span> Push to GitHub</button>`;
@@ -4259,6 +4281,7 @@ function depRender() {
 
   body.innerHTML = `
     ${branchBanner}
+    ${wtSection}
     <div class="dep-grid">
       <div class="dep-main">
         <div class="dep-card dep-state-${state}">
@@ -4292,13 +4315,17 @@ function depRender() {
 
 /* ── the typed-confirm modal (mirrors Dispatch's dsp-confirm: type `deploy` to arm) ── */
 function depAskPush() {
-  const g = J.dep || {};
-  const ahead = g.ahead || 0, upstream = g.upstream || 'origin';
-  if (!g.hasUpstream || ahead === 0) { toast('Nothing to push', 'err'); return; }   // guard — never arm without an upstream + commits
-  modal(`<h2>Push ${ahead} commit${ahead === 1 ? '' : 's'} to GitHub</h2>
-    <p>This runs <b>git push</b> from your local repo to <code>${esc(upstream)}</code> — the
-       <b>one irreversible action</b>. It's the only way prod changes go live. Review the commit
-       list behind this dialog first; nothing fires until you type the word below.</p>
+  const g = J.dep || {}; const wt = J.depWt || {};
+  const ahead = g.ahead || 0, upstream = g.upstream || 'origin/main';
+  // Allow the push when on a deploy branch + ahead, OR when fixes are staged on the main worktree
+  // (the deploy action pushes from wherever main is checked out — branch-guarded server-side).
+  const fromWt = !!(wt.exists && wt.ahead > 0 && !DEPLOY_BRANCHES_C.includes(g.branch));
+  const n = fromWt ? wt.ahead : ahead;
+  if (!fromWt && (!g.hasUpstream || ahead === 0)) { toast('Nothing to push', 'err'); return; }
+  modal(`<h2>Push ${n} commit${n === 1 ? '' : 's'} to GitHub</h2>
+    <p>This runs <b>git push</b>${fromWt ? ' from the <b>main worktree</b> (your cockpit branch is untouched)' : ''} to <code>${esc(fromWt ? 'origin/main' : upstream)}</code> — the
+       <b>one irreversible action</b>. It's the only way prod changes go live. Review the staged
+       fix${n === 1 ? '' : 'es'} behind this dialog first; nothing fires until you type the word below.</p>
     <div class="dep-confirm">
       <div class="dep-confirm-label">Type <code>deploy</code> to confirm</div>
       <input id="depConfirm" placeholder="deploy" autocomplete="off"
