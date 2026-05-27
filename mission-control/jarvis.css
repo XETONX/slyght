@@ -57,6 +57,7 @@ h2.section-h{font-size:18px;font-weight:700;color:var(--head);margin:28px 0 12px
 .pill.sm{font-size:11.5px;padding:3px 9px}
 .p-p0{background:var(--red-bg);color:var(--red)} .p-p1{background:var(--amber-bg);color:var(--amber)} .p-p2{background:#f2f4f7;color:var(--label)}
 .s-Open{background:var(--amber-bg);color:var(--amber)}
+.s-Gathering{background:var(--accent-soft);color:var(--accent)}
 .s-Discussing{background:var(--blue-bg);color:var(--blue)}
 .s-Aligned{background:var(--violet-bg);color:var(--violet)}
 .s-Investigating{background:var(--teal-bg);color:var(--teal)}
@@ -719,12 +720,14 @@ body{ background-image:radial-gradient(1200px 600px at 100% -5%, #eef1f6 0%, var
 .bd2-selwrap.status .bd2-chev{ right:9px; }
 .s-Open.bd2-statussel,           .bd2-selwrap.status.s-Open .bd2-chev{ }
 .bd2-statussel.s-Open{ color:var(--amber); border-color:#f5d990; background:var(--amber-bg); }
+.bd2-statussel.s-Gathering{ color:var(--accent); border-color:#c7cdf7; background:var(--accent-soft); }
 .bd2-statussel.s-Discussing{ color:var(--blue); border-color:#bcd4f6; background:var(--blue-bg); }
 .bd2-statussel.s-Aligned{ color:var(--violet); border-color:#d9c9f5; background:var(--violet-bg); }
 .bd2-statussel.s-Investigating{ color:var(--teal); border-color:#a9def0; background:var(--teal-bg); }
 .bd2-statussel.s-ConfirmedLive{ color:var(--green); border-color:#a6e9c0; background:var(--green-bg); }
 .bd2-statussel.s-Shipped{ color:var(--label); border-color:var(--border2); background:#f2f4f7; }
 .bd2-selwrap.status.s-Open .bd2-chev{ color:var(--amber); }
+.bd2-selwrap.status.s-Gathering .bd2-chev{ color:var(--accent); }
 .bd2-selwrap.status.s-Discussing .bd2-chev{ color:var(--blue); }
 .bd2-selwrap.status.s-Aligned .bd2-chev{ color:var(--violet); }
 .bd2-selwrap.status.s-Investigating .bd2-chev{ color:var(--teal); }

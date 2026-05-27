@@ -7,8 +7,8 @@
 'use strict';
 const TOKEN = window.MC_TOKEN;
 const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, autotickets: null, walk: null, mapFace: 'back', mapSurface: null, cal: null, dep: null, ccspend: null };
-const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
-const STATUS_LABEL = { Open: 'Open', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
+const STATUSES = ['Open', 'Gathering', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
+const STATUS_LABEL = { Open: 'Open', Gathering: 'Gathering', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -479,8 +479,9 @@ function ticketRow(t) {
 /* ── board state + helpers ────────────────────────────────────────────── */
 // client mirror of the server's earned-state machine (server.js TRANSITIONS)
 const TRANSITIONS_CLIENT = {
-  Open: ['Discussing'],
-  Discussing: ['Aligned', 'Open'],
+  Open: ['Gathering', 'Discussing'],
+  Gathering: ['Discussing', 'Aligned', 'Open'],
+  Discussing: ['Gathering', 'Aligned', 'Open'],
   Aligned: ['Investigating', 'Discussing'],
   Investigating: ['ConfirmedLive', 'Shipped', 'Aligned'],
   ConfirmedLive: ['Shipped', 'Investigating'],
@@ -827,7 +828,7 @@ function viewTicket(id) {
             </div>
           </div>
           <div class="btns">
-            ${['Open', 'Discussing'].includes(status)
+            ${['Open', 'Discussing', 'Gathering'].includes(status)
               ? `<button class="btn green" onclick="align('${t.id}')">&#10003; Aligned — hand to CC</button>
                  <button class="btn dsp-btn dsp-btn-locked" type="button" disabled
                    title="Align this ticket first to dispatch — CC needs the handoff package">
@@ -2866,6 +2867,7 @@ const REC_READY = {
   ConfirmedLive: 1.0,    // proven live → ship it now
   Investigating: 0.62,   // CC is on it
   Aligned:       0.70,   // handed off, freshest in-flight intent
+  Gathering:     0.60,   // drones building the case — close to a decision
   Discussing:    0.55,   // needs John — a decision unblocks it
   Open:          0.50,   // needs John — untriaged
 };
@@ -2951,7 +2953,7 @@ function viewRecommend() {
 
   const shipReady = ranked.filter(x => x.t.state.status === 'ConfirmedLive');
   // What John is actively working on (in flight) vs what's queued (open, by priority).
-  const WORKING = ['Discussing', 'Aligned', 'Investigating'];
+  const WORKING = ['Gathering', 'Discussing', 'Aligned', 'Investigating'];
   const working = ranked.filter(x => WORKING.includes(x.t.state.status));
   const nextUp = ranked.filter(x => x.t.state.status === 'Open').slice(0, 8);
   const top = ranked.length ? ranked[0] : null;

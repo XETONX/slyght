@@ -339,7 +339,7 @@ const ACTIONS = {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
     const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
     const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id); if (!ticket) throw new Error('no ticket spine for ' + id);
-    if (!['Open', 'Discussing'].includes(t.status)) throw new Error(`can only align from Open/Discussing (now ${t.status})`);
+    if (!['Open', 'Discussing', 'Gathering'].includes(t.status)) throw new Error(`can only align from Open/Discussing/Gathering (now ${t.status})`);
     const abs = jail(path.join('mission-control', 'handoffs', id + '.md'));
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, collate(ticket, t, decision), 'utf8');
@@ -882,9 +882,9 @@ const MANUAL = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'ti
 const readState = () => { try { return JSON.parse(fs.readFileSync(path.join(MC, 'ticket-state.json'), 'utf8')); } catch { return {}; } };
 const writeState = (s) => fs.writeFileSync(jail(path.join('mission-control', 'ticket-state.json')), JSON.stringify(s, null, 2));
 // the earned-state machine — each transition is a legal edge, not a free text set
-const TRANSITIONS = { Open: ['Discussing'], Discussing: ['Aligned', 'Open'], Aligned: ['Investigating', 'Discussing'], Investigating: ['ConfirmedLive', 'Shipped', 'Aligned'], ConfirmedLive: ['Shipped', 'Investigating'], Shipped: ['Investigating'] };
-const STATUSES = ['Open', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
-const assigneeFor = (st) => (st === 'Aligned' || st === 'Investigating') ? 'cc' : 'john';
+const TRANSITIONS = { Open: ['Gathering', 'Discussing'], Gathering: ['Discussing', 'Aligned', 'Open'], Discussing: ['Gathering', 'Aligned', 'Open'], Aligned: ['Investigating', 'Discussing'], Investigating: ['ConfirmedLive', 'Shipped', 'Aligned'], ConfirmedLive: ['Shipped', 'Investigating'], Shipped: ['Investigating'] };
+const STATUSES = ['Open', 'Gathering', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
+const assigneeFor = (st) => (st === 'Aligned' || st === 'Investigating' || st === 'Gathering') ? 'cc' : 'john';
 function mergedTickets() {
   const spine = [...TICKETS(), ...MANUAL()], state = readState();
   return {
@@ -1278,8 +1278,8 @@ function launchScoped(id, task, afterResult, opts) {
   // Building a case is active work — lift an Open ticket out of Open so the status reflects it
   // (and Recommends moves it into "What you're working on"). Per John 2026-05-27.
   if (st0[id] && st0[id].status === 'Open') {
-    st0[id].status = 'Discussing'; st0[id].assignee = 'john'; st0[id].lastActivity = new Date().toISOString();
-    logTransition(id, 'Open', 'Discussing', 'jarvis'); writeState(st0);
+    st0[id].status = 'Gathering'; st0[id].assignee = 'cc'; st0[id].lastActivity = new Date().toISOString();
+    logTransition(id, 'Open', 'Gathering', 'jarvis'); writeState(st0);
   }
   const mdl = opts.model === 'opus' ? 'opus' : 'sonnet';
   const rsn = ['off', 'think', 'deep'].includes(opts.reasoning) ? opts.reasoning : (spec.reasoning || 'off');
