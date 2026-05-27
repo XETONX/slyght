@@ -538,7 +538,7 @@ const ACTIONS = {
     const budget = mdl === 'opus' ? '6' : '3';
 
     const directive = (m === 'fix'
-      ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. NEVER run git push or deploy. End with a concise RESULT section: what you found, what you changed (files), and the evidence.'
+      ? 'You are a CC drone dispatched by Jarvis on ' + id + '. Investigate AND implement the fix on the CURRENT branch. Reuse canonical writers (BRAIN.<domain>.<verb>, source tags) — never a parallel calc. When the change is complete and Guardian passes, COMMIT it with a message that STARTS with "' + id + ': " (one commit for this ticket, so Deploy can surface it). NEVER run git push or deploy — committing is allowed, pushing is not. End with a concise RESULT section: what you found, what you changed (files + the commit), and the evidence.'
       : 'You are a CC drone dispatched by Jarvis on ' + id + '. INVESTIGATE ONLY — read + analyse, propose the precise fix with file:line + evidence. Do NOT edit files. End with a concise RESULT section.')
       + REASON_SUFFIX[rsn];
     const prompt = handoff + '\n\n---\n' + directive;
@@ -733,6 +733,37 @@ const ACTIONS = {
     spawnDrone({
       key, id, task: 'resolution', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '6', maxTurns: 14,
       onResult: ({ job, resultText }) => recordResolution(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
+  },
+
+  // The CODE-ALIGNMENT AUDITOR — the gate before Deploy. A READ-ONLY drone (Opus) reads the ticket's
+  // committed fix (git show of the "<id>:" commit) and verifies it against the CANON: canonical writers
+  // / BRAIN, FINANCIAL-INVARIANTS, ARCHITECTURE + roadmap, and runs Guardian. PASS/FAIL → caseFile.codeAudit,
+  // surfaced in the Deploy UI so the push is informed. Confirm-gated. See PATHWAY-AND-COHERENCE.md §E.
+  codeAudit: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'codeAudit needs confirm:true' };
+    const key = id + '#code-audit';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a code audit is already running on ' + id };
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const cf = (readState()[id] || {}).caseFile || {};
+    const prompt = [
+      'You are the CODE-ALIGNMENT AUDITOR for slyght — the gate before a fix ships. Ticket ' + id + '\'s fix has been implemented and committed (its commit subject starts "' + id + ':"). Verify the change is SOUND. READ-ONLY — never edit or commit.',
+      'slyght: single-file index.html (~24k lines); global S persisted to localStorage; BRAIN bubbles are the canonical writers; every write carries a SOURCES tag + hits the audit log.',
+      'Look at the ACTUAL change first: run `git show` on the ' + id + ' commit (find it via `git log --grep="' + id + ':" -1 --format=%H`), then run these four checks and report each with file:line evidence:',
+      '1. CANONICAL WRITERS — does it mutate S only via BRAIN.<domain>.<verb> with a SOURCES tag (no direct `S.x =`, no parallel re-calc of an existing value)?',
+      '2. INVARIANTS — which FINANCIAL-INVARIANTS (INV-NN) does it touch; are they preserved; any at risk? (read FINANCIAL-INVARIANTS.md)',
+      '3. ARCHITECTURE + ROADMAP — does it fit ARCHITECTURE.md and NOT collide with a queued bundle? (read ARCHITECTURE.md / FEATURE-MAP.md)',
+      '4. GUARDIAN — run it read-only (`npm run guardian` — or `node scripts/guardian-static.js` if the full run is slow) and report the result verbatim-ish.',
+      cf.resolution ? '## The intended fix (resolution)\n' + (cf.resolution.technical || cf.resolution.resolution || '') : '',
+      '',
+      'End with EXACTLY ONE fenced json block: {"verdict":"PASS|RISK|FAIL","checks":{"canonical":"pass|fail|n/a — note","invariants":"...","architecture":"...","guardian":"pass|fail — note"},"blockers":["only real ship-blockers"],"summary":"one plain-English paragraph: is it safe to ship, and why"}',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'code-audit', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '6', maxTurns: 20,
+      onResult: ({ job, resultText }) => recordCodeAudit(id, resultText, job),
     });
     return { ok: true, dispatched: key, id };
   },
@@ -1536,6 +1567,19 @@ function recordTriagePlan(resultText, job) {
   });
 }
 
+// Store the code-alignment audit verdict on the ticket caseFile + post the summary. Best-effort.
+function recordCodeAudit(id, resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.caseFile = t.caseFile || {};
+    t.caseFile.codeAudit = parsed
+      ? Object.assign({ ts: new Date().toISOString(), model: job && job.model }, parsed)
+      : { ts: new Date().toISOString(), raw: String(resultText || '').slice(0, 4000) };
+    t.thread.push({ author: 'cc', text: '**Code-alignment audit — ' + ((parsed && parsed.verdict) || '?') + '**\n\n' + (parsed ? (parsed.summary || '(see verdict on the ticket)') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
 // Store the composed resolution (dual narrative) on the ticket caseFile + post the story to the thread.
 function recordResolution(id, resultText, job) {
   try {

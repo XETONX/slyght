@@ -2358,6 +2358,12 @@ body{ background-image:
 .cf-res-tech summary:hover{color:var(--text)}
 .cf-res-techbody{margin-top:10px;font-size:13.5px;color:var(--text)}
 .cf-res-recompose{opacity:.8}
+.cf-res-acts{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.cf-codeaudit{font-size:13px;line-height:1.5;border-radius:8px;padding:9px 12px;margin:4px 0 10px;border:1px solid var(--border)}
+.cf-codeaudit b{margin-right:6px}
+.cf-ca-pass{background:var(--green-bg);border-color:var(--green);color:var(--text)}.cf-ca-pass b{color:var(--green)}
+.cf-ca-risk{background:var(--amber-bg);border-color:var(--amber);color:var(--text)}.cf-ca-risk b{color:var(--amber)}
+.cf-ca-fail{background:var(--red-bg);border-color:var(--red);color:var(--text)}.cf-ca-fail b{color:var(--red)}
 
 /* ════════════════════════ FLIGHTDECK — the management home (neon command deck) ════════════════════ */
 .fdeck{position:relative;--cy:#2de2e6;--am:#ffb454;--gn:#49d18b;--vi:#a98bf5;--rd:#f4767e;--panel:rgba(20,28,44,.72);--ink:#dbe7f2;--ink2:#8aa0b8;--ink3:#5e7491;--line:#1b2940}

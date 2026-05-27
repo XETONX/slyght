@@ -962,6 +962,8 @@ function renderCaseFile(t) {
   const filled = rows.filter(r => r.filled).length;
   const res = cf.resolution || null;          // the composed end-of-investigation resolution (dual narrative)
   const resRunning = !!(J.ccjobs && J.ccjobs[t.id + '#resolution'] && J.ccjobs[t.id + '#resolution'].status === 'running');
+  const ca = cf.codeAudit || null;            // code-alignment audit verdict (the gate before Deploy)
+  const caRunning = !!(J.ccjobs && J.ccjobs[t.id + '#code-audit'] && J.ccjobs[t.id + '#code-audit'].status === 'running');
 
   const rowsHtml = rows.map(r => {
     const v = sv[r.slotKey] || '';
@@ -1015,7 +1017,11 @@ function renderCaseFile(t) {
         ${res.verify ? `<div class="cf-res-kv"><span>Verify</span> ${esc(res.verify)}</div>` : ''}
       </div>` : ''}
       ${res.technical ? `<details class="cf-res-tech"><summary>Technical brief — for CC</summary><div class="cf-res-techbody txt md">${mdToHtml(res.technical)}</div></details>` : ''}
-      <button class="btn sm cf-res-recompose" onclick="composeResolution('${t.id}')">Recompose</button>
+      ${ca ? `<div class="cf-codeaudit cf-ca-${esc(String(ca.verdict || '').toLowerCase())}"><b>Code audit: ${esc(ca.verdict || '?')}</b> ${esc(String(ca.summary || '').slice(0, 200))}</div>` : ''}
+      <div class="cf-res-acts">
+        <button class="btn sm cf-res-recompose" onclick="composeResolution('${t.id}')">Recompose</button>
+        ${caRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> auditing the code…</span>' : `<button class="btn sm" onclick="runCodeAudit('${t.id}')" title="Verify the committed fix against BRAIN, invariants, architecture &amp; Guardian">${ca ? 'Re-audit code' : 'Code-audit the fix'}</button>`}
+      </div>
     </div>` : '';
 
   // Spin-off findings — split into THREE buckets so the list isn't noise (Stage 2c):
@@ -1233,6 +1239,16 @@ async function composeResolution(id) {
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#resolution'] = { status: 'running', id, task: 'resolution', mode: 'gather', model: 'opus', started: Date.now() };
     J.dspWatch = id; await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
     dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
+}
+// Run the code-alignment auditor on a ticket's committed fix (BRAIN / invariants / architecture / Guardian).
+async function runCodeAudit(id) {
+  try {
+    await action('codeAudit', { id, confirm: true });
+    toast('Code-alignment audit running — BRAIN · invariants · architecture · Guardian', 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#code-audit'] = { status: 'running', id, task: 'code-audit', mode: 'gather', model: 'opus', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
 // Ask Jarvis ALL of a ticket's open questions at once → one clean threaded reply.
@@ -2232,7 +2248,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
