@@ -695,7 +695,7 @@ async function doDigScoped(id, task) {
   closeModal();
   try {
     await action('dispatchScoped', { id, task, confirm: true });
-    toast(`${task} drone dispatched on ${id}`, 'ok');
+    toast(`${TASK_LABEL[task] || task} drone dispatched on ${id}`, 'ok');
     if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
     J.ccjobs = J.ccjobs || {};
     J.ccjobs[id + '#' + task] = { status: 'running', id, task, mode: 'gather', model: 'sonnet', reasoning: 'off', started: Date.now() };
@@ -4342,7 +4342,34 @@ function renderSystemAuditBody(rec) {
     ${lens('Cloud-sync integrity', (p.lenses || {}).cloudSync)}
     ${lens('Story coherence', (p.lenses || {}).storyCoherence)}
     ${lens('Financial ↔ AI ↔ Jarvis', (p.lenses || {}).financialAiJarvis)}
-    ${(p.topRisks || []).length ? `<div class="sa-risks-h">Top risks</div>${p.topRisks.slice(0, 6).map(r => `<div class="sa-risk-row"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}<div class="sa-risk-why">${esc(r.why || '')}</div></div>`).join('')}` : ''}`;
+    ${(p.topRisks || []).length ? `<div class="sa-risks-h">Top risks <span class="cf-spinoff-hint">— log any as a ticket</span></div>${p.topRisks.slice(0, 6).map((r, i) => `<div class="sa-risk-row"><div class="sa-risk-main"><b>${esc(r.what || '')}</b> ${r.where ? `<span class="sa-risk-where">${esc(r.where)}</span>` : ''}<div class="sa-risk-why">${esc(r.why || '')}</div></div><button class="btn sm" onclick="logAuditFinding(${i})">Log as ticket</button></div>`).join('')}` : ''}`;
+  J._auditRisks = p.topRisks || [];   // referenced by index in logAuditFinding
+}
+// Log a system-audit top-risk as a ticket. Jarvis-categorize for v1 = a smart default (P1 bug) that
+// John adjusts in the modal; he can Ask Jarvis on the created ticket to refine scope/severity.
+function logAuditFinding(idx) {
+  const r = ((J._auditRisks) || [])[idx]; if (!r) { toast('finding not found', 'err'); return; }
+  const title = String(r.what || 'System-audit finding').slice(0, 120);
+  const summary = `[From system audit ${new Date().toISOString().slice(0, 10)}]\n\n${r.what || ''}\n\nWhere: ${r.where || '(unspecified)'}\n\nWhy: ${r.why || ''}`;
+  modal(`<h2>Log audit finding as a ticket</h2>
+    <p>Creates a ticket from this system-audit risk. The detail below is for CC; tune the category, then create.</p>
+    <div class="label">Title</div><input id="afTitle" value="${esc(title)}" maxlength="200">
+    <div class="label" style="margin-top:10px">Detail (for CC)</div><textarea id="afSummary">${esc(summary)}</textarea>
+    <div class="dsp-tunes" style="margin-top:10px">
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="afType">Type</label><div class="dsp-selwrap"><select id="afType" class="dsp-sel"><option value="bug" selected>Bug</option><option value="task">Task</option></select></div></div>
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="afSev">Severity</label><div class="dsp-selwrap"><select id="afSev" class="dsp-sel"><option value="P1" selected>P1</option><option value="P0">P0</option><option value="P2">P2</option></select></div></div>
+    </div>
+    <div class="btns"><button class="btn primary" onclick="doLogAuditFinding()">Create ticket</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doLogAuditFinding() {
+  const title = ($('afTitle').value || '').trim(); if (!title) { toast('title required', 'err'); return; }
+  const summary = ($('afSummary').value || '').trim();
+  const type = $('afType') ? $('afType').value : 'bug'; const severity = $('afSev') ? $('afSev').value : 'P1';
+  try {
+    const r = await action('createTicket', { title, summary, type, severity });
+    closeModal(); toast(`Created ${r.id} from the system audit`, 'ok');
+    await load(); location.hash = '#/ticket/' + r.id;
+  } catch (e) { /* action() already toasted */ }
 }
 async function runSystemAudit() {
   try {
