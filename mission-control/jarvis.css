@@ -2388,6 +2388,21 @@ body{ background-image:
 .cf-sb-fail{background:var(--red-bg);border-color:var(--red)}.cf-sb-fail .cf-sb-h b{color:var(--red)}
 .cf-sb-running{background:var(--amber-bg);border-color:var(--amber)}
 .cf-sb-pending{background:var(--card2)}
+/* UX drone review — frontend-design discipline */
+.cf-ux{border-radius:10px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--accent);background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 8%,var(--card)),var(--card))}
+.cf-ux-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.cf-ux-tag{font-size:11px;font-weight:700;letter-spacing:.3px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 8px;text-transform:uppercase}
+.cf-ux-sum{font-size:13.5px;line-height:1.55;color:var(--text);margin-bottom:8px}
+.cf-ux-glitch{font-size:13px;line-height:1.5;color:var(--text);margin-bottom:8px}
+.cf-ux-find{font-size:13px;line-height:1.5;color:var(--text);padding:6px 0;border-top:1px solid var(--border)}
+.cf-ux-find code{font-size:12px;color:var(--muted)}
+.cf-ux-fix{font-size:12.5px;color:var(--text2);margin-top:2px}
+.cf-ux-sevtag{font-size:10.5px;font-weight:800;text-transform:uppercase;padding:1px 6px;border-radius:6px;margin-right:4px;background:var(--card2);color:var(--muted)}
+.cf-ux-sev-high .cf-ux-sevtag{background:var(--red);color:#fff}
+.cf-ux-sev-med .cf-ux-sevtag{background:var(--amber);color:#2a1c00}
+.cf-ux-sev-low .cf-ux-sevtag{background:var(--card2);color:var(--text2)}
+.cf-ux-empty{font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px}
+.cf-ux-acts{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:8px}
 /* Pre-ship gate (Guardian + smoke) — deterministic, server-run */
 .cf-verify{border-radius:10px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--border)}
 .cf-vf-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:8px}

@@ -1046,6 +1046,8 @@ function renderCaseFile(t) {
   const sbRunning = !!(J.ccjobs && J.ccjobs[t.id + '#sandbox'] && J.ccjobs[t.id + '#sandbox'].status === 'running');
   const vf = cf.verify || null;               // deterministic Guardian + smoke gate result (the pre-ship gate)
   const vfRunning = !!(J.ccjobs && J.ccjobs[t.id + '#verify'] && J.ccjobs[t.id + '#verify'].status === 'running');
+  const ux = cf.uxReview || null;             // UX drone's frontend-design review
+  const uxRunning = !!(J.ccjobs && J.ccjobs[t.id + '#ux'] && J.ccjobs[t.id + '#ux'].status === 'running');
   const fixShot = cf.fixShot || null;         // captured preview of the fixed screen (#36)
   const shotRunning = !!(J.ccjobs && J.ccjobs[t.id + '#fixshot'] && J.ccjobs[t.id + '#fixshot'].status === 'running');
 
@@ -1106,6 +1108,19 @@ function renderCaseFile(t) {
         <button class="btn sm cf-res-recompose" onclick="composeResolution('${t.id}')">Recompose</button>
         ${caRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> auditing the code…</span>' : `<button class="btn sm" onclick="runCodeAudit('${t.id}')" title="Verify the committed fix against BRAIN, invariants, architecture &amp; Guardian">${ca ? 'Re-audit code' : 'Code-audit the fix'}</button>`}
       </div>
+    </div>` : '';
+  // UX drone block — the frontend-design specialist's review. Shows on UX-flavoured tickets (or once run):
+  // summary + the glitch cause + concrete findings, plus a one-click "Run UX review".
+  const uxRelevant = ux || uxRunning || /\b(ux|ui|visual|layout|flash|glitch|flicker|strob|reload|re-?render|render|animation|animate|transition|spacing|align|responsive|design|screen|style|css|theme|motion|jank|stutter)\b/i.test([t.title, t.summary, t.group, t.type].join(' '));
+  const uxBlock = uxRelevant ? `
+    <div class="cf-ux">
+      <div class="cf-ux-h"><span aria-hidden="true">✦</span> UX review <span class="cf-ux-tag">frontend-design</span></div>
+      ${ux ? `<div class="cf-ux-body">
+        ${ux.summary ? `<div class="cf-ux-sum">${esc(ux.summary)}</div>` : ''}
+        ${ux.glitch ? `<div class="cf-ux-glitch"><b>Glitch:</b> ${esc(ux.glitch)}</div>` : ''}
+        ${(Array.isArray(ux.findings) ? ux.findings : []).slice(0, 8).map(f => `<div class="cf-ux-find cf-ux-sev-${esc(String(f.severity || 'med'))}"><span class="cf-ux-sevtag">${esc(f.severity || '?')}</span> <b>${esc(f.issue || '')}</b>${f.cause ? ` <code>${esc(f.cause)}</code>` : ''}${f.fix ? `<div class="cf-ux-fix">&rarr; ${esc(f.fix)}</div>` : ''}</div>`).join('')}
+      </div>` : `<div class="cf-ux-empty">${uxRunning ? 'Walking the surface + reading the render path…' : 'Bring in the frontend-design drone — it judges the surface against slyght&rsquo;s design system and diagnoses flash / jank to the re-render path.'}</div>`}
+      <div class="cf-ux-acts">${uxRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> reviewing…</span>' : `<button class="btn sm${ux ? '' : ' primary'}" onclick="uxReview('${t.id}')">${ux ? 'Re-run UX review' : 'Run UX review'}</button>`}</div>
     </div>` : '';
   // The sandbox-confirm gate — shows once a fix is implemented: walk the fixed app, PASS → ready to ship.
   const sandboxBlock = (sb || sbRunning || cf.fixImplemented) ? `
@@ -1185,6 +1200,7 @@ function renderCaseFile(t) {
       </div>
     </div>
     ${resolutionBlock}
+    ${uxBlock}
     ${sandboxBlock}
     ${verifyBlock}
     ${fixShotBlock}
@@ -1392,6 +1408,19 @@ async function captureFixShot(id) {
     await action('captureFixShot', { id, confirm: true });
     toast(`Capturing the fixed screen for ${id}…`, 'ok');
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#fixshot'] = { status: 'running', id, task: 'fixshot', mode: 'capture', model: '—', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Dispatch the UX drone (2026-05-28) — the frontend-design specialist. Walks the surface + reads the
+// render code, judges against the design discipline (always loaded), proposes system-respecting changes
+// (incl. flash/reload glitch diagnosis). Read-only — records caseFile.uxReview. Re-renders on landing.
+async function uxReview(id) {
+  try {
+    await action('uxReview', { id, confirm: true });
+    toast(`UX drone on ${id} — frontend-design review (walks the surface + render path)…`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#ux'] = { status: 'running', id, task: 'ux', mode: 'gather', model: 'opus', started: Date.now() };
     J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
   } catch (e) { /* action() already toasted */ }
@@ -2410,7 +2439,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'verify': 'Pre-ship gate', 'fixshot': 'Screen capture', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'verify': 'Pre-ship gate', 'fixshot': 'Screen capture', 'ux': 'UX review', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {

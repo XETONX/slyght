@@ -871,8 +871,9 @@ const ACTIONS = {
     const cf = (st0[id] && st0[id].caseFile) || {};
     const thread = (st0[id] && st0[id].thread) || [];
     const threadTxt = thread.map(c => c.author + ': ' + String(c.text || '').replace(/\s+/g, ' ').slice(0, 800)).join('\n').slice(-6000);
+    const uxRail = isUXWork(ticket) ? UX_DESIGN_PREAMBLE() + '\n\n' : '';   // UX discussions always carry the design discipline
     const prompt = [
-      'You are Jarvis — John\'s sharp, plain-spoken engineering advisor on slyght (a single-file PWA: index.html ~24k lines; global S persisted to localStorage; BRAIN bubbles are the canonical writers).',
+      uxRail + 'You are Jarvis — John\'s sharp, plain-spoken engineering advisor on slyght (a single-file PWA: index.html ~24k lines; global S persisted to localStorage; BRAIN bubbles are the canonical writers).',
       'You are discussing ticket ' + id + ' with John in a thread. Answer his LATEST message directly and concisely — your take, what to watch for, your recommendation. Push back if he is wrong (he wants that, not flattery; never "great question"). You MAY read the codebase to ground your answer; do NOT edit files.',
       '',
       '## Ticket', ticket.title, String(ticket.summary || ''),
@@ -884,6 +885,38 @@ const ACTIONS = {
     spawnDrone({
       key, id, task: 'jarvis-chat', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'off', budget: '3', maxTurns: 12,
       onResult: ({ job, resultText }) => postJarvisReply(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
+  },
+
+  // ── UX DRONE (2026-05-28) — the frontend-design specialist in the pipeline. Read-only: walks the
+  // surface (FAKE-seeded) + reads the render code, judges against the frontend-design discipline (always
+  // loaded via UX_DESIGN_PREAMBLE), and proposes concrete, system-respecting changes — including
+  // diagnosing flash/reload/jank glitches down to the re-render path. Records caseFile.uxReview.
+  uxReview: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'uxReview needs confirm:true' };
+    const key = id + '#ux';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a UX review is already running on ' + id };
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const wt = fs.existsSync(WORKTREE) ? WORKTREE : REPO;   // prefer the fixed worktree; else read the live app
+    const prompt = [
+      UX_DESIGN_PREAMBLE(),
+      '',
+      'You are the UX drone for ' + id + ' on slyght. You are in the app repo (single-file index.html ~24k lines + the BRAIN bubbles).',
+      '## The UX concern', ticket.title, String(ticket.summary || ''), 'surface: ' + (ticket.group || '?'),
+      '',
+      'HOW TO WORK (read-only — propose, never patch index.html):',
+      '- READ the render path: grep index.html for the view/render function(s) for this surface + how they\'re re-invoked (navigation, poll/setInterval, onStateChange, save→reload). For a flash/reload/jank glitch the cause is almost always a FULL re-render that replays enter-animations or re-paints a whole subtree on every tick/nav — find the exact function + line.',
+      '- OPTIONALLY capture the surface to SEE it: you may run Playwright headless via Bash (node -e) to seed FAKE state (localStorage.slyght_v5 from state-snapshot.json), open the surface, and screenshot — then Read the PNG. Do NOT trust assumptions about how it looks.',
+      '- JUDGE against the discipline above (typography/motion/spacing/contrast/anti-slop) WITHIN slyght\'s tokens + skin.',
+      '',
+      'End with EXACTLY ONE fenced json block: {"summary":"plain-English what\'s wrong + the feel","glitch":"the specific re-render/flash cause with file:line, or null","findings":[{"issue":"","cause":"file:line","fix":"the minimal system-respecting change","severity":"high|med|low"}],"respectsSystem":true}',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'ux', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '6', maxTurns: 40, cwd: wt,
+      onResult: ({ job, resultText }) => recordUxReview(id, resultText, job),
     });
     return { ok: true, dispatched: key, id };
   },
@@ -955,8 +988,10 @@ const ACTIONS = {
     if (!DEPLOY_BRANCHES.includes(wt.branch)) throw new Error('worktree is on "' + wt.branch + '", expected main — refusing to fix on a non-deploy branch');
     const cf = (readState()[id] || {}).caseFile || {};
     const plan = (cf.resolution && (cf.resolution.technical || cf.resolution.resolution)) || '';
+    const ticketForUx = (mergedTickets().tickets || []).find(t => t.id === id);
+    const uxRail = isUXWork(ticketForUx) ? UX_DESIGN_PREAMBLE() + '\n\n---\n' : '';   // UX changes always carry the design discipline
     const prompt = [
-      handoff,
+      uxRail + handoff,
       '\n---\nYou are CC, dispatched by Jarvis to IMPLEMENT the fix for ' + id + ' on the slyght app (single-file index.html, ~24k lines).',
       'You are in an ISOLATED git worktree checked out on `main` — your edits + commit land on the deploy branch, but NOTHING is pushed (push is blocked; John reviews the diff and pushes). Work ONLY in this directory.',
       plan ? '## The approved plan (from the resolution)\n' + plan : '',
@@ -1533,6 +1568,36 @@ const REASON_SUFFIX_SC = {
   think: ' Think carefully, step by step, before answering.',
   deep:  ' Ultrathink — reason deeply and consider edge cases before answering.',
 };
+// THE FRONTEND-DESIGN DISCIPLINE — distilled from the built-in `frontend-design` skill and ALWAYS
+// prepended to any UX work in this pipeline (per John 2026-05-28). The skill's core is production-grade
+// craft + anti-"AI-slop"; here it is ADAPTED for slyght, which already has an established design system —
+// so the drone COHERES with + elevates it, never reskins on a whim. It also bakes in slyght's hard-won
+// UX rules (the re-render flash class, contrast, touch targets, motion-must-serve).
+function UX_DESIGN_PREAMBLE() {
+  return [
+    '## You carry the frontend-design discipline (always loaded for UX work in this pipeline).',
+    'Production-grade craft, NOT generic "AI slop". But slyght/Mission Control is a LIVING product with an ESTABLISHED design system — your job is to COHERE with and ELEVATE it, never to reskin it on a whim.',
+    '',
+    'RESPECT THE SYSTEM: slyght (the app) is a clean data-dense PWA on CSS custom properties (--bg/--card/--accent/--text/--text2/--text3/--green/--amber/--red…). Mission Control is soft-dark + a neon command-centre surface. Reuse the existing tokens + components; introduce NO new fonts, palettes, or one-off hex. Every value should trace to a token.',
+    '',
+    'BRING THE CRAFT (the skill\'s pillars, applied within the system):',
+    '- TYPOGRAPHY: clear hierarchy + rhythm. slyght rule: data/numbers in --text (never grey-on-grey); labels --text2; --text3 decorative only. No Inter/Roboto/Arial defaults.',
+    '- MOTION: motion must SERVE, never distract — purposeful micro-interactions, high-impact moments. ⚠ CRITICAL for this app: a live/poll-updating view must NOT full-re-render every tick — that replays enter-animations and STROBES (the Command Centre flash bug; fixed by splitting build vs. in-place update). A screen that flashes / looks like it "reloads" when you navigate or when data updates is a DEFECT, not a style. Animate only what changed.',
+    '- SPATIAL COMPOSITION: honest alignment + a consistent spacing scale + honest density. The REAL target is a 380px phone viewport; 44×44px minimum touch targets.',
+    '- DEPTH & DETAIL: shadows/borders/transitions in the existing language; never decorative noise that hurts readability.',
+    '',
+    'ANTI-SLOP: no purple-on-white gradients, no default system fonts, no cookie-cutter predictable layouts, no animation for its own sake. Intentionality over intensity.',
+    '',
+    'DIAGNOSE CONCRETELY: name the SPECIFIC cause with file:line — for a flash/reload glitch, find the function that triggers the FULL re-render (view swap on nav, or a poll/interval re-painting the whole subtree) and propose the MINIMAL in-place-update fix within the system. Name the exact CSS/JS to change.',
+  ].join('\n');
+}
+// Does this ticket / surface count as UX work? If so the frontend-design preamble rides along in
+// execute-fix, jarvis-chat, and (always) the dedicated UX drone. Heuristic: UI-surface group OR keywords.
+function isUXWork(ticket) {
+  if (!ticket) return false;
+  const hay = [ticket.title, ticket.summary, ticket.group, ticket.type].map(x => String(x || '').toLowerCase()).join(' ');
+  return /\b(ux|ui|visual|layout|flash|glitch|flicker|strob|reload|re-render|rerender|render|animation|animate|transition|spacing|align|responsive|design|screen|style|css|theme|motion|jank|stutter)\b/.test(hay);
+}
 function GATHER_PREAMBLE(id, richDump) {
   return [
     'You are a Gather drone for slyght Mission Control, dispatched on ticket ' + id + ' for ONE scoped job.',
@@ -1879,6 +1944,24 @@ function recordSandboxConfirm(id, resultText, job) {
       : { ts: new Date().toISOString(), verdict: 'FAIL', reason: 'could not parse the sandbox drone output', raw: String(resultText || '').slice(0, 4000) };
     const v = t.caseFile.sandbox.verdict;
     t.thread.push({ author: 'cc', text: '**Sandbox confirm — ' + (v || '?') + '**\n\n' + (parsed ? (parsed.reason || '') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
+// Store the UX drone's review on the ticket caseFile + post the summary. Best-effort.
+function recordUxReview(id, resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.caseFile = t.caseFile || {};
+    t.caseFile.uxReview = parsed
+      ? Object.assign({ ts: new Date().toISOString(), model: job && job.model }, parsed)
+      : { ts: new Date().toISOString(), summary: 'could not parse the UX drone output', raw: String(resultText || '').slice(0, 4000) };
+    const ux = t.caseFile.uxReview;
+    const fnd = Array.isArray(ux.findings) ? ux.findings : [];
+    const body = (parsed
+      ? (ux.summary || '') + (ux.glitch ? '\n\n**Glitch:** ' + ux.glitch : '') + (fnd.length ? '\n\n' + fnd.map(f => '- **' + (f.severity || '?') + '** ' + (f.issue || '') + (f.cause ? ' (' + f.cause + ')' : '') + (f.fix ? ' → ' + f.fix : '')).join('\n') : '')
+      : String(resultText || '').slice(0, 1500));
+    t.thread.push({ author: 'cc', text: '**UX review** (frontend-design discipline)\n\n' + body, ts: new Date().toISOString() });
     t.lastActivity = new Date().toISOString(); writeState(st);
   } catch (_) {}
 }
