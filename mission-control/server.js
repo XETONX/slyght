@@ -695,6 +695,27 @@ const ACTIONS = {
     return { ok: true, dispatched: key, id };
   },
 
+  // ── Design a new agent — an OPUS drone (deep reasoning, per John's standing rule) drafts a new
+  // scoped-agent spec from a plain-English description. Draft → agent-drafts.json (read-only viewable).
+  designAgent: ({ desc, confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'designAgent needs confirm:true' };
+    if (!desc || typeof desc !== 'string') throw new Error('desc required');
+    const key = 'SYSTEM#design-agent';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'already designing an agent' };
+    const prompt = [
+      'You are designing a NEW scoped drone agent for slyght Mission Control, from this request:',
+      String(desc).slice(0, 1200),
+      '',
+      'A scoped agent has: a short label, ONE tightly-bounded job, an explicit DO-NOT list (so it never overlaps the others), and a strict JSON output schema. Existing agents you must NOT duplicate: root-cause, locate-surface, fix-proposal, conformance, auditor. The agent is read-only (it investigates, never edits).',
+      'Design it carefully. End with EXACTLY ONE fenced json block: {"id":"kebab-id","label":"...","scope":"the one job in a sentence","doNot":["..."],"schema":"the json fields it should return","directive":"the full prompt directive, in the same voice as the existing Gather agents"}',
+    ].join('\n');
+    spawnDrone({
+      key, id: 'SYSTEM', task: 'design-agent', prompt, mode: 'gather', mdl: 'opus', rsn: 'deep', budget: '6', maxTurns: 14,
+      onResult: ({ job, resultText }) => recordAgentDraft(resultText, job),
+    });
+    return { ok: true, dispatched: key };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
@@ -1204,6 +1225,18 @@ const SYSTEM_AUDIT_PROMPT = [
   'End with EXACTLY ONE fenced code block tagged json: {"lenses":{"cloudSync":{"verdict":"ok|risk|broken","findings":["file:line — what"]},"storyCoherence":{"verdict":"...","findings":[...]},"financialAiJarvis":{"verdict":"...","findings":[...]}},"topRisks":[{"what":"...","where":"file:line","why":"..."}],"summary":"one paragraph"}',
 ].join('\n');
 
+// Persist a drafted agent spec (from designAgent's Opus drone) to a fixed file. Best-effort.
+function recordAgentDraft(resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const abs = jail(path.join('mission-control', 'agent-drafts.json'));
+    let arr = []; try { arr = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (_) {}
+    if (!Array.isArray(arr)) arr = [];
+    arr.push({ ts: new Date().toISOString(), model: (job && job.model) || null, draft: parsed || null, raw: String(resultText || '').slice(0, 4000) });
+    if (arr.length > 50) arr = arr.slice(-50);
+    fs.writeFileSync(abs, JSON.stringify(arr, null, 2));
+  } catch (_) {}
+}
 // Persist the latest system audit (jail()'d to one fixed file). Best-effort; never throws.
 function recordSystemAudit(resultText, job) {
   try {

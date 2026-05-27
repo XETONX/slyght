@@ -1594,6 +1594,7 @@ function dspStartPoll(watchId) {
       if (cur) viewTicket(cur);
       else if (rt === 'agents-fleet') viewAgentsFleet();
       else if (rt === 'architecture') viewArchitecture();
+      else if (rt === 'command') viewCommandCentre();
     }
 
     // Watch a TICKET: when its last running drone finishes AND no sweep is mid-flight, toast + notify.
@@ -1701,8 +1702,10 @@ function dspEnsureBannerTimer() {
   if (dspBannerTimer) return;
   dspBannerTimer = setInterval(() => {
     const id = currentTicketId();
+    const rt2 = (location.hash || '').slice(1).split('?')[0].split('/')[1];
     if (id) dspRenderTicketBanner(id);
-    else if ((location.hash || '').slice(1).split('?')[0].split('/')[1] === 'agents-fleet') viewAgentsFleet();   // tick the fleet clocks
+    else if (rt2 === 'agents-fleet') viewAgentsFleet();   // tick the fleet clocks
+    else if (rt2 === 'command') viewCommandCentre();      // tick the command-centre fleet
     if (!Object.values(J.ccjobs || {}).some(v => v.status === 'running')) { clearInterval(dspBannerTimer); dspBannerTimer = null; }
   }, 1000);
 }
@@ -4585,6 +4588,121 @@ async function doNewInitiative() {
   } catch (e) { /* action() already toasted */ }
 }
 
+/* ════════════════════════ COMMAND CENTRE — the orbital drone deck ════════════════
+ * The one page that breaks the light skin: a dark, glowing command deck for deploying the
+ * headless-Claude drone fleet. No copy-paste prompts — every agent is a one-click deploy against
+ * a selected target. Live fleet with a radar sweep. Full keyboard control. */
+const CC_AGENTS = [
+  { id: 'build',          ic: '⚡', name: 'Build the Case',   role: 'Full parallel sweep → fills the whole case file + auditor', needs: 'ticket', hero: true },
+  { id: 'root-cause',     ic: '⌖', name: 'Root-cause Dig',   role: 'Trace mechanism + root cause + every file:line',            needs: 'ticket' },
+  { id: 'locate-surface', ic: '◇', name: 'Locate Surface',   role: 'Map the ticket to its App-Map surface',                     needs: 'ticket' },
+  { id: 'fix-proposal',   ic: '⟐', name: 'Fix Proposal',     role: 'Design the minimal fix + invariants (needs root cause)',    needs: 'ticket' },
+  { id: 'conformance',    ic: '⊟', name: 'Conformance',      role: 'FIT checks: mapped · labelled · canonical · invariants',    needs: 'ticket' },
+  { id: 'auditor',        ic: '✓', name: 'Auditor',          role: 'Verify the case · merge · COMPLETE or one targeted re-dig',  needs: 'ticket' },
+  { id: 'walk',           ic: '◎', name: 'Walk Drone',       role: 'Walk the surface live in a browser, map gaps',              needs: 'surface' },
+  { id: 'jarvis',         ic: '✦', name: 'Ask Jarvis',       role: 'Conversational advisor — opens the ticket to ask',          needs: 'ticket' },
+  { id: 'system',         ic: '⊕', name: 'System Auditor',   role: 'Whole-app health: sync · story · money↔AI↔Jarvis',          needs: 'none' },
+];
+let ccSel = 0;   // keyboard selection index across the deck
+function viewCommandCentre() {
+  const v = $('view'); v.className = 'view cmd-centre';
+  const ts = J.tickets || [];
+  const target = J._ccTarget && ts.find(t => t.id === J._ccTarget) ? J._ccTarget : '';
+  const jobs = J.ccjobs || {};
+  const running = Object.values(jobs).filter(j => j.status === 'running');
+  const walkRunning = !!(J.walk && J.walk.deploying);
+  const online = running.length + (walkRunning ? 1 : 0);
+  const sp = J.ccspend || {};
+  const targetable = ts.filter(t => !(t.state && t.state.status === 'Shipped')).sort((a, b) => SEVRANK[a.severity] - SEVRANK[b.severity]);
+
+  const cards = CC_AGENTS.map((a, i) => {
+    const liveOnTarget = target && jobs[target + '#' + a.id] && jobs[target + '#' + a.id].status === 'running';
+    const disabled = (a.needs === 'ticket' && !target);
+    return `<button class="cc-card${a.hero ? ' cc-hero' : ''}${i === ccSel ? ' cc-on' : ''}${disabled ? ' cc-dim' : ''}" data-i="${i}"
+        ${liveOnTarget ? 'data-live="1"' : ''} onclick="ccDeploy(${i})" onmouseenter="ccHover(${i})">
+      <span class="cc-card-ic">${a.ic}</span>
+      <span class="cc-card-name">${esc(a.name)}</span>
+      <span class="cc-card-role">${esc(a.role)}</span>
+      <span class="cc-card-foot">${liveOnTarget ? '<span class="cc-pulse"></span> DEPLOYED' : (disabled ? 'SELECT TARGET' : 'DEPLOY ▸')}</span>
+    </button>`;
+  }).join('');
+
+  const fleetRows = (running.length || walkRunning)
+    ? (walkRunning ? `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><span class="cc-fleet-id">WALK</span><span class="cc-fleet-task">${esc((J.walk.scope) || 'all')}</span><span class="cc-fleet-clock">live</span></div>` : '')
+      + running.map(j => { const ms = j.started ? Date.now() - j.started : 0; const clk = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); return `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || 'investigate')}</span><span class="cc-fleet-clock">${clk}</span></div>`; }).join('')
+    : `<div class="cc-fleet-idle">No drones in the air. Select a target and deploy.</div>`;
+
+  v.innerHTML = `
+    <div class="cc-bg" aria-hidden="true"></div>
+    <header class="cc-head">
+      <div class="cc-title"><span class="cc-title-glow">COMMAND</span> CENTRE</div>
+      <div class="cc-telemetry">
+        <span class="cc-tm"><b class="cc-tm-n ${online ? 'cc-tm-live' : ''}">${online}</b> drones online</span>
+        <span class="cc-tm"><b class="cc-tm-n">${(+sp.count || 0)}</b> ops total</span>
+        <span class="cc-tm"><b class="cc-tm-n">~$${(+sp.today_usd || 0).toFixed(2)}</b> today</span>
+      </div>
+    </header>
+    <div class="cc-targetbar">
+      <span class="cc-target-lbl">▸ TARGET</span>
+      <select class="cc-target-sel" onchange="ccSetTarget(this.value)">
+        <option value="">— select a ticket —</option>
+        ${targetable.map(t => `<option value="${t.id}"${t.id === target ? ' selected' : ''}>${esc(t.id + ' · ' + String(t.title || '').slice(0, 48))}</option>`).join('')}
+      </select>
+      ${target ? `<a class="cc-target-open" href="#/ticket/${esc(target)}">open ${esc(target)} →</a>` : '<span class="cc-target-hint">ticket-scoped drones need a target · ←→ to pick an agent, Enter to deploy</span>'}
+    </div>
+    <div class="cc-layout">
+      <section class="cc-deck">
+        <div class="cc-deck-h">AGENT ROSTER</div>
+        <div class="cc-deck-grid">${cards}<button class="cc-card cc-new" onclick="ccNewAgent()"><span class="cc-card-ic">+</span><span class="cc-card-name">New Agent</span><span class="cc-card-role">Design a custom drone with Opus</span><span class="cc-card-foot">DESIGN ▸</span></button></div>
+      </section>
+      <aside class="cc-fleet">
+        <div class="cc-fleet-h"><span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}</div>
+        <div class="cc-fleet-list">${fleetRows}</div>
+      </aside>
+    </div>`;
+  ccBindKeys();
+}
+function ccSetTarget(id) { J._ccTarget = id || ''; viewCommandCentre(); }
+function ccHover(i) { ccSel = i; document.querySelectorAll('.cc-card').forEach((el, n) => el.classList.toggle('cc-on', n === i)); }
+function ccDeploy(i) {
+  const a = CC_AGENTS[i]; if (!a) return;
+  const target = J._ccTarget;
+  if (a.needs === 'ticket' && !target) { toast('select a target ticket first', 'err'); return; }
+  if (a.id === 'system') return doRunSystemAudit();
+  if (a.id === 'build') return buildCase(target);
+  if (a.id === 'jarvis') { location.hash = '#/ticket/' + target; setTimeout(() => toast('ask Jarvis from the ticket composer', 'ok'), 300); return; }
+  if (a.id === 'walk') { const t = get(target); return goWalkDrone(t ? t.group : ''); }
+  return digScoped(target, a.id);   // root-cause / locate-surface / fix-proposal / conformance / auditor
+}
+async function doRunSystemAudit() { if (typeof runSystemAudit === 'function') return runSystemAudit(); }
+let ccKeyHandler = null;
+function ccBindKeys() {
+  if (ccKeyHandler) document.removeEventListener('keydown', ccKeyHandler);
+  ccKeyHandler = (e) => {
+    if (!(location.hash || '').startsWith('#/command')) { document.removeEventListener('keydown', ccKeyHandler); ccKeyHandler = null; return; }
+    if ($('scrim') && $('scrim').classList.contains('on')) return;   // a dialog is open
+    const n = CC_AGENTS.length;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); ccSel = (ccSel + 1) % n; ccHover(ccSel); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); ccSel = (ccSel - 1 + n) % n; ccHover(ccSel); }
+    else if (e.key === 'Enter') { e.preventDefault(); ccDeploy(ccSel); }
+    else if (/^[1-9]$/.test(e.key) && +e.key <= n) { e.preventDefault(); ccSel = +e.key - 1; ccHover(ccSel); }
+  };
+  document.addEventListener('keydown', ccKeyHandler);
+}
+// New agent — describe it, an Opus drone drafts the spec (always Opus reasoning per John).
+function ccNewAgent() {
+  modal(`<h2><span aria-hidden="true">✦</span> Design a new agent</h2>
+    <p>Describe the drone you want. <b>Opus</b> drafts its scope + prompt; you review before it joins the roster.</p>
+    <div class="label">What should this agent do?</div>
+    <textarea id="ccNaDesc" placeholder="e.g. a 'dependency mapper' that lists every reader/writer of a given S field with file:line"></textarea>
+    <div class="btns"><button class="btn primary" onclick="doCcNewAgent()"><span aria-hidden="true">✦</span> Draft with Opus</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+  setTimeout(() => { const el = $('ccNaDesc'); if (el) el.focus(); }, 30);
+}
+async function doCcNewAgent() {
+  const desc = ($('ccNaDesc').value || '').trim(); if (!desc) { toast('describe the agent first', 'err'); return; }
+  try { await action('designAgent', { desc, confirm: true }); closeModal(); toast('Opus is drafting the agent — check the Knowledge tab when it lands', 'ok'); } catch (e) {}
+}
+
 /* ── router ───────────────────────────────────────────────────────────── */
 function route() {
   const raw = (location.hash || '#/overview').slice(1);
@@ -4623,7 +4741,7 @@ function route() {
   else if (r === 'deploy') viewDeploy();
   else if (r === 'agents-fleet') viewAgentsFleet();
   else if (r === 'architecture') viewArchitecture();
-  else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
+  else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommandCentre(); }
   else viewOverview();
   renderTopbarStatus();
   renderNowBar();
