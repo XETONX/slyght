@@ -1644,7 +1644,7 @@ function dspStartPoll(watchId) {
       if (cur) viewTicket(cur);
       else if (rt === 'agents-fleet') viewAgentsFleet();
       else if (rt === 'architecture') viewArchitecture();
-      else if (rt === 'command') viewCommandCentre();
+      else if (rt === 'command') renderCCFleet();   // fleet-only update — no full re-render, no flash
     }
 
     // Watch a TICKET: when its last running drone finishes AND no sweep is mid-flight, toast + notify.
@@ -1755,7 +1755,7 @@ function dspEnsureBannerTimer() {
     const rt2 = (location.hash || '').slice(1).split('?')[0].split('/')[1];
     if (id) dspRenderTicketBanner(id);
     else if (rt2 === 'agents-fleet') viewAgentsFleet();   // tick the fleet clocks
-    else if (rt2 === 'command') viewCommandCentre();      // tick the command-centre fleet
+    else if (rt2 === 'command') renderCCFleet();          // fleet-only update — no full re-render, no flash
     if (!Object.values(J.ccjobs || {}).some(v => v.status === 'running')) { clearInterval(dspBannerTimer); dspBannerTimer = null; }
   }, 1000);
 }
@@ -4677,21 +4677,14 @@ function viewCommandCentre() {
     </button>`;
   }).join('');
 
-  const liveRows = (walkRunning ? `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><span class="cc-fleet-id">WALK</span><span class="cc-fleet-task">${esc((J.walk.scope) || 'all')}</span><span class="cc-fleet-clock">live</span></div>` : '')
-    + running.map(j => { const ms = j.started ? Date.now() - j.started : 0; const clk = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); return `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || 'investigate')}</span><span class="cc-fleet-clock">${clk}</span></div>`; }).join('');
-  // fill the column when idle: recent completed ops (this session) so the panel is never dead space
-  const recent = Object.values(jobs).filter(j => j.status === 'done' || j.status === 'failed').sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 8);
-  const recentRows = recent.length ? `<div class="cc-fleet-sub">RECENT OPS</div>` + recent.map(j => `<div class="cc-fleet-row cc-fleet-done"><span class="cc-fleet-dot cc-dot-${j.status === 'done' ? 'ok' : 'bad'}"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || '—')}</span><span class="cc-fleet-clock">${j.status === 'done' ? '✓' : '✕'}</span></div>`).join('') : '';
-  const fleetRows = (running.length || walkRunning)
-    ? liveRows + recentRows
-    : (recentRows || `<div class="cc-fleet-idle">No drones in the air. Select a target and deploy — agents you launch show here, live.</div>`);
+  const fleetRows = ccFleetHtml();   // built once; live updates go through renderCCFleet() (no full re-render = no flashing)
 
   v.innerHTML = `
     <div class="cc-bg" aria-hidden="true"></div>
     <header class="cc-head">
       <div class="cc-title"><span class="cc-title-glow">COMMAND</span> CENTRE</div>
       <div class="cc-telemetry">
-        <span class="cc-tm"><b class="cc-tm-n ${online ? 'cc-tm-live' : ''}">${online}</b> drones online</span>
+        <span class="cc-tm"><b class="cc-tm-n ${online ? 'cc-tm-live' : ''}" id="ccOnline">${online}</b> drones online</span>
         <span class="cc-tm"><b class="cc-tm-n">${(+sp.count || 0)}</b> ops total</span>
         <span class="cc-tm"><b class="cc-tm-n">~$${(+sp.today_usd || 0).toFixed(2)}</b> today</span>
       </div>
@@ -4710,8 +4703,8 @@ function viewCommandCentre() {
         <div class="cc-deck-grid">${cards}<button class="cc-card cc-new" onclick="ccNewAgent()"><span class="cc-card-ic">+</span><span class="cc-card-name">New Agent</span><span class="cc-card-role">Design a custom drone with Opus</span><span class="cc-card-foot">DESIGN ▸</span></button></div>
       </section>
       <aside class="cc-fleet">
-        <div class="cc-fleet-h"><span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}</div>
-        <div class="cc-fleet-list">${fleetRows}</div>
+        <div class="cc-fleet-h" id="ccFleetH"><span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}</div>
+        <div class="cc-fleet-list" id="ccFleetList">${fleetRows}</div>
       </aside>
     </div>`;
   ccBindKeys();
@@ -4729,6 +4722,24 @@ function ccDeploy(i) {
   return digScoped(target, a.id);   // root-cause / locate-surface / fix-proposal / conformance / auditor
 }
 async function doRunSystemAudit() { if (typeof runSystemAudit === 'function') return runSystemAudit(); }
+function ccFleetHtml() {
+  const jobs = J.ccjobs || {};
+  const running = Object.values(jobs).filter(j => j.status === 'running');
+  const walkRunning = !!(J.walk && J.walk.deploying);
+  const liveRows = (walkRunning ? `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><span class="cc-fleet-id">WALK</span><span class="cc-fleet-task">${esc((J.walk.scope) || 'all')}</span><span class="cc-fleet-clock">live</span></div>` : '')
+    + running.map(j => { const ms = j.started ? Date.now() - j.started : 0; const clk = Math.floor(ms / 60000) + ':' + String(Math.floor((ms % 60000) / 1000)).padStart(2, '0'); return `<div class="cc-fleet-row"><span class="cc-fleet-dot"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || 'investigate')}</span><span class="cc-fleet-clock">${clk}</span></div>`; }).join('');
+  const recent = Object.values(jobs).filter(j => j.status === 'done' || j.status === 'failed').sort((a, b) => (b.started || 0) - (a.started || 0)).slice(0, 8);
+  const recentRows = recent.length ? `<div class="cc-fleet-sub">RECENT OPS</div>` + recent.map(j => `<div class="cc-fleet-row cc-fleet-done"><span class="cc-fleet-dot cc-dot-${j.status === 'done' ? 'ok' : 'bad'}"></span><a class="cc-fleet-id" href="${esc(agentHref(j.id))}">${esc(j.id)}</a><span class="cc-fleet-task">${esc(TASK_LABEL[j.task] || j.task || '—')}</span><span class="cc-fleet-clock">${j.status === 'done' ? '✓' : '✕'}</span></div>`).join('') : '';
+  return (running.length || walkRunning) ? liveRows + recentRows : (recentRows || `<div class="cc-fleet-idle">No drones in the air. Select a target and deploy — agents you launch show here, live.</div>`);
+}
+// Update ONLY the fleet panel + telemetry in place — never a full re-render, so the deck never flashes.
+function renderCCFleet() {
+  const list = document.getElementById('ccFleetList'); if (!list) return;
+  list.innerHTML = ccFleetHtml();
+  const online = Object.values(J.ccjobs || {}).filter(j => j.status === 'running').length + ((J.walk && J.walk.deploying) ? 1 : 0);
+  const h = document.getElementById('ccFleetH'); if (h) h.innerHTML = `<span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}`;
+  const o = document.getElementById('ccOnline'); if (o) { o.textContent = online; o.className = 'cc-tm-n' + (online ? ' cc-tm-live' : ''); }
+}
 let ccKeyHandler = null;
 function ccBindKeys() {
   if (ccKeyHandler) document.removeEventListener('keydown', ccKeyHandler);

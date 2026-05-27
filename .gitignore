@@ -82,3 +82,7 @@ mission-control/snapshots.json
 
 # Jarvis CC-dispatch spend ledger (runtime, append-only — total_usd + per-job cost)
 mission-control/cc-spend.json
+
+# Jarvis runtime audit/triage artifacts (regenerated per run)
+mission-control/system-audit.json
+mission-control/triage-report.json
