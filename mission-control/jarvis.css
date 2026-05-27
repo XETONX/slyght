@@ -2379,6 +2379,15 @@ body{ background-image:
 .cf-ca-pass{background:var(--green-bg);border-color:var(--green);color:var(--text)}.cf-ca-pass b{color:var(--green)}
 .cf-ca-risk{background:var(--amber-bg);border-color:var(--amber);color:var(--text)}.cf-ca-risk b{color:var(--amber)}
 .cf-ca-fail{background:var(--red-bg);border-color:var(--red);color:var(--text)}.cf-ca-fail b{color:var(--red)}
+/* Sandbox-confirm gate */
+.cf-sandbox{border-radius:10px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--border)}
+.cf-sb-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:6px}
+.cf-sb-reason{font-size:13px;line-height:1.5;color:var(--text);margin-bottom:10px}
+.cf-sb-acts{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.cf-sb-pass{background:var(--green-bg);border-color:var(--green)}.cf-sb-pass .cf-sb-h b{color:var(--green)}
+.cf-sb-fail{background:var(--red-bg);border-color:var(--red)}.cf-sb-fail .cf-sb-h b{color:var(--red)}
+.cf-sb-running{background:var(--amber-bg);border-color:var(--amber)}
+.cf-sb-pending{background:var(--card2)}
 /* Deploy branch-safety banner */
 .dep-branchbar{border-radius:11px;padding:12px 16px;margin-bottom:16px;font-size:14px;line-height:1.5;border:1px solid}
 .dep-branchbar code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:rgba(0,0,0,.25);padding:1px 5px;border-radius:4px}

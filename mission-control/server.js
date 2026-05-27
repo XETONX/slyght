@@ -42,7 +42,7 @@ function ensureWorktree() {
   try {
     const list = require('child_process').execSync('git worktree list --porcelain', { cwd: REPO }).toString();
     const norm = WORKTREE.replace(/\\/g, '/');
-    if (list.includes('worktree ' + norm) || list.includes('worktree ' + WORKTREE)) { linkNodeModules(); return { ok: true, path: WORKTREE, existed: true, branch: gitBranchOf(WORKTREE) }; }
+    if (list.includes('worktree ' + norm) || list.includes('worktree ' + WORKTREE)) { linkNodeModules(); syncWorktreeIfClean(); return { ok: true, path: WORKTREE, existed: true, branch: gitBranchOf(WORKTREE) }; }
   } catch (_) {}
   try {
     require('child_process').execSync('git worktree add ' + JSON.stringify(WORKTREE) + ' main', { cwd: REPO, stdio: 'pipe' });
@@ -52,6 +52,20 @@ function ensureWorktree() {
 }
 // The worktree has no node_modules (not committed) → Guardian/tests can't run there. Junction/symlink
 // it to the main repo's node_modules so the fix + code-audit drones can run `npm run guardian` in the worktree.
+// Keep the sandbox matching the LIVE app: when the worktree is CLEAN (no uncommitted edits, nothing
+// unpushed), fetch + hard-reset to origin/main so each fresh fix starts from the latest SHIPPED state.
+// If there's in-progress work (a pending fix), leave it untouched — never nuke unreviewed work.
+function syncWorktreeIfClean() {
+  try {
+    const sh = (c) => execSync(c, { cwd: WORKTREE }).toString().trim();
+    const dirty = sh('git status --porcelain').length > 0;
+    const ahead = (sh('git rev-list --count origin/main..HEAD') || '0') !== '0';
+    if (dirty || ahead) return { synced: false, reason: 'worktree has in-progress work' };
+    execSync('git fetch origin main --quiet', { cwd: WORKTREE });
+    execSync('git reset --hard origin/main', { cwd: WORKTREE, stdio: 'pipe' });
+    return { synced: true };
+  } catch (e) { return { synced: false, reason: e.message }; }
+}
 function linkNodeModules() {
   try {
     const wtNM = path.join(WORKTREE, 'node_modules'); const repoNM = path.join(REPO, 'node_modules');
@@ -947,6 +961,58 @@ const ACTIONS = {
     return { ok: true, dispatched: key, id, worktree: wt.path };
   },
 
+  // CONFIRM IN SANDBOX — the walk/emulator gate before ready-to-ship. A drone runs IN the main
+  // worktree (the fixed app, FAKE-seeded for safety), drives the ticket's surface / runs its smoke
+  // test, captures screenshots, and JUDGES whether the fix actually works. PASS → the ticket can be
+  // marked ready-to-ship; FAIL → back to fix with the reason. It may fix the test HARNESS/seed but
+  // never the app (index.html) — if the fix is broken it reports, it doesn't patch. Per John's flow.
+  confirmInSandbox: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'confirmInSandbox needs confirm:true' };
+    const key = id + '#sandbox';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a sandbox confirm is already running on ' + id };
+    const wt = ensureWorktree();
+    if (!wt.ok) throw new Error('could not prepare the sandbox worktree: ' + wt.error);
+    const ticket = (mergedTickets().tickets || []).find(t => t.id === id);
+    if (!ticket) throw new Error('no such ticket: ' + id);
+    const cf = (readState()[id] || {}).caseFile || {};
+    const res = (cf.resolution && (cf.resolution.story || cf.resolution.resolution)) || ticket.summary || '';
+    const prompt = [
+      'You are CC, verifying ' + id + '\'s fix in a SANDBOX before it can ship. You are in an isolated git worktree on `main` with the fix applied — the live app (single-file index.html), seeded with FAKE data (never John\'s real money). Confirm the fix ACTUALLY WORKS; do not take anyone\'s word for it.',
+      'RULES: you MAY run the app + Playwright + write/run capture or test scripts; you may fix the TEST HARNESS or seed if it won\'t boot. You must NOT edit index.html (the fix itself) — if the fix is wrong, REPORT it, do not patch it. Never git push.',
+      'WHAT TO VERIFY:\n' + res,
+      'HOW: run the ticket\'s smoke test if one exists (look in tests/smoke/ — e.g. `npx playwright test tests/smoke/<file> --config=playwright.smoke.config.js`). If the harness fails to boot/seed, debug + fix the HARNESS so the FAKE-seeded app runs, then re-run. Capture before/after screenshots of the fixed behaviour and READ them. Judge against the invariants the fix should satisfy (e.g. conservation: money out of cash equals money into the goal).',
+      'End with EXACTLY ONE fenced json block: {"verdict":"PASS|FAIL","reason":"plain-English: does it work, and how you know","evidence":"the concrete numbers/screens you saw","smokePassed":true,"smokeOutput":"the key pass/fail lines"}',
+    ].join('\n');
+    spawnDrone({
+      key, id, task: 'sandbox', prompt, mode: 'fix', mdl: 'opus', rsn: 'think', budget: '10', maxTurns: 50, cwd: wt.path,
+      onResult: ({ job, resultText }) => recordSandboxConfirm(id, resultText, job),
+    });
+    return { ok: true, dispatched: key, id };
+  },
+  // Mark a sandbox-confirmed fix READY TO SHIP — commit the worktree fix (so Deploy can push it) and
+  // earn ConfirmedLive. Only allowed when the sandbox verdict is PASS (the walk evidence). Push still John's.
+  markReadyToShip: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'markReadyToShip needs confirm:true' };
+    const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
+    const sandbox = (t.caseFile && t.caseFile.sandbox) || null;
+    if (!sandbox || sandbox.verdict !== 'PASS') return { ok: false, reason: 'not sandbox-confirmed — run confirm-in-sandbox and get a PASS first' };
+    if (!(TRANSITIONS[t.status] || []).includes('ConfirmedLive') && t.status !== 'Investigating') return { ok: false, reason: 'illegal transition ' + t.status + ' → ConfirmedLive' };
+    const ticket = (mergedTickets().tickets || []).find(x => x.id === id);
+    const subj = id + ': ' + String((ticket && ticket.title) || 'fix').slice(0, 80);
+    // Commit the worktree fix so it's a discrete, pushable commit on main. Push remains John's (Deploy).
+    let committed = false, commitErr = '';
+    try { execSync('git add -A', { cwd: WORKTREE }); execSync('git commit -m ' + JSON.stringify(subj), { cwd: WORKTREE, stdio: 'pipe' }); committed = true; }
+    catch (e) { commitErr = (e.stderr ? e.stderr.toString() : '') || e.message; }   // nothing to commit (already committed) is fine
+    const from = t.status; t.status = 'ConfirmedLive'; t.assignee = assigneeFor('ConfirmedLive');
+    t.evidence = { kind: 'sandbox', reason: sandbox.reason, ts: new Date().toISOString() };
+    logTransition(id, from, 'ConfirmedLive', 'jarvis');
+    t.thread.push({ author: 'jarvis', text: '**Ready to ship** — sandbox-confirmed, fix committed on the main worktree' + (committed ? '' : ' (already committed)') + '. Review the diff in Deploy and push.', ts: new Date().toISOString() });
+    t.lastActivity = new Date().toISOString(); writeState(st);
+    return { ok: true, status: 'ConfirmedLive', committed };
+  },
+
   // RULE 6: the one irreversible action. git push, hard-coded, and ONLY with
   // an explicit confirm:true (the UI also gates it behind a typed confirmation).
   deploy: ({ confirm }) => {
@@ -1653,11 +1719,29 @@ function recordTriagePlan(resultText, job) {
 }
 
 // Post the execute-fix drone's result into the ticket + advance Aligned → Investigating (CC is on it).
+// Flag the fix as implemented so the next-action becomes "walk it in the sandbox to confirm".
 function recordExecuteFix(id, resultText, job) {
   try {
     const st = readState(); const t = st[id]; if (!t) return;
     t.thread.push({ author: 'cc', text: '**Execute-fix drone (main worktree) — ' + ((job && job.model) || '') + '**\n\n' + (resultText || '(no output)').slice(0, 9000), ts: new Date().toISOString() });
+    t.caseFile = t.caseFile || {};
+    t.caseFile.fixImplemented = { ts: new Date().toISOString(), worktree: true };
+    delete t.caseFile.sandbox;   // a fresh implementation invalidates any prior sandbox verdict
     if (t.status === 'Aligned') { t.status = 'Investigating'; t.assignee = 'cc'; logTransition(id, 'Aligned', 'Investigating', 'cc'); }
+    t.lastActivity = new Date().toISOString(); writeState(st);
+  } catch (_) {}
+}
+// Record the sandbox-confirm verdict (PASS/FAIL) on the ticket caseFile + post the report.
+function recordSandboxConfirm(id, resultText, job) {
+  try {
+    const parsed = extractJsonBlock(resultText);
+    const st = readState(); const t = st[id]; if (!t) return;
+    t.caseFile = t.caseFile || {};
+    t.caseFile.sandbox = parsed
+      ? Object.assign({ ts: new Date().toISOString(), model: job && job.model }, parsed)
+      : { ts: new Date().toISOString(), verdict: 'FAIL', reason: 'could not parse the sandbox drone output', raw: String(resultText || '').slice(0, 4000) };
+    const v = t.caseFile.sandbox.verdict;
+    t.thread.push({ author: 'cc', text: '**Sandbox confirm — ' + (v || '?') + '**\n\n' + (parsed ? (parsed.reason || '') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
     t.lastActivity = new Date().toISOString(); writeState(st);
   } catch (_) {}
 }

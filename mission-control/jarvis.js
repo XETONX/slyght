@@ -28,13 +28,19 @@ function nextAction(t) {
   const complete = ((cf.audit && cf.audit.verdict) || '') === 'COMPLETE';
   const hasRes = !!cf.resolution;
   const anyCase = CASE_SLOT_KEYS.some(k => cf[k]);
+  const fixDone = !!cf.fixImplemented;          // execute-fix drone implemented it in the worktree
+  const sandbox = cf.sandbox || null;           // sandbox-confirm verdict (PASS/FAIL)
   if (status === 'Shipped')        return { label: 'Done', why: 'Shipped and live — nothing left.', kind: 'done' };
-  if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Fix is proven on a walk. Review &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
-  if (fdLive(t.id))                return { label: 'Drones working — sit tight', why: 'Jarvis is investigating this now. Findings will land in the case file.', kind: 'wait' };
-  if (status === 'Investigating')  return { label: 'CC is fixing it', why: 'CC is implementing the fix. It&rsquo;ll post back when done.', kind: 'wait' };
-  if (status === 'Aligned')        return { label: 'Execute the fix', why: 'You approved the plan — a drone implements it on an isolated main worktree (nothing pushes; you review the diff in Deploy).', fn: `executeFix('${t.id}')`, kind: 'go' };
+  if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Sandbox-confirmed. Review the diff &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
+  if (fdLive(t.id))                return { label: 'Drones working — sit tight', why: 'A drone is on this now. Findings/results land in the case file.', kind: 'wait' };
+  // The fix loop: implemented → confirm in sandbox → ready to ship.
+  if (sandbox && sandbox.verdict === 'PASS') return { label: 'Mark ready to ship', why: 'Sandbox-confirmed working. This commits the fix on main and moves it to Deploy.', fn: `markReadyToShip('${t.id}')`, kind: 'go' };
+  if (sandbox && sandbox.verdict === 'FAIL') return { label: 'Sandbox failed — re-run the fix', why: 'The sandbox walk found the fix doesn&rsquo;t work yet (see the verdict below). Re-run execute-fix.', fn: `executeFix('${t.id}')`, kind: 'go' };
+  if (fixDone)                     return { label: 'Walk it in the sandbox', why: 'Fix implemented on an isolated main worktree — confirm it actually works (FAKE-seeded) before shipping.', fn: `confirmInSandbox('${t.id}')`, kind: 'go' };
+  if (status === 'Aligned')        return { label: 'Execute the fix', why: 'You approved the plan — a drone implements it on an isolated main worktree (nothing pushes; you review the diff).', fn: `executeFix('${t.id}')`, kind: 'go' };
+  if (status === 'Investigating')  return { label: 'Execute the fix', why: 'Handed to CC but no fix yet — run the execute-fix drone to implement it on a main worktree.', fn: `executeFix('${t.id}')`, kind: 'go' };
   if (complete && !hasRes)         return { label: 'Compose the resolution', why: 'The case is complete. Get the plain-English resolution, then align.', fn: `composeResolution('${t.id}')`, kind: 'go' };
-  if (complete && hasRes)          return { label: 'Align — sign off the fix', why: 'Resolution&rsquo;s ready. Align to hand it to CC.', fn: `align('${t.id}')`, kind: 'go' };
+  if (complete && hasRes)          return { label: 'Align — sign off the fix', why: 'Resolution&rsquo;s ready. Align to hand it to the fix drone.', fn: `align('${t.id}')`, kind: 'go' };
   if (!anyCase)                    return { label: 'Build the case', why: 'No evidence yet — deploy drones to investigate it for you.', fn: `buildCase('${t.id}')`, kind: 'go' };
   return { label: 'Continue the case', why: 'Some evidence is in. Keep building, or run the auditor to check if it&rsquo;s complete.', fn: `buildCase('${t.id}')`, kind: 'go' };
 }
@@ -974,6 +980,8 @@ function renderCaseFile(t) {
   const resRunning = !!(J.ccjobs && J.ccjobs[t.id + '#resolution'] && J.ccjobs[t.id + '#resolution'].status === 'running');
   const ca = cf.codeAudit || null;            // code-alignment audit verdict (the gate before Deploy)
   const caRunning = !!(J.ccjobs && J.ccjobs[t.id + '#code-audit'] && J.ccjobs[t.id + '#code-audit'].status === 'running');
+  const sb = cf.sandbox || null;              // sandbox-confirm verdict (the walk that gates ready-to-ship)
+  const sbRunning = !!(J.ccjobs && J.ccjobs[t.id + '#sandbox'] && J.ccjobs[t.id + '#sandbox'].status === 'running');
 
   const rowsHtml = rows.map(r => {
     const v = sv[r.slotKey] || '';
@@ -1033,6 +1041,16 @@ function renderCaseFile(t) {
         ${caRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> auditing the code…</span>' : `<button class="btn sm" onclick="runCodeAudit('${t.id}')" title="Verify the committed fix against BRAIN, invariants, architecture &amp; Guardian">${ca ? 'Re-audit code' : 'Code-audit the fix'}</button>`}
       </div>
     </div>` : '';
+  // The sandbox-confirm gate — shows once a fix is implemented: walk the fixed app, PASS → ready to ship.
+  const sandboxBlock = (sb || sbRunning || cf.fixImplemented) ? `
+    <div class="cf-sandbox cf-sb-${sb ? esc(String(sb.verdict || '').toLowerCase()) : (sbRunning ? 'running' : 'pending')}">
+      <div class="cf-sb-h"><span aria-hidden="true">◎</span> Sandbox confirm ${sb ? `— <b>${esc(sb.verdict || '?')}</b>` : (sbRunning ? '— walking the fixed app…' : '— fix implemented, not yet confirmed')}</div>
+      ${sb && sb.reason ? `<div class="cf-sb-reason">${esc(String(sb.reason).slice(0, 400))}</div>` : ''}
+      <div class="cf-sb-acts">
+        ${sbRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> walking the sandbox…</span>' : `<button class="btn sm${sb ? '' : ' primary'}" onclick="confirmInSandbox('${t.id}')">${sb ? 'Re-confirm in sandbox' : 'Walk it in the sandbox'}</button>`}
+        ${sb && sb.verdict === 'PASS' ? `<button class="btn sm primary" onclick="markReadyToShip('${t.id}')">Mark ready to ship &rarr;</button>` : ''}
+      </div>
+    </div>` : '';
 
   // Spin-off findings — split into THREE buckets so the list isn't noise (Stage 2c):
   //   • Potential tickets  (unmappedTerritory) — real out-of-scope findings → loggable, with "Log all"
@@ -1079,6 +1097,7 @@ function renderCaseFile(t) {
       </div>
     </div>
     ${resolutionBlock}
+    ${sandboxBlock}
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
     ${merged}
@@ -1262,6 +1281,26 @@ async function executeFix(id) {
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#execute-fix'] = { status: 'running', id, task: 'execute-fix', mode: 'fix', model: 'opus', started: Date.now() };
     J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Walk/confirm the implemented fix in the sandbox (the worktree's fixed app, FAKE-seeded) — proves
+// it works before ready-to-ship. A drone runs the smoke / drives the surface + judges. PASS/FAIL.
+async function confirmInSandbox(id) {
+  try {
+    await action('confirmInSandbox', { id, confirm: true });
+    toast(`Confirming ${id} in the sandbox — walking the fixed app (FAKE-seeded)`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#sandbox'] = { status: 'running', id, task: 'sandbox', mode: 'fix', model: 'opus', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Mark a sandbox-confirmed fix ready to ship — commits the worktree fix + earns ConfirmedLive → Deploy.
+async function markReadyToShip(id) {
+  try {
+    const r = await action('markReadyToShip', { id, confirm: true });
+    toast(`${id} → ready to ship${r.committed ? ' (fix committed on main)' : ''}. Review the diff in Deploy and push.`, 'ok');
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
   } catch (e) { /* action() already toasted */ }
 }
 // Run the code-alignment auditor on a ticket's committed fix (BRAIN / invariants / architecture / Guardian).
@@ -2271,7 +2310,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
