@@ -352,15 +352,15 @@ const ACTIONS = {
     return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.` };
   },
   // John (or a walk) creates a ticket → manual store (never clobbered by regen).
-  createTicket: ({ title, summary, surface, severity, type, parent, spinoffText }) => {
+  createTicket: ({ title, summary, surface, severity, type, parent, spinoffText, epic }) => {
     if (!title) throw new Error('title required');
-    if (type && !['bug', 'feature', 'task'].includes(type)) throw new Error('bad type');
+    if (type && !['bug', 'feature', 'task', 'epic'].includes(type)) throw new Error('bad type');
     const all = [...TICKETS(), ...MANUAL()]; const nextN = Math.max(0, ...all.map(t => +(t.id.replace('SLY-', '') || 0))) + 1; const id = 'SLY-' + nextN;
     const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
     let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
     // optional parent link (spin-off from an investigation) — child→parent, validated id
     const links = (parent && /^SLY-\d+$/.test(parent)) ? [{ to: parent, why: 'spun off from this investigation' }] : [];
-    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links });
+    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links, epic: (epic && /^SLY-\d+$/.test(epic)) ? epic : null });
     fs.mkdirSync(path.dirname(manualPath), { recursive: true }); fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
     const stt = readState(); const now = new Date().toISOString();
     stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now };
@@ -413,12 +413,16 @@ const ACTIONS = {
   // ticket-state.json via writeState; id pinned to ^SLY-\d+$ like every other ticket action.
   setMeta: ({ id, field, value }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
-    if (!['type', 'severity', 'dueDate', 'bundle'].includes(field)) throw new Error('bad meta field: ' + field);
+    if (!['type', 'severity', 'dueDate', 'bundle', 'epic'].includes(field)) throw new Error('bad meta field: ' + field);
     const v = String(value == null ? '' : value).trim();
     // per-field validation — reject anything that isn't a legal value (or '' to clear)
     let val = '';
     if (field === 'type') {
-      if (v && !['bug', 'feature', 'task'].includes(v)) throw new Error('bad type: ' + v);
+      if (v && !['bug', 'feature', 'task', 'epic'].includes(v)) throw new Error('bad type: ' + v);
+      val = v;
+    } else if (field === 'epic') {
+      if (v && !/^SLY-\d+$/.test(v)) throw new Error('epic must be a ticket id (SLY-N) or empty');
+      if (v === id) throw new Error('a ticket cannot be its own epic');
       val = v;
     } else if (field === 'severity') {
       if (v && !['P0', 'P1', 'P2'].includes(v)) throw new Error('bad severity: ' + v);
@@ -900,6 +904,7 @@ function mergedTickets() {
           severity: m.severity || t.severity,      // …and severity, when John has set one
           dueDate:  m.dueDate  || null,            // NEW — null when unset (Calendar reads this)
           bundle:   m.bundle   || null,            // NEW — null when unset (Planning reads this)
+          epic:     m.epic     || t.epic || null,  // NEW — parent epic id (meta override → spine fallback)
           rich:     mergeRich(t.rich, cf),         // drone evidence overlays the spine rich (filled slots only)
           caseFile: cf,                            // raw slot-level evidence for the case-file panel
           state: s,

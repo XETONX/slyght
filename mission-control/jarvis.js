@@ -758,6 +758,27 @@ async function doLogSpinoff(parentId) {
   } catch (e) { /* action() already toasted */ }
 }
 
+// Epic assignment dropdown — lists existing epics; setMeta('epic',...) re-parents the story.
+function epicSelect(t) {
+  const epics = (J.tickets || []).filter(x => x.type === 'epic' && x.id !== t.id);
+  const cur = t.epic || '';
+  const opts = ['<option value="">— no epic —</option>']
+    .concat(epics.map(e => `<option value="${e.id}"${e.id === cur ? ' selected' : ''}>${esc(e.id + ' · ' + String(e.title || '').slice(0, 38))}</option>`));
+  if (cur && !epics.some(e => e.id === cur)) opts.push(`<option value="${cur}" selected>${esc(cur)} (missing)</option>`);
+  return `<select class="fld-bundle fld-epic${cur ? ' set' : ''}" onchange="setMeta('${t.id}','epic',this.value)" aria-label="Epic for ${t.id}">${opts.join('')}</select>`;
+}
+// Epic roll-up — the stories under this epic + done/total, shown on an epic ticket.
+function renderEpicChildren(epic) {
+  const kids = (J.tickets || []).filter(x => x.epic === epic.id);
+  const done = kids.filter(k => ['ConfirmedLive', 'Shipped'].includes((k.state || {}).status)).length;
+  return `<div class="siderail epic-rail">
+    <div class="sh">Stories in this epic <span class="epic-count">${done}/${kids.length}</span></div>
+    ${kids.length
+      ? kids.map(k => `<div class="kv"><span class="k"><a href="#/ticket/${k.id}">${k.id}</a></span><span class="v"><span class="pill sm s-${(k.state || {}).status}">${STATUS_LABEL[(k.state || {}).status] || (k.state || {}).status}</span></span></div>`).join('')
+      : '<div class="epic-empty">No stories yet — set this epic on other tickets via their Epic field.</div>'}
+  </div>`;
+}
+
 /* ════════════════════════ TICKET DETAIL (the case-view skin) ════════════ */
 function viewTicket(id) {
   const t = get(id); const v = $('view');
@@ -853,8 +874,9 @@ function viewTicket(id) {
           <div class="kv"><span class="k">Status</span><span class="v"><span class="pill sm s-${status}">${STATUS_LABEL[status]}</span></span></div>
           <div class="kv"><span class="k">Assignee</span><span class="v">${assignee === 'cc' ? 'CC — investigating' : 'John — needs judgment'}</span></div>
           <div class="kv fld-kv"><span class="k">Type</span><span class="v">
-            ${fldSelect(t.id, 'type', t.type, [['bug', 'Bug'], ['feature', 'Feature'], ['task', 'Task']], 'fld-type-' + t.type)}
+            ${fldSelect(t.id, 'type', t.type, [['bug', 'Bug'], ['feature', 'Feature'], ['task', 'Task'], ['epic', 'Epic']], 'fld-type-' + t.type)}
           </span></div>
+          ${t.type !== 'epic' ? `<div class="kv fld-kv"><span class="k">Epic</span><span class="v">${epicSelect(t)}</span></div>` : ''}
           <div class="kv fld-kv"><span class="k">Severity</span><span class="v">
             ${fldSelect(t.id, 'severity', t.severity, [['P0', 'P0 · Critical'], ['P1', 'P1 · High'], ['P2', 'P2 · Normal']], sevCls(t.severity))}
           </span></div>
@@ -871,6 +893,7 @@ function viewTicket(id) {
           <div class="kv"><span class="k">Age</span><span class="v">${ago(st.opened)}</span></div>
         </div>
         ${fldBundleDatalist()}
+        ${t.type === 'epic' ? renderEpicChildren(t) : ''}
         ${(t.links || []).length ? `<div class="siderail"><div class="sh">Related</div>${t.links.map(l => `<div class="kv"><span class="k">${l.to.startsWith('SLY') ? `<a href="#/ticket/${l.to}">${esc(l.to)}</a>` : esc(l.to)}</span><span class="v" style="font-weight:400;color:var(--muted);font-size:12px;max-width:150px">${esc(l.why)}</span></div>`).join('')}</div>` : ''}
         ${sync.length ? `<div class="siderail" style="background:var(--green-bg);border-color:#a6e9c0"><div class="sh" style="color:var(--green)">Kept in sync on ship</div><div style="font-size:13px;color:#1a1d24;line-height:1.6">${sync.map(esc).join(', ')} — the reasoning stays here on the ticket.</div></div>` : ''}
         <div class="siderail">
