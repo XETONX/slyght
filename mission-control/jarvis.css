@@ -2502,3 +2502,26 @@ body{ background-image:
 .fmap-node.fmap-hi circle{filter:drop-shadow(0 0 10px currentColor)}
 .fmap-node.fmap-hi{opacity:1}
 @media(max-width:760px){.fmap-side{display:none}.fmap{height:calc(100vh - 96px)}}
+
+/* ── NEXT banner — the one thing to do, on every ticket (legibility) ── */
+.nx{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;border:1px solid var(--border);border-radius:14px;padding:16px 20px;margin-bottom:18px;background:var(--card)}
+.nx-go{border-left:4px solid var(--accent);background:linear-gradient(100deg,var(--accent-soft),var(--card) 70%)}
+.nx-wait{border-left:4px solid var(--teal);background:linear-gradient(100deg,var(--teal-bg),var(--card) 70%)}
+.nx-done{border-left:4px solid var(--green);background:linear-gradient(100deg,var(--green-bg),var(--card) 70%)}
+.nx-main{min-width:0}
+.nx-k{font-family:ui-monospace,monospace;font-size:10.5px;font-weight:800;letter-spacing:.14em;color:var(--accent);text-transform:uppercase;margin-bottom:4px}
+.nx-wait .nx-k{color:var(--teal)}.nx-done .nx-k{color:var(--green)}
+.nx-label{font-size:20px;font-weight:800;color:var(--head);margin-bottom:3px;line-height:1.2}
+.nx-why{font-size:14px;color:var(--muted);line-height:1.5;max-width:66ch}
+.nx-side{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.nx-btn{font:inherit;font-size:15px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent-2));border:none;border-radius:11px;padding:12px 22px;cursor:pointer;box-shadow:var(--sh-sm);transition:transform .15s var(--ease),box-shadow .15s var(--ease);white-space:nowrap}
+.nx-btn:hover{transform:translateY(-2px);box-shadow:var(--sh-md)}
+.nx-status{display:flex;flex-direction:column;align-items:flex-start;gap:3px;background:none;border:none;cursor:pointer;font:inherit;text-align:left;padding:0}
+.nx-status-need{font-size:11.5px;color:var(--muted);max-width:160px}
+.nx-status:hover .nx-status-need{color:var(--text)}
+/* status legend */
+.sl-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.sl-row{display:flex;align-items:flex-start;gap:12px}
+.sl-txt{display:flex;flex-direction:column;gap:1px}
+.sl-txt b{font-size:14px;color:var(--head)}
+.sl-txt span{font-size:12.5px;color:var(--muted)}

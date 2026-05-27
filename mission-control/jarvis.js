@@ -9,6 +9,53 @@ const TOKEN = window.MC_TOKEN;
 const J = { tickets: [], filter: { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all' }, flows: null, autotickets: null, walk: null, mapFace: 'back', mapSurface: null, cal: null, dep: null, ccspend: null };
 const STATUSES = ['Open', 'Gathering', 'Discussing', 'Aligned', 'Investigating', 'ConfirmedLive', 'Shipped'];
 const STATUS_LABEL = { Open: 'Open', Gathering: 'Gathering', Discussing: 'Discussing', Aligned: 'Aligned', Investigating: 'Investigating', ConfirmedLive: 'Confirmed live', Shipped: 'Shipped' };
+// What each status MEANS, who holds the ball, and what's needed — so a status word is never bare.
+const STATUS_INFO = {
+  Open:          { mean: 'Logged, not started yet',      who: 'you',    need: 'Build the case, or discuss it' },
+  Gathering:     { mean: 'Drones are investigating',     who: 'jarvis', need: 'Wait — evidence is filling in' },
+  Discussing:    { mean: "You're working it out",         who: 'you',    need: 'Decide, or ask Jarvis' },
+  Aligned:       { mean: "You've signed off the fix",     who: 'cc',     need: 'Hand it to CC to implement' },
+  Investigating: { mean: 'CC is implementing the fix',    who: 'cc',     need: 'Wait for CC' },
+  ConfirmedLive: { mean: 'Fix proven on a walk',          who: 'you',    need: 'Ship it' },
+  Shipped:       { mean: 'Done & pushed live',            who: '—',      need: 'Nothing — complete' },
+};
+const CASE_SLOT_KEYS = ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance', 'breakdown'];
+// The ONE right next step for a ticket, by stage. Drives the prominent NEXT banner + keeps the page
+// from showing a wall of co-equal buttons. kind: go (you act) | wait (drones/CC) | done.
+function nextAction(t) {
+  const cf = t.caseFile || {}; const status = t.state.status;
+  const complete = ((cf.audit && cf.audit.verdict) || '') === 'COMPLETE';
+  const hasRes = !!cf.resolution;
+  const anyCase = CASE_SLOT_KEYS.some(k => cf[k]);
+  if (status === 'Shipped')        return { label: 'Done', why: 'Shipped and live — nothing left.', kind: 'done' };
+  if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Fix is proven on a walk. Review &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
+  if (fdLive(t.id))                return { label: 'Drones working — sit tight', why: 'Jarvis is investigating this now. Findings will land in the case file.', kind: 'wait' };
+  if (status === 'Investigating')  return { label: 'CC is fixing it', why: 'CC is implementing the fix. It&rsquo;ll post back when done.', kind: 'wait' };
+  if (status === 'Aligned')        return { label: 'Hand to CC', why: 'You signed off the fix — send it to CC to implement.', fn: `dispatchToCC('${t.id}')`, kind: 'go' };
+  if (complete && !hasRes)         return { label: 'Compose the resolution', why: 'The case is complete. Get the plain-English resolution, then align.', fn: `composeResolution('${t.id}')`, kind: 'go' };
+  if (complete && hasRes)          return { label: 'Align — sign off the fix', why: 'Resolution&rsquo;s ready. Align to hand it to CC.', fn: `align('${t.id}')`, kind: 'go' };
+  if (!anyCase)                    return { label: 'Build the case', why: 'No evidence yet — deploy drones to investigate it for you.', fn: `buildCase('${t.id}')`, kind: 'go' };
+  return { label: 'Continue the case', why: 'Some evidence is in. Keep building, or run the auditor to check if it&rsquo;s complete.', fn: `buildCase('${t.id}')`, kind: 'go' };
+}
+function renderNextBanner(t) {
+  const a = nextAction(t); const si = STATUS_INFO[t.state.status] || {};
+  const btn = a.fn ? `<button class="nx-btn" onclick="${a.fn}">${a.label} &rarr;</button>` : '';
+  return `<div class="nx nx-${a.kind}">
+    <div class="nx-main">
+      <div class="nx-k">NEXT${a.kind === 'wait' ? ' &middot; waiting' : a.kind === 'done' ? '' : ' &middot; your move'}</div>
+      <div class="nx-label">${a.label}</div>
+      <div class="nx-why">${a.why}</div>
+    </div>
+    <div class="nx-side">
+      ${btn}
+      <button class="nx-status" onclick="statusLegend()" title="What the statuses mean"><span class="pill sm s-${t.state.status}">${STATUS_LABEL[t.state.status]}</span><span class="nx-status-need">${esc(si.need || '')}</span></button>
+    </div>
+  </div>`;
+}
+function statusLegend() {
+  const rows = Object.keys(STATUS_INFO).map(s => `<div class="sl-row"><span class="pill sm s-${s}">${STATUS_LABEL[s]}</span><div class="sl-txt"><b>${esc(STATUS_INFO[s].mean)}</b><span>holds: ${esc(STATUS_INFO[s].who)} &middot; ${esc(STATUS_INFO[s].need)}</span></div></div>`).join('');
+  modal(`<h2>What the statuses mean</h2><p>Every ticket flows through these stages. The status tells you who holds the ball and what&rsquo;s needed next.</p><div class="sl-list">${rows}</div><div class="btns"><button class="btn" onclick="closeModal()">Got it</button></div>`);
+}
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -1010,7 +1057,9 @@ function renderCaseFile(t) {
           : `<button class="btn sm" onclick="jarvisOrganize('${t.id}')" title="Jarvis suggests epic / bundle / related tickets"><span aria-hidden="true">✦</span> Organize</button>`}
         ${sweepRunning
           ? `<span class="cf-sweep"><span class="cf-spin" aria-hidden="true"></span> Building · ${esc(sw.step)}${sw.cycle ? ` (audit ${sw.cycle})` : ''}</span>`
-          : `<button class="btn sm primary" onclick="buildCase('${t.id}')">⚡ Build the case</button>`}
+          : (filled >= rows.length || (audit && audit.verdict === 'COMPLETE'))
+            ? ''
+            : `<button class="btn sm primary" onclick="buildCase('${t.id}')">⚡ ${filled ? 'Continue building' : 'Build the case'}</button>`}
       </div>
     </div>
     ${resolutionBlock}
@@ -1460,6 +1509,7 @@ function viewTicket(id) {
       </div>
     </div>
     <div id="dspTicketBanner"></div>
+    ${renderNextBanner(t)}
     <div class="ticketgrid">
       <div class="ticketmain">
         <div class="card">
