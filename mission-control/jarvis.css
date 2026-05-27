@@ -88,6 +88,19 @@ h2.section-h{font-size:18px;font-weight:700;color:var(--head);margin:28px 0 12px
 
 /* ── ticket detail (matches the case-view ref) ───────────────────────────── */
 .maxw{max-width:1560px}
+/* "Now" focus bar — next-move strip above every view */
+#nowBar{max-width:1560px}
+.now-wrap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;margin-bottom:18px;box-shadow:var(--sh-xs)}
+.now-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.now-seg{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--card2);border-radius:8px;padding:5px 11px;cursor:pointer;font:inherit;font-size:13px;color:var(--text);transition:all .14s var(--ease)}
+.now-seg:hover{transform:translateY(-1px);box-shadow:var(--sh-sm)}
+.now-n{font-size:14px;font-weight:700}
+.now-green{border-color:#a6e9c0;background:var(--green-bg);color:var(--green)}
+.now-violet{border-color:#d9c9f5;background:var(--violet-bg);color:var(--violet)}
+.now-amber{border-color:#f5d990;background:var(--amber-bg);color:var(--amber)}
+.now-indigo{border-color:#c7cdf7;background:var(--accent-soft);color:var(--accent)}
+.now-teal{border-color:#7cd4fd;background:var(--teal-bg);color:var(--teal)}
+.now-all{margin-left:auto;font-size:12px;font-weight:600;color:var(--blue)}
 .backlink{font-size:14px;color:var(--muted);margin-bottom:18px;display:inline-block}
 .backlink:hover{color:var(--text)}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:26px 30px;margin-bottom:16px}

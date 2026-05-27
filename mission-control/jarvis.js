@@ -125,6 +125,34 @@ function renderTopbarStatus() {
   dspRenderTopbar();   // paint the Agents-Running chip from the last /api/ccjobs poll (if any)
 }
 
+/* "Now" focus bar — one always-visible strip above every view so the next move is never hidden.
+ * Segments ordered by urgency; each jumps to the exact next ticket. Empty (hidden) when nothing pends. */
+function renderNowBar() {
+  const host = $('nowBar'); if (!host) return;
+  const ts = J.tickets || [];
+  const st = t => (t.state || {}).status;
+  const bySev = a => a.slice().sort((x, y) => SEVRANK[x.severity] - SEVRANK[y.severity]);
+  const readyShip  = bySev(ts.filter(t => st(t) === 'ConfirmedLive'));
+  const readyAlign = bySev(ts.filter(t => { const cf = t.caseFile || {}; return cf.audit && cf.audit.verdict === 'COMPLETE' && ['Gathering', 'Discussing'].includes(st(t)); }));
+  const alignIds = new Set(readyAlign.map(t => t.id));
+  const needYou   = bySev(ts.filter(t => ['Open', 'Discussing'].includes(st(t)) && !alignIds.has(t.id)));
+  const gathering = ts.filter(t => st(t) === 'Gathering');
+  const inFlight  = ts.filter(t => ['Aligned', 'Investigating'].includes(st(t)));
+  const seg = (arr, label, tone, toTicket) => arr.length
+    ? `<button class="now-seg now-${tone}" title="${esc(arr.map(t => t.id).slice(0, 10).join(', '))}" onclick="location.hash='${toTicket ? '#/ticket/' + arr[0].id : '#/recommend'}'"><b class="now-n">${arr.length}</b> <span class="now-l">${label}</span></button>`
+    : '';
+  const segs = [
+    seg(readyShip, 'ready to ship', 'green', true),
+    seg(readyAlign, 'ready to align', 'violet', true),
+    seg(needYou, 'need you', 'amber', true),
+    seg(gathering, 'gathering', 'indigo', true),
+    seg(inFlight, 'in flight', 'teal', false),
+  ].filter(Boolean);
+  host.innerHTML = segs.length
+    ? `<div class="now-wrap"><span class="now-title">Now</span>${segs.join('')}<a class="now-all" href="#/recommend">Recommends →</a></div>`
+    : '';
+}
+
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
 const SEVRANK = { P0: 0, P1: 1, P2: 2 };
 async function viewOverview() {
@@ -1544,6 +1572,7 @@ function dspStartPoll(watchId) {
     if (sig !== lastSig) {
       lastSig = sig;
       await load();
+      renderNowBar();
       const cur = currentTicketId();
       const rt = (location.hash || '').slice(1).split('?')[0].split('/')[1];
       if (cur) viewTicket(cur);
@@ -4589,6 +4618,7 @@ function route() {
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommand(); }
   else viewOverview();
   renderTopbarStatus();
+  renderNowBar();
   window.scrollTo(0, 0);
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
