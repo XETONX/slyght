@@ -2388,6 +2388,18 @@ body{ background-image:
 .cf-sb-fail{background:var(--red-bg);border-color:var(--red)}.cf-sb-fail .cf-sb-h b{color:var(--red)}
 .cf-sb-running{background:var(--amber-bg);border-color:var(--amber)}
 .cf-sb-pending{background:var(--card2)}
+/* Pre-ship gate (Guardian + smoke) — deterministic, server-run */
+.cf-verify{border-radius:10px;padding:12px 14px;margin:0 0 14px;border:1px solid var(--border)}
+.cf-vf-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:8px}
+.cf-vf-lines{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.cf-vf-line{font-size:13px;line-height:1.45;color:var(--text);display:flex;gap:8px;align-items:baseline}
+.cf-vf-line .cf-vf-ok{color:var(--green);font-weight:700;flex:none}
+.cf-vf-line .cf-vf-bad{color:var(--red);font-weight:700;flex:none}
+.cf-vf-acts{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.cf-vf-pass{background:var(--green-bg);border-color:var(--green)}.cf-vf-pass .cf-vf-h b{color:var(--green)}
+.cf-vf-fail{background:var(--red-bg);border-color:var(--red)}.cf-vf-fail .cf-vf-h b{color:var(--red)}
+.cf-vf-running{background:var(--amber-bg);border-color:var(--amber)}
+.cf-vf-pending{background:var(--card2)}
 /* Fixed-screen preview (#36) */
 .cf-fixshot{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin:0 0 14px;background:var(--card2)}
 .cf-fs-h{font-size:14px;font-weight:700;color:var(--head);margin-bottom:9px}

@@ -23,7 +23,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync, execSync } = require('child_process');
 
 const PORT = 5050;
 const HOST = '127.0.0.1';                              // RULE 1 — loopback only, hard-coded
@@ -38,6 +38,7 @@ const DEPLOY_BRANCHES = ['main'];
 // Nothing auto-pushes; John reviews the diff in Deploy and pushes. Sibling dir, gitignored from commits.
 const WORKTREE = path.resolve(__dirname, '..', '..', 'slyght-deploy');
 function gitBranchOf(dir) { try { return require('child_process').execSync('git rev-parse --abbrev-ref HEAD', { cwd: dir }).toString().trim(); } catch (_) { return ''; } }
+function gitHeadOf(dir) { try { return require('child_process').execSync('git rev-parse HEAD', { cwd: dir }).toString().trim().slice(0, 40); } catch (_) { return ''; } }
 function ensureWorktree() {
   try {
     const list = require('child_process').execSync('git worktree list --porcelain', { cwd: REPO }).toString();
@@ -990,14 +991,56 @@ const ACTIONS = {
     });
     return { ok: true, dispatched: key, id };
   },
+  // VERIFY — the deterministic, server-run pre-ship GATE (2026-05-28). Not a drone: runs Guardian +
+  // the ticket's own smoke spec in the worktree and records a trustworthy verdict to caseFile.verify.
+  // This exists because confirmInSandbox trusted a drone's self-reported "smokePassed:true" and a wrong
+  // assertion reached the push gate (SLY-1). markReadyToShip + deploy are now hard-gated on this result.
+  verifyFix: ({ id, confirm }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    if (confirm !== true) return { ok: false, reason: 'verifyFix needs confirm:true' };
+    if (!fs.existsSync(WORKTREE)) throw new Error('no fixed worktree yet — run execute-fix first');
+    const key = id + '#verify';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a verification is already running on ' + id };
+    ccJobs[key] = { status: 'running', id, task: 'verify', mode: 'gate', model: '—', started: Date.now() };
+    const child = spawn(process.execPath, [path.join(MC, 'scripts', 'verify-fix.js'), id, WORKTREE], { cwd: MC });
+    let buf = '', err = '';
+    child.stdout.on('data', d => buf += d); child.stderr.on('data', d => err += d);
+    child.on('exit', () => {
+      let v = null; try { v = JSON.parse(buf.trim().split('\n').pop()); } catch (_) {}
+      ccJobs[key].status = (v && v.ok) ? 'done' : 'failed';
+      try {
+        const st = readState(); const t = st[id];
+        if (t) {
+          t.caseFile = t.caseFile || {};
+          t.caseFile.verify = v || { ok: false, error: (err.slice(0, 200) || 'verify crashed'), ts: new Date().toISOString() };
+          const g = v && v.guardian, s = v && v.smoke;
+          t.thread.push({
+            author: 'cc',
+            text: ((v && v.ok) ? '**Verification PASSED** &check; ' : '**Verification FAILED** &#10007; ') +
+              'Guardian: ' + (g ? (g.newFindings.length ? g.newFindings.length + ' NEW finding(s) — ' + g.newFindings.map(f => f.rule + '@L' + f.line).join(', ') : 'no new findings (' + g.failTotal + ' pre-existing on main)') : '—') +
+              ' &middot; Smoke: ' + (s ? (s.ran ? s.passed + '/' + (s.passed + s.failed) + ' passed' : (s.reason || 'did not run')) : '—'),
+            ts: new Date().toISOString(),
+          });
+          t.lastActivity = new Date().toISOString(); writeState(st);
+        }
+      } catch (_) {}
+    });
+    return { ok: true, verifying: id };
+  },
+
   // Mark a sandbox-confirmed fix READY TO SHIP — commit the worktree fix (so Deploy can push it) and
-  // earn ConfirmedLive. Only allowed when the sandbox verdict is PASS (the walk evidence). Push still John's.
+  // earn ConfirmedLive. Gated on BOTH the sandbox walk (PASS) AND a fresh, green Verify result. Push still John's.
   markReadyToShip: ({ id, confirm }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
     if (confirm !== true) return { ok: false, reason: 'markReadyToShip needs confirm:true' };
     const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
     const sandbox = (t.caseFile && t.caseFile.sandbox) || null;
     if (!sandbox || sandbox.verdict !== 'PASS') return { ok: false, reason: 'not sandbox-confirmed — run confirm-in-sandbox and get a PASS first' };
+    // Hard gate (2026-05-28): a fresh, green Verify (Guardian no-new-findings + smoke green) is required.
+    const verify = (t.caseFile && t.caseFile.verify) || null;
+    if (!verify || !verify.ok) return { ok: false, reason: 'not verified — run Verify (Guardian + smoke) and get a green result first' };
+    const headSha = gitHeadOf(WORKTREE);
+    if (verify.sha && headSha && verify.sha !== headSha) return { ok: false, reason: 'verification is stale — it ran against ' + verify.sha.slice(0, 7) + ' but the worktree is now at ' + headSha.slice(0, 7) + '. Re-run Verify.' };
     if (!(TRANSITIONS[t.status] || []).includes('ConfirmedLive') && t.status !== 'Investigating') return { ok: false, reason: 'illegal transition ' + t.status + ' → ConfirmedLive' };
     const ticket = (mergedTickets().tickets || []).find(x => x.id === id);
     const subj = id + ': ' + String((ticket && ticket.title) || 'fix').slice(0, 80);
@@ -1051,6 +1094,20 @@ const ACTIONS = {
     }
     if (!DEPLOY_BRANCHES.includes(branch)) {
       return { ok: false, blocked: true, branch: gitBranchOf(REPO), reason: 'deploy refused: no deploy branch (' + DEPLOY_BRANCHES.join(', ') + ') is checked out. The cockpit is on "' + gitBranchOf(REPO) + '"; run Execute-fix to stage the change on a main worktree, then push.' };
+    }
+    // PRE-PUSH GATE (RULE 6.1, 2026-05-28) — the deterministic final guard. Never push a staged delta
+    // that introduces a NEW Guardian finding or whose smoke is red / missing. Runs synchronously here so
+    // the push CANNOT proceed on a red gate. This is what makes "a broken fix reaches my phone" impossible.
+    {
+      const g = spawnSync(process.execPath, [path.join(MC, 'scripts', 'verify-fix.js'), '--staged', pushDir], { cwd: MC, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 240000 });
+      let v = null; try { v = JSON.parse((g.stdout || '').trim().split('\n').pop()); } catch (_) {}
+      if (!v) return { ok: false, blocked: true, reason: 'pre-push gate could not run — refusing to push blind. ' + ((g.stderr || '').slice(0, 300) || 'no gate output') };
+      if (!v.ok) {
+        const why = (v.guardian && v.guardian.newFindings.length ? v.guardian.newFindings.length + ' new Guardian finding(s) (' + v.guardian.newFindings.map(f => f.rule + '@L' + f.line).join(', ') + ')' : '') +
+          (v.smoke && v.smoke.failed ? (v.guardian && v.guardian.newFindings.length ? ' + ' : '') + 'smoke ' + v.smoke.failed + ' failed' : '') +
+          (v.smoke && !v.smoke.ran ? 'no smoke ran (' + (v.smoke.reason || 'unknown') + ')' : '');
+        return { ok: false, blocked: true, gate: v, reason: 'push refused by the pre-push gate: ' + (why || 'verification not green') + '. Fix it and re-verify before shipping to the live app.' };
+      }
     }
     return new Promise((resolve) => {
       const p = spawn('git', ['push'], { cwd: pushDir });

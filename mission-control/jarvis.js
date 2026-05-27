@@ -30,11 +30,14 @@ function nextAction(t) {
   const anyCase = CASE_SLOT_KEYS.some(k => cf[k]);
   const fixDone = !!cf.fixImplemented;          // execute-fix drone implemented it in the worktree
   const sandbox = cf.sandbox || null;           // sandbox-confirm verdict (PASS/FAIL)
+  const verify = cf.verify || null;             // deterministic Guardian + smoke gate result
   if (status === 'Shipped')        return { label: 'Done', why: 'Shipped and live — nothing left.', kind: 'done' };
-  if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Sandbox-confirmed. Review the diff &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
+  if (status === 'ConfirmedLive')  return { label: 'Ship it', why: 'Verified &amp; sandbox-confirmed. Review the diff &amp; push in Deploy.', fn: `location.hash='#/deploy'`, kind: 'go' };
   if (fdLive(t.id))                return { label: 'Drones working — sit tight', why: 'A drone is on this now. Findings/results land in the case file.', kind: 'wait' };
-  // The fix loop: implemented → confirm in sandbox → ready to ship.
-  if (sandbox && sandbox.verdict === 'PASS') return { label: 'Mark ready to ship', why: 'Sandbox-confirmed working. This commits the fix on main and moves it to Deploy.', fn: `markReadyToShip('${t.id}')`, kind: 'go' };
+  // The fix loop: implemented → confirm in sandbox → VERIFY (Guardian + smoke) → ready to ship.
+  if (sandbox && sandbox.verdict === 'PASS' && verify && verify.ok) return { label: 'Mark ready to ship', why: 'Sandbox-confirmed AND verified (Guardian clean + smoke green). This commits the fix on main and moves it to Deploy.', fn: `markReadyToShip('${t.id}')`, kind: 'go' };
+  if (sandbox && sandbox.verdict === 'PASS' && verify && !verify.ok) return { label: 'Verification failed — re-run the fix', why: 'The gate found ' + ((verify.guardian && verify.guardian.newFindings.length ? verify.guardian.newFindings.length + ' new Guardian finding(s)' : '') || (verify.smoke && verify.smoke.failed ? verify.smoke.failed + ' smoke failure(s)' : 'a problem')) + '. Re-run execute-fix.', fn: `executeFix('${t.id}')`, kind: 'go' };
+  if (sandbox && sandbox.verdict === 'PASS') return { label: 'Verify (Guardian + smoke)', why: 'Sandbox walk passed. Run the deterministic gate — Guardian (no new findings) + the ticket&rsquo;s smoke spec — before it can ship.', fn: `verifyFix('${t.id}')`, kind: 'go' };
   if (sandbox && sandbox.verdict === 'FAIL') return { label: 'Sandbox failed — re-run the fix', why: 'The sandbox walk found the fix doesn&rsquo;t work yet (see the verdict below). Re-run execute-fix.', fn: `executeFix('${t.id}')`, kind: 'go' };
   if (fixDone)                     return { label: 'Walk it in the sandbox', why: 'Fix implemented on an isolated main worktree — confirm it actually works (FAKE-seeded) before shipping.', fn: `confirmInSandbox('${t.id}')`, kind: 'go' };
   if (status === 'Aligned')        return { label: 'Execute the fix', why: 'You approved the plan — a drone implements it on an isolated main worktree (nothing pushes; you review the diff).', fn: `executeFix('${t.id}')`, kind: 'go' };
@@ -1041,6 +1044,8 @@ function renderCaseFile(t) {
   const caRunning = !!(J.ccjobs && J.ccjobs[t.id + '#code-audit'] && J.ccjobs[t.id + '#code-audit'].status === 'running');
   const sb = cf.sandbox || null;              // sandbox-confirm verdict (the walk that gates ready-to-ship)
   const sbRunning = !!(J.ccjobs && J.ccjobs[t.id + '#sandbox'] && J.ccjobs[t.id + '#sandbox'].status === 'running');
+  const vf = cf.verify || null;               // deterministic Guardian + smoke gate result (the pre-ship gate)
+  const vfRunning = !!(J.ccjobs && J.ccjobs[t.id + '#verify'] && J.ccjobs[t.id + '#verify'].status === 'running');
   const fixShot = cf.fixShot || null;         // captured preview of the fixed screen (#36)
   const shotRunning = !!(J.ccjobs && J.ccjobs[t.id + '#fixshot'] && J.ccjobs[t.id + '#fixshot'].status === 'running');
 
@@ -1109,7 +1114,21 @@ function renderCaseFile(t) {
       ${sb && sb.reason ? `<div class="cf-sb-reason">${esc(String(sb.reason).slice(0, 400))}</div>` : ''}
       <div class="cf-sb-acts">
         ${sbRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> walking the sandbox…</span>' : `<button class="btn sm${sb ? '' : ' primary'}" onclick="confirmInSandbox('${t.id}')">${sb ? 'Re-confirm in sandbox' : 'Walk it in the sandbox'}</button>`}
-        ${sb && sb.verdict === 'PASS' ? `<button class="btn sm primary" onclick="markReadyToShip('${t.id}')">Mark ready to ship &rarr;</button>` : ''}
+        ${sb && sb.verdict === 'PASS' && !(vf && vf.ok) ? `<button class="btn sm primary" onclick="verifyFix('${t.id}')">Verify (Guardian + smoke) &rarr;</button>` : ''}
+      </div>
+    </div>` : '';
+  // The deterministic pre-ship GATE (2026-05-28) — Guardian (no new findings) + the ticket's own smoke spec.
+  // Server-run, not a drone, so the verdict is trustworthy. markReadyToShip + deploy are hard-gated on it.
+  const verifyBlock = (vf || vfRunning || (sb && sb.verdict === 'PASS')) ? `
+    <div class="cf-verify cf-vf-${vf ? (vf.ok ? 'pass' : 'fail') : (vfRunning ? 'running' : 'pending')}">
+      <div class="cf-vf-h"><span aria-hidden="true">⛉</span> Pre-ship gate ${vf ? `— <b>${vf.ok ? 'PASS' : 'FAIL'}</b>` : (vfRunning ? '— running Guardian + smoke…' : '— not yet run')}</div>
+      ${vf ? `<div class="cf-vf-lines">
+        <div class="cf-vf-line"><span class="cf-vf-${vf.guardian && vf.guardian.newFindings.length ? 'bad' : 'ok'}">${vf.guardian && vf.guardian.newFindings.length ? '✕' : '✓'}</span> Guardian — ${vf.guardian ? (vf.guardian.newFindings.length ? `${vf.guardian.newFindings.length} NEW finding(s): ${esc(vf.guardian.newFindings.map(f => f.rule + '@L' + f.line).join(', '))}` : `no new findings (${vf.guardian.failTotal} pre-existing on main)`) : '—'}</div>
+        <div class="cf-vf-line"><span class="cf-vf-${vf.smoke && vf.smoke.ran && !vf.smoke.failed ? 'ok' : 'bad'}">${vf.smoke && vf.smoke.ran && !vf.smoke.failed ? '✓' : '✕'}</span> Smoke — ${vf.smoke ? (vf.smoke.ran ? `${vf.smoke.passed}/${vf.smoke.passed + vf.smoke.failed} passed${vf.smoke.specs && vf.smoke.specs.length ? ` (${esc(vf.smoke.specs.join(', '))})` : ''}` : esc(vf.smoke.reason || 'did not run')) : '—'}</div>
+      </div>` : ''}
+      <div class="cf-vf-acts">
+        ${vfRunning ? '<span class="cf-running"><span class="cf-spin" aria-hidden="true"></span> verifying…</span>' : `<button class="btn sm${vf && vf.ok ? '' : ' primary'}" onclick="verifyFix('${t.id}')">${vf ? 'Re-verify' : 'Run the gate'}</button>`}
+        ${vf && vf.ok ? `<button class="btn sm primary" onclick="markReadyToShip('${t.id}')">Mark ready to ship &rarr;</button>` : ''}
       </div>
     </div>` : '';
   // What the fixed screen looks like (#36) — a captured preview from the FAKE-seeded fixed app.
@@ -1167,6 +1186,7 @@ function renderCaseFile(t) {
     </div>
     ${resolutionBlock}
     ${sandboxBlock}
+    ${verifyBlock}
     ${fixShotBlock}
     <div class="cf-list">${rowsHtml}</div>
     <div class="cf-auditrow">${auditHtml}</div>
@@ -1372,6 +1392,18 @@ async function captureFixShot(id) {
     await action('captureFixShot', { id, confirm: true });
     toast(`Capturing the fixed screen for ${id}…`, 'ok');
     J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#fixshot'] = { status: 'running', id, task: 'fixshot', mode: 'capture', model: '—', started: Date.now() };
+    J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+    if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+// Run the deterministic pre-ship GATE (2026-05-28) — server runs Guardian + the ticket's smoke spec in
+// the worktree and records a trustworthy PASS/FAIL. Gates markReadyToShip + deploy. Re-renders on landing.
+async function verifyFix(id) {
+  try {
+    await action('verifyFix', { id, confirm: true });
+    toast(`Verifying ${id} — Guardian + smoke on the fixed worktree…`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.ccjobs = J.ccjobs || {}; J.ccjobs[id + '#verify'] = { status: 'running', id, task: 'verify', mode: 'gate', model: '—', started: Date.now() };
     J.dspWatch = id; dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
   } catch (e) { /* action() already toasted */ }
@@ -2378,7 +2410,7 @@ function usageDetail() {
 // Live "drone out" banner on the ticket detail — paints from J.ccjobs (kept fresh by the poll).
 // Shows an elapsed clock + mode/model/turns while a drone runs on THIS ticket; clears when it's
 // done (the posted result comment is the durable record). No-op when nothing is running here.
-const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'fixshot': 'Screen capture', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
+const TASK_LABEL = { 'root-cause': 'Root-cause dig', 'locate-surface': 'Locate surface', 'fix-proposal': 'Fix proposal', 'conformance': 'Conformance', 'auditor': 'Auditor', 'intent': 'Intent', 'design': 'Design', 'acceptance': 'Acceptance', 'breakdown': 'Breakdown', 'resolution': 'Resolution', 'code-audit': 'Code audit', 'execute-fix': 'Execute fix', 'sandbox': 'Sandbox confirm', 'verify': 'Pre-ship gate', 'fixshot': 'Screen capture', 'jarvis-chat': 'Jarvis', 'system-audit': 'System audit', 'organize': 'Jarvis organize', 'triage': 'Triage' };
 // Where a drone's chip/row links — real tickets go to the ticket; the SYSTEM auditor goes to Architecture.
 const agentHref = id => (String(id || '').startsWith('SLY-') ? '#/ticket/' + id : '#/architecture');
 function dspRenderTicketBanner(id) {
