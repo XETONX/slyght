@@ -690,22 +690,30 @@ function renderCaseFile(t) {
   }
   const merged = (audit && audit.verdict === 'COMPLETE' && audit.merged) ? `<div class="cf-merged">${mdToHtml(audit.merged)}</div>` : '';
 
-  // Spin-off findings — drone openQuestions + unmappedTerritory + audit caveats. One click logs any
-  // as a new ticket linked back here, so investigations breed tickets instead of dying in a comment.
-  const spin = [];
-  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => {
-    const slot = cf[k]; if (!slot) return;
-    (slot.openQuestions || []).forEach(q => { const x = String(q || '').trim(); if (x) spin.push(x); });
-    (slot.unmappedTerritory || []).forEach(u => { const x = (typeof u === 'string' ? u : JSON.stringify(u)).trim(); if (x) spin.push(x); });
-  });
-  if (cf.audit && Array.isArray(cf.audit.caveats)) cf.audit.caveats.forEach(c => { const x = String(c || '').trim(); if (x) spin.push(x); });
+  // Spin-off findings — split into THREE buckets so the list isn't noise (Stage 2c):
+  //   • Potential tickets  (unmappedTerritory) — real out-of-scope findings → loggable, with "Log all"
+  //   • Open questions     (openQuestions)     — decisions to answer in-thread, NOT tickets
+  //   • Case-quality notes (audit caveats)     — notes about THIS investigation, never tickets
   const logged = cf.spinoffLogged || [];
-  const spinUniq = [...new Set(spin)].filter(x => !logged.includes(x)).slice(0, 8);   // drop ones already logged as tickets
-  J._spin = J._spin || {}; J._spin[t.id] = spinUniq;   // referenced by index in logSpinoff (avoids attr-escaping)
-  const spinoffBlock = spinUniq.length ? `
+  const collect = (whichKey) => {
+    const out = [];
+    ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const slot = cf[k]; if (!slot) return; (slot[whichKey] || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x) out.push(x); }); });
+    return [...new Set(out)].filter(x => !logged.includes(x));
+  };
+  const newTickets = collect('unmappedTerritory');
+  const questions = collect('openQuestions');
+  const caveats = [...new Set((cf.audit && cf.audit.caveats || []).map(c => String(c || '').trim()).filter(Boolean))];
+  J._spin = J._spin || {}; J._spin[t.id] = newTickets;   // logSpinoff indexes into the Potential-tickets bucket
+  const cfBucket = (label, items, opts) => items.length ? `
+    <div class="cf-spinoff-bucket">
+      <div class="cf-spinoff-h">${label} <span class="cf-spinoff-n">${items.length}</span>${opts.logAll && items.length > 1 ? `<button class="btn sm cf-logall" onclick="logAllSpinoffs('${t.id}')">Log all ${items.length}</button>` : ''}</div>
+      ${items.slice(0, 12).map((x, i) => `<div class="cf-spinoff-row"><span class="cf-spinoff-t">${esc(x.slice(0, 180))}</span>${opts.log ? `<button class="btn sm" onclick="logSpinoff('${t.id}',${i})">Log</button>` : ''}</div>`).join('')}
+    </div>` : '';
+  const spinoffBlock = (newTickets.length || questions.length || caveats.length) ? `
     <div class="cf-spinoff">
-      <div class="cf-spinoff-h">Spin-off findings <span class="cf-spinoff-hint">— log any as a new linked ticket</span></div>
-      ${spinUniq.map((x, i) => `<div class="cf-spinoff-row"><span class="cf-spinoff-t">${esc(x.slice(0, 180))}</span><button class="btn sm" onclick="logSpinoff('${t.id}',${i})">Log as ticket</button></div>`).join('')}
+      ${cfBucket('Potential tickets', newTickets, { log: true, logAll: true })}
+      ${cfBucket('Open questions — answer in the thread', questions, {})}
+      ${cfBucket('Case-quality notes (auditor)', caveats, {})}
     </div>` : '';
 
   const sw = (J.sweeps || {})[t.id];
@@ -794,11 +802,38 @@ async function doLogSpinoff(parentId) {
   const type = ($('soType') ? $('soType').value : 'bug'); const severity = ($('soSev') ? $('soSev').value : 'P2');
   const parent = get(parentId);
   try {
-    const r = await action('createTicket', { title, summary, type, severity, surface: parent ? parent.group : null, parent: parentId, spinoffText: (J._pendingSpinoff || {}).text });
+    const r = await action('createTicket', { title, summary, type, severity, surface: parent ? parent.group : null, parent: parentId, spinoffText: (J._pendingSpinoff || {}).text, epic: parent ? parent.epic : null });
     closeModal(); toast(`Created ${r.id} — linked to ${parentId}`, 'ok');
     await load();
     if ((location.hash || '').includes('/ticket/' + parentId)) viewTicket(parentId);
   } catch (e) { /* action() already toasted */ }
+}
+// Bulk-log every Potential-ticket finding at once → N child tickets, inheriting the parent's epic
+// (so they land in the same bundle/epic, shaping a release). Per John 2026-05-27.
+function logAllSpinoffs(parentId) {
+  const items = (J._spin || {})[parentId] || [];
+  if (!items.length) { toast('nothing to log', 'err'); return; }
+  modal(`<h2>Log all ${items.length} findings as tickets</h2>
+    <p>Creates ${items.length} tickets, each linked to <b>${esc(parentId)}</b>${(get(parentId) || {}).epic ? ` and under epic <b>${esc(get(parentId).epic)}</b>` : ''}. Pick the category they share.</p>
+    <div class="dsp-tunes" style="margin-top:6px">
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="laType">Type</label><div class="dsp-selwrap"><select id="laType" class="dsp-sel"><option value="bug" selected>Bug</option><option value="task">Task</option></select></div></div>
+      <div class="dsp-tune"><label class="dsp-tune-lbl" for="laSev">Severity</label><div class="dsp-selwrap"><select id="laSev" class="dsp-sel"><option value="P2" selected>P2</option><option value="P1">P1</option></select></div></div>
+    </div>
+    <div class="btns"><button class="btn primary" onclick="doLogAllSpinoffs('${parentId}')">Create ${items.length} tickets</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doLogAllSpinoffs(parentId) {
+  const items = ((J._spin || {})[parentId] || []).slice();
+  const parent = get(parentId);
+  const type = $('laType') ? $('laType').value : 'bug'; const severity = $('laSev') ? $('laSev').value : 'P2';
+  closeModal(); toast(`Logging ${items.length} tickets…`, 'ok');
+  let n = 0, last = '';
+  for (const text of items) {
+    const title = text.length > 90 ? text.slice(0, 87) + '…' : text;
+    try { const r = await action('createTicket', { title, summary: text, type, severity, surface: parent ? parent.group : null, parent: parentId, spinoffText: text, epic: parent ? parent.epic : null }); n++; last = r.id; } catch (e) {}
+  }
+  toast(`Created ${n} ticket${n === 1 ? '' : 's'} from findings${last ? ' (…' + last + ')' : ''}`, 'ok');
+  await load();
+  if ((location.hash || '').includes('/ticket/' + parentId)) viewTicket(parentId);
 }
 
 // Epic assignment dropdown — lists existing epics; setMeta('epic',...) re-parents the story.

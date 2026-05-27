@@ -192,7 +192,10 @@ details.deep .dbody{padding:2px 18px 18px;font-size:14.5px;line-height:1.7;color
 .cf-v-complete{background:var(--green-bg);color:var(--green)} .cf-v-gap{background:var(--amber-bg);color:var(--amber)}
 .cf-merged{margin-top:10px;font-size:13px;line-height:1.6;color:var(--text);background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
 .cf-spinoff{margin-top:14px;padding-top:12px;border-top:1px dashed var(--border2)}
-.cf-spinoff-h{font-size:12px;font-weight:700;color:var(--head);margin-bottom:6px}
+.cf-spinoff-bucket{margin-bottom:14px}
+.cf-spinoff-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--head);margin-bottom:6px}
+.cf-spinoff-n{font-size:11px;font-weight:700;color:var(--muted);background:var(--card2);border:1px solid var(--border);border-radius:5px;padding:1px 7px}
+.cf-logall{margin-left:auto}
 .cf-spinoff-hint{font-weight:400;color:var(--muted)}
 .cf-spinoff-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
 .cf-spinoff-row:last-child{border-bottom:0}
