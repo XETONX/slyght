@@ -445,6 +445,33 @@ const ACTIONS = {
     st[id] = t; writeState(st);
     return { ok: true, id, field, value: val };
   },
+  // Set a ticket's dependency edges (epic ordering) — meta.blockedBy = the ticket ids that must
+  // complete before this one. Validated to SLY-ids (and never itself); stored like every other meta
+  // override in ticket-state.json. Empty array clears it.
+  setBlockedBy: ({ id, ids }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
+    const clean = [...new Set((Array.isArray(ids) ? ids : []).filter(x => /^SLY-\d+$/.test(x) && x !== id))];
+    if (![...TICKETS(), ...MANUAL()].some(t => t.id === id)) throw new Error('no such ticket: ' + id);
+    const st = readState();
+    const t = st[id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: null, lastActivity: null };
+    t.meta = t.meta || {};
+    if (clean.length) t.meta.blockedBy = clean; else delete t.meta.blockedBy;
+    t.lastActivity = new Date().toISOString(); st[id] = t; writeState(st);
+    return { ok: true, id, blockedBy: clean };
+  },
+  // Set an epic's explicit child sequence — meta.childOrder = ordered ticket ids. The Epic
+  // workspace writes this on reorder; mergedTickets surfaces it. Empty clears (falls back to heuristic).
+  setEpicOrder: ({ id, order }) => {
+    if (!/^SLY-\d+$/.test(id)) throw new Error('bad epic id');
+    const clean = [...new Set((Array.isArray(order) ? order : []).filter(x => /^SLY-\d+$/.test(x)))];
+    if (![...TICKETS(), ...MANUAL()].some(t => t.id === id)) throw new Error('no such ticket: ' + id);
+    const st = readState();
+    const t = st[id] || { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: null, lastActivity: null };
+    t.meta = t.meta || {};
+    if (clean.length) t.meta.childOrder = clean; else delete t.meta.childOrder;
+    t.lastActivity = new Date().toISOString(); st[id] = t; writeState(st);
+    return { ok: true, id, childOrder: clean };
+  },
   // CC posts results BACK into the ticket — closes the loop. Optional transition.
   postResult: ({ id, found, fixed, evidence, to, propagate }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
@@ -999,6 +1026,8 @@ function mergedTickets() {
           dueDate:  m.dueDate  || null,            // NEW — null when unset (Calendar reads this)
           bundle:   m.bundle   || null,            // NEW — null when unset (Planning reads this)
           epic:     m.epic     || t.epic || null,  // NEW — parent epic id (meta override → spine fallback)
+          blockedBy: Array.isArray(m.blockedBy) ? m.blockedBy : [],   // dependency edges (epic ordering)
+          childOrder: Array.isArray(m.childOrder) ? m.childOrder : null, // explicit child sequence (on an epic)
           rich:     mergeRich(t.rich, cf),         // drone evidence overlays the spine rich (filled slots only)
           caseFile: cf,                            // raw slot-level evidence for the case-file panel
           state: s,

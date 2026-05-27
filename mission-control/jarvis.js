@@ -144,11 +144,11 @@ function renderNowBar() {
     ? `<button class="now-seg now-${tone}" title="${esc(arr.map(t => t.id).slice(0, 10).join(', '))}" onclick="nowJump('${key}')"><b class="now-n">${arr.length}</b> <span class="now-l">${label}</span></button>`
     : '';
   const segs = [
-    seg(readyShip, 'ready to ship', 'green', 'ship'),
-    seg(readyAlign, 'ready to align', 'violet', 'align'),
-    seg(needYou, 'need you', 'amber', 'need'),
-    seg(gathering, 'gathering', 'indigo', 'gather'),
-    seg(inFlight, 'in flight', 'teal', 'flight'),
+    seg(readyShip, 'Ready to ship', 'green', 'ship'),
+    seg(readyAlign, 'Ready to align', 'violet', 'align'),
+    seg(needYou, 'Need you', 'amber', 'need'),
+    seg(gathering, 'Gathering', 'indigo', 'gather'),
+    seg(inFlight, 'In flight', 'teal', 'flight'),
   ].filter(Boolean);
   host.innerHTML = segs.length
     ? `<div class="now-wrap"><span class="now-title">Now</span>${segs.join('')}<a class="now-all" href="#/recommend">Recommends →</a></div>`
@@ -160,16 +160,19 @@ function renderNowBar() {
 function nowJump(key) {
   const arr = (J._now || {})[key] || [];
   if (!arr.length) return;
-  if (arr.length === 1) { location.hash = '#/ticket/' + arr[0].id; return; }
+  if (arr.length === 1) { goHash('#/ticket/' + arr[0].id); return; }
+  if (key === 'align') { goHash('#/recommend'); return; }
   const base = { surface: '', severity: '', type: '', status: '', search: '', sort: 'activity', view: 'all', group: '' };
-  const dests = {
-    ship:   () => { J.filter = { ...base, view: 'live' }; location.hash = '#/board'; },
-    need:   () => { J.filter = { ...base, view: 'judgment' }; location.hash = '#/board'; },
-    flight: () => { J.filter = { ...base, view: 'flight' }; location.hash = '#/board'; },
-    gather: () => { J.filter = { ...base, status: 'Gathering' }; location.hash = '#/board'; },
-    align:  () => { location.hash = '#/recommend'; },
-  };
-  (dests[key] || dests.align)();
+  const f = { ship: { view: 'live' }, need: { view: 'judgment' }, flight: { view: 'flight' }, gather: { status: 'Gathering' } }[key] || {};
+  J.filter = { ...base, ...f };
+  goHash('#/board');
+}
+// Navigate, but force a re-render when the hash is ALREADY the target — setting location.hash to
+// its current value fires no hashchange event, so a filter-only jump (board→board) would silently
+// no-op. This is why clicking a second Now segment "did nothing" until you went somewhere else first.
+function goHash(h) {
+  if (location.hash === h) route();
+  else location.hash = h;
 }
 
 /* ════════════════════════ OVERVIEW (the whole story) ════════════════════ */
@@ -554,6 +557,12 @@ function ticketRow(t) {
         </div>
       </div>
 
+      <!-- CASE — one-click parallel sweep straight from the board (no need to open the ticket) -->
+      <div class="bd2-ctrl bd2-buildctrl">
+        <span class="bd2-ctrl-k">Case</span>
+        ${bd2BuildControl(t, status)}
+      </div>
+
       <!-- ASSIGNEE — derived from status; chip filters by who-owns-it bucket -->
       <div class="bd2-ctrl bd2-assignee">
         <span class="bd2-ctrl-k">Assignee</span>
@@ -564,6 +573,28 @@ function ticketRow(t) {
       </div>
     </div>
   </div>`;
+}
+// The board's per-row case control — live sweep state, a ready-to-look badge, or a one-click Build.
+function bd2BuildControl(t, status) {
+  const sweeping = (J.sweeps || {})[t.id] && J.sweeps[t.id].status === 'running';
+  const cf = t.caseFile || {}; const cs = caseScore(t);
+  const ready = cf.audit && cf.audit.verdict === 'COMPLETE';
+  if (sweeping) return `<span class="bd2-building" title="Drones scoping this ticket now"><span class="bd2-bdot"></span> scoping ${cs}/5</span>`;
+  if (['ConfirmedLive', 'Shipped'].includes(status)) return `<span class="bd2-caseck">&check; done</span>`;
+  if (ready) return `<a class="bd2-caseready" href="#/ticket/${t.id}" title="Case complete — your call">case ready &rarr;</a>`;
+  return `<button class="bd2-build" onclick="boardBuildCase('${t.id}')" title="Build the case — a parallel read-only drone sweep, no need to open the ticket">&#9889; ${cs ? 'case ' + cs + '/5' : 'Build'}</button>`;
+}
+// One-click build-the-case from the board — dispatch, watch, re-render in place. Parallel work,
+// minimal friction: you only open a ticket when it needs your decision.
+async function boardBuildCase(id) {
+  try {
+    await action('buildCase', { id, confirm: true });
+    toast(`Building the case on ${id} — drones out`, 'ok');
+    if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+    J.dspWatch = id; await load();
+    if ((location.hash || '').startsWith('#/board')) viewBoard();
+    dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+  } catch (e) { /* action() already toasted */ }
 }
 
 /* ── board state + helpers ────────────────────────────────────────────── */
@@ -850,6 +881,52 @@ function renderLinkedTickets(t) {
     ${closesWith.length ? `<div class="lk-grp">Closes when this ships</div>${closesWith.map(row).join('')}` : ''}
   </div>`;
 }
+// The bundle bubble — when a ticket is in motion, surface related/sibling tickets and offer to
+// bring them INTO this investigation (sweep in parallel) or bundle them, vs keep them separate.
+// John's ask: "ensure we are always working in parallel." Sources: epic siblings + organize.related + links.
+function renderBundleBubble(t) {
+  const status = (t.state || {}).status;
+  if (!['Gathering', 'Discussing', 'Aligned', 'Investigating'].includes(status)) return '';
+  if ((J._bundleDismissed || {})[t.id]) return '';
+  const o = (t.caseFile || {}).organize || {};
+  const notDone = x => !['ConfirmedLive', 'Shipped'].includes((x.state || {}).status);
+  const epicSibs = t.epic ? (J.tickets || []).filter(x => x.epic === t.epic && x.id !== t.id && x.type !== 'epic') : [];
+  const relIds = [...new Set([...(o.related || []), ...epicSibs.map(x => x.id), ...((t.links || []).map(l => l.to))])].filter(x => /^SLY-\d+$/.test(x) && x !== t.id);
+  const rel = relIds.map(get).filter(Boolean).filter(notDone);
+  if (!rel.length) return '';
+  J._bundleRel = J._bundleRel || {}; J._bundleRel[t.id] = rel.map(x => x.id);
+  return `<div class="card bundle-bubble">
+    <div class="bundle-h"><span aria-hidden="true">&#10022;</span> Jarvis: ${rel.length} related ticket${rel.length === 1 ? '' : 's'} &mdash; bring into this investigation?</div>
+    <p class="bundle-note">Work in parallel: CC can scope these alongside <b>${t.id}</b>, or keep them separate. ${t.epic ? `Siblings under epic ${t.epic}` : 'Related by surface / links'}.</p>
+    <div class="bundle-list">${rel.map(x => `<a class="bundle-item" href="#/ticket/${x.id}"><span class="pill sm ${sevCls(x.severity)}">${x.severity}</span> <b>${x.id}</b> ${esc(String(x.title || '').slice(0, 54))}</a>`).join('')}</div>
+    <div class="bundle-acts">
+      <button class="btn sm brief-deploy" onclick="bundleSweepAll('${t.id}')">&#9889; Sweep all in parallel</button>
+      <button class="btn sm" onclick="bundleMark('${t.id}')">Mark as a bundle</button>
+      <button class="btn sm" onclick="bundleDismiss('${t.id}')">Keep separate</button>
+    </div>
+  </div>`;
+}
+async function bundleSweepAll(id) {
+  const rel = (J._bundleRel || {})[id] || [];
+  toast(`Sweeping ${id} + ${rel.length} related in parallel…`, 'ok');
+  if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
+  for (const rid of [id, ...rel]) { try { await action('buildCase', { id: rid, confirm: true }); } catch (e) {} }
+  J.dspWatch = id; await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
+}
+async function bundleMark(id) {
+  const rel = (J._bundleRel || {})[id] || []; const t = get(id);
+  const name = prompt('Bundle name for these tickets:', (t && t.bundle) || (t ? t.id + ' bundle' : 'bundle'));
+  if (!name) return;
+  try {
+    await action('setMeta', { id, field: 'bundle', value: name });
+    for (const rid of rel) { try { await action('setMeta', { id: rid, field: 'bundle', value: name }); } catch (e) {} }
+    toast(`Bundled ${rel.length + 1} tickets as "${name}"`, 'ok');
+    await load(); if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);
+  } catch (e) { /* action() already toasted */ }
+}
+function bundleDismiss(id) { J._bundleDismissed = J._bundleDismissed || {}; J._bundleDismissed[id] = true; if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id); }
+
 function jarvisOrganize(id) {
   modal(`<h2><span aria-hidden="true">✦</span> Jarvis: organize ${esc(id)}</h2>
     <p>Jarvis reads this ticket + the whole ticket list and suggests an <b>epic</b>, <b>bundle</b>, <b>related</b> tickets, and what would <b>close when this ships</b>. Read-only; ~a minute.</p>
@@ -992,10 +1069,174 @@ function renderEpicChildren(epic) {
   const done = kids.filter(k => ['ConfirmedLive', 'Shipped'].includes((k.state || {}).status)).length;
   return `<div class="siderail epic-rail">
     <div class="sh">Stories in this epic <span class="epic-count">${done}/${kids.length}</span></div>
+    <a class="btn sm full" href="#/epic/${epic.id}" style="margin-bottom:8px">Open epic workspace &rarr;</a>
     ${kids.length
       ? kids.map(k => `<div class="kv"><span class="k"><a href="#/ticket/${k.id}">${k.id}</a></span><span class="v"><span class="pill sm s-${(k.state || {}).status}">${STATUS_LABEL[(k.state || {}).status] || (k.state || {}).status}</span></span></div>`).join('')
       : '<div class="epic-empty">No stories yet — set this epic on other tickets via their Epic field.</div>'}
   </div>`;
+}
+
+/* ════════════════════════ EPIC WORKSPACE — the deep epic view ════════════
+ * John: "the EPIC depth is nowhere near deep enough — hard to track what's linked and in what
+ * order to complete them." This is the workspace: the goal (human story), a progress bar, the
+ * single DO THIS NEXT, the ordered children (reorder + dependencies + case-completeness), and a
+ * technical rollup for Jarvis/CC. #/epic/SLY-N. */
+const isEpicDone = k => ['ConfirmedLive', 'Shipped'].includes((k.state || {}).status);
+const isBlocked = k => (k.blockedBy || []).some(b => { const bt = get(b); return bt && !isEpicDone(bt); });
+// Case-file completeness 0-5 (root &middot; surface &middot; fix &middot; conformance &middot; audit) &mdash; the "how built out is this" signal.
+function caseScore(k) {
+  const cf = k.caseFile || {}; let n = 0;
+  if (cf.rootCause && cf.rootCause.rootCause) n++;
+  if (cf.surface && cf.surface.surface) n++;
+  if (cf.fix && cf.fix.fix) n++;
+  if (cf.conformance && cf.conformance.driftVerdict) n++;
+  if (cf.audit && cf.audit.verdict) n++;
+  return n;
+}
+// Child order: explicit epic.childOrder if set, else heuristic (not-done first &middot; unblocked first &middot; severity).
+function epicChildOrder(epic, kids) {
+  if (Array.isArray(epic.childOrder) && epic.childOrder.length) {
+    const idx = {}; epic.childOrder.forEach((x, i) => idx[x] = i);
+    return kids.slice().sort((a, b) => (idx[a.id] == null ? 999 : idx[a.id]) - (idx[b.id] == null ? 999 : idx[b.id]));
+  }
+  return kids.slice().sort((a, b) => (isEpicDone(a) - isEpicDone(b)) || (isBlocked(a) - isBlocked(b)) || (SEVRANK[a.severity] - SEVRANK[b.severity]));
+}
+function viewEpic(id) {
+  const epic = get(id); const v = $('view'); v.className = 'view maxw';
+  if (!epic) { v.innerHTML = `<a class="backlink" onclick="goBack();return false" href="#/board">&lsaquo; Back</a><div class="empty">Epic not found.</div>`; return; }
+  if (epic.type !== 'epic') {   // not an epic &mdash; offer to promote, but show what we can
+    v.innerHTML = `<a class="backlink" onclick="goBack();return false" href="#/board">&lsaquo; Back</a>
+      <div class="empty">${esc(id)} isn&rsquo;t an epic. <button class="btn sm" onclick="setMeta('${id}','type','epic')">Make it an epic</button> <a class="btn sm" href="#/ticket/${id}">Open as ticket</a></div>`;
+    return;
+  }
+  const kids = (J.tickets || []).filter(x => x.epic === id);
+  const ordered = epicChildOrder(epic, kids);
+  const total = kids.length, done = kids.filter(isEpicDone).length;
+  const pct = total ? Math.round(done / total * 100) : 0;
+  const next = ordered.find(k => !isEpicDone(k) && !isBlocked(k));
+  const inFlight = kids.filter(k => ['Aligned', 'Investigating', 'Gathering'].includes((k.state || {}).status));
+  const surfaces = [...new Set(kids.map(k => k.group).filter(Boolean))];
+
+  // a sibling option list (for the "blocked by" picker)
+  const siblingOpts = (childId, cur) => ordered.filter(k => k.id !== childId)
+    .map(k => `<option value="${k.id}"${(cur || []).includes(k.id) ? ' selected' : ''}>${esc(k.id + ' &middot; ' + String(k.title || '').slice(0, 30))}</option>`).join('');
+
+  const childRow = (k, i) => {
+    const dn = isEpicDone(k), bl = isBlocked(k);
+    const blockers = (k.blockedBy || []).filter(b => { const bt = get(b); return bt && !isEpicDone(bt); });
+    const cs = caseScore(k);
+    const sweeping = (J.sweeps || {})[k.id] && J.sweeps[k.id].status === 'running';
+    return `<div class="ew-row${dn ? ' ew-done' : ''}${bl ? ' ew-blocked' : ''}${next && next.id === k.id ? ' ew-next' : ''}">
+      <div class="ew-seq">${i + 1}</div>
+      <div class="ew-reorder">
+        <button class="ew-arrow" title="Move up" ${i === 0 ? 'disabled' : ''} onclick="epicReorder('${id}','${k.id}',-1)">&#9650;</button>
+        <button class="ew-arrow" title="Move down" ${i === ordered.length - 1 ? 'disabled' : ''} onclick="epicReorder('${id}','${k.id}',1)">&#9660;</button>
+      </div>
+      <div class="ew-main">
+        <div class="ew-top">
+          <a class="ew-id" href="#/ticket/${k.id}">${k.id}</a>
+          <span class="pill sm ${sevCls(k.severity)}">${k.severity}</span>
+          <span class="pill sm s-${(k.state || {}).status}">${STATUS_LABEL[(k.state || {}).status] || (k.state || {}).status}</span>
+          <span class="ew-case" title="Case file ${cs} of 5 slots filled">case ${cs}/5</span>
+          ${sweeping ? '<span class="ew-sweeping"><span class="ew-dot"></span> drones in</span>' : ''}
+          ${bl ? `<span class="ew-blk">&#9940; blocked by ${blockers.map(esc).join(', ')}</span>` : ''}
+        </div>
+        <div class="ew-title">${esc(k.title)}</div>
+      </div>
+      <div class="ew-act">
+        ${!dn ? `<button class="btn sm brief-deploy" onclick="doBuildCase('${k.id}')" title="Build the case &mdash; parallel drone sweep">&#9889; build</button>` : '<span class="ew-doneck">&check; done</span>'}
+        <div class="dsp-selwrap ew-blkpick"><select class="dsp-sel ew-blksel" onchange="epicSetBlocked('${k.id}', this)" aria-label="Blocked by"><option value="">blocked by&hellip;</option>${siblingOpts(k.id, k.blockedBy)}</select></div>
+      </div>
+    </div>`;
+  };
+
+  v.innerHTML = `
+    <a class="backlink" onclick="goBack();return false" href="#/board">&lsaquo; Back</a>
+    <div class="ew-head">
+      <div class="ew-headmain">
+        <div class="pills"><span class="pill k-epic">Epic</span><span class="meta">${epic.id}</span></div>
+        <h1>${esc(epic.title)}</h1>
+        ${epic.summary ? `<p class="ew-goal">${esc(epic.summary)}</p>` : ''}
+      </div>
+      <div class="ew-progresswrap">
+        <div class="ew-pct">${pct}%</div>
+        <div class="ew-bar"><span style="width:${pct}%"></span></div>
+        <div class="ew-prog-l">${done} of ${total} done${inFlight.length ? ` &middot; ${inFlight.length} in motion` : ''}</div>
+      </div>
+    </div>
+
+    ${next ? `<div class="ew-next-card">
+      <div class="ew-next-h">&#9656; DO THIS NEXT</div>
+      <a class="ew-next-id" href="#/ticket/${next.id}">${next.id} &middot; ${esc(next.title)}</a>
+      <div class="ew-next-why">${esc(String(next.summary || '').slice(0, 200))}</div>
+      <div class="ew-next-act">
+        <a class="btn sm" href="#/ticket/${next.id}">open &rarr;</a>
+        <button class="btn sm brief-deploy" onclick="doBuildCase('${next.id}')">&#9889; build the case</button>
+      </div>
+    </div>` : (total && done === total ? `<div class="ew-alldone">&check; Every story in this epic is done. Ready to close.</div>` : '')}
+
+    <div class="ticketgrid">
+      <div class="ticketmain">
+        <div class="ew-children-h">
+          <span>Stories in order <small>&mdash; drag-free reorder with &#9650;&#9660;; the order respects blockers</small></span>
+          <button class="btn sm" onclick="epicAutoOrder('${id}')" title="Sort by dependencies + severity">Auto-order</button>
+        </div>
+        ${ordered.length ? ordered.map(childRow).join('') : '<div class="ew-empty">No stories under this epic yet. Set this epic on tickets via their <b>Epic</b> field, or use &ldquo;Log all&rdquo; on an investigation&rsquo;s spin-offs (they inherit the epic).</div>'}
+      </div>
+      <div class="ticketside">
+        <div class="siderail">
+          <div class="sh">Epic at a glance</div>
+          <div class="kv"><span class="k">Stories</span><span class="v">${total}</span></div>
+          <div class="kv"><span class="k">Done</span><span class="v">${done}</span></div>
+          <div class="kv"><span class="k">In motion</span><span class="v">${inFlight.length}</span></div>
+          <div class="kv"><span class="k">Blocked</span><span class="v">${kids.filter(isBlocked).length}</span></div>
+        </div>
+        <div class="siderail">
+          <div class="sh">Technical footprint <span class="cf-spinoff-hint">&mdash; for Jarvis / CC</span></div>
+          ${surfaces.length ? `<div class="ew-surfaces">${surfaces.map(s => `<a class="ew-surface" href="#/map/${s}">${esc(niceSurface(s))}</a>`).join('')}</div>` : '<div class="epic-empty">No surfaces mapped yet.</div>'}
+          <p class="ew-tech-note">These are the App-Map surfaces this epic&rsquo;s stories touch &mdash; the blast radius CC inherits when it picks one up.</p>
+        </div>
+        <div class="siderail">
+          <div class="sh">Sweep them in parallel</div>
+          <p class="dz-note" style="color:var(--label)">Build the case on every open story at once &mdash; drones scope them while you focus on decisions.</p>
+          <button class="btn full" onclick="epicSweepAll('${id}')">&#9889; Build all open cases</button>
+        </div>
+      </div>
+    </div>`;
+  dspEnsureBannerTimer();
+}
+// Reorder a child within the epic: materialise the current order, move the child, persist childOrder.
+async function epicReorder(epicId, childId, dir) {
+  const epic = get(epicId); if (!epic) return;
+  const kids = (J.tickets || []).filter(x => x.epic === epicId);
+  const order = epicChildOrder(epic, kids).map(k => k.id);
+  const i = order.indexOf(childId); const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  [order[i], order[j]] = [order[j], order[i]];
+  try { await action('setEpicOrder', { id: epicId, order }); await load(); if ((location.hash || '').includes('/epic/' + epicId)) viewEpic(epicId); } catch (e) {}
+}
+async function epicAutoOrder(epicId) {
+  const epic = get(epicId); if (!epic) return;
+  // write the heuristic order explicitly so John has a sensible starting sequence to tweak
+  const kids = (J.tickets || []).filter(x => x.epic === epicId);
+  const cleared = { ...epic, childOrder: null };   // force the heuristic (ignore any saved order)
+  const order = epicChildOrder(cleared, kids).map(k => k.id);
+  try { await action('setEpicOrder', { id: epicId, order }); toast('Ordered by dependencies + severity', 'ok'); await load(); if ((location.hash || '').includes('/epic/' + epicId)) viewEpic(epicId); } catch (e) {}
+}
+async function epicSetBlocked(childId, sel) {
+  const v = sel.value; if (!v) return;
+  const child = get(childId); const cur = (child && child.blockedBy) || [];
+  const next = cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v];   // toggle
+  try { await action('setBlockedBy', { id: childId, ids: next }); toast(cur.includes(v) ? 'Dependency removed' : 'Marked blocked by ' + v, 'ok'); await load(); const ep = (J.tickets || []).find(x => x.id === childId); const epicId = ep && ep.epic; if (epicId && (location.hash || '').includes('/epic/' + epicId)) viewEpic(epicId); } catch (e) {}
+}
+async function epicSweepAll(epicId) {
+  const kids = (J.tickets || []).filter(x => x.epic === epicId && !isEpicDone(x));
+  if (!kids.length) { toast('nothing open to sweep', 'err'); return; }
+  if (!confirm(`Build the case on all ${kids.length} open stories in ${epicId}? Spawns parallel read-only drone sweeps.`)) return;
+  toast(`Sweeping ${kids.length} stories&hellip;`, 'ok');
+  for (const k of kids) { try { await action('buildCase', { id: k.id, confirm: true }); } catch (e) {} }
+  J.dspWatch = epicId; await load(); if ((location.hash || '').includes('/epic/' + epicId)) viewEpic(epicId);
+  dspStartPoll(epicId); dspRenderTopbar(); dspEnsureBannerTimer();
 }
 
 /* ════════════════════════ TICKET DETAIL (the case-view skin) ════════════ */
@@ -1041,6 +1282,7 @@ function viewTicket(id) {
           ${t.group && t.group !== 'tracked' && t.group !== 'planning' ? `<div style="margin-top:14px"><a class="btn sm" href="#/map/${t.group}">View this surface on the App Map →</a></div>` : ''}
         </div>
         ${renderCaseFile(t)}
+        ${renderBundleBubble(t)}
         <div class="card">
           <div class="cf-cardhead">
             <div class="label">Discuss with Jarvis — then align to hand to CC</div>
@@ -1665,6 +1907,8 @@ function dspStartPoll(watchId) {
       else if (rt === 'architecture') viewArchitecture();
       else if (rt === 'briefing') renderBriefing();   // in-place body update — no flash
       else if (rt === 'command') renderCCFleet();   // fleet-only update — no full re-render, no flash
+      else if (rt === 'board') viewBoard();            // live build-case state on the rows
+      else if (rt === 'epic' && (location.hash.split('/')[2])) viewEpic(location.hash.split('/')[2].split('?')[0]);
     }
 
     // Watch a TICKET: when its last running drone finishes AND no sweep is mid-flight, toast + notify.
@@ -4975,6 +5219,16 @@ async function briefInvestigate(id) {
 
 /* ── router ───────────────────────────────────────────────────────────── */
 function route() {
+  // Nav history — remember where we came from so Back returns to the page you were just on
+  // (not just raw browser-back). J._navBack suppresses the push when WE triggered the navigation.
+  const _cur = location.hash || '#/overview';
+  if (J._navBack) J._navBack = false;
+  else if (J._lastHash && J._lastHash !== _cur) {
+    J._navStack = J._navStack || [];
+    if (J._navStack[J._navStack.length - 1] !== J._lastHash) J._navStack.push(J._lastHash);
+    if (J._navStack.length > 50) J._navStack.shift();
+  }
+  J._lastHash = _cur;
   const raw = (location.hash || '#/overview').slice(1);
   const [pathPart, queryPart] = raw.split('?');
   // Overview stat cards deep-link via a query suffix (#/board?status=… / ?sev=…).
@@ -5012,11 +5266,33 @@ function route() {
   else if (r === 'agents-fleet') viewAgentsFleet();
   else if (r === 'architecture') viewArchitecture();
   else if (r === 'briefing') viewBriefing();
+  else if (r === 'epic' && parts[1]) viewEpic(parts[1]);
   else if (r === 'command') { if (parts[1] === 'prompts') viewPrompts(); else viewCommandCentre(); }
   else viewOverview();
   renderTopbarStatus();
   renderNowBar();
+  renderBackBtn();
   window.scrollTo(0, 0);
+}
+// Back to wherever you came from (pops the nav stack). goHash re-renders even when the target
+// equals the current hash. Falls back to Overview when the stack is empty.
+function goBack() {
+  const stack = J._navStack || [];
+  if (!stack.length) { goHash('#/overview'); return; }
+  J._navBack = true;            // don't re-push the page we're leaving
+  goHash(stack.pop());
+}
+function hashLabel(h) {
+  const p = String(h || '').replace('#/', '').split('?')[0].split('/');
+  const m = { overview: 'Overview', board: 'Board', recommend: 'Recommends', briefing: 'Briefing', command: 'Command Centre', 'agents-fleet': 'Fleet', architecture: 'Architecture', map: 'App Map', planning: 'Planning', calendar: 'Calendar', insights: 'Insights', roadmap: 'Roadmap', knowledge: 'Knowledge', deploy: 'Deploy', ticket: (p[1] || 'ticket'), epic: 'epic ' + (p[1] || '') };
+  return m[p[0]] || p[0] || 'back';
+}
+function renderBackBtn() {
+  const host = $('navBack'); if (!host) return;
+  const stack = J._navStack || [];
+  host.innerHTML = stack.length
+    ? `<button class="nav-back" onclick="goBack()" title="Back to ${esc(hashLabel(stack[stack.length - 1]))}"><span aria-hidden="true">‹</span> Back</button>`
+    : '';
 }
 $('scrim').addEventListener('click', e => { if (e.target === $('scrim')) closeModal(); });
 // Escape closes the shared ticket-style modal (Deploy / Create / Delete / Align / Dispatch /
