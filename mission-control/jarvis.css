@@ -2541,7 +2541,18 @@ body{ background-image:
 .fd-sevtag.s-P0{color:var(--rd);border-color:rgba(244,118,126,.5);background:rgba(244,118,126,.12)}
 .fd-sevtag.s-P1{color:var(--am);border-color:rgba(255,180,84,.5);background:rgba(255,180,84,.12)}
 .fd-sevtag.s-P2{color:var(--ink2);border-color:var(--neon-line2)}
-.fd-statetag,.fd-restag,.fd-bundle-n{margin-left:auto;font-family:ui-monospace,monospace;font-size:10.5px;color:var(--ink3)}
+.fd-statetag,.fd-restag,.fd-bundle-n{margin-left:auto;font-family:ui-monospace,monospace;font-size:var(--text-xs);color:var(--ink3)}
+/* COMPRESSED CARD — one button per card, diagnostic status line, ⋯ menu for granular escape hatch */
+.fd-state{margin-left:auto;font-family:ui-monospace,monospace;font-size:var(--text-xs);color:var(--ink3);padding:2px 8px;border-radius:5px;background:rgba(255,255,255,.04);letter-spacing:.02em}
+.fd-statusline{font-size:var(--text-sm);color:var(--ink2);line-height:1.45;margin:0 0 var(--sp-3) 0}
+.fd-more{position:relative;margin-left:var(--sp-2)}
+.fd-more-btn{cursor:pointer;font-size:var(--text-md);font-weight:700;color:var(--ink3);padding:0 8px;border-radius:5px;list-style:none;line-height:1;user-select:none}
+.fd-more-btn::-webkit-details-marker,.fd-more-btn::marker{display:none;content:''}
+.fd-more-btn:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+.fd-more[open] .fd-more-btn{color:var(--ink);background:rgba(255,255,255,.08)}
+.fd-more-list{position:absolute;top:calc(100% + 6px);right:0;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:var(--sp-2);display:flex;flex-direction:column;gap:1px;z-index:10;min-width:220px;box-shadow:0 8px 28px rgba(0,0,0,.5)}
+.fd-more-item{background:none;border:none;color:var(--text);font:inherit;font-size:var(--text-sm);padding:8px 11px;text-align:left;border-radius:6px;cursor:pointer;white-space:nowrap}
+.fd-more-item:hover{background:var(--card2);color:var(--head)}
 .fd-restag{color:var(--gn)}
 .fd-title{font-size:var(--text-md);line-height:1.42;color:var(--ink);margin-bottom:9px}
 .fd-prog{height:4px;border-radius:3px;background:rgba(10,14,22,.7);overflow:hidden;margin-bottom:10px}

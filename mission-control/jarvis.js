@@ -371,58 +371,96 @@ function viewFlightdeck() {
     : 'Ask Jarvis to read your whole backlog — architecture, invariants, live numbers — and tell you what actually matters.';
   const triMeta = (J._triage && J._triage.ts) ? 'Jarvis read this ' + when(J._triage.ts) : 'no triage yet';
 
-  // severity spark on a card (left stripe handled in CSS via data-sev)
-  const card = (t, actions, opts = {}) => `<div class="fd-card${opts.cls ? ' ' + opts.cls : ''}" data-sev="${t.severity}" onclick="location.hash='#/ticket/${t.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/ticket/${t.id}'">
+  // COMPRESSED CARD — one helper for every ticket column. Top row = id/sev/state-pill/⋯more.
+  // Title. Status line (diagnostic). One primary button (or no button + live status). Card click opens ticket.
+  const card = (t, opts = {}) => `<div class="fd-card${opts.cls ? ' ' + opts.cls : ''}" data-sev="${t.severity}" onclick="location.hash='#/ticket/${t.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/ticket/${t.id}'">
       <div class="fd-card-top">
         <span class="fd-id">${t.id}</span>
         <span class="fd-sevtag s-${t.severity}">${t.severity}</span>
-        ${opts.tag || ''}
+        <span class="fd-state">${esc(STATUS_LABEL[(t.state || {}).status] || '')}</span>
+        ${opts.more || ''}
       </div>
-      <div class="fd-title">${esc(String(t.title || '').slice(0, 76))}</div>
+      <div class="fd-title">${esc(String(t.title || '').slice(0, 90))}</div>
+      ${opts.statusLine ? `<div class="fd-statusline">${opts.statusLine}</div>` : ''}
       ${opts.prog != null ? `<div class="fd-prog"><span style="width:${opts.prog}%"></span></div>` : ''}
-      ${actions ? `<div class="fd-card-acts" onclick="event.stopPropagation()">${actions}</div>` : ''}
+      ${opts.actions ? `<div class="fd-card-acts" onclick="event.stopPropagation()">${opts.actions}</div>` : ''}
     </div>`;
 
+  // The unified state-machine for the PRIMARY card button — fuses nextAction's transitions with the
+  // (b) readiness gate. Returns {label, kind:'go'|'wait'|'done', fn?}. The column decides PLACEMENT;
+  // the card decides ACTION. One source of truth for "what's the next move on this ticket."
+  const cardPrimaryAction = t => {
+    const st = t.state || {}, status = st.status, cf = t.caseFile || {};
+    if (status === 'Shipped') return { label: 'Done', kind: 'done' };
+    if (status === 'ConfirmedLive') return { label: 'Ship it →', kind: 'go', fn: `location.hash='#/deploy'` };
+    if (fdLive(t.id)) return { label: null, kind: 'wait' };   // drone in flight — status line says enough
+    const sandbox = cf.sandbox, verify = cf.verify, fixDone = !!cf.fixImplemented;
+    if (sandbox && sandbox.verdict === 'PASS' && verify && verify.ok) return { label: 'Mark ready to ship →', kind: 'go', fn: `markReadyToShip('${t.id}')` };
+    if (sandbox && sandbox.verdict === 'PASS' && verify) return { label: 'Re-run fix (verify failed)', kind: 'go', fn: `executeFix('${t.id}')` };
+    if (sandbox && sandbox.verdict === 'PASS') return { label: 'Verify (Guardian + smoke)', kind: 'go', fn: `verifyFix('${t.id}')` };
+    if (sandbox && sandbox.verdict === 'FAIL') return { label: 'Re-run fix (sandbox failed)', kind: 'go', fn: `executeFix('${t.id}')` };
+    if (fixDone) return { label: 'Walk it in the sandbox →', kind: 'go', fn: `confirmInSandbox('${t.id}')` };
+    if (status === 'Aligned' || status === 'Investigating') return { label: 'Re-deploy CC', kind: 'go', fn: `dispatchToCC('${t.id}')` };
+    const r = ticketReady(t), res = cf.resolution, complete = cf.audit && cf.audit.verdict === 'COMPLETE';
+    if (r.ready && res) return { label: '✓ Align & deploy CC →', kind: 'go', fn: `align('${t.id}')` };
+    if (r.ready && complete && !res) return { label: 'Compose & align →', kind: 'go', fn: `composeResolution('${t.id}')` };
+    const hasAnyCase = ['rootCause', 'surface', 'fix', 'conformance'].some(k => cf[k]);
+    if (hasAnyCase) return { label: '↻ Close the gaps', kind: 'go', fn: `gatherCaseDetails('${t.id}')` };
+    return { label: '⚡ Investigate', kind: 'go', fn: `boardBuildCase('${t.id}')` };
+  };
+
+  // The diagnostic status line under the title — one sentence telling John WHERE it's stuck.
+  // Replaces the per-state tag-pills that just echoed the status word ("aligned", "case complete").
+  const cardStatusLine = t => {
+    const status = (t.state || {}).status;
+    if (status === 'Shipped') return '✓ shipped';
+    if (status === 'ConfirmedLive') return '✓ verified live — ready to ship';
+    if (fdLive(t.id)) {
+      const jobs = Object.values(J.ccjobs || {}).filter(j => j.id === t.id && j.status === 'running');
+      const tasks = [...new Set(jobs.map(j => j.task).filter(Boolean))].slice(0, 2).join(' + ');
+      const elapsed = (jobs[0] && jobs[0].started) ? Math.round((Date.now() - jobs[0].started) / 60000) : 0;
+      return `drones working · ${elapsed}m · ${esc(tasks || 'investigating')}`;
+    }
+    if (status === 'Aligned' || status === 'Investigating') return 'CC dispatched — awaiting result';
+    const r = ticketReady(t);
+    if (r.ready) return '✓ ready to advance';
+    const gaps = [];
+    if (!r.caseBacked) gaps.push('no proposed fix');
+    if (!r.questionsAnswered) gaps.push(r.openQ + ' open Q' + (r.openQ === 1 ? '' : 's'));
+    if (!r.findingsLogged) gaps.push(r.unlogged + ' unlogged finding' + (r.unlogged === 1 ? '' : 's'));
+    if (!gaps.length) return 'no case yet — fire Investigate';
+    return gaps.length + ' gap' + (gaps.length === 1 ? '' : 's') + ': ' + esc(gaps.join(' · '));
+  };
+
+  // The ⋯ more-menu — granular escape hatch for the 5% case where John wants a specific drone fire
+  // instead of the primary "advance" path. Native <details>/<summary> = click-outside-to-close free.
+  const cardMoreMenu = t => `<details class="fd-more" onclick="event.stopPropagation()">
+    <summary class="fd-more-btn" title="More actions" aria-label="More actions">⋯</summary>
+    <div class="fd-more-list" onclick="event.stopPropagation()">
+      <button class="fd-more-item" onclick="location.hash='#/ticket/${t.id}'">Open ticket</button>
+      <button class="fd-more-item" onclick="askQuestionAll('${t.id}')">Ask Jarvis (answer open Qs)</button>
+      <button class="fd-more-item" onclick="boardBuildCase('${t.id}')">Re-investigate (build case)</button>
+      <button class="fd-more-item" onclick="composeResolution('${t.id}')">Compose resolution only</button>
+      <button class="fd-more-item" onclick="dispatchToCC('${t.id}')">Hand to CC (configured)</button>
+      <button class="fd-more-item" onclick="viewHandoff('${t.id}')">View handoff package</button>
+    </div>
+  </details>`;
+
+  // One renderer for every ticket column — placement is decided upstream by case-status routing,
+  // the card decides the action. The four ticket columns collapse into ONE renderCard.
+  const renderCard = t => {
+    const a = cardPrimaryAction(t);
+    const actions = a.fn
+      ? `<button class="fd-btn fd-btn-go" onclick="${a.fn}">${a.label}</button>`
+      : a.label ? `<span class="fd-liveact"><span class="fd-livedot"></span> ${esc(a.label)}</span>` : '';
+    return card(t, { statusLine: cardStatusLine(t), actions, more: cardMoreMenu(t), cls: fdLive(t.id) ? 'fd-card-live' : '' });
+  };
+
   const renderers = {
-    needs: t => {
-      const q = fdOpenQ(t);
-      const started = fdCaseComplete(t) || (t.caseFile && Object.keys(t.caseFile).length);
-      const act = (t.state.status === 'Open' && !started)
-        ? `<button class="fd-btn fd-btn-go" onclick="boardBuildCase('${t.id}')">&#9889; Build case</button>`
-        : `<button class="fd-btn" onclick="align('${t.id}')">&check; Align</button>`;
-      return card(t, act + (q ? `<button class="fd-btn fd-btn-q" onclick="askQuestionAll('${t.id}')" title="Ask Jarvis all ${q} open question${q === 1 ? '' : 's'}">Ask Jarvis &middot; ${q}Q</button>` : ''),
-        { tag: `<span class="fd-statetag">${esc(STATUS_LABEL[t.state.status] || t.state.status)}</span>` });
-    },
-    fix: t => {
-      // The button names the ACTUAL next-action the gate will accept. If the (b) readiness gate would
-      // refuse, the card shows the gap-closer instead of the gated action — one click delegates to
-      // Jarvis (jarvisAskAll for open Qs · dispatchScoped fix-proposal for missing fix · auto-log catches
-      // findings on completion · (e) intake-enrichment organizes resulting sub-tickets). The Flightdeck
-      // is Jarvis's keyboard — John names intent, Jarvis fans out the drone work.
-      const aligned = t.state.status === 'Aligned';
-      if (aligned) return card(t, `<button class="fd-btn fd-btn-go" onclick="dispatchToCC('${t.id}')">Hand to CC &rarr;</button>`, { tag: '<span class="fd-statetag">aligned</span>' });
-      const r = ticketReady(t);
-      const res = t.caseFile && t.caseFile.resolution;
-      if (r.ready && res) return card(t, `<button class="fd-btn fd-btn-go" onclick="align('${t.id}')">&check; Align &mdash; sign off the fix</button>`, { tag: '<span class="fd-restag">&check; ready to align</span>' });
-      if (r.ready && !res) return card(t, `<button class="fd-btn fd-btn-go" onclick="composeResolution('${t.id}')">Compose resolution &rarr;</button>`, { tag: '<span class="fd-restag">&check; case ready</span>' });
-      // Not ready — name the gap, delegate the chain
-      const gaps = [];
-      if (!r.caseBacked) gaps.push('no proposed fix');
-      if (!r.questionsAnswered) gaps.push(r.openQ + ' open Q' + (r.openQ === 1 ? '' : 's'));
-      if (!r.findingsLogged) gaps.push(r.unlogged + ' unlogged');
-      return card(t, `<button class="fd-btn fd-btn-go" onclick="gatherCaseDetails('${t.id}')" title="Jarvis delegates: answer open Qs · fire fix-proposal · auto-log catches new findings on drone completion">&#8635; Gather case details</button>`, { tag: '<span class="fd-statetag">' + esc(gaps.join(' · ')) + '</span>' });
-    },
-    flight: t => {
-      const s = (J.sweeps || {})[t.id]; const cs = caseScore(t); const livenow = fdLive(t.id);
-      // Only claim activity when a drone is GENUINELY running. An Investigating ticket with no live
-      // drone (CC finished without posting back, or a restart killed it) shows as idle — not a false pulse.
-      if (livenow) {
-        const lbl = s && s.status === 'running' ? 'scoping &middot; ' + esc(s.step || 'gather') : 'drones working';
-        return card(t, `<span class="fd-liveact"><span class="fd-livedot"></span> ${lbl}</span>`, { cls: 'fd-card-live', prog: Math.round(cs / 5 * 100), tag: '<span class="fd-statetag">' + cs + '/5</span>' });
-      }
-      return card(t, `<span class="fd-liveact fd-idle">awaiting CC &middot; no drone running</span><button class="fd-btn" onclick="dispatchToCC('${t.id}')">Re-dispatch</button>`, { tag: '<span class="fd-statetag">idle</span>' });
-    },
-    deploy: t => card(t, `<a class="fd-btn fd-btn-ship" href="#/deploy" onclick="event.stopPropagation()">Review &amp; push &rarr;</a>`, { tag: '<span class="fd-restag">&check; ready</span>' }),
+    needs: renderCard,
+    fix: renderCard,
+    flight: renderCard,
+    deploy: renderCard,
     bundle: g => `<div class="fd-card fd-bundle${g.hot ? ' fd-card-live' : ''}" onclick="location.hash='#/epic/${g.e.id}'" tabindex="0" onkeydown="if(event.key==='Enter')location.hash='#/epic/${g.e.id}'">
         <div class="fd-card-top"><span class="fd-id">${g.e.id}</span><span class="fd-bundle-n">${g.done}/${g.total}</span>${g.hot ? '<span class="fd-livedot"></span>' : ''}</div>
         <div class="fd-title">${esc(String(g.e.title || '').slice(0, 64))}</div>
