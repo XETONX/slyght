@@ -101,20 +101,27 @@ async function gatherCaseDetails(id) {
   const t = get(id); if (!t) return;
   const r = ticketReady(t);
   if (r.ready) { align(id); return; }
+  // Fire the drones + register them in J.ccjobs client-side IMMEDIATELY so fdLive(id) flips true and
+  // the ticket moves to IN FLIGHT on next render (otherwise we'd wait for the next /api/ccjobs poll).
   const fires = []; const fired = [];
-  if (!r.questionsAnswered) fires.push(action('jarvisAskAll', { id, confirm: true }).then(() => fired.push(r.openQ + ' Qs')).catch(() => {}));
-  if (!r.caseBacked) fires.push(action('dispatchScoped', { id, task: 'fix-proposal', confirm: true }).then(() => fired.push('fix-proposal')).catch(() => {}));
+  const register = (key, task) => { J.ccjobs = J.ccjobs || {}; J.ccjobs[key] = { status: 'running', id, task, mode: 'gather', model: 'sonnet', started: Date.now() }; };
+  if (!r.questionsAnswered) fires.push(action('jarvisAskAll', { id, confirm: true }).then(rr => { fired.push(r.openQ + ' open Q' + (r.openQ === 1 ? '' : 's')); if (rr && rr.dispatched) register(rr.dispatched, 'jarvis-chat'); }).catch(() => {}));
+  if (!r.caseBacked) fires.push(action('dispatchScoped', { id, task: 'fix-proposal', confirm: true }).then(rr => { fired.push('fix-proposal'); if (rr && rr.dispatched) register(rr.dispatched, 'fix-proposal'); }).catch(() => {}));
   if (!fires.length) {
-    // Only unlogged findings remain — autoLog catches them on next drone completion, but if no drone needs to fire here, John reviews in the case file.
     toast('Open the case file to log the surfaced findings', 'ok');
     location.hash = '#/ticket/' + id; return;
   }
-  toast('Jarvis is gathering case details — dispatching drones…', 'ok');
   await Promise.all(fires);
-  toast('Dispatched: ' + (fired.join(', ') || 'drones') + '. Auto-log catches new findings on completion.', 'ok');
+  if (!fired.length) { toast('Could not dispatch — open the ticket to retry', 'err'); return; }
+  // One consolidated toast (avoid the second-toast-overwrites-the-first race) + the dsp watch chain
+  // that paints the Agents-Running chip + ensures the live banner (same pattern as boardBuildCase).
+  toast(`Jarvis is gathering ${id}: ${fired.join(' + ')} — watch the topbar`, 'ok');
+  J.dspWatch = id;
+  if ('Notification' in window && Notification.permission === 'default') { try { Notification.requestPermission(); } catch (_) {} }
   await load();
   const h = location.hash || '';
   if (h.startsWith('#/overview') || h === '#/' || h === '') viewFlightdeck();
+  dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer();
 }
 function readinessLegend(id) {
   const t = get(id); const r = ticketReady(t);
