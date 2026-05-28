@@ -2622,9 +2622,11 @@ function dspStartPoll(watchId) {
       if (cur) viewTicket(cur);
       else if (rt === 'agents-fleet') viewAgentsFleet();
       else if (rt === 'architecture') viewArchitecture();
-      else if (rt === 'briefing') renderBriefing();   // in-place body update — no flash
+      else if (rt === 'briefing') { if (J._chat) loadBriefingChat(); else renderBriefing(); }   // chat reloads its thread; legacy briefing does an in-place body update
       else if (rt === 'command') renderCCFleet();   // fleet-only update — no full re-render, no flash
       else if (rt === 'board') viewBoard();            // live build-case state on the rows
+      else if (rt === 'overview' || !rt) viewFlightdeck();   // Flightdeck auto-refresh: drone lands → card flips state without F5
+      else if (rt === 'dedupe') viewDedupe();          // dedupe view live-updates as merges/auto-logs change the backlog
       else if (rt === 'epic' && (location.hash.split('/')[2])) viewEpic(location.hash.split('/')[2].split('?')[0]);
     }
 
