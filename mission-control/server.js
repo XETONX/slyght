@@ -1062,7 +1062,7 @@ const ACTIONS = {
       '## Open questions', uniq.map((q, i) => (i + 1) + '. ' + q).join('\n'),
       '', 'Answer each as "**Q1.** <question> — <your answer>". Plain English, no preamble.',
     ].join('\n');
-    spawnDrone({ key, id, task: 'jarvis-chat', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'think', budget: '3', maxTurns: 12, onResult: ({ job, resultText }) => postJarvisReply(id, resultText, job) });
+    spawnDrone({ key, id, task: 'jarvis-chat', prompt, mode: 'gather', mdl: 'sonnet', rsn: 'think', budget: '3', maxTurns: 12, onResult: ({ job, resultText }) => { postJarvisReply(id, resultText, job); clearAllOpenQuestions(id); } });
     return { ok: true, dispatched: key, id, questions: uniq.length };
   },
 
@@ -2025,10 +2025,15 @@ function recordScopedResult(id, task, spec, parsed, job, resultText) {
     t.thread.push({ author: 'cc', text: head + note + (detail ? (parsed ? '\n\n' + detail : detail) : ''), ts });
     t.lastActivity = ts;
     writeState(st);
-    // (d) AUTO-LOG — after the slot lands, auto-create linked sub-tickets for qualifying NEW findings
-    // (no-op when policy.autoWrite is false; honors per-investigation cap, day-cap, dedupe-skip).
-    if (parsed && Array.isArray(parsed.unmappedTerritory) && parsed.unmappedTerritory.length) {
-      try { autoLogTrigger(id, parsed.unmappedTerritory, parsed.confidence, (t.caseFile.spinoffLogged || [])); } catch (_) {}
+    // (d) AUTO-LOG — after the slot lands, evaluate ALL unmapped findings on the parent (this drone's
+    // new ones + any older ones from prior drones that haven't been decided yet). Idempotent: anything
+    // already in spinoffLogged or spinoffEvaluated is skipped. Self-heals stale gate state every drone fire.
+    if (parsed) {
+      const fullUnmapped = [];
+      ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = t.caseFile[k]; if (s && Array.isArray(s.unmappedTerritory)) s.unmappedTerritory.forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x) fullUnmapped.push(x); }); });
+      if (fullUnmapped.length) {
+        try { autoLogTrigger(id, fullUnmapped, parsed.confidence, (t.caseFile.spinoffLogged || []), (t.caseFile.spinoffEvaluated || [])); } catch (_) {}
+      }
     }
   } catch (_) {}
 }
@@ -2265,8 +2270,10 @@ function ticketReadyServer(t) {
   const caseBacked = !!(cf.fix && cf.fix.fix) || ((cf.audit && cf.audit.verdict) === 'COMPLETE');
   let openQ = 0;
   ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) openQ += s.openQuestions.length; });
-  const logged = cf.spinoffLogged || []; const find = new Set();
-  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !logged.includes(x)) find.add(x); }); });
+  // "decided" = logged as ticket OR auto-log-evaluated-and-rejected; only undecided findings count.
+  const decided = new Set([...(cf.spinoffLogged || []), ...(cf.spinoffEvaluated || [])]);
+  const find = new Set();
+  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !decided.has(x)) find.add(x); }); });
   const missing = [];
   if (!caseBacked) missing.push('no proposed fix / complete case');
   if (openQ) missing.push(openQ + ' open question(s)');
@@ -2366,16 +2373,18 @@ function autoLogScanCandidates(policy) {
 // and fires createTicket for the qualifiers. Honors the drone's own overall confidence (low → skip all).
 // Dedupe match → SKIP (the finding is already tracked elsewhere); future polish can promote dedupe to
 // "attach-as-related" by adding a link from the hit ticket. Day-cap counted in-memory across the process.
-function autoLogTrigger(parentId, unmappedItems, droneConfidence, loggedAlready) {
+function autoLogTrigger(parentId, unmappedItems, droneConfidence, loggedAlready, evaluatedAlready) {
   const policy = getAutoLogPolicy(); if (!policy.autoWrite) return { fired: 0 };
   const all = mergedTickets().tickets;
   const parent = all.find(t => t.id === parentId); if (!parent) return { fired: 0 };
   const open = all.filter(t => !(t.state && t.state.status === 'Shipped') && t.type !== 'epic' && t.id !== parentId);
   const today = new Date().toISOString().slice(0, 10);
   autoLogDayCounts[today] = autoLogDayCounts[today] || 0;
-  const created = []; let perParent = 0;
+  const decided = new Set([...(loggedAlready || []), ...(evaluatedAlready || [])]);   // idempotent: skip anything already decided
+  const created = []; const evaluated = []; let perParent = 0;
   for (const raw of (unmappedItems || [])) {
-    const text = String(raw || '').trim(); if (!text || loggedAlready.includes(text)) continue;
+    const text = String(raw || '').trim(); if (!text || decided.has(text)) continue;
+    evaluated.push(text);   // record EVERY processed finding — qualifying or not — so the readiness gate sees them as "decided," not "still unlogged."
     const c = autoLogClassify(text);
     const effConf = droneConfidence === 'low' ? 'low' : c.confidence;   // a low-confidence drone taints all findings
     if (!['P0', 'P1'].includes(c.severity)) continue;
@@ -2387,6 +2396,19 @@ function autoLogTrigger(parentId, unmappedItems, droneConfidence, loggedAlready)
     try {
       const r = ACTIONS.createTicket({ title, summary: text, severity: c.severity, type: 'bug', surface: parent.group || null, epic: parent.epic || null, parent: parentId, spinoffText: text });
       if (r && r.ok && r.id) { created.push(r.id); perParent++; autoLogDayCounts[today]++; }
+    } catch (_) {}
+  }
+  // Persist EVALUATED list — non-qualifying findings have now been considered by policy and rejected;
+  // they're not "still unlogged work" so the readiness gate should ignore them. (Qualifying ones go
+  // into spinoffLogged via createTicket; this captures the rest.)
+  if (evaluated.length) {
+    try {
+      const st = readState(); const t = st[parentId]; if (t) {
+        t.caseFile = t.caseFile || {};
+        const existing = t.caseFile.spinoffEvaluated || [];
+        t.caseFile.spinoffEvaluated = [...new Set([...existing, ...evaluated])];
+        writeState(st);
+      }
     } catch (_) {}
   }
   if (created.length) {
@@ -2498,6 +2520,24 @@ function claudeChatCall(prompt, mdl, budget, maxTurns) {
       onResult: ({ resultText }) => resolve(String(resultText || '')),
     });
   });
+}
+// Mark every caseFile slot's openQuestions as answered after a jarvisAskAll completes — moves them
+// to answeredQuestions for audit, empties openQuestions. Without this the readiness gate measures
+// stale state (Jarvis answered them in-thread but the slot's array still flags them open).
+function clearAllOpenQuestions(id) {
+  try {
+    const st = readState(); const t = st[id]; if (!t) return 0;
+    const cf = t.caseFile = t.caseFile || {}; let cleared = 0;
+    ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => {
+      const s = cf[k]; if (s && Array.isArray(s.openQuestions) && s.openQuestions.length) {
+        s.answeredQuestions = (s.answeredQuestions || []).concat(s.openQuestions.map(q => ({ q, answeredTs: new Date().toISOString() })));
+        cleared += s.openQuestions.length;
+        s.openQuestions = [];
+      }
+    });
+    if (cleared) { t.lastActivity = new Date().toISOString(); writeState(st); }
+    return cleared;
+  } catch (_) { return 0; }
 }
 // Post a live-Jarvis reply into the thread as a 'jarvis' comment. Best-effort; never throws.
 function postJarvisReply(id, resultText, job) {

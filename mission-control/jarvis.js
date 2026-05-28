@@ -324,8 +324,12 @@ function fdOpenQ(t) { const cf = t.caseFile || {}; let n = 0; ['rootCause', 'sur
 // question is answered, and every surfaced finding is logged. The gate GUIDES; John can always
 // force-align (his sign-off is authoritative — logged as an override). Mirrored server-side in alignHandoff.
 function fdUnloggedFindings(t) {
-  const cf = t.caseFile || {}; const logged = cf.spinoffLogged || []; const out = new Set();
-  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !logged.includes(x)) out.add(x); }); });
+  const cf = t.caseFile || {};
+  // "decided" = either logged as a ticket (spinoffLogged) OR evaluated by auto-log and not qualifying
+  // (spinoffEvaluated). Both count as resolved — the gate only counts findings still awaiting a decision.
+  const decided = new Set([...(cf.spinoffLogged || []), ...(cf.spinoffEvaluated || [])]);
+  const out = new Set();
+  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !decided.has(x)) out.add(x); }); });
   return [...out];
 }
 function ticketReady(t) {
