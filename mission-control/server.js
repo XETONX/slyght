@@ -2445,6 +2445,20 @@ function readBriefingChat() {
   try { return JSON.parse(fs.readFileSync(jail(BRIEFING_CHAT_FILE), 'utf8')); }
   catch (_) { return { ts: new Date().toISOString(), turns: [] }; }
 }
+// Recent ticket-thread activity across the backlog — drone completions, alignments, auto-logs, John comments.
+// Surfaced to the chat engine so Jarvis stays in the loop on live state without waiting for a triage refresh.
+function recentActivity(limit) {
+  const st = readState(); const events = [];
+  Object.entries(st).forEach(([id, t]) => {
+    if (!t || t.deleted) return;
+    (t.thread || []).forEach(c => {
+      events.push({ ticket: id, author: c.author || '?', text: String(c.text || '').slice(0, 180).replace(/\s+/g, ' '), ts: c.ts || '' });
+    });
+    if (t.alignment && t.alignment.ts) events.push({ ticket: id, author: 'system', text: 'ALIGNED — ' + String(t.alignment.decision || '').slice(0, 100), ts: t.alignment.ts });
+  });
+  events.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+  return events.slice(0, limit || 15);
+}
 function writeBriefingChat(c) { try { fs.writeFileSync(jail(BRIEFING_CHAT_FILE), JSON.stringify(c, null, 2)); } catch (_) {} }
 // Build the chat-engine prompt — Discuss-thread threading + Triage Commander's backlog/architecture
 // /invariants/ledger context + the strict action-plan output schema. Naming-only: no free-form code.
@@ -2501,6 +2515,9 @@ function buildBriefingChatPrompt(userMessage, thread) {
     '',
     '## LATEST JARVIS TRIAGE',
     triageCtx,
+    '',
+    '## RECENT TICKET ACTIVITY (drone completions · alignments · auto-logs · John\'s comments — last 15 events backlog-wide; HH:MM ticket author: text)',
+    recentActivity(15).map(e => '[' + String(e.ts || '').slice(11, 16) + '] ' + e.ticket + ' ' + e.author + ': ' + e.text).join('\n') || '(no activity yet)',
     '',
     '## CHAT HISTORY (last 10 turns)',
     history || '(start of conversation)',

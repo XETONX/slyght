@@ -2317,16 +2317,29 @@ async function doAlign(id) {
   const decision = ($('alignDec').value || '').trim();
   const force = !!($('alignForce') && $('alignForce').value === '1');
   try {
-    const r = await action('alignHandoff', { id, decision, force });
+    await action('alignHandoff', { id, decision, force });
+    // Auto-chain: dispatch the CC drone in safe PLAN mode (read+analyse, no file edits). Kills the
+    // legacy copy-paste-the-kickoff workflow — Align now means "Aligned + drone investigating."
+    let drone = null;
+    try {
+      drone = await action('dispatchCC', { id, confirm: true, mode: 'plan', model: 'sonnet', reasoning: 'off' });
+      if (drone && drone.dispatched) { J.ccjobs = J.ccjobs || {}; J.ccjobs[drone.dispatched] = { status: 'running', id, task: 'cc', mode: 'plan', model: 'sonnet', started: Date.now() }; }
+    } catch (_) { /* dispatch failed; show graceful fallback */ }
     closeModal();
-    modal(`<h2>Handed to CC → ${esc(r.handoff)}</h2>
-      <p>The rich package is written. <b>This is what CC receives</b> — deeper than your summary: the finding, your full thread, your decision, links, age. Paste the kickoff to start the mission:</p>
-      <pre id="kick">${esc(r.kickoff)}</pre>
-      <div class="btns"><button class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('kick').textContent);toast('copied','ok')">Copy kickoff</button>
-      <button class="btn" onclick="viewHandoff('${id}')">View the package</button>
-      <button class="btn" onclick="closeModal()">Close</button></div>`);
+    const droneOK = !!(drone && drone.dispatched);
+    modal(`<h2>&check; Aligned${droneOK ? ' + CC drone deployed' : ''}</h2>
+      <p>${esc(id)} is now <b>Aligned</b>. ${droneOK
+        ? 'A CC drone is investigating in <b>plan mode</b> (read + analyse only — no file edits). It posts back to the ticket thread when done; the Flightdeck auto-updates.'
+        : 'CC dispatch failed — re-dispatch from the ticket or the card&rsquo;s &ldquo;Hand to CC&rdquo; button.'}</p>
+      <div class="btns">
+        <button class="btn primary" onclick="closeModal();location.hash='#/ticket/${id}'">Open ticket</button>
+        <button class="btn" onclick="viewHandoff('${id}')">View handoff package</button>
+        <button class="btn" onclick="closeModal()">Done</button>
+      </div>`);
+    J.dspWatch = id;
     await load();
     if ((location.hash || '').includes('/ticket/' + id)) viewTicket(id);  // refresh the card behind the modal → status flips to Aligned live
+    if (droneOK) { dspStartPoll(id); dspRenderTopbar(); dspEnsureBannerTimer(); }
   } catch (e) {}
 }
 /* ════════════════════ CONFIRM FROM WALK (earned ConfirmedLive) ═══════════════
