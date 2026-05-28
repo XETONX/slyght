@@ -66,6 +66,68 @@ function statusLegend() {
   const rows = Object.keys(STATUS_INFO).map(s => `<div class="sl-row"><span class="pill sm s-${s}">${STATUS_LABEL[s]}</span><div class="sl-txt"><b>${esc(STATUS_INFO[s].mean)}</b><span>holds: ${esc(STATUS_INFO[s].who)} &middot; ${esc(STATUS_INFO[s].need)}</span></div></div>`).join('');
   modal(`<h2>What the statuses mean</h2><p>Every ticket flows through these stages. The status tells you who holds the ball and what&rsquo;s needed next.</p><div class="sl-list">${rows}</div><div class="btns"><button class="btn" onclick="closeModal()">Got it</button></div>`);
 }
+// The 3-tick readiness chip — the contract's home on a ticket. Only on align-able states (pre-Aligned).
+function renderReadinessChip(t) {
+  if (!['Open', 'Gathering', 'Discussing'].includes((t.state || {}).status)) return '';
+  const r = ticketReady(t);
+  const tick = (ok, label, detail) => `<span class="rdy-item rdy-${ok ? 'ok' : 'no'}" title="${esc(detail)}">${ok ? '&check;' : '&times;'} ${label}</span>`;
+  return `<button class="rdy ${r.ready ? 'rdy-ready' : 'rdy-blocked'}" onclick="readinessLegend('${t.id}')" title="The ready-to-align contract — click for detail">
+    <span class="rdy-k">${r.ready ? '&check; READY TO ALIGN' : 'NOT READY TO ALIGN'}</span>
+    ${tick(r.caseBacked, 'Case backed', r.caseBacked ? 'A fix is proposed (or the case is COMPLETE)' : 'No proposed fix yet — build the case first')}
+    ${tick(r.questionsAnswered, r.questionsAnswered ? 'Questions answered' : r.openQ + ' open', r.questionsAnswered ? 'No open questions' : r.openQ + ' open question(s) — answer before aligning')}
+    ${tick(r.findingsLogged, r.findingsLogged ? 'Findings logged' : r.unlogged + ' unlogged', r.findingsLogged ? 'Every surfaced finding is logged' : r.unlogged + ' surfaced finding(s) not yet logged')}
+  </button>`;
+}
+// (a) — triage-rank surfacing: shows the Triage Commander's per-ticket verdict (severity assessment,
+// why, recommended drone, learn-for-John) right under the NEXT banner. Persists Jarvis's architectural
+// judgment onto the ticket UI, even though the underlying t.severity stays user-owned. Empty when there's
+// no triage data for this ticket — never noisy.
+function renderTriageVerdict(t) {
+  const tr = J._triage; if (!tr || !tr.plan || !Array.isArray(tr.plan.issues)) return '';
+  const issue = tr.plan.issues.find(i => i.ticketId === t.id); if (!issue) return '';
+  const sevClass = issue.severity === 'P0' ? 's-P0' : issue.severity === 'P1' ? 's-P1' : 's-P2';
+  return `<div class="tv">
+    <div class="tv-k"><span aria-hidden="true">✦</span> JARVIS TRIAGE <span class="pill sm ${sevClass}">${esc(issue.severity || '?')}</span> <span class="tv-conf">${esc(issue.confidence || '?')}-conf</span></div>
+    <div class="tv-why">${esc(issue.why || '')}</div>
+    ${issue.learnForJohn ? `<div class="tv-learn"><b>Learn:</b> ${esc(issue.learnForJohn)}</div>` : ''}
+    ${issue.recommendedDrone ? `<div class="tv-rec"><b>Recommended drone:</b> ${esc(issue.recommendedDrone)}</div>` : ''}
+  </div>`;
+}
+// One-click chain — when the (b) readiness gate would refuse, this is the Flightdeck card's NEXT action.
+// Jarvis fans out: jarvisAskAll on open Qs · dispatchScoped fix-proposal on missing fix. Auto-log (d) catches
+// new findings on drone completion, intake-enrichment (e) categorizes resulting sub-tickets. The card is
+// John's high-level intent ("close this ticket"); the chain is Jarvis's keyboard underneath.
+async function gatherCaseDetails(id) {
+  const t = get(id); if (!t) return;
+  const r = ticketReady(t);
+  if (r.ready) { align(id); return; }
+  const fires = []; const fired = [];
+  if (!r.questionsAnswered) fires.push(action('jarvisAskAll', { id, confirm: true }).then(() => fired.push(r.openQ + ' Qs')).catch(() => {}));
+  if (!r.caseBacked) fires.push(action('dispatchScoped', { id, task: 'fix-proposal', confirm: true }).then(() => fired.push('fix-proposal')).catch(() => {}));
+  if (!fires.length) {
+    // Only unlogged findings remain — autoLog catches them on next drone completion, but if no drone needs to fire here, John reviews in the case file.
+    toast('Open the case file to log the surfaced findings', 'ok');
+    location.hash = '#/ticket/' + id; return;
+  }
+  toast('Jarvis is gathering case details — dispatching drones…', 'ok');
+  await Promise.all(fires);
+  toast('Dispatched: ' + (fired.join(', ') || 'drones') + '. Auto-log catches new findings on completion.', 'ok');
+  await load();
+  const h = location.hash || '';
+  if (h.startsWith('#/overview') || h === '#/' || h === '') viewFlightdeck();
+}
+function readinessLegend(id) {
+  const t = get(id); const r = ticketReady(t);
+  const row = (ok, label, why) => `<div class="sl-row"><span class="pill sm s-${ok ? 'Shipped' : 'Open'}">${ok ? '&check;' : '&times;'}</span><div class="sl-txt"><b>${label}</b><span>${why}</span></div></div>`;
+  modal(`<h2>Ready-to-align contract &mdash; ${esc(id)}</h2>
+    <p>Align hands the fix to CC, so the ticket should be worked before you sign off. Three things must hold &mdash; or you can sign off anyway on your authority (it&rsquo;s logged on the ticket).</p>
+    <div class="sl-list">
+      ${row(r.caseBacked, 'Case backed', r.caseBacked ? 'A fix is proposed or the case is COMPLETE.' : 'No proposed fix yet. Build the case, or force-align if you already know the fix.')}
+      ${row(r.questionsAnswered, 'Questions answered', r.questionsAnswered ? 'No open questions.' : r.openQ + ' open question(s). Use &ldquo;Ask Jarvis&rdquo; to answer them all.')}
+      ${row(r.findingsLogged, 'Findings logged', r.findingsLogged ? 'Every surfaced finding is logged.' : r.unlogged + ' finding(s) surfaced by drones aren&rsquo;t logged yet &mdash; log or dismiss them in the case file.')}
+    </div>
+    <div class="btns">${r.ready ? `<button class="btn green" onclick="closeModal();align('${id}')">&check; Align</button>` : `<button class="btn danger" onclick="closeModal();forceAlign('${id}')">Align anyway &mdash; I&rsquo;m signing off</button>`}<button class="btn" onclick="closeModal()">Close</button></div>`);
+}
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -149,7 +211,11 @@ async function loadAutoTickets() {
 }
 
 /* ── data ─────────────────────────────────────────────────────────────── */
-async function load() { J.tickets = (await api('/api/tickets')).tickets || []; }
+async function load() {
+  const [t, tr] = await Promise.all([api('/api/tickets'), api('/api/triage').catch(() => null)]);
+  J.tickets = t.tickets || [];
+  if (tr && !tr.empty) J._triage = tr;   // makes the per-ticket triage verdict available to every view
+}
 const get = id => J.tickets.find(t => t.id === id);
 // the ticket id currently open in the detail view (null elsewhere) — drives the live drone banner
 const currentTicketId = () => { const m = (location.hash || '').match(/#\/ticket\/(SLY-\d+)/i); return m ? m[1] : null; };
@@ -182,9 +248,14 @@ function renderTopbarStatus() {
   dspRenderTopbar();   // paint the Agents-Running chip from the last /api/ccjobs poll (if any)
 }
 
-/* "Now" focus bar — one always-visible strip above every view so the next move is never hidden.
- * Segments ordered by urgency; each jumps to the exact next ticket. Empty (hidden) when nothing pends. */
+/* RETIRED (2026-05-28): the "Now" focus bar duplicated the Flightdeck telemetry strip (and disagreed
+ * with it). Per John's cohesion note — kill the Now bar, keep the per-ticket NEXT-move banner. The
+ * Flightdeck telemetry is the pipeline pulse on the home; the ticket NEXT banner is the next-move signal.
+ * Kept as a no-op (clears its host) so route()/callers and nowJump() references don't break. */
 function renderNowBar() {
+  const host = $('nowBar'); if (host) host.innerHTML = '';
+}
+function renderNowBar_retired() {
   const host = $('nowBar'); if (!host) return;
   const ts = J.tickets || [];
   const st = t => (t.state || {}).status;
@@ -242,12 +313,27 @@ function fdLive(id) { const s = (J.sweeps || {})[id]; return (s && s.status === 
 function fdDone(t) { return ['ConfirmedLive', 'Shipped'].includes(t.state.status); }
 function fdCaseComplete(t) { return ((t.caseFile && t.caseFile.audit && t.caseFile.audit.verdict) || '') === 'COMPLETE'; }
 function fdOpenQ(t) { const cf = t.caseFile || {}; let n = 0; ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) n += s.openQuestions.length; }); return n; }
+// (b) READINESS CONTRACT — a ticket is "ready to align" only when its case backs a fix, every open
+// question is answered, and every surfaced finding is logged. The gate GUIDES; John can always
+// force-align (his sign-off is authoritative — logged as an override). Mirrored server-side in alignHandoff.
+function fdUnloggedFindings(t) {
+  const cf = t.caseFile || {}; const logged = cf.spinoffLogged || []; const out = new Set();
+  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !logged.includes(x)) out.add(x); }); });
+  return [...out];
+}
+function ticketReady(t) {
+  const cf = t.caseFile || {};
+  const caseBacked = !!(cf.fix && cf.fix.fix) || ((cf.audit && cf.audit.verdict) === 'COMPLETE');
+  const openQ = fdOpenQ(t);
+  const unlogged = fdUnloggedFindings(t).length;
+  return { ready: caseBacked && openQ === 0 && unlogged === 0, caseBacked, questionsAnswered: openQ === 0, findingsLogged: unlogged === 0, openQ, unlogged };
+}
 const FD_COLS = [
-  { key: 'needs',  lbl: 'NEEDS YOU',        sub: 'your call',        tone: 'needs'  },
-  { key: 'bundle', lbl: 'EPICS',            sub: 'grouped work',     tone: 'bundle' },
-  { key: 'fix',    lbl: 'READY TO FIX',     sub: 'hand to CC',       tone: 'fix'    },
-  { key: 'flight', lbl: 'IN FLIGHT',        sub: 'drones working',   tone: 'flight' },
-  { key: 'deploy', lbl: 'READY TO DEPLOY',  sub: 'your push',        tone: 'deploy' },
+  { key: 'needs',  lbl: 'Needs You',        sub: 'Your call',        tone: 'needs'  },
+  { key: 'bundle', lbl: 'Epics',            sub: 'Grouped work',     tone: 'bundle' },
+  { key: 'fix',    lbl: 'Ready to Fix',     sub: 'Hand to CC',       tone: 'fix'    },
+  { key: 'flight', lbl: 'In Flight',        sub: 'Drones working',   tone: 'flight' },
+  { key: 'deploy', lbl: 'Ready to Deploy',  sub: 'Your push',        tone: 'deploy' },
 ];
 function viewFlightdeck() {
   const v = $('view'); v.className = 'view fdeck';
@@ -297,12 +383,23 @@ function viewFlightdeck() {
         { tag: `<span class="fd-statetag">${esc(STATUS_LABEL[t.state.status] || t.state.status)}</span>` });
     },
     fix: t => {
+      // The button names the ACTUAL next-action the gate will accept. If the (b) readiness gate would
+      // refuse, the card shows the gap-closer instead of the gated action — one click delegates to
+      // Jarvis (jarvisAskAll for open Qs · dispatchScoped fix-proposal for missing fix · auto-log catches
+      // findings on completion · (e) intake-enrichment organizes resulting sub-tickets). The Flightdeck
+      // is Jarvis's keyboard — John names intent, Jarvis fans out the drone work.
+      const aligned = t.state.status === 'Aligned';
+      if (aligned) return card(t, `<button class="fd-btn fd-btn-go" onclick="dispatchToCC('${t.id}')">Hand to CC &rarr;</button>`, { tag: '<span class="fd-statetag">aligned</span>' });
+      const r = ticketReady(t);
       const res = t.caseFile && t.caseFile.resolution;
-      const handoff = t.state.status === 'Aligned'
-        ? `<button class="fd-btn fd-btn-go" onclick="dispatchToCC('${t.id}')">Hand to CC &rarr;</button>`
-        : `<button class="fd-btn" onclick="align('${t.id}')">&check; Align</button>`;
-      const resBtn = res ? '' : `<button class="fd-btn fd-btn-q" onclick="composeResolution('${t.id}')">Compose resolution</button>`;
-      return card(t, handoff + resBtn, { tag: res ? '<span class="fd-restag">&check; resolution</span>' : '<span class="fd-statetag">case complete</span>' });
+      if (r.ready && res) return card(t, `<button class="fd-btn fd-btn-go" onclick="align('${t.id}')">&check; Align &mdash; sign off the fix</button>`, { tag: '<span class="fd-restag">&check; ready to align</span>' });
+      if (r.ready && !res) return card(t, `<button class="fd-btn fd-btn-go" onclick="composeResolution('${t.id}')">Compose resolution &rarr;</button>`, { tag: '<span class="fd-restag">&check; case ready</span>' });
+      // Not ready — name the gap, delegate the chain
+      const gaps = [];
+      if (!r.caseBacked) gaps.push('no proposed fix');
+      if (!r.questionsAnswered) gaps.push(r.openQ + ' open Q' + (r.openQ === 1 ? '' : 's'));
+      if (!r.findingsLogged) gaps.push(r.unlogged + ' unlogged');
+      return card(t, `<button class="fd-btn fd-btn-go" onclick="gatherCaseDetails('${t.id}')" title="Jarvis delegates: answer open Qs · fire fix-proposal · auto-log catches new findings on drone completion">&#8635; Gather case details</button>`, { tag: '<span class="fd-statetag">' + esc(gaps.join(' · ')) + '</span>' });
     },
     flight: t => {
       const s = (J.sweeps || {})[t.id]; const cs = caseScore(t); const livenow = fdLive(t.id);
@@ -361,6 +458,148 @@ function viewFlightdeck() {
   dspEnsureBannerTimer();
 }
 function fdScrollTo(key) { const el = document.getElementById('fdcol-' + key); if (el) { el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); el.classList.remove('fd-flash'); void el.offsetWidth; el.classList.add('fd-flash'); } }
+
+/* ════════════════════════ (c) DEDUPE — collapse the auto-spawned backlog ═══════════════════
+ * Read model: group non-shipped tickets that are the SAME issue, by deterministic signals — a shared
+ * FR-NN / INV-NN reference in title+summary (the canonical-bug signal: SLY-27 ≡ SLY-75 ≡ FR-07), or a
+ * link hub (2+ tickets pointing at one). Each group proposes a survivor (most case evidence, tie-break
+ * the original/lowest id); John picks the keeper + merges. The server merge PRESERVES every dupe's key
+ * info into the keeper before tombstoning. Suggest→click — nothing merges without John. */
+const idNum = t => +String((t && t.id) || '').replace(/\D/g, '') || 0;
+function dedupeGroups() {
+  const ts = (J.tickets || []).filter(t => t.type !== 'epic' && (t.state || {}).status !== 'Shipped');
+  const byId = {}; ts.forEach(t => byId[t.id] = t);
+  const groups = []; const claimed = new Set();
+  const refsOf = t => { const m = ((t.title || '') + ' ' + (t.summary || '')).match(/\b(?:FR|INV)-\d+\b/gi); return m ? [...new Set(m.map(x => x.toUpperCase()))] : []; };
+  // signal 1 — shared FR-NN / INV-NN canonical-bug reference (highest confidence)
+  const byRef = {}; ts.forEach(t => refsOf(t).forEach(ref => { (byRef[ref] = byRef[ref] || []).push(t); }));
+  Object.keys(byRef).sort().forEach(ref => {
+    const arr = byRef[ref].filter(t => !claimed.has(t.id));
+    if (arr.length < 2) return;
+    const sorted = arr.slice().sort((a, b) => (caseScore(b) - caseScore(a)) || (idNum(a) - idNum(b)));
+    sorted.forEach(t => claimed.add(t.id));
+    groups.push({ key: ref, kind: 'token', reason: 'Same canonical bug ' + ref, survivor: sorted[0], dupes: sorted.slice(1) });
+  });
+  // signal 2 — link hub: 2+ tickets pointing at one via links.to (related cluster)
+  const inbound = {}; ts.forEach(t => (t.links || []).forEach(l => { if (byId[l.to]) (inbound[l.to] = inbound[l.to] || []).push(t); }));
+  Object.keys(inbound).forEach(hubId => {
+    if (claimed.has(hubId)) return;
+    const hub = byId[hubId]; const kids = (inbound[hubId] || []).filter(t => !claimed.has(t.id) && t.id !== hubId);
+    if (!hub || kids.length < 2) return;
+    [hub, ...kids].forEach(t => claimed.add(t.id));
+    groups.push({ key: 'hub-' + hubId, kind: 'hub', reason: kids.length + ' tickets linked to ' + hubId, survivor: hub, dupes: kids });
+  });
+  return groups.sort((a, b) => b.dupes.length - a.dupes.length);
+}
+async function viewDedupe() {
+  const v = $('view'); v.className = 'view ddx';
+  v.innerHTML = `<header class="ddx-head"><h1 class="ddx-h1">Dedupe</h1></header><div class="ddx-empty">Loading clusters…</div>`;
+  let cr; try { cr = await api('/api/cluster'); } catch (_) {}
+  J._cluster = (cr && !cr.empty) ? cr : null;
+  renderDedupe();
+}
+// Render deterministic groups (high-confidence: shared FR/INV or link hub) + Jarvis semantic groups
+// (from the cluster report) DISTINCTLY. A ticket claimed by a deterministic group is excluded from
+// semantic ones. First semantic pass is dry-run (propose-only) until John marks it reviewed.
+function renderDedupe() {
+  const v = $('view'); if (!v || !v.classList.contains('ddx')) return;
+  const byId = {}; (J.tickets || []).forEach(t => byId[t.id] = t);
+  // CLAIM PRIORITY: FR/INV token (highest — same named bug) → semantic (Opus meaning) → link-hub
+  // (lowest — incidental links must not steal a keeper from a semantic cluster). This is the fix for
+  // the link-hub stealing SLY-28 (a PIN-cluster parent) and orphaning its sub-findings.
+  const raw = dedupeGroups();
+  const tokenG = raw.filter(g => g.kind === 'token').map(g => ({ ...g, semantic: false }));
+  const hubG = raw.filter(g => g.kind === 'hub');
+  const claimed = new Set();
+  tokenG.forEach(g => { claimed.add(g.survivor.id); g.dupes.forEach(d => claimed.add(d.id)); });
+  const detBySurv = {}; tokenG.forEach(g => detBySurv[g.survivor.id] = g);
+  const cr = J._cluster; const sem = [];
+  if (cr && Array.isArray(cr.groups)) cr.groups.forEach((g, i) => {
+    const fresh = (g.dupes || []).filter(id => byId[id] && !claimed.has(id));
+    if (detBySurv[g.survivor]) { fresh.forEach(id => { detBySurv[g.survivor].dupes.push(byId[id]); claimed.add(id); }); return; }  // fold into shared token keeper
+    const survivor = byId[g.survivor];
+    if (!survivor || claimed.has(survivor.id) || !fresh.length) return;
+    [survivor.id, ...fresh].forEach(id => claimed.add(id));
+    sem.push({ key: 'sem-' + i, reason: g.reason, survivor, dupes: fresh.map(id => byId[id]), semantic: true });
+  });
+  // link-hubs LAST — only their members not already claimed by a token or semantic group
+  const hubShown = [];
+  hubG.forEach(g => {
+    if (claimed.has(g.survivor.id)) return;
+    const fresh = g.dupes.filter(d => !claimed.has(d.id));
+    if (fresh.length < 2) return;
+    claimed.add(g.survivor.id); fresh.forEach(d => claimed.add(d.id));
+    hubShown.push({ ...g, dupes: fresh, semantic: false });
+  });
+  const det = [...tokenG, ...hubShown];
+  const all = [...det, ...sem];
+  J._ddx = {}; all.forEach(g => J._ddx[g.key] = { survivor: g.survivor.id, ids: [g.survivor.id, ...g.dupes.map(d => d.id)], semantic: g.semantic });
+  const total = (J.tickets || []).filter(t => t.type !== 'epic' && (t.state || {}).status !== 'Shipped').length;
+  const after = total - all.reduce((n, g) => n + g.dupes.length, 0);
+  const reviewed = !!(cr && cr.reviewed);
+  const dryRun = !!(cr && cr.dryRun && !reviewed);
+
+  const row = t => `<div class="ddx-tk"><a href="#/ticket/${t.id}">${t.id}</a><span class="ddx-sev s-${t.severity}">${t.severity}</span><span class="ddx-tt">${esc(String(t.title || '').slice(0, 92))}</span></div>`;
+  const card = g => {
+    const opts = [g.survivor, ...g.dupes].sort((a, b) => idNum(a) - idNum(b));
+    const reason = g.semantic
+      ? `<span class="ddx-tag ddx-tag-sem">Jarvis · semantic</span> ${esc(g.reason || 'same root cause')}`
+      : `<span class="ddx-tag ddx-tag-det">High confidence</span> ${esc(g.reason)}`;
+    return `<section class="ddx-group ${g.semantic ? 'ddx-sem' : 'ddx-det'}">
+      <div class="ddx-g-h"><span class="ddx-g-reason">${reason}</span><span class="ddx-g-n">${g.dupes.length + 1} &rarr; 1</span></div>
+      <div class="ddx-keep"><span class="ddx-k-lbl">KEEP</span>
+        <select class="ddx-survivor" onchange="ddxPick('${g.key}',this.value)">${opts.map(t => `<option value="${t.id}"${t.id === g.survivor.id ? ' selected' : ''}>${esc(t.id + ' · ' + String(t.title || '').slice(0, 52))}</option>`).join('')}</select></div>
+      <div class="ddx-merge-lbl">Merge in — key info preserved into the keeper:</div>
+      ${g.dupes.map(row).join('')}
+      <div class="ddx-acts"><button class="btn ${g.semantic ? '' : 'primary'}" onclick="doMergeGroup('${g.key}')">Merge ${g.dupes.length} into keeper &rarr;</button></div>
+    </section>`;
+  };
+  const semHeader = `<div class="ddx-sec-h ddx-sec-sem">Jarvis semantic clusters <span class="ddx-sec-sub">— LLM judgment, verify each${cr && cr.realCount ? ` · Jarvis estimates ~${cr.realCount} real issues` : ''}</span></div>`;
+  const semBody = sem.length
+    ? (dryRun
+      ? `<div class="ddx-dry">First semantic pass — <b>propose-only</b>. Verify each group (merge them one at a time), then unlock bulk merge. <button class="btn sm" onclick="markClusterReviewed()">I&rsquo;ve reviewed these → enable Merge all</button></div>`
+      : `<div class="ddx-allbar"><button class="btn green" onclick="doMergeAll('sem')">Merge all ${sem.length} semantic groups</button></div>`)
+      + `<div class="ddx-groups">${sem.map(card).join('')}</div>`
+    : `<div class="ddx-empty ddx-empty-sem">${cr ? 'No further semantic dupes beyond the deterministic groups.' : 'Not run yet — run the Jarvis cluster pass to catch the auto-spawned sub-findings deterministic signals can&rsquo;t see.'}</div>`;
+
+  v.innerHTML = `
+    <header class="ddx-head">
+      <h1 class="ddx-h1">Dedupe</h1>
+      <p class="ddx-sub">Collapse the auto-spawned backlog. Deterministic groups (shared <b>FR/INV</b> or link hub) are high-confidence; <b>Jarvis semantic</b> groups are LLM judgment — verify each. Merging carries every dupe&rsquo;s key info into the keeper, then tombstones it (recoverable).</p>
+      <div class="ddx-stat"><b>${total}</b> active &rarr; <b class="ddx-after">${after}</b> if all ${all.length} group${all.length === 1 ? '' : 's'} merge · <button class="btn sm" onclick="runClusterPass()">${cr ? 'Re-run' : 'Run'} Jarvis cluster pass</button></div>
+    </header>
+    <div class="ddx-sec-h">High confidence (deterministic)</div>
+    ${det.length ? `<div class="ddx-allbar"><button class="btn green" onclick="doMergeAll('det')">Merge all ${det.length} deterministic groups</button></div><div class="ddx-groups">${det.map(card).join('')}</div>` : '<div class="ddx-empty">No deterministic clusters — FR/INV refs and link hubs are clean.</div>'}
+    ${semHeader}
+    ${semBody}`;
+}
+function ddxPick(key, survivorId) { if (J._ddx && J._ddx[key]) J._ddx[key].survivor = survivorId; }
+async function doMergeGroup(key) {
+  const g = (J._ddx || {})[key]; if (!g) return;
+  const into = g.survivor; const from = g.ids.filter(id => id !== into); if (!from.length) return;
+  try { const r = await action('mergeTickets', { into, from, confirm: true }); toast(`Merged ${r.count} into ${into}`, 'ok'); await load(); viewDedupe(); } catch (e) {}
+}
+function doMergeAll(scope) {
+  const groups = J._ddx || {};
+  const keys = Object.keys(groups).filter(k => scope === 'det' ? !groups[k].semantic : scope === 'sem' ? groups[k].semantic : true);
+  if (!keys.length) return;
+  J._mergeAllScope = scope;
+  const totalDupes = keys.reduce((n, k) => n + (groups[k].ids.length - 1), 0);
+  modal(`<h2>Merge all ${keys.length} ${scope === 'sem' ? 'semantic ' : scope === 'det' ? 'deterministic ' : ''}groups?</h2><p>${totalDupes} ticket(s) fold into their keepers — each keeper absorbs the key info first. Recoverable: dupes are tombstoned, not deleted.</p><div class="btns"><button class="btn green" onclick="doMergeAllGo()">Merge all</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
+}
+async function doMergeAllGo() {
+  closeModal(); const scope = J._mergeAllScope; const groups = J._ddx || {};
+  const keys = Object.keys(groups).filter(k => scope === 'det' ? !groups[k].semantic : scope === 'sem' ? groups[k].semantic : true);
+  let done = 0;
+  for (const k of keys) { const g = groups[k]; const from = g.ids.filter(id => id !== g.survivor); if (!from.length) continue; try { const r = await action('mergeTickets', { into: g.survivor, from, confirm: true }); done += r.count; } catch (e) {} }
+  toast(`Merged ${done} tickets into their keepers`, 'ok'); await load(); viewDedupe();
+}
+async function runClusterPass() {
+  try { await action('clusterBacklog', { confirm: true }); toast('Jarvis is clustering the backlog — Opus is reading every ticket. Re-open Dedupe in ~a minute.', 'ok'); } catch (e) {}
+}
+async function markClusterReviewed() {
+  try { await action('clusterReviewed', {}); toast('Reviewed — semantic bulk merge unlocked', 'ok'); viewDedupe(); } catch (e) {}
+}
 async function viewOverview() {
   if (!J.flows) J.flows = await api('/api/flows');
   const v = $('view'); v.className = 'view maxw'; const ts = J.tickets;
@@ -1730,6 +1969,8 @@ function viewTicket(id) {
     </div>
     <div id="dspTicketBanner"></div>
     ${renderNextBanner(t)}
+    ${renderReadinessChip(t)}
+    ${renderTriageVerdict(t)}
     <div class="ticketgrid">
       <div class="ticketmain">
         <div class="card">
@@ -2043,18 +2284,29 @@ async function askQuestionJarvis(id, idx) {
     dspStartPoll(id); dspRenderTopbar(); dspRenderTicketBanner(id); dspEnsureBannerTimer();
   } catch (e) { /* action() already toasted */ }
 }
+// (b) THE READINESS GATE — clicking Align on a not-ready ticket shows the contract (what's missing +
+// the force-align path) instead of the decision modal. Ready → straight to the decision. The server
+// enforces the same contract in alignHandoff, so the gate can't be bypassed by a stale client.
 function align(id) {
-  const t = get(id);
+  const r = ticketReady(get(id));
+  if (!r.ready) { readinessLegend(id); return; }
+  alignModal(id, false);
+}
+function forceAlign(id) { alignModal(id, true); }   // authoritative sign-off past the gate (logged)
+function alignModal(id, force) {
   modal(`<h2>&#10003; Aligned — hand to CC</h2>
+    ${force ? '<p class="rdy-warn">&#9888; Signing off past the readiness gate — this override is logged on the ticket.</p>' : ''}
     <p>This is the gate. Jarvis collates the rich finding + your whole thread + this decision + links + age into one package and hands it to CC. State → <b>Aligned</b>.</p>
     <div class="label" style="margin-top:8px">Your alignment decision</div>
     <textarea id="alignDec" placeholder="e.g. Agreed — fix as proposed. Or: change it — do X instead because…">Agreed with the proposed fix.</textarea>
+    <input type="hidden" id="alignForce" value="${force ? '1' : ''}">
     <div class="btns"><button class="btn green" onclick="doAlign('${id}')">Confirm — collate &amp; hand to CC</button><button class="btn" onclick="closeModal()">Cancel</button></div>`);
 }
 async function doAlign(id) {
   const decision = ($('alignDec').value || '').trim();
+  const force = !!($('alignForce') && $('alignForce').value === '1');
   try {
-    const r = await action('alignHandoff', { id, decision });
+    const r = await action('alignHandoff', { id, decision, force });
     closeModal();
     modal(`<h2>Handed to CC → ${esc(r.handoff)}</h2>
       <p>The rich package is written. <b>This is what CC receives</b> — deeper than your summary: the finding, your full thread, your decision, links, age. Paste the kickoff to start the mission:</p>
@@ -3926,11 +4178,11 @@ function rmFocusLane(id) {
 // dominate (what + how-ready), AGE and SURFACE modulate (how-urgent + how-much-it-
 // -touches-money), and BLAST is a tie-breaker (how-many-things-hang-off-it).
 const REC_WEIGHTS = {
-  severity: 34,   // P0 vs P2 — the single biggest lever. What's actually critical.
-  readiness: 28,  // how close to landing. ConfirmedLive = "ship now"; Open = needs John.
-  age:       16,  // open-staleness. Older untouched tickets rot — nudge them up.
-  surface:   14,  // cash-surface criticality. Money surfaces outrank cosmetic ones.
-  blast:      8,  // link count / blast radius. More dependents = clear it first.
+  severity:   32,   // P0 vs P2 — biggest lever. What's actually critical.
+  readiness:  26,   // how close to landing. ConfirmedLive = "ship now"; Open = needs John.
+  age:        14,   // open-staleness. Older untouched tickets rot — nudge them up.
+  surface:    12,   // cash-surface criticality. Money surfaces outrank cosmetic ones.
+  dependency: 16,   // (a) — real dependency-leverage: closesWith + blocks + gates-an-epic. The "next-move = unblocks the most" signal. Replaces the old blast=links/4 (8pt tie-breaker), bumped to a primary lever.
 };
 
 // SEVERITY intensity — P0 critical, P1 high, P2 normal.
@@ -3964,11 +4216,24 @@ function recAgeIntensity(openedIso) {
   return Math.min(1, days / 21);                   // 0d→0, 21d+→1, linear between
 }
 
-// BLAST intensity — number of links/dependents, saturating at 4. A ticket other
-// tickets hang off is worth clearing first (it unblocks them).
-function recBlastIntensity(t) {
-  const n = (t.links || []).length;
-  return Math.min(1, n / 4);
+// (a) DEPENDENCY-LEVERAGE intensity — real signal, not raw link count. Counts other tickets that
+// closeWith this one (close when it ships) + tickets blocked-BY this one (clearing it unblocks them).
+// Bumps for "gates an epic" (a child of an epic that's itself unblocked = the next move on that epic).
+// Saturates at 5 dependents. Returns the breakdown so the WHY line can name the specific leverage.
+function recDependencyLeverage(t) {
+  const ts = J.tickets || [];
+  let closes = 0, unblocks = 0;
+  ts.forEach(o => {
+    if (!o || o.id === t.id) return;
+    const cw = ((o.caseFile || {}).organize || {}).closesWith || [];
+    if (cw.includes(t.id)) closes++;
+    if ((o.blockedBy || []).includes(t.id)) unblocks++;
+  });
+  const blocked = (t.blockedBy || []).some(b => { const x = ts.find(y => y.id === b); return x && (x.state || {}).status !== 'Shipped'; });
+  const gatesEpic = !!t.epic && !blocked;
+  let intensity = Math.min(1, (closes + unblocks) / 5);
+  if (gatesEpic && intensity < 1) intensity = Math.min(1, intensity + 0.2);
+  return { closes, unblocks, gatesEpic, intensity };
 }
 
 // Score one ticket. Returns { total, factors:[{key,label,pts,why}] } so the view
@@ -3976,6 +4241,7 @@ function recBlastIntensity(t) {
 function scoreTicket(t) {
   const st = t.state || {};
   const cash = REC_CASH.has(t.group);
+  const dep = recDependencyLeverage(t);   // (a) — closes/unblocks/gates-an-epic; replaces raw blast
   const f = [
     { key: 'severity', label: 'Severity',
       i: REC_SEV[t.severity] != null ? REC_SEV[t.severity] : 0.4,
@@ -3992,11 +4258,10 @@ function scoreTicket(t) {
     { key: 'age', label: 'Age',
       i: recAgeIntensity(st.opened),
       why: 'open ' + ago(st.opened) },
-    { key: 'blast', label: 'Blast',
-      i: recBlastIntensity(t),
-      why: (t.links || []).length
-        ? (t.links.length + ' link' + (t.links.length === 1 ? '' : 's') + ' hang off it')
-        : 'no links' },
+    { key: 'dependency', label: 'Dependency', i: dep.intensity,
+      why: (dep.closes || dep.unblocks)
+        ? [dep.closes ? 'closes ' + dep.closes + ' when shipped' : '', dep.unblocks ? 'unblocks ' + dep.unblocks : '', dep.gatesEpic ? 'gates an epic' : ''].filter(Boolean).join(' · ')
+        : (dep.gatesEpic ? 'gates an epic' : 'no dependents') },
   ];
   let total = 0;
   const factors = f.map(x => {
@@ -5637,11 +5902,11 @@ function viewCommandCentre() {
     </div>
     <div class="cc-layout">
       <section class="cc-deck">
-        <div class="cc-deck-h">AGENT ROSTER</div>
+        <div class="cc-deck-h">Agent Roster</div>
         <div class="cc-deck-grid">${cards}<button class="cc-card cc-new" onclick="ccNewAgent()"><span class="cc-card-ic">+</span><span class="cc-card-name">New Agent</span><span class="cc-card-role">Design a custom drone with Opus</span><span class="cc-card-foot">DESIGN ▸</span></button></div>
       </section>
       <aside class="cc-fleet">
-        <div class="cc-fleet-h" id="ccFleetH"><span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}</div>
+        <div class="cc-fleet-h" id="ccFleetH"><span class="cc-radar"></span> Live Fleet${online ? ` · ${online}` : ''}</div>
         <div class="cc-fleet-list" id="ccFleetList">${fleetRows}</div>
       </aside>
     </div>`;
@@ -5675,7 +5940,7 @@ function renderCCFleet() {
   const list = document.getElementById('ccFleetList'); if (!list) return;
   list.innerHTML = ccFleetHtml();
   const online = Object.values(J.ccjobs || {}).filter(j => j.status === 'running').length + ((J.walk && J.walk.deploying) ? 1 : 0);
-  const h = document.getElementById('ccFleetH'); if (h) h.innerHTML = `<span class="cc-radar"></span> LIVE FLEET${online ? ` · ${online}` : ''}`;
+  const h = document.getElementById('ccFleetH'); if (h) h.innerHTML = `<span class="cc-radar"></span> Live Fleet${online ? ` · ${online}` : ''}`;
   const o = document.getElementById('ccOnline'); if (o) { o.textContent = online; o.className = 'cc-tm-n' + (online ? ' cc-tm-live' : ''); }
 }
 let ccKeyHandler = null;
@@ -5728,9 +5993,122 @@ async function askJarvisTriage() {
   } catch (e) { /* action() already toasted */ }
 }
 
-function viewBriefing() {
+// BRIEFING CHAT — Phase 1: the conversational front door. Talk to Jarvis in plain English; Jarvis
+// names actions; the server-side executor fires them (low-risk only this phase). The OLD viewBriefing
+// (loadBriefing/renderBriefing below) is dead code — left intact so future surfaces could reuse the
+// triage-rendering pattern if needed.
+async function viewBriefing() {
+  const v = $('view'); v.className = 'view bc';
+  v.innerHTML = `
+    <header class="bc-head">
+      <h1 class="bc-h1"><span class="brief-glow">JARVIS</span> BRIEFING</h1>
+      <p class="bc-sub">Talk to Jarvis. Plain English in, plain English out — Jarvis conducts the fleet.</p>
+    </header>
+    <div id="bcThread" class="bc-thread"><div class="bc-empty">Loading conversation…</div></div>
+    <form class="bc-form" onsubmit="event.preventDefault();sendBriefingChat();return false;">
+      <textarea id="bcInput" class="bc-input" rows="2" placeholder="Talk to Jarvis — try &quot;what matters in my backlog?&quot;, &quot;organize SLY-30&quot;, &quot;log a ticket: payday countdown is wrong&quot;…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendBriefingChat()}"></textarea>
+      <button class="btn primary bc-send" id="bcSend" type="submit">Send <kbd>&#8629;</kbd></button>
+    </form>`;
+  await loadBriefingChat();
+  setTimeout(() => { const el = $('bcInput'); if (el) el.focus(); }, 50);
+}
+async function loadBriefingChat() {
+  let chat; try { chat = await api('/api/briefing-chat'); } catch (_) { chat = { turns: [] }; }
+  J._chat = chat || { turns: [] };
+  renderBriefingChat();
+}
+function renderBriefingChat() {
+  const thread = $('bcThread'); if (!thread) return;
+  const turns = (J._chat && J._chat.turns) || [];
+  if (!turns.length) {
+    thread.innerHTML = `<div class="bc-empty">
+      <div class="bc-empty-h">Start the conversation</div>
+      <div class="bc-empty-sub">Try: <i>"what matters in my backlog?"</i> &middot; <i>"organize SLY-30"</i> &middot; <i>"log a ticket: payday countdown is wrong"</i> &middot; <i>"what would auto-log right now?"</i></div>
+    </div>`;
+    return;
+  }
+  thread.innerHTML = turns.map((t, i) => renderBriefingTurn(t, i)).join('');
+  thread.scrollTop = thread.scrollHeight;
+}
+function renderBriefingTurn(t, ti) {
+  const who = t.author === 'john' ? 'john' : t.author === 'jarvis' ? 'jarvis' : 'system';
+  const acts = (t.actions || []).length ? `<div class="bc-acts">${t.actions.map((a, ai) => renderBriefingActionResult(a, ti, ai)).join('')}</div>` : '';
+  const text = t._placeholder ? '<span class="bc-thinking">Jarvis is thinking…</span>' : esc(String(t.text || '')).replace(/\n/g, '<br>');
+  return `<div class="bc-turn bc-${who}${t._placeholder ? ' bc-pending' : ''}">
+    <div class="bc-author">${who === 'john' ? 'You' : who === 'jarvis' ? '<span class="bc-jarvis-glow">&#10022;</span> Jarvis' : '—'}<span class="bc-ts">${esc(when(t.ts) || '')}</span></div>
+    <div class="bc-text">${text}</div>
+    ${acts}
+  </div>`;
+}
+function renderBriefingActionResult(a, turnIdx, actIdx) {
+  const v = a.verdict;
+  // PENDING_CONFIRM gets the typed-CONFIRM card (Phase 2 — the gate the entire risk-tier model rests on)
+  if (v === 'PENDING_CONFIRM') {
+    const argsPreview = JSON.stringify(a.args || {}, null, 2).slice(0, 300);
+    return `<div class="bc-act bc-act-pending">
+      <div class="bc-act-h"><code>${esc(a.name)}</code><span class="bc-act-v">&#9888; Awaiting your CONFIRM</span></div>
+      ${a.why ? `<div class="bc-act-why">${esc(a.why)}</div>` : ''}
+      <div class="bc-act-args"><b>Args:</b> <pre>${esc(argsPreview)}</pre></div>
+      <div class="bc-act-reason">${esc(a.reason || 'High-risk — type CONFIRM exactly to fire.')}</div>
+      <div class="bc-confirm-row">
+        <input class="bc-confirm-input" id="bcConfirm-${turnIdx}-${actIdx}" placeholder="Type CONFIRM exactly to authorize" autocomplete="off">
+        <button class="btn danger" onclick="chatConfirm(${turnIdx},${actIdx})">Confirm &amp; fire</button>
+        <button class="btn" onclick="chatDismiss(${turnIdx},${actIdx})">Cancel</button>
+      </div>
+    </div>`;
+  }
+  const cls = v === 'FIRED' ? 'bc-act-ok' : v === 'BLOCKED' ? 'bc-act-block' : v === 'REJECTED' ? 'bc-act-no' : v === 'CANCELLED' ? 'bc-act-no' : 'bc-act-err';
+  const label = v === 'FIRED' ? '&check; Fired' : v === 'BLOCKED' ? '&#9940; Blocked' : v === 'REJECTED' ? '&times; Rejected' : v === 'CANCELLED' ? '&times; Cancelled' : '&#9888; Error';
+  let resultLine = '';
+  if (a.result) {
+    if (a.result.id && a.name === 'createTicket') resultLine = `Created <a href="#/ticket/${esc(a.result.id)}">${esc(a.result.id)}</a>${a.result.surface ? ' &middot; surface: ' + esc(a.result.surface) : ''}${a.result.enriching ? ' &middot; Jarvis is enriching…' : ''}`;
+    else if (a.result.dispatched) resultLine = 'Dispatched: <code>' + esc(a.result.dispatched) + '</code>';
+    else if (typeof a.result.wouldLog === 'number') resultLine = `Would auto-log: <b>${a.result.wouldLog}</b> &middot; skipped: ${a.result.skipped} &middot; <a href="#/dedupe">review</a>`;
+    else if (typeof a.result.count === 'number') resultLine = `Merged ${a.result.count} into ${esc(a.result.into || '?')}`;
+    else if (a.result.ok) resultLine = '&check;';
+  }
+  return `<div class="bc-act ${cls}">
+    <div class="bc-act-h"><code>${esc(a.name)}</code><span class="bc-act-v">${label}</span></div>
+    ${a.why ? `<div class="bc-act-why">${esc(a.why)}</div>` : ''}
+    ${a.reason ? `<div class="bc-act-reason">${esc(a.reason)}</div>` : ''}
+    ${resultLine ? `<div class="bc-act-result">${resultLine}</div>` : ''}
+  </div>`;
+}
+// PHASE 2 — typed-CONFIRM gate. The exact text must be 'CONFIRM' (server checks case-sensitively too).
+async function chatConfirm(turnIdx, actIdx) {
+  const el = document.getElementById('bcConfirm-' + turnIdx + '-' + actIdx);
+  const text = (el && el.value || '').trim();
+  if (text !== 'CONFIRM') { toast('Type CONFIRM exactly (case-sensitive) to fire', 'err'); if (el) el.focus(); return; }
+  try { await action('confirmChatAction', { turnIndex: turnIdx, actionIndex: actIdx, confirmText: text }); await loadBriefingChat(); }
+  catch (e) {}
+}
+async function chatDismiss(turnIdx, actIdx) {
+  try { await action('dismissChatAction', { turnIndex: turnIdx, actionIndex: actIdx }); await loadBriefingChat(); } catch (e) {}
+}
+async function sendBriefingChat() {
+  const input = $('bcInput'); const send = $('bcSend');
+  const msg = ((input && input.value) || '').trim(); if (!msg) return;
+  if (input) input.value = ''; if (send) { send.disabled = true; send.textContent = 'Thinking…'; }
+  J._chat = J._chat || { turns: [] };
+  J._chat.turns.push({ author: 'john', text: msg, ts: new Date().toISOString() });
+  J._chat.turns.push({ author: 'jarvis', text: '', ts: new Date().toISOString(), _placeholder: true });
+  renderBriefingChat();
+  try {
+    await action('briefingChatTurn', { message: msg });
+    await loadBriefingChat();   // server-truth thread (includes Jarvis's real reply + executed actions)
+  } catch (e) {
+    if (J._chat.turns.length && J._chat.turns[J._chat.turns.length - 1]._placeholder) J._chat.turns.pop();
+    J._chat.turns.push({ author: 'system', text: 'Failed: ' + (e.message || 'unknown error'), ts: new Date().toISOString() });
+    renderBriefingChat();
+  } finally {
+    if (send) { send.disabled = false; send.innerHTML = 'Send <kbd>&#8629;</kbd>'; }
+    setTimeout(() => { if (input) input.focus(); }, 30);
+  }
+}
+// Old triage-render briefing (dead since chat replaced it; kept harmless).
+function viewBriefing_legacy() {
   const v = $('view'); v.className = 'view brief';
-  J._briefAnimated = false;   // entrance stagger plays once per fresh open
+  J._briefAnimated = false;
   v.innerHTML = `
     <div class="cc-bg" aria-hidden="true"></div>
     <header class="brief-head">
@@ -5919,6 +6297,7 @@ function route() {
   document.querySelectorAll('.rail a').forEach(a => a.classList.toggle('on', a.dataset.r === r));
   if (r === 'ticket' && parts[1]) viewTicket(parts[1]);
   else if (r === 'board') viewBoard();
+  else if (r === 'dedupe') viewDedupe();
   else if (r === 'map') { if (parts[1]) viewMap(parts[1]); else viewGraphMap(); }
   else if (r === 'knowledge') viewKnowledge(parts[1]);
   else if (r === 'calendar') viewCalendar();

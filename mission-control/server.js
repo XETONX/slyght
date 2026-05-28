@@ -399,43 +399,61 @@ const ACTIONS = {
     return { ok: true, status: 'ConfirmedLive', assignee: t.assignee, walkDir: w.dir, scope: scope.group, flows: passing.map(v => v.flow), propagated };
   },
   // THE GATE — John's alignment collates the rich package + writes the handoff CC reads.
-  alignHandoff: ({ id, decision }) => {
+  alignHandoff: ({ id, decision, force }) => {
     if (!/^SLY-\d+$/.test(id)) throw new Error('bad ticket id');
     const st = readState(); const t = st[id]; if (!t) throw new Error('no such ticket: ' + id);
     const ticket = [...TICKETS(), ...MANUAL()].find(x => x.id === id); if (!ticket) throw new Error('no ticket spine for ' + id);
     if (!['Open', 'Discussing', 'Gathering'].includes(t.status)) throw new Error(`can only align from Open/Discussing/Gathering (now ${t.status})`);
+    // (b) READINESS CONTRACT — case-backed + questions-answered + findings-logged. The gate GUIDES;
+    // John can force-align (authoritative sign-off, logged below). Enforced here so a stale client can't bypass it.
+    const rdy = ticketReadyServer(t);
+    if (!rdy.ready && force !== true) return { ok: false, reason: 'not ready to align — ' + rdy.missing.join('; ') + '. Sign off anyway with force.' };
     const abs = jail(path.join('mission-control', 'handoffs', id + '.md'));
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, collate(ticket, t, decision), 'utf8');
     const from = t.status;                                                                              // ← capture before align (Open or Discussing)
     t.status = 'Aligned'; t.assignee = 'cc';
     logTransition(id, from, 'Aligned', 'john');                                                         // ← THE GATE — log the align edge
-    t.alignment = { decision: String(decision || 'agreed with the proposed fix').slice(0, 4000), ts: new Date().toISOString() };
+    if (!rdy.ready) t.thread.push({ author: 'john', text: '⚠️ FORCE-ALIGNED past the readiness gate (' + rdy.missing.join('; ') + ') — signing off on my authority.', ts: new Date().toISOString() });
+    t.alignment = { decision: String(decision || 'agreed with the proposed fix').slice(0, 4000), ts: new Date().toISOString(), forced: !rdy.ready };
     t.thread.push({ author: 'john', text: '✓ ALIGNED — handed to CC. ' + t.alignment.decision, ts: t.alignment.ts });
     t.lastActivity = t.alignment.ts; writeState(st);
-    return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.` };
+    return { ok: true, status: 'Aligned', handoff: path.relative(REPO, abs), kickoff: `Read ${path.relative(REPO, abs)} and investigate ${id} — post results back into the ticket, my approval before push.`, forced: !rdy.ready };
   },
-  // John (or a walk) creates a ticket → manual store (never clobbered by regen).
+  // John (or a walk) creates a ticket → manual store (never clobbered by regen). (e) INTAKE ENRICHMENT:
+  // top-level tickets (no parent) get a deterministic surface-from-keywords guess (instant) + auto-fire
+  // jarvisOrganize (Jarvis suggests epic/bundle/related/closesWith — posts on the ticket within a minute).
+  // Spin-offs already inherit surface and epic from the parent, so they skip the drone; (d)'s auto-logged
+  // sub-findings will inherit this enrichment for free.
   createTicket: ({ title, summary, surface, severity, type, parent, spinoffText, epic }) => {
     if (!title) throw new Error('title required');
     if (type && !['bug', 'feature', 'task', 'epic'].includes(type)) throw new Error('bad type');
+    // deterministic surface guess from keywords — no drone, instant. Skipped when user set surface explicitly.
+    const guessSurface = (tx) => {
+      const s = String(tx || '').toLowerCase();
+      const map = [['payday plan', 'plan'], ['quick log', 'savings'], ['bills ', 'bills'], ['savings', 'savings'], ['debts', 'debts'], ['debt ', 'debts'], ['payday', 'plan'], ['hero', 'dashboard'], ['dashboard', 'dashboard'], ['analysis', 'analysis'], ['surplus', 'analysis'], ['ai coach', 'ai'], ['ai chat', 'ai'], ['settings', 'settings'], ['onboarding', 'nav']];
+      for (const [k, v] of map) if (s.includes(k)) return v;
+      return null;
+    };
+    const finalSurface = surface || guessSurface(title + ' ' + (summary || '')) || null;
     const all = [...TICKETS(), ...MANUAL()]; const nextN = Math.max(0, ...all.map(t => +(t.id.replace('SLY-', '') || 0))) + 1; const id = 'SLY-' + nextN;
     const manualPath = jail(path.join('mission-control', 'tickets-manual.json'));
     let m = { tickets: [] }; try { m = JSON.parse(fs.readFileSync(manualPath, 'utf8')); } catch (_) {}
-    // optional parent link (spin-off from an investigation) — child→parent, validated id
     const links = (parent && /^SLY-\d+$/.test(parent)) ? [{ to: parent, why: 'spun off from this investigation' }] : [];
-    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: surface || null, group: surface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links, epic: (epic && /^SLY-\d+$/.test(epic)) ? epic : null });
+    m.tickets.push({ id, type: type || 'task', caseId: null, title: String(title).slice(0, 200), surface: finalSurface, group: finalSurface || 'planning', severity: severity || 'P2', kind: 'manual', summary: String(summary || '').slice(0, 2000), rich: { mechanism: '', rootCause: '(manual ticket — no walk evidence yet)', fix: '', files: [], evidence: null }, openBug: null, links, epic: (epic && /^SLY-\d+$/.test(epic)) ? epic : null });
     fs.mkdirSync(path.dirname(manualPath), { recursive: true }); fs.writeFileSync(manualPath, JSON.stringify(m, null, 2));
     const stt = readState(); const now = new Date().toISOString();
     stt[id] = { status: 'Open', assignee: 'john', thread: [], alignment: null, evidence: null, opened: now, lastActivity: now };
-    // mark the spin-off as logged on the PARENT so the case-file spin-off list clears it (now it's a ticket)
     if (parent && /^SLY-\d+$/.test(parent) && spinoffText && stt[parent]) {
       stt[parent].caseFile = stt[parent].caseFile || {};
       const sl = stt[parent].caseFile.spinoffLogged = stt[parent].caseFile.spinoffLogged || [];
       if (!sl.includes(spinoffText)) sl.push(String(spinoffText).slice(0, 600));
     }
     writeState(stt);
-    return { ok: true, id, spawnedFrom: parent || null };
+    // auto-organize top-level new tickets — fire-and-forget; Jarvis posts suggestions on the ticket.
+    let enriching = false;
+    if (!parent) { try { ACTIONS.jarvisOrganize({ id, confirm: true }); enriching = true; } catch (_) {} }
+    return { ok: true, id, spawnedFrom: parent || null, surface: finalSurface, enriching };
   },
   // John removes a ticket. MANUAL tickets (tickets-manual.json) are deleted outright;
   // GENERATED tickets (the read-only spine) can't be removed from the spine, so we
@@ -469,6 +487,196 @@ const ACTIONS = {
     writeState(st);
 
     return { ok: true, id, kind: removedManual ? 'manual-removed' : 'tombstoned' };
+  },
+  // (c) MERGE — fold duplicate / sub-finding tickets INTO a survivor, PRESERVING every key thing first
+  // (the reason it was logged: summary + root cause + fix + files + links → the survivor's thread), then
+  // tombstone the dupes with a mergedInto pointer. Info-preserving by contract: nothing is lost, and the
+  // dupes are tombstoned (state.deleted), not purged, so a merge is recoverable. Confirm-gated.
+  mergeTickets: ({ into, from, confirm }) => {
+    if (!/^SLY-\d+$/.test(into)) throw new Error('bad survivor id');
+    const dupes = (Array.isArray(from) ? from : [from]).filter(x => /^SLY-\d+$/.test(x) && x !== into);
+    if (!dupes.length) throw new Error('no dupes to merge');
+    if (confirm !== true) return { ok: false, reason: 'mergeTickets needs confirm:true' };
+    const all = mergedTickets().tickets;
+    const survivor = all.find(t => t.id === into);
+    if (!survivor) throw new Error('no such survivor: ' + into);
+    const st = readState();
+    st[into] = st[into] || { status: 'Open', assignee: 'john', thread: [], opened: new Date().toISOString(), lastActivity: null };
+    st[into].thread = st[into].thread || [];
+    const ts = new Date().toISOString();
+    const merged = [];
+    for (const id of dupes) {
+      const d = all.find(t => t.id === id);
+      if (!d) continue;
+      const r = d.rich || {};
+      const block = [
+        `🔗 **Merged in ${d.id}** — ${d.title}  _(was ${d.severity} · ${d.group || '—'})_`,
+        `**Why it was logged:** ${d.summary || '(no summary)'}`,
+        (r.rootCause && r.rootCause !== '(manual ticket — no walk evidence yet)') ? `**Root cause:** ${r.rootCause}` : '',
+        r.fix ? `**Proposed fix:** ${r.fix}` : '',
+        (Array.isArray(r.files) && r.files.length) ? `**Files:** ${r.files.join(', ')}` : '',
+        (Array.isArray(d.links) && d.links.length) ? `**Links carried:** ${d.links.map(l => l.to + (l.why ? ' (' + l.why + ')' : '')).join(', ')}` : '',
+      ].filter(Boolean).join('\n');
+      st[into].thread.push({ author: 'jarvis', text: block, ts });
+      st[into].mergedFrom = [...new Set([...(st[into].mergedFrom || []), d.id])];
+      // tombstone the dupe (same mechanism as deleteTicket) + a pointer home
+      st[id] = st[id] || { thread: [] };
+      st[id].deleted = true; st[id].deletedAt = ts; st[id].mergedInto = into;
+      st[id].thread = st[id].thread || [];
+      st[id].thread.push({ author: 'jarvis', text: `Merged into ${into} — its key evidence was carried over.`, ts });
+      merged.push(d.id);
+    }
+    st[into].lastActivity = ts;
+    writeState(st);
+    return { ok: true, into, merged, count: merged.length };
+  },
+  // (c) SEMANTIC CLUSTER PASS — the second half of dedupe. An Opus drone reads every active ticket's
+  // title+summary and proposes merge groups by MEANING (sub-findings of the same bug that share no FR/link
+  // signal, so deterministic detection is blind to them). Read-only: it only PROPOSES → cluster-report.json;
+  // John merges via the same suggest→click UI. First run is dry-run (propose-only) until John marks reviewed.
+  clusterBacklog: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'clusterBacklog needs confirm:true' };
+    const key = 'BACKLOG#cluster';
+    if (ccJobs[key] && ccJobs[key].status === 'running') return { ok: false, reason: 'a cluster pass is already running' };
+    ccJobs[key] = { status: 'running', id: 'BACKLOG', task: 'cluster', mode: 'gather', model: 'opus', started: Date.now() };
+    const all = mergedTickets().tickets.filter(t => t.type !== 'epic' && !(t.state && t.state.status === 'Shipped'));
+    const list = all.map(t => `${t.id} [${t.severity} ${t.group || '?'}] ${String(t.title || '').slice(0, 90)} :: ${String(t.summary || '').replace(/\s+/g, ' ').slice(0, 220)}`).join('\n').slice(0, 16000);
+    const prompt = [
+      'You are JARVIS running a DEDUPE pass on John\'s slyght backlog. MANY tickets are auto-spawned sub-findings of a few real bugs. Cluster the tickets that are THE SAME underlying issue — same root cause, same bug, or one is a sub-finding/duplicate of another. John says the REAL backlog is about a DOZEN, not ~90, so be decisive: most of these collapse into a few parents.',
+      'Rules: (1) pick a SURVIVOR per group — the most canonical/complete ticket (the parent bug, not a sub-finding). (2) list the DUPES to fold in. (3) give a SHORT plain-English reason (the shared root cause). (4) a ticket appears in at most ONE group. Ground every grouping in the title+summary; do not invent links.',
+      'CRITICAL — RECONCILE TO YOUR OWN COUNT: there are ~89 active tickets and you believe only ~a dozen are REAL. That means ~75 of them are sub-findings that MUST fold into a parent. Do NOT leave sub-findings as ungrouped singletons — that is the failure mode. Every ticket that is a symptom/sub-aspect/duplicate of a larger issue gets assigned to that issue\'s group. Only a genuinely-distinct, standalone top-level issue may stay ungrouped. After you draft groups, COUNT the survivors + ungrouped singletons; if that total is far above your realCount, you under-grouped — fold more. Over-grouping is safe (John reviews and declines bad merges); under-grouping is the thing to avoid.',
+      '## Active tickets (id [severity surface] title :: summary)', list,
+      '',
+      'End with EXACTLY ONE fenced code block tagged json:',
+      '{"groups":[{"survivor":"SLY-N","dupes":["SLY-M","SLY-K"],"reason":"the shared root cause, plain English"}],"realCount":<your estimate of the number of REAL distinct issues left after merging>}',
+    ].join('\n');
+    spawnDrone({
+      key, id: 'BACKLOG', task: 'cluster', prompt, mode: 'gather', mdl: 'opus', rsn: 'think', budget: '6', maxTurns: 18,
+      onResult: ({ job, resultText }) => recordClusterReport(resultText, job),
+    });
+    return { ok: true, dispatched: key };
+  },
+  // John has reviewed the dry-run semantic groups → unlock bulk merge for them (and future runs skip dry-run).
+  clusterReviewed: () => {
+    try { const r = JSON.parse(fs.readFileSync(jail(CLUSTER_FILE), 'utf8')); r.reviewed = true; r.dryRun = false; writeClusterReport(r); return { ok: true, reviewed: true }; }
+    catch (e) { return { ok: false, reason: 'no cluster report to mark reviewed' }; }
+  },
+  // (d) AUTO-LOG DRY-RUN — scan all existing unmapped findings, apply policy (conf≥high & sev≥P1, cap
+  // 3/parent + 10/day, dedupe-to-related at Jaccard≥0.4), write the dry-run list. NO writes. John reviews
+  // the list, then autoLogEnable flips autoWrite:true so future drone completions can auto-log qualifying
+  // findings. The seatbelt: nothing creates tickets until John clicks enable.
+  autoLogDryRun: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'autoLogDryRun needs confirm:true' };
+    const policy = getAutoLogPolicy();
+    const candidates = autoLogScanCandidates(policy);
+    const wouldLog = candidates.filter(c => c.action === 'AUTO-LOG').length;
+    const dedupes = candidates.filter(c => c.action === 'attach-as-related').length;
+    const out = { ts: new Date().toISOString(), policy, candidates, summary: { total: candidates.length, wouldLog, dedupes, skipped: candidates.length - wouldLog - dedupes } };
+    fs.writeFileSync(jail(AUTO_LOG_FILE), JSON.stringify(out, null, 2));
+    return { ok: true, ...out.summary };
+  },
+  // (d) UNBUCKLE — flip autoWrite:true. Future scoped-drone completions auto-log qualifying findings.
+  // Persisted to auto-log-policy.json so it survives restarts. Reversible via autoLogDisable.
+  autoLogEnable: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'autoLogEnable needs confirm:true' };
+    const p = Object.assign(getAutoLogPolicy(), { autoWrite: true });
+    fs.writeFileSync(jail(AUTO_LOG_POLICY_FILE), JSON.stringify(p, null, 2));
+    return { ok: true, autoWrite: true, policy: p };
+  },
+  autoLogDisable: () => {
+    const p = Object.assign(getAutoLogPolicy(), { autoWrite: false });
+    fs.writeFileSync(jail(AUTO_LOG_POLICY_FILE), JSON.stringify(p, null, 2));
+    return { ok: true, autoWrite: false };
+  },
+  // BRIEFING CHAT TURN — one user message → engine call → execute low-risk actions → persist john+jarvis
+  // turns → return. Phase 1: low-risk only. The executor REFUSES high-risk names server-side regardless
+  // of what Claude emits (Phase 2 routes them to a typed-CONFIRM card instead of fire). confirm:true is
+  // set HERE on the executor — never accepted from Claude for high-risk; for low-risk it's set as the
+  // underlying action requires (e.g., triageWorkload/jarvisOrganize/clusterBacklog/autoLogDryRun).
+  briefingChatTurn: async ({ message }) => {
+    if (!message || typeof message !== 'string') throw new Error('message required');
+    const chat = readBriefingChat();
+    const ts = new Date().toISOString();
+    chat.turns.push({ author: 'john', text: String(message).slice(0, 2000), ts });
+    writeBriefingChat(chat);
+    const prompt = buildBriefingChatPrompt(message, chat.turns);
+    const resultText = await claudeChatCall(prompt, 'sonnet', '2', 5);
+    const parsed = extractJsonBlock(resultText);
+    const reply = (parsed && parsed.reply) || String(resultText || '(Jarvis returned no reply — try again)').slice(0, 2000);
+    const proposed = (parsed && Array.isArray(parsed.actions)) ? parsed.actions : [];
+    const executed = [];
+    const NEEDS_CONFIRM_TRUE = new Set(['triageWorkload', 'jarvisOrganize', 'clusterBacklog', 'autoLogDryRun', 'jarvisAskAll']);
+    for (const a of proposed) {
+      const name = a && typeof a.name === 'string' ? a.name : null;
+      if (!name) continue;
+      const baseArgs = Object.assign({}, a.args || {});
+      // server-side strip: Claude can't ride in confirm:true for high-risk names, ever.
+      if (HIGH_RISK_CHAT_NAMES.has(name)) {
+        // PHASE 2 — high-risk = pending-confirm card. Strip any confirm:true Claude tried to ride in;
+        // ONLY John's typed CONFIRM (via confirmChatAction) can set it. The action sits as PENDING until
+        // John types CONFIRM exactly (case-sensitive) and clicks the confirm button on the card.
+        delete baseArgs.confirm;
+        executed.push({ name, args: baseArgs, why: a.why || '', verdict: 'PENDING_CONFIRM', reason: 'High-risk — type CONFIRM in the card below to fire (case-sensitive). Cancelling leaves nothing run.' });
+        continue;
+      }
+      if (!LOW_RISK_CHAT_ALLOWLIST.has(name)) {
+        executed.push({ name, args: baseArgs, why: a.why || '', verdict: 'REJECTED', reason: 'not on the low-risk chat allowlist' });
+        continue;
+      }
+      // strip any confirm Claude tried to set; the executor sets it where the low-risk action requires.
+      delete baseArgs.confirm;
+      if (NEEDS_CONFIRM_TRUE.has(name)) baseArgs.confirm = true;
+      try {
+        const r = await ACTIONS[name](baseArgs);
+        executed.push({ name, args: baseArgs, why: a.why || '', verdict: 'FIRED', result: r });
+      } catch (e) {
+        executed.push({ name, args: baseArgs, why: a.why || '', verdict: 'ERROR', reason: e.message });
+      }
+    }
+    const jarvisTurn = { author: 'jarvis', text: reply, ts: new Date().toISOString(), actions: executed };
+    chat.turns.push(jarvisTurn);
+    writeBriefingChat(chat);
+    return { ok: true, reply, actions: executed, threadLength: chat.turns.length };
+  },
+  // Clear the briefing chat thread (start fresh). No drones, no side effects beyond the file.
+  briefingChatReset: ({ confirm }) => {
+    if (confirm !== true) return { ok: false, reason: 'briefingChatReset needs confirm:true' };
+    writeBriefingChat({ ts: new Date().toISOString(), turns: [] });
+    return { ok: true };
+  },
+  // PHASE 2 — TYPED CONFIRM. Validates exact-case 'CONFIRM', sets confirm:true ONLY here (never from
+  // Claude), fires the high-risk action, updates the pending-confirm card in the chat. Defense in depth:
+  // (1) typed text must equal 'CONFIRM' exactly; (2) name must still be in HIGH_RISK_CHAT_NAMES;
+  // (3) the action's verdict must still be PENDING_CONFIRM (no replays).
+  confirmChatAction: async ({ turnIndex, actionIndex, confirmText }) => {
+    if (confirmText !== 'CONFIRM') return { ok: false, reason: 'type CONFIRM exactly (case-sensitive)' };
+    const chat = readBriefingChat();
+    const turn = chat.turns[turnIndex]; if (!turn || !Array.isArray(turn.actions)) return { ok: false, reason: 'no such turn' };
+    const a = turn.actions[actionIndex]; if (!a) return { ok: false, reason: 'no such action' };
+    if (a.verdict !== 'PENDING_CONFIRM') return { ok: false, reason: 'action is not pending (verdict: ' + a.verdict + ')' };
+    if (!HIGH_RISK_CHAT_NAMES.has(a.name)) return { ok: false, reason: 'name not in high-risk allowlist: ' + a.name };
+    const args = Object.assign({}, a.args || {}, { confirm: true });   // John's CONFIRM is the ONLY thing that sets this
+    try {
+      const r = await ACTIONS[a.name](args);
+      a.verdict = 'FIRED'; a.result = r; a.args = args; a.confirmedTs = new Date().toISOString();
+      chat.turns.push({ author: 'system', text: '✓ You confirmed and fired `' + a.name + '`.', ts: new Date().toISOString() });
+    } catch (e) {
+      a.verdict = 'ERROR'; a.reason = e.message; a.confirmedTs = new Date().toISOString();
+      chat.turns.push({ author: 'system', text: '⚠ You confirmed `' + a.name + '` but it errored: ' + e.message, ts: new Date().toISOString() });
+    }
+    writeBriefingChat(chat);
+    return { ok: true, verdict: a.verdict, result: a.result || null };
+  },
+  // Cancel a pending-confirm card without firing — sets verdict to CANCELLED. Reversible only by
+  // re-asking Jarvis (which will produce a new pending card if appropriate).
+  dismissChatAction: ({ turnIndex, actionIndex }) => {
+    const chat = readBriefingChat();
+    const turn = chat.turns[turnIndex]; if (!turn || !Array.isArray(turn.actions)) return { ok: false, reason: 'no such turn' };
+    const a = turn.actions[actionIndex]; if (!a) return { ok: false, reason: 'no such action' };
+    if (a.verdict !== 'PENDING_CONFIRM') return { ok: false, reason: 'action is not pending' };
+    a.verdict = 'CANCELLED'; a.confirmedTs = new Date().toISOString();
+    writeBriefingChat(chat);
+    return { ok: true };
   },
   // John edits a ticket's METADATA — type/severity/dueDate/bundle. These live on the
   // read-only spine (tickets.json), so we store OVERRIDES in ticket-state.json[id].meta
@@ -1817,6 +2025,11 @@ function recordScopedResult(id, task, spec, parsed, job, resultText) {
     t.thread.push({ author: 'cc', text: head + note + (detail ? (parsed ? '\n\n' + detail : detail) : ''), ts });
     t.lastActivity = ts;
     writeState(st);
+    // (d) AUTO-LOG — after the slot lands, auto-create linked sub-tickets for qualifying NEW findings
+    // (no-op when policy.autoWrite is false; honors per-investigation cap, day-cap, dedupe-skip).
+    if (parsed && Array.isArray(parsed.unmappedTerritory) && parsed.unmappedTerritory.length) {
+      try { autoLogTrigger(id, parsed.unmappedTerritory, parsed.confidence, (t.caseFile.spinoffLogged || [])); } catch (_) {}
+    }
   } catch (_) {}
 }
 
@@ -1857,6 +2070,8 @@ function recordSystemAudit(resultText, job) {
 // ── Autonomous triage helpers ────────────────────────────────────────────────
 const TRIAGE_FILE = path.join('mission-control', 'triage-report.json');
 function writeTriageReport(rec) { try { fs.writeFileSync(jail(TRIAGE_FILE), JSON.stringify(rec, null, 2)); } catch (_) {} }
+const CLUSTER_FILE = path.join('mission-control', 'cluster-report.json');
+function writeClusterReport(rec) { try { fs.writeFileSync(jail(CLUSTER_FILE), JSON.stringify(rec, null, 2)); } catch (_) {} }
 
 // Assemble the compact TICKET WORLD brief for the triage commander — the bridge that lets a drone
 // reason about the whole backlog (which a per-ticket drone cannot see), then point it at the on-disk
@@ -2041,6 +2256,248 @@ function recordOrganize(id, resultText, job) {
     t.thread.push({ author: 'jarvis', text: '**Jarvis — organize suggestion**\n\n' + (parsed ? (parsed.reasoning || '(see suggestions on the ticket)') : String(resultText || '').slice(0, 1500)), ts: new Date().toISOString() });
     t.lastActivity = new Date().toISOString(); writeState(st);
   } catch (_) {}
+}
+// (b) Server mirror of the client ticketReady() — the readiness contract, enforced at the align edge.
+// case-backed (a proposed fix or a COMPLETE case) + questions-answered (0 open) + findings-logged (no
+// un-logged unmappedTerritory). Shapes match the caseFile slots written by the scoped drones.
+function ticketReadyServer(t) {
+  const cf = (t && t.caseFile) || {};
+  const caseBacked = !!(cf.fix && cf.fix.fix) || ((cf.audit && cf.audit.verdict) === 'COMPLETE');
+  let openQ = 0;
+  ['rootCause', 'surface', 'fix', 'conformance', 'intent', 'design', 'acceptance'].forEach(k => { const s = cf[k]; if (s && Array.isArray(s.openQuestions)) openQ += s.openQuestions.length; });
+  const logged = cf.spinoffLogged || []; const find = new Set();
+  ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const s = cf[k]; if (!s) return; (s.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !logged.includes(x)) find.add(x); }); });
+  const missing = [];
+  if (!caseBacked) missing.push('no proposed fix / complete case');
+  if (openQ) missing.push(openQ + ' open question(s)');
+  if (find.size) missing.push(find.size + ' unlogged finding(s)');
+  return { ready: missing.length === 0, missing, caseBacked, openQ, unlogged: find.size };
+}
+// (c) Persist the semantic cluster pass → cluster-report.json. Validates ids against the live spine, drops
+// empty/self groups. Preserves the `reviewed` flag across runs: the FIRST ever run is dry-run (propose-only);
+// once John marks it reviewed, that and later runs are review-then-merge. The merge itself is always his click.
+function recordClusterReport(resultText, job) {
+  const parsed = extractJsonBlock(resultText);
+  let prevReviewed = false;
+  try { prevReviewed = !!JSON.parse(fs.readFileSync(jail(CLUSTER_FILE), 'utf8')).reviewed; } catch (_) {}
+  const valid = new Set(mergedTickets().tickets.map(t => t.id));
+  const groups = ((parsed && Array.isArray(parsed.groups)) ? parsed.groups : [])
+    .map(g => ({
+      survivor: g.survivor,
+      dupes: [...new Set((Array.isArray(g.dupes) ? g.dupes : []).filter(x => /^SLY-\d+$/.test(x) && x !== g.survivor && valid.has(x)))],
+      reason: String(g.reason || '').slice(0, 200),
+    }))
+    .filter(g => /^SLY-\d+$/.test(g.survivor) && valid.has(g.survivor) && g.dupes.length);
+  writeClusterReport({
+    ts: new Date().toISOString(),
+    model: (job && job.model) || 'opus',
+    groups,
+    realCount: (parsed && parsed.realCount) || null,
+    reviewed: prevReviewed,
+    dryRun: !prevReviewed,
+    raw: parsed ? null : String(resultText || '').slice(0, 4000),
+  });
+}
+// (d) AUTO-LOG — heuristic classifier + scanner + dry-run, all behind a policy file. Drones never
+// auto-write tickets unless autoWrite:true (you flip it after reviewing the dry-run list). The classifier
+// is heuristic by design — no per-finding drone spend; transparent rules John can see and tune.
+const AUTO_LOG_FILE = path.join('mission-control', 'auto-log-dryrun.json');
+const AUTO_LOG_POLICY_FILE = path.join('mission-control', 'auto-log-policy.json');
+const AUTO_LOG_POLICY_DEFAULT = { confidenceMin: 'high', severityMin: 'P1', perInvestigationCap: 3, dayCap: 10, autoWrite: false };
+function getAutoLogPolicy() {
+  try { return Object.assign({}, AUTO_LOG_POLICY_DEFAULT, JSON.parse(fs.readFileSync(jail(AUTO_LOG_POLICY_FILE), 'utf8'))); }
+  catch (_) { return Object.assign({}, AUTO_LOG_POLICY_DEFAULT); }
+}
+const autoLogDayCounts = {};   // YYYY-MM-DD → count; in-memory (resets on restart — day-cap is soft)
+function autoLogClassify(text) {
+  const s = String(text || '');
+  const hasFileLine = /\b[\w/.-]+\.(js|html|css|ts|json|md):\d+\b/.test(s);
+  const hasSymbol = /\b(?:BRAIN|MODEL|SNAPSHOTS|S)\.\w+/.test(s) || /\b[a-z][a-zA-Z0-9_]{4,}\(/.test(s);
+  const isShort = s.length < 30;
+  const confidence = (hasFileLine || hasSymbol) ? 'high' : isShort ? 'low' : 'med';
+  const sl = s.toLowerCase();
+  let severity = 'P2';
+  if (/\b(?:p0|critical|corrupt|silent|overshoot|race condition|data loss|invariant|fr-0[1-9])\b/.test(sl)) severity = 'P0';
+  else if (/\b(?:p1|wrong|broken|fails?|bypass|cap|overflow|leak|drift|stale|gap|missing|orphan|stuck)\b/.test(sl)) severity = 'P1';
+  return { confidence, severity };
+}
+function autoLogDedupe(findingText, openTickets) {
+  const tokenize = s => new Set(String(s || '').toLowerCase().match(/\b[a-z][a-z0-9-]{3,}\b/g) || []);
+  const ft = tokenize(findingText); if (ft.size < 3) return null;
+  let best = null, bestScore = 0;
+  for (const t of openTickets) {
+    const tt = tokenize((t.title || '') + ' ' + (t.summary || '')); if (tt.size < 3) continue;
+    let intersect = 0; ft.forEach(w => { if (tt.has(w)) intersect++; });
+    const score = intersect / Math.min(ft.size, tt.size);
+    if (score > bestScore) { bestScore = score; best = t.id; }
+  }
+  return bestScore >= 0.4 ? best : null;
+}
+function autoLogScanCandidates(policy) {
+  const all = mergedTickets().tickets;
+  const open = all.filter(t => !(t.state && t.state.status === 'Shipped') && t.type !== 'epic');
+  const candidates = [];
+  const perParentCount = {}; let dailyCount = 0;
+  for (const parent of open) {
+    const cf = parent.caseFile || {}; const logged = cf.spinoffLogged || [];
+    const findings = new Set();
+    ['rootCause', 'surface', 'fix', 'conformance'].forEach(k => { const slot = cf[k]; if (!slot) return; (slot.unmappedTerritory || []).forEach(v => { const x = (typeof v === 'string' ? v : JSON.stringify(v)).trim(); if (x && !logged.includes(x)) findings.add(x); }); });
+    for (const text of findings) {
+      const c = autoLogClassify(text);
+      const dedupeId = autoLogDedupe(text, open.filter(o => o.id !== parent.id));
+      const sevOk = ['P0', 'P1'].includes(c.severity);
+      const confOk = c.confidence === 'high';
+      const capOk = (perParentCount[parent.id] || 0) < policy.perInvestigationCap;
+      const dayOk = dailyCount < policy.dayCap;
+      let action, reason;
+      if (dedupeId) { action = 'attach-as-related'; reason = 'dedupes to ' + dedupeId + ' (similarity ≥ 0.4)'; }
+      else if (!sevOk) { action = 'skip'; reason = 'severity ' + c.severity + ' < ' + policy.severityMin; }
+      else if (!confOk) { action = 'skip'; reason = 'confidence ' + c.confidence + ' < ' + policy.confidenceMin; }
+      else if (!capOk) { action = 'skip-cap'; reason = 'per-investigation cap (' + policy.perInvestigationCap + ') reached on ' + parent.id; }
+      else if (!dayOk) { action = 'skip-cap'; reason = 'daily cap (' + policy.dayCap + ') reached'; }
+      else { action = 'AUTO-LOG'; reason = 'qualifies'; perParentCount[parent.id] = (perParentCount[parent.id] || 0) + 1; dailyCount++; }
+      candidates.push({ parentId: parent.id, parentTitle: String(parent.title || '').slice(0, 60), text: text.slice(0, 220), confidence: c.confidence, severity: c.severity, dedupeMatchId: dedupeId, action, reason });
+    }
+  }
+  return candidates;
+}
+// (d) AUTO-LOG TRIGGER — called from recordScopedResult after a scoped drone's findings land.
+// Classifies each NEW unmappedTerritory item, applies the policy (sev≥P1 + conf=high + dedupe + cap),
+// and fires createTicket for the qualifiers. Honors the drone's own overall confidence (low → skip all).
+// Dedupe match → SKIP (the finding is already tracked elsewhere); future polish can promote dedupe to
+// "attach-as-related" by adding a link from the hit ticket. Day-cap counted in-memory across the process.
+function autoLogTrigger(parentId, unmappedItems, droneConfidence, loggedAlready) {
+  const policy = getAutoLogPolicy(); if (!policy.autoWrite) return { fired: 0 };
+  const all = mergedTickets().tickets;
+  const parent = all.find(t => t.id === parentId); if (!parent) return { fired: 0 };
+  const open = all.filter(t => !(t.state && t.state.status === 'Shipped') && t.type !== 'epic' && t.id !== parentId);
+  const today = new Date().toISOString().slice(0, 10);
+  autoLogDayCounts[today] = autoLogDayCounts[today] || 0;
+  const created = []; let perParent = 0;
+  for (const raw of (unmappedItems || [])) {
+    const text = String(raw || '').trim(); if (!text || loggedAlready.includes(text)) continue;
+    const c = autoLogClassify(text);
+    const effConf = droneConfidence === 'low' ? 'low' : c.confidence;   // a low-confidence drone taints all findings
+    if (!['P0', 'P1'].includes(c.severity)) continue;
+    if (effConf !== 'high') continue;
+    if (perParent >= policy.perInvestigationCap) break;
+    if (autoLogDayCounts[today] >= policy.dayCap) break;
+    if (autoLogDedupe(text, open)) continue;   // already tracked elsewhere
+    const title = text.split(/[.\n]/)[0].slice(0, 120);
+    try {
+      const r = ACTIONS.createTicket({ title, summary: text, severity: c.severity, type: 'bug', surface: parent.group || null, epic: parent.epic || null, parent: parentId, spinoffText: text });
+      if (r && r.ok && r.id) { created.push(r.id); perParent++; autoLogDayCounts[today]++; }
+    } catch (_) {}
+  }
+  if (created.length) {
+    // post a note on the parent thread so John sees what auto-logged
+    try {
+      const st = readState(); const t = st[parentId]; if (t) {
+        t.thread = t.thread || []; t.thread.push({ author: 'jarvis', text: '🤖 **Auto-logged ' + created.length + ' sub-finding(s)** (policy: sev≥' + policy.severityMin + ' + conf=' + policy.confidenceMin + '): ' + created.join(', '), ts: new Date().toISOString() });
+        t.lastActivity = new Date().toISOString(); writeState(st);
+      }
+    } catch (_) {}
+  }
+  return { fired: created.length, created };
+}
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// BRIEFING CHAT — Phase 1 — the conversational front door over the built engine room.
+// State: briefing-chat.json (persisted multi-turn). Engine: one Claude call per turn with Discuss
+// threading + Triage Commander context + an action-plan output schema. Executor: validates names
+// against a LOW-risk allowlist (Phase 1) and strips/blocks high-risk names server-side regardless
+// of what Claude emits (defense in depth — Phase 2 routes high-risk to a typed-CONFIRM card).
+const BRIEFING_CHAT_FILE = path.join('mission-control', 'briefing-chat.json');
+// Low-risk actions Jarvis may fire DIRECTLY from a chat turn. Read-only or recoverable/proposal-style.
+// Phase 3 widens to include single-field metadata edits (setMeta), policy reversals (autoLogDisable),
+// and review-state flips (clusterReviewed) — all recoverable per-call, no destructive cascades.
+const LOW_RISK_CHAT_ALLOWLIST = new Set(['triageWorkload', 'jarvisOrganize', 'createTicket', 'jarvisAskAll', 'autoLogDryRun', 'clusterBacklog', 'setMeta', 'autoLogDisable', 'clusterReviewed', 'setBlockedBy']);
+// High-risk names — routed to a PENDING_CONFIRM card requiring John's typed CONFIRM. Claude NEVER
+// sets confirm:true here (stripped server-side regardless). Includes EITHER destructive writes OR
+// token-spending multi-step drone fires that produce an artifact (John 2026-05-28: dispatchDrone-tier
+// belongs here — not destructive, but real work + spend → the right friction is typed CONFIRM).
+const HIGH_RISK_CHAT_NAMES = new Set([
+  'mergeTickets', 'executeFixOnMain', 'alignHandoff', 'autoLogEnable', 'markReadyToShip', 'deleteTicket', 'doExecuteWithPush',
+  'dispatchCC', 'dispatchScoped', 'buildCase', 'composeResolution', 'designAgent', 'uxAudit',
+]);
+function readBriefingChat() {
+  try { return JSON.parse(fs.readFileSync(jail(BRIEFING_CHAT_FILE), 'utf8')); }
+  catch (_) { return { ts: new Date().toISOString(), turns: [] }; }
+}
+function writeBriefingChat(c) { try { fs.writeFileSync(jail(BRIEFING_CHAT_FILE), JSON.stringify(c, null, 2)); } catch (_) {} }
+// Build the chat-engine prompt — Discuss-thread threading + Triage Commander's backlog/architecture
+// /invariants/ledger context + the strict action-plan output schema. Naming-only: no free-form code.
+function buildBriefingChatPrompt(userMessage, thread) {
+  const all = mergedTickets().tickets;
+  const open = all.filter(t => t.type !== 'epic' && !(t.state && t.state.status === 'Shipped'));
+  const backlog = open.map(t => `${t.id} [${t.severity} ${(t.state && t.state.status) || '?'} ${t.group || '?'}] ${String(t.title || '').slice(0, 90)}`).join('\n').slice(0, 7000);
+  let triageCtx = '(no triage report yet — call triageWorkload to refresh)';
+  try { const p = JSON.parse(fs.readFileSync(jail(TRIAGE_FILE), 'utf8')); if (p && p.plan) triageCtx = JSON.stringify(p.plan).slice(0, 3000); } catch (_) {}
+  const history = (thread || []).slice(-10).map(t => `${(t.author || 'system').toUpperCase()}: ${String(t.text || '').slice(0, 400)}`).join('\n\n').slice(0, 3500);
+  return [
+    'You are JARVIS — the conversational front door for John\'s Mission Control cockpit. The engine room is built (every drone, ACTIONS + /api/action + token + allowlist + confirm gates, the Discuss-thread pattern, the Triage Commander\'s context, the record* post-back paths). You conduct the fleet through plain-English conversation. You NAME actions; the executor fires them.',
+    '',
+    '## YOUR ALLOWED ACTIONS THIS PHASE (low-risk — fire on your call)',
+    '- `triageWorkload` (args: {confirm:true}) — refresh Jarvis Triage (Opus reads backlog + ARCHITECTURE + INVARIANTS + live ledger). Slow (~minute). Use when John asks "what should I work on?" / "what matters?" / triage is stale.',
+    '- `jarvisOrganize` (args: {id, confirm:true}) — suggest epic/bundle/related/closesWith for ONE ticket. Use when John asks to categorize a specific ticket.',
+    '- `createTicket` (args: {title, summary, severity:"P0"|"P1"|"P2", type:"bug"|"feature"|"task"}) — log a new ticket. AUTO-ENRICHED on intake (surface guess + auto-organize fires). Use when John names a finding to log.',
+    '- `jarvisAskAll` (args: {id, confirm:true}) — Jarvis answers every open question on a ticket in one threaded reply. Use when a ticket has open Qs blocking align.',
+    '- `clusterBacklog` (args: {confirm:true}) — proposes dedupe merge groups (does NOT auto-merge — John reviews + clicks). Use when John asks to dedupe / "what\'s a dupe of what?"',
+    '- `autoLogDryRun` (args: {confirm:true}) — scans for auto-loggable sub-findings, shows the list (no writes). Use for "what would auto-log right now?"',
+    '- `setMeta` (args: {id, field:"type"|"severity"|"dueDate"|"bundle"|"epic", value}) — edit ONE field on ONE ticket. Recoverable. Use for "bump SLY-30 to P0", "set SLY-3\'s epic to SLY-37", etc.',
+    '- `setBlockedBy` (args: {id, ids:[]}) — set the dependency edges (which tickets block this one). Use for "SLY-5 is blocked by SLY-2".',
+    '- `autoLogDisable` (args: {}) — turn auto-write OFF (safe reverse of the high-risk autoLogEnable). Use when John says "pause auto-log".',
+    '- `clusterReviewed` (args: {}) — flip the cluster dry-run to reviewed (unlocks semantic merge-all). Use when John says "I\'ve reviewed the cluster proposals".',
+    '',
+    '## HIGH-RISK — TYPED-CONFIRM TIER (emit when right; John types CONFIRM in the card to fire)',
+    'These actions route to a PENDING_CONFIRM card — John sees your proposed name+args+why, types CONFIRM (case-sensitive exact), then fires. EMIT them when they\'re the right move. NEVER set `confirm:true` — the executor strips it server-side regardless; only John\'s typed CONFIRM can set it.',
+    '- `mergeTickets` (args: {into, from:[]}) — fold dupe tickets into a keeper. Use when John names a merge.',
+    '- `dispatchScoped` (args: {id, task:"root-cause"|"locate-surface"|"fix-proposal"|"conformance"|"auditor"|"intent"|"design"|"acceptance"|"breakdown"}) — fire ONE scoped investigation drone. Use when John asks for evidence on a ticket ("dig into SLY-X", "find the root cause", "propose a fix for…").',
+    '- `buildCase` (args: {id}) — fire the FULL parallel sweep (multiple scoped drones at once). Use when John asks for a full case on a ticket.',
+    '- `composeResolution` (args: {id}) — Opus drafts the resolution text once the case is complete. Use only when audit verdict = COMPLETE.',
+    '- `designAgent` (args: {desc}) — Opus designs a NEW scoped drone from John\'s description. Use only when John explicitly asks for a new agent.',
+    '- `uxAudit` (args: {}) — cockpit visual-consistency audit (runs against the cockpit itself).',
+    '- `executeFixOnMain` (args: {id}) — destructive: CC writer drone implements the fix on a worktree.',
+    '- `alignHandoff` (args: {id, decision, force:true}) — bypasses the readiness gate (force-align).',
+    '- `markReadyToShip` (args: {id}) — commits fix on main + moves to deploy queue.',
+    '- `deleteTicket` (args: {id}) — tombstones a ticket.',
+    '- `autoLogEnable` (args: {}) — turns auto-write ON (the (d) seatbelt off).',
+    '',
+    '## DISCIPLINE',
+    '- Plain English in John\'s voice (no jargon). Title Case ticket titles.',
+    '- Be decisive — if he asks "what matters", emit the triage fire. If he describes a bug, emit createTicket.',
+    '- Ground claims in the backlog or triage below. Don\'t invent IDs.',
+    '- One action per turn is usually right. Multi-action plans only when clearly indicated ("organize these 3").',
+    '',
+    '## OUTPUT — STRICT JSON, ONE FENCED BLOCK AT THE END',
+    '```json',
+    '{"reply":"plain-English reply (what you\'re doing + why)","actions":[{"name":"<actionName>","args":{...},"why":"plain-English: what this does"}]}',
+    '```',
+    'No actions? `actions: []`. Don\'t describe what you would do — emit it.',
+    '',
+    '## CURRENT BACKLOG (' + open.length + ' active)',
+    backlog || '(empty)',
+    '',
+    '## LATEST JARVIS TRIAGE',
+    triageCtx,
+    '',
+    '## CHAT HISTORY (last 10 turns)',
+    history || '(start of conversation)',
+    '',
+    '## JOHN\'S NEW MESSAGE',
+    String(userMessage || '').slice(0, 2000),
+  ].join('\n');
+}
+// Sync-style wrapper around spawnDrone for the chat engine — awaits the drone result and resolves.
+function claudeChatCall(prompt, mdl, budget, maxTurns) {
+  return new Promise((resolve) => {
+    const key = 'CHAT#' + Date.now();
+    ccJobs[key] = { status: 'running', id: 'CHAT', task: 'chat', mode: 'gather', model: mdl || 'sonnet', started: Date.now() };
+    spawnDrone({
+      key, id: 'CHAT', task: 'chat', prompt,
+      mode: 'gather', mdl: mdl || 'sonnet', rsn: 'off', budget: budget || '2', maxTurns: maxTurns || 4,
+      onResult: ({ resultText }) => resolve(String(resultText || '')),
+    });
+  });
 }
 // Post a live-Jarvis reply into the thread as a 'jarvis' comment. Best-effort; never throws.
 function postJarvisReply(id, resultText, job) {
@@ -2424,6 +2881,11 @@ const server = http.createServer((req, res) => {
       try { return send(res, 200, JSON.parse(fs.readFileSync(jail(TRIAGE_FILE), 'utf8'))); }
       catch (e) { return send(res, 200, { empty: true }); }
     }
+    if (p === '/api/cluster') {
+      try { return send(res, 200, JSON.parse(fs.readFileSync(jail(CLUSTER_FILE), 'utf8'))); }
+      catch (e) { return send(res, 200, { empty: true }); }
+    }
+    if (p === '/api/briefing-chat') { return send(res, 200, readBriefingChat()); }
     if (p === '/api/read') {
       const key = url.searchParams.get('name');
       if (!READS[key]) return send(res, 400, { error: 'not an allowlisted read: ' + key });
